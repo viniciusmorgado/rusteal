@@ -15,6 +15,11 @@ concurrency:
   group: release
   cancel-in-progress: false
 
+# The job commits the version bump and pushes the tag; the default token is
+# read-only in a new repository.
+permissions:
+  contents: write
+
 env:
   CARGO_TERM_COLOR: always
   CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
@@ -79,7 +84,10 @@ jobs:
             cargo update --workspace
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add Cargo.toml Cargo.lock
+            git add Cargo.toml
+            # Cargo.lock is not versioned in this repository; stage it only
+            # if that ever changes.
+            git ls-files --error-unmatch Cargo.lock >/dev/null 2>&1 && git add Cargo.lock || true
             git commit -m "chore: bump version to $TARGET_VERSION"
             git push
           fi

@@ -13,4 +13,4 @@ glam = { workspace = true }
 inventory = { workspace = true }
 
 [build-dependencies]
-syn = { version = "2", features = ["full"] }
+syn = { workspace = true }
