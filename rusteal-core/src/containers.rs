@@ -1018,6 +1018,12 @@ pub struct OwnedStruct<T: UeStruct> {
     _marker: PhantomData<T>,
 }
 
+impl<T: UeStruct> Default for OwnedStruct<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T: UeStruct> OwnedStruct<T> {
     /// Allocate a new struct initialized via C++ default constructor.
     ///

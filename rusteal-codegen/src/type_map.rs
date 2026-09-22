@@ -476,10 +476,10 @@ pub fn container_element_rust_type(
         "Int8Property" => Some("i8".into()),
         "ByteProperty" => {
             if let Some(en) = &inner.enum_name {
-                if let Some(ctx) = ctx {
-                    if !ctx.enums.contains_key(en.as_str()) {
-                        return None;
-                    }
+                if let Some(ctx) = ctx
+                    && !ctx.enums.contains_key(en.as_str())
+                {
+                    return None;
                 }
                 Some(en.clone())
             } else {
@@ -498,10 +498,10 @@ pub fn container_element_rust_type(
         "NameProperty" => Some("rusteal_core::FNameHandle".into()),
         "ObjectProperty" | "SoftObjectProperty" | "WeakObjectProperty" => {
             if let Some(cls) = &inner.class_name {
-                if let Some(ctx) = ctx {
-                    if !ctx.classes.contains_key(cls.as_str()) {
-                        return None;
-                    }
+                if let Some(ctx) = ctx
+                    && !ctx.classes.contains_key(cls.as_str())
+                {
+                    return None;
                 }
                 Some(format!("rusteal_core::UObjectRef<{cls}>"))
             } else {
@@ -511,10 +511,10 @@ pub fn container_element_rust_type(
         "ClassProperty" => {
             let effective_class = inner.meta_class_name.as_deref().or(inner.class_name.as_deref());
             if let Some(cls) = effective_class {
-                if let Some(ctx) = ctx {
-                    if !ctx.classes.contains_key(cls) {
-                        return None;
-                    }
+                if let Some(ctx) = ctx
+                    && !ctx.classes.contains_key(cls)
+                {
+                    return None;
                 }
                 Some(format!("rusteal_core::UObjectRef<{cls}>"))
             } else {
@@ -523,10 +523,10 @@ pub fn container_element_rust_type(
         }
         "InterfaceProperty" => {
             if let Some(ref iface) = inner.interface_name {
-                if let Some(ctx) = ctx {
-                    if !ctx.classes.contains_key(iface.as_str()) {
-                        return None;
-                    }
+                if let Some(ctx) = ctx
+                    && !ctx.classes.contains_key(iface.as_str())
+                {
+                    return None;
                 }
                 Some(format!("rusteal_core::UObjectRef<{iface}>"))
             } else {
@@ -535,10 +535,10 @@ pub fn container_element_rust_type(
         }
         "EnumProperty" => {
             if let Some(en) = &inner.enum_name {
-                if let Some(ctx) = ctx {
-                    if !ctx.enums.contains_key(en.as_str()) {
-                        return None;
-                    }
+                if let Some(ctx) = ctx
+                    && !ctx.enums.contains_key(en.as_str())
+                {
+                    return None;
                 }
                 Some(en.clone())
             } else {
