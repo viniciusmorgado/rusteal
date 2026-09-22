@@ -7,9 +7,9 @@ repository.workspace = true
 description = "Safe Rust runtime for uika (object refs, lifecycle, dynamic calls)"
 
 [dependencies]
-uika-ffi = { version = "0.1.0", path = "../uika-ffi" }
-glam = "0.29"
-inventory = "0.3"
+uika-ffi = { workspace = true }
+glam = { workspace = true }
+inventory = { workspace = true }
 
 [build-dependencies]
 syn = { version = "2", features = ["full"] }

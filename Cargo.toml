@@ -8,6 +8,7 @@ members = [
     "uika-cli",
     "uika-bindings",
     "uika",
+    "rusteal-cli",
     "example_game",
 ]
 resolver = "3"
@@ -15,5 +16,24 @@ resolver = "3"
 [workspace.package]
 edition = "2024"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/VioletHelianthus/uika"
-homepage = "https://github.com/VioletHelianthus/uika"
+repository = "https://github.com/viniciusmorgado/uika"
+homepage = "https://github.com/viniciusmorgado/uika"
+
+[workspace.dependencies]
+clap = { version = "4.6.7", features = ["derive"] }
+toml = "1.1.6"
+serde = { version = "1.0.229", features = ["derive"] }
+glam = "0.33.8"
+inventory = "0.3.24"
+syn = { version = "3.0.6", features = ["full", "extra-traits"] }
+quote = "1.0.47"
+proc-macro2 = "1.0.107"
+serde_json = "1.0.151"
+
+# Internal dependencies
+uika-ue-flags = { version = "0.1.0", path = "uika-ue-flags" }
+uika-codegen = { version = "0.1.0", path = "uika-codegen" }
+uika-runtime = { version = "0.1.0", path = "uika-runtime" }
+uika-ffi = { version = "0.1.0", path = "uika-ffi" }
+uika-macros = { version = "0.1.0", path = "uika-macros" }
+uika-bindings = { version = "0.1.0", path = "uika-bindings", default-features = false }
