@@ -37,6 +37,3 @@ public:
     // Override ProcessEvent to intercept delegate invocations.
     virtual void ProcessEvent(UFunction* Function, void* Parms) override;
 };
-
-// Module-level accessor for the Rust callbacks pointer.
-const FUikaRustCallbacks* GetUikaRustCallbacks();
