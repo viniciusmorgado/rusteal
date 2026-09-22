@@ -185,8 +185,9 @@ struct BuildContext {
     config_path: PathBuf,
     crate_name: String,
     config_dir: PathBuf,
-    /// Path to an external crate directory (resolved, absolute).
-    /// When set, `cargo build` uses `--manifest-path` instead of `-p`.
+    /// The game's Rust workspace (resolved, absolute): the Cargo workspace
+    /// holding the game crate and the generated `bindings` crate. `cargo build`
+    /// runs with its manifest and the library comes out of its `target/`.
     crate_path: Option<PathBuf>,
     /// Extra features for `cargo build` (from `[build].features`).
     features: Vec<String>,
@@ -351,17 +352,16 @@ impl BuildContext {
         let manifest_path_str;
         let mut args = vec!["cargo", "build", "--release"];
 
+        // The game's Rust workspace holds the game crate and the generated
+        // bindings; build the cdylib member by name.
         if let Some(ref crate_path) = self.crate_path {
-            // External crate: use --manifest-path
             let manifest = crate_path.join("Cargo.toml");
             manifest_path_str = manifest.to_string_lossy().into_owned();
             args.push("--manifest-path");
             args.push(&manifest_path_str);
-        } else {
-            // Workspace member: use -p
-            args.push("-p");
-            args.push(&self.crate_name);
         }
+        args.push("-p");
+        args.push(&self.crate_name);
 
         let features_str = self.features.join(",");
         if !features_str.is_empty() {
@@ -376,25 +376,11 @@ impl BuildContext {
         let platform = &HostPlatform::CURRENT;
         let dll_filename = platform.lib_filename(&self.crate_name);
 
-        // Search order for the built DLL:
-        // 1. External crate's own target dir (when crate_path is set)
-        // 2. CWD/target/release/ (workspace member, step 4 runs from CWD)
-        // 3. config_dir/target/release/ (fallback)
-        let external_target = self.crate_path.as_ref().map(|p| {
-            p.join("target/release").join(&dll_filename)
-        });
-        let cwd_target = std::env::current_dir()
-            .unwrap_or_default()
-            .join("target/release")
-            .join(&dll_filename);
-        let config_target = self.config_dir.join("target/release").join(&dll_filename);
-
-        let src = if external_target.as_ref().is_some_and(|p| p.exists()) {
-            external_target.unwrap()
-        } else if cwd_target.exists() {
-            cwd_target
-        } else {
-            config_target
+        // The workspace target dir, with the config dir as a fallback for a
+        // game crate that still lives inside this workspace.
+        let src = match self.crate_path {
+            Some(ref workspace) => workspace.join("target/release").join(&dll_filename),
+            None => self.config_dir.join("target/release").join(&dll_filename),
         };
 
         let dest_dir = self

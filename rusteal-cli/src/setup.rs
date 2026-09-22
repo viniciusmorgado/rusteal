@@ -31,7 +31,7 @@ features = ["core", "engine"]
 
 [codegen.paths]
 uht_input = "generated/uht"
-rust_out = "rusteal-bindings/src"
+rust_out = "{project_path}/Rust/bindings"
 cpp_out = "{cpp_out}"
 
 [codegen.modules]
