@@ -84,15 +84,14 @@ jobs:
             git push
           fi
 
-      # The CLI embeds the UE plugin sources; cargo package cannot reach outside the package
-      # directory, so the snapshot has to be in step with ue_plugin/ before publishing.
+      # The CLI embeds the UE plugin sources, and cargo package cannot reach
+      # outside the package directory: the snapshot inside rusteal-cli/ is what
+      # ships. It is generated, not versioned, so it is written here, from
+      # ue_plugin/, right before packaging.
       - name: Sync the plugin snapshot
         run: |
           cargo run -p rusteal -- sync-plugin
-          if ! git diff --quiet -- rusteal-cli/ue_plugin_embed; then
-            echo "rusteal-cli/ue_plugin_embed is out of date with ue_plugin/." >&2
-            exit 1
-          fi
+          test -f rusteal-cli/ue_plugin_embed/Rusteal/Rusteal.uplugin
 
       - name: Publish to crates.io
         run: |
