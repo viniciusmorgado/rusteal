@@ -6,6 +6,8 @@ use std::path::Path;
 
 use rusteal_codegen::config::find_uproject;
 
+use crate::templates;
+
 include!(concat!(env!("OUT_DIR"), "/plugin_files.rs"));
 
 const CSPROJ_PROPS_TEMPLATE: &str = r#"<Project>
@@ -14,102 +16,6 @@ const CSPROJ_PROPS_TEMPLATE: &str = r#"<Project>
   </PropertyGroup>
 </Project>
 "#;
-
-/// Starter `rusteal.toml`. `{crate}` is replaced at runtime.
-const PROJECT_CONFIG_TEMPLATE: &str = r##"# Rusteal project configuration. Versioned with the project.
-#
-# The layout is fixed by convention:
-#   Rust/                                       Cargo workspace (game crate + bindings)
-#   Rust/bindings/                              generated bindings crate (versioned)
-#   Plugins/Rusteal/Source/Rusteal/Generated/   generated C++ wrappers (versioned)
-#   Intermediate/Rusteal/uht/                   reflection JSON (build output)
-#
-# The engine location is per machine: `rusteal` asks for it once and keeps it
-# in its own configuration directory.
-
-[project]
-# The cdylib package in Rust/ deployed as the Rusteal library.
-crate = "{crate}"
-
-[codegen]
-# UE modules to generate bindings for, by feature (see [codegen.modules]).
-# `engine` needs `input`, `slate` and `umg`: the runtime plugin links them.
-features = ["core", "engine", "input", "slate", "umg"]
-
-[codegen.modules]
-# UE package = { module = "rust module", feature = "cargo feature" }
-CoreUObject = { module = "core_ue", feature = "core" }
-Engine = { module = "engine", feature = "engine" }
-PhysicsCore = { module = "physics_core", feature = "physics-core" }
-InputCore = { module = "input_core", feature = "input" }
-SlateCore = { module = "slate_core", feature = "slate" }
-Slate = { module = "slate", feature = "slate" }
-UMG = { module = "umg", feature = "umg" }
-Niagara = { module = "niagara", feature = "niagara" }
-GameplayAbilities = { module = "gameplay_abilities", feature = "gameplay-abilities" }
-LevelSequence = { module = "level_sequence", feature = "level-sequence" }
-CinematicCamera = { module = "cinematic_camera", feature = "cinematic" }
-MovieScene = { module = "movie_scene", feature = "movie" }
-MovieSceneTracks = { module = "movie_scene_tracks", feature = "movie" }
-
-[codegen.blocklist]
-# Reflected types and functions the generated code cannot handle yet.
-classes = [
-    "BlueprintTypeConversions",
-    "InstancedStaticMeshComponent",
-    "InstancedSkinnedMeshComponent",
-    "HierarchicalInstancedStaticMeshComponent",
-    "VisualLoggerKismetLibrary",
-    "PluginBlueprintLibrary",
-    "MeshVertexPainterKismetLibrary",
-    "FieldNotificationLibrary",
-    "WorldPartitionBlueprintLibrary",
-    "BlueprintMapLibrary",
-    "BlueprintSetLibrary",
-    "KismetArrayLibrary",
-    "MaterialExpressionDataDrivenShaderPlatformInfoSwitch",
-]
-structs = [
-    "ConstraintInstanceAccessor",
-]
-functions = [
-    # UFUNCTIONs the engine does not export (no *_API on the declaration): the
-    # generated wrapper compiles but does not link. Found with UE 5.8.2; keep sorted.
-    "AnimMontage.IsValidAdditiveSlot",
-    "GameplayStatics.BlueprintSuggestProjectileVelocity",
-    "KismetSystemLibrary.GetEnumTopLevelAssetPath",
-    "KismetSystemLibrary.GetStructTopLevelAssetPath",
-    "KismetSystemLibrary.RaiseScriptError",
-    "KismetSystemLibrary.StackTrace",
-    "ListView.SetReturnFocusToSelection",
-    "ListViewBase.CreateDragDropOperation",
-    "MaterialInstanceConstant.K2_GetScalarParameterValue",
-    "MaterialInstanceConstant.K2_GetTextureCollectionParameterValue",
-    "MaterialInstanceConstant.K2_GetTextureParameterValue",
-    "MaterialInstanceConstant.K2_GetVectorParameterValue",
-    "ParticleSystem.ContainsEmitterType",
-    "PhysicsConstraintComponent.IsProjectionEnabled",
-    "PlanarReflection.OnInterpToggle",
-    "SceneCapture2D.OnInterpToggle",
-    "SoundConcurrency.SetMaxCount",
-    "SplineComponent.PopulateFromLegacy",
-    "SpotLight.SetInnerConeAngle",
-    "SpotLight.SetOuterConeAngle",
-    "Texture.Blueprint_GetBuiltTextureSize",
-    "Texture.Blueprint_GetMemorySize",
-    "Texture.Blueprint_GetTextureSourceDiskAndMemorySize",
-    "Texture.Blueprint_GetTextureSourceIdString",
-    "Texture.ComputeTextureSourceChannelMinMax",
-    "Texture2D.Blueprint_GetSizeX",
-    "Texture2D.Blueprint_GetSizeY",
-    "WidgetAnimation.UnbindAllFromAnimationFinished",
-    "WidgetAnimation.UnbindAllFromAnimationStarted",
-    "WidgetAnimationPlayCallbackProxy.CreatePlayAnimationProxyObject",
-    "WidgetAnimationPlayCallbackProxy.CreatePlayAnimationTimeRangeProxyObject",
-    "WidgetAnimationPlayCallbackProxy.NewPlayAnimationProxyObject",
-    "WidgetAnimationPlayCallbackProxy.NewPlayAnimationTimeRangeProxyObject",
-]
-"##;
 
 /// Stub RustealFuncIds.h — empty namespace with FUNC_COUNT = 0.
 const STUB_FUNC_IDS_H: &str = "\
@@ -228,8 +134,9 @@ fn generate_config(project_path: &Path) {
         return;
     }
     let crate_name = default_crate_name(project_path);
-    let content = PROJECT_CONFIG_TEMPLATE.replace("{crate}", &crate_name);
-    fs::write(&config_path, content)
+    let mut ctx = tera::Context::new();
+    ctx.insert("crate_name", &crate_name);
+    fs::write(&config_path, templates::render("rusteal.toml.tera", &ctx))
         .unwrap_or_else(|e| panic!("Failed to write {}: {e}", config_path.display()));
     eprintln!("  Generated {} (crate = \"{crate_name}\")", config_path.display());
 }

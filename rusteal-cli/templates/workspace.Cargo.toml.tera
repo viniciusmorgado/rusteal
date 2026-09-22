@@ -1,0 +1,18 @@
+# Cargo workspace for {{ project }}: the game crate and the bindings generated
+# by `rusteal build` from this project's Unreal Engine reflection data.
+[workspace]
+members = ["{{ crate_name }}", "bindings"]
+resolver = "3"
+
+[workspace.dependencies]
+{%- if runtime_path %}
+# Local Rusteal checkout (rusteal new --runtime-path).
+rusteal-runtime = { path = "{{ runtime_path }}/rusteal-runtime" }
+rusteal-core = { path = "{{ runtime_path }}/rusteal-core" }
+rusteal-ffi = { path = "{{ runtime_path }}/rusteal-ffi" }
+{%- else %}
+rusteal-runtime = "={{ version }}"
+rusteal-core = "={{ version }}"
+rusteal-ffi = "={{ version }}"
+{%- endif %}
+glam = "{{ glam_version }}"
