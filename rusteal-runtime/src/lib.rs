@@ -1,27 +1,15 @@
-// rusteal: User-facing library crate. Users depend on this and use `rusteal_runtime::entry!()`
-// to generate the DLL entry points in their own cdylib crate.
+// rusteal-runtime: what a game crate depends on. It carries the safe runtime,
+// the FFI contract, the engine's reflection flags and the proc macros, and
+// generates the library entry points through `rusteal_runtime::entry!()`.
 //
-//! ## Feature Flags
-//!
-//! | Feature              | Modules                                     |
-//! |----------------------|---------------------------------------------|
-//! | `core`               | CoreUObject types (UObject, UClass, ...)    |
-//! | `engine`             | Engine types (AActor, UWorld, ...)           |
-//! | `physics-core`       | PhysicsCore types                           |
-//! | `input`              | EnhancedInput types                         |
-//! | `slate`              | Slate UI types                              |
-//! | `umg`                | UMG (Widget) types                          |
-//! | `niagara`            | Niagara particle system types               |
-//! | `gameplay-abilities` | Gameplay Ability System types                |
-//! | `level-sequence`     | Level Sequence / Sequencer types            |
-//! | `cinematic`          | Cinematic camera types                      |
-//! | `movie`              | Movie scene types                           |
+// The Unreal types themselves are not here: they are generated per project by
+// `rusteal build` into the game's own `bindings` crate, whose features decide
+// which engine modules exist.
 
 // Re-exports for proc macro path resolution and user access.
 pub use rusteal_ffi as ffi;
 pub use rusteal_core as runtime;
 pub use rusteal_ue_flags as ue_flags;
-pub use rusteal_bindings as bindings;
 pub use rusteal_macros::{uclass, uclass_impl};
 
 // For proc macro generated inventory::submit! invocations.
@@ -121,28 +109,9 @@ pub fn init(api_table: *const ffi::RustealApiTable) -> *const ffi::RustealRustCa
     .unwrap_or(std::ptr::null())
 }
 
-/// Build a greeting string listing all compiled feature flags.
-fn build_feature_greeting(prefix: &str) -> String {
-    macro_rules! collect_features {
-        ($s:expr, $($feat:literal),+ $(,)?) => {{
-            $(
-                #[cfg(feature = $feat)]
-                $s.push_str(concat!(" ", $feat));
-            )+
-        }};
-    }
-    let mut s = format!("[Rusteal] {} (features:", prefix);
-    collect_features!(s,
-        "core", "engine", "physics-core", "input", "slate", "umg",
-        "niagara", "gameplay-abilities", "level-sequence", "cinematic", "movie"
-    );
-    s.push(')');
-    s
-}
-
-/// Log the Rusteal greeting message with compiled feature list.
+/// Log the Rusteal greeting message.
 fn log_greeting() {
-    let msg = build_feature_greeting("Rust side initialized");
+    let msg = "[Rusteal] Rust side initialized";
     let bytes = msg.as_bytes();
     unsafe {
         runtime::ffi_dispatch::logging_log(0, bytes.as_ptr(), bytes.len() as u32);

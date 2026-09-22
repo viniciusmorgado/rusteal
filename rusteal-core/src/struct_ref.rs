@@ -49,6 +49,12 @@ impl<T: UeStruct> UStructRef<T> {
 /// Create a `UStructRef<T>` from a native parameter buffer pointer + byte offset.
 ///
 /// Used by `#[uclass_impl]` macro for Override function struct parameters.
+///
+/// # Safety
+///
+/// `ptr` must point to a live parameter buffer and `offset` must be the offset
+/// of a `T` inside it, as UE laid the buffer out; the reference must not outlive
+/// the call the buffer belongs to.
 #[inline(always)]
 pub unsafe fn struct_ref_from_param<T: UeStruct>(ptr: *mut u8, offset: usize) -> UStructRef<T> {
     unsafe { UStructRef::from_raw(ptr.add(offset)) }

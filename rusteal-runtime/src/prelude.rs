@@ -1,6 +1,7 @@
-// Prelude: one-import access to the most commonly used Rusteal types.
+// Prelude: one-import access to the most commonly used runtime types.
 //
-// Usage: `use rusteal_runtime::prelude::*;`
+// Usage: `use rusteal_runtime::prelude::*;`. The engine types live in the
+// project's generated `bindings` crate, which has its own `bindings::prelude`.
 
 // Core runtime types
 pub use rusteal_core::{
@@ -25,54 +26,3 @@ pub use rusteal_macros::{uclass, uclass_impl};
 
 // glam re-exports (common math types users will interact with)
 pub use glam::{DVec2, DVec3, DVec4, DQuat, DMat4, IVec2, IVec3};
-
-// Core UE types (feature-gated)
-#[cfg(feature = "core")]
-pub use rusteal_bindings::core_ue::{
-    FVector, FVectorExt,
-    FVector2D, FVector2DExt,
-    FVector4, FVector4Ext,
-    FQuat, FQuatExt,
-    FRotator, FRotatorExt,
-    FTransform, FTransformExt,
-    FLinearColor, FLinearColorExt,
-    FColor, FColorExt,
-    FPlane, FPlaneExt,
-    FBox2D, FBox2DExt,
-};
-
-// Manual conversion traits (feature-gated)
-#[cfg(feature = "core")]
-pub use rusteal_bindings::manual::vector::OwnedFVectorExt;
-#[cfg(feature = "core")]
-pub use rusteal_bindings::manual::vector2d::OwnedFVector2DExt;
-#[cfg(feature = "core")]
-pub use rusteal_bindings::manual::vector4::OwnedFVector4Ext;
-#[cfg(feature = "core")]
-pub use rusteal_bindings::manual::quat::OwnedFQuatExt;
-#[cfg(feature = "core")]
-pub use rusteal_bindings::manual::rotator::OwnedFRotatorExt;
-#[cfg(feature = "core")]
-pub use rusteal_bindings::manual::transform::OwnedFTransformExt;
-#[cfg(feature = "core")]
-pub use rusteal_bindings::manual::linear_color::OwnedFLinearColorExt;
-#[cfg(feature = "core")]
-pub use rusteal_bindings::manual::color::OwnedFColorExt;
-#[cfg(feature = "core")]
-pub use rusteal_bindings::manual::plane::OwnedFPlaneExt;
-#[cfg(feature = "core")]
-pub use rusteal_bindings::manual::ue_box2d::OwnedFBox2DExt;
-
-// Engine types (feature-gated)
-#[cfg(feature = "engine")]
-pub use rusteal_bindings::engine::{Actor, ActorExt, World, WorldExt};
-
-// FKey (feature-gated via input)
-#[cfg(feature = "input")]
-pub use rusteal_bindings::input_core::FKey;
-#[cfg(feature = "input")]
-pub use rusteal_bindings::manual::fkey::FKeyExt;
-
-// World spawn/query extensions (feature-gated)
-#[cfg(feature = "engine")]
-pub use rusteal_bindings::manual::world_ext::{WorldSpawnExt, find_object, load_object};

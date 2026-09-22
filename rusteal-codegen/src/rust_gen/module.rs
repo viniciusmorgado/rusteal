@@ -76,8 +76,9 @@ pub fn generate_lib_rs(ctx: &CodegenContext) -> String {
         }
     }
 
-    // Hand-written manual override module (not generated).
+    // Hand-written extensions, written verbatim by the generator.
     out.push_str("pub mod manual;\n\n");
+    out.push_str("pub mod prelude;\n\n");
 
     out
 }

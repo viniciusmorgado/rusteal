@@ -1,63 +1,40 @@
-// Configuration types for rusteal-codegen, deserialized from rusteal.config.toml.
+// Project configuration: `<Project>/rusteal.toml`, next to the .uproject.
+//
+// The file is versioned with the project and holds only what varies between
+// projects: the game crate and the codegen module selection. Everything else
+// is a fixed layout (see `ProjectLayout`). The engine location is per machine
+// and lives in the CLI's own configuration, not here.
 
 use serde::Deserialize;
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 
-/// Top-level config file.
-#[derive(Deserialize)]
-pub struct RustealConfig {
-    pub codegen: CodegenConfig,
-    #[serde(default)]
-    pub ue: Option<UeConfig>,
-    #[serde(default)]
-    pub build: Option<BuildConfig>,
-    #[serde(default)]
-    pub project: Option<ProjectConfig>,
-}
+/// Name of the project configuration file.
+pub const FILE_NAME: &str = "rusteal.toml";
 
-#[derive(Deserialize)]
-pub struct UeConfig {
-    pub engine_path: String,
-}
-
-#[derive(Deserialize)]
-pub struct BuildConfig {
-    /// Cargo crate name of the cdylib to build. If not set, auto-detected from Cargo.toml.
-    pub crate_name: Option<String>,
-    /// Path to an external crate directory (relative to config file location).
-    /// When set, `cargo build` uses `--manifest-path` instead of `-p`, allowing
-    /// the game crate to live outside the rusteal workspace.
-    pub crate_path: Option<String>,
-    /// Extra features to pass to `cargo build`.
-    #[serde(default)]
-    pub features: Vec<String>,
-}
-
+/// Top-level `rusteal.toml`.
 #[derive(Deserialize)]
 pub struct ProjectConfig {
-    /// Path to the UE project directory (relative to config file location).
-    /// Defaults to "." (current directory).
-    #[serde(default = "default_project_path")]
-    pub path: String,
+    pub project: ProjectSection,
+    pub codegen: CodegenConfig,
 }
 
-fn default_project_path() -> String {
-    ".".to_string()
+#[derive(Deserialize)]
+pub struct ProjectSection {
+    /// Cargo package, a cdylib member of `Rust/`, deployed as the Rusteal library.
+    #[serde(rename = "crate")]
+    pub crate_name: String,
+    /// Extra cargo features to build it with.
+    #[serde(default)]
+    pub features: Vec<String>,
 }
 
 #[derive(Deserialize)]
 pub struct CodegenConfig {
     pub features: Vec<String>,
-    pub paths: CodegenPaths,
     pub modules: HashMap<String, ModuleMapping>,
+    #[serde(default)]
     pub blocklist: Blocklist,
-}
-
-#[derive(Deserialize)]
-pub struct CodegenPaths {
-    pub uht_input: String,
-    pub rust_out: String,
-    pub cpp_out: String,
 }
 
 #[derive(Deserialize)]
@@ -66,11 +43,14 @@ pub struct ModuleMapping {
     pub feature: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Default)]
 pub struct Blocklist {
+    #[serde(default)]
     pub classes: Vec<String>,
+    #[serde(default)]
     pub structs: Vec<String>,
     /// Function blocklist in "Class.Function" format.
+    #[serde(default)]
     pub functions: Vec<String>,
 }
 
@@ -85,4 +65,75 @@ impl Blocklist {
             })
             .collect()
     }
+}
+
+impl ProjectConfig {
+    /// Read `rusteal.toml` from the project root.
+    pub fn load(root: &Path) -> Result<Self, String> {
+        let path = root.join(FILE_NAME);
+        let text = std::fs::read_to_string(&path)
+            .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
+        toml::from_str(&text).map_err(|e| format!("cannot parse {}: {e}", path.display()))
+    }
+}
+
+/// Where things live inside a Rusteal project. Fixed by convention so that the
+/// config, the CLI and the plugin agree without a single path in `rusteal.toml`.
+pub struct ProjectLayout {
+    /// The directory holding the .uproject.
+    pub root: PathBuf,
+}
+
+impl ProjectLayout {
+    pub fn new(root: &Path) -> Self {
+        Self { root: root.to_path_buf() }
+    }
+
+    /// The .uproject file, if the root holds one.
+    pub fn uproject(&self) -> Option<PathBuf> {
+        find_uproject(&self.root)
+    }
+
+    /// Cargo workspace with the game crate(s) and the bindings.
+    pub fn rust_workspace(&self) -> PathBuf {
+        self.root.join("Rust")
+    }
+
+    /// The generated `bindings` crate.
+    pub fn bindings_crate(&self) -> PathBuf {
+        self.rust_workspace().join("bindings")
+    }
+
+    /// The generated C++ wrappers, compiled into the Rusteal plugin.
+    pub fn cpp_generated(&self) -> PathBuf {
+        self.root.join("Plugins/Rusteal/Source/Rusteal/Generated")
+    }
+
+    /// The reflection JSON the codegen reads: build output, not versioned.
+    pub fn uht_json(&self) -> PathBuf {
+        self.root.join("Intermediate/Rusteal/uht")
+    }
+
+    /// The project's `rusteal.toml`.
+    pub fn config_file(&self) -> PathBuf {
+        self.root.join(FILE_NAME)
+    }
+}
+
+/// The .uproject file in `dir`, if any.
+pub fn find_uproject(dir: &Path) -> Option<PathBuf> {
+    std::fs::read_dir(dir)
+        .ok()?
+        .flatten()
+        .map(|entry| entry.path())
+        .find(|path| path.extension().is_some_and(|ext| ext == "uproject"))
+}
+
+/// Walk up from `start` to the first directory holding a .uproject.
+pub fn find_project_root(start: &Path) -> Option<PathBuf> {
+    let start = start.canonicalize().ok()?;
+    start
+        .ancestors()
+        .find(|dir| find_uproject(dir).is_some())
+        .map(Path::to_path_buf)
 }

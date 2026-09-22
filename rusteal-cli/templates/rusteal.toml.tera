@@ -1,35 +1,25 @@
-# Rusteal project configuration
-# Copy this file to rusteal.config.toml and adjust paths for your environment.
-
-[ue]
-# Path to the Unreal Engine installation root.
-# This directory should contain Engine/, GenerateProjectFiles.bat, etc.
-engine_path = "C:/Program Files/Epic Games/UE_5.7"
+# Rusteal project configuration. Versioned with the project.
+#
+# The layout is fixed by convention:
+#   Rust/                                       Cargo workspace (game crate + bindings)
+#   Rust/bindings/                              generated bindings crate (versioned)
+#   Plugins/Rusteal/Source/Rusteal/Generated/   generated C++ wrappers (versioned)
+#   Intermediate/Rusteal/uht/                   reflection JSON (build output)
+#
+# The engine location is per machine: `rusteal` asks for it once and keeps it
+# in its own configuration directory.
 
 [project]
-# Path to the UE project directory (relative to repo root).
-# Defaults to "." if omitted.
-path = "saki"
-
-[build]
-# cdylib crate to build (default: example-game for rusteal development)
-crate_name = "example-game"
-
-# --- Codegen configuration ---
+# The cdylib package in Rust/ deployed as the Rusteal library.
+crate = "{{ crate_name }}"
 
 [codegen]
-# Modules to generate. Must cover everything the `rusteal` crate's features imply — its `engine`
-# feature turns on `input`, and the hand-written runtime (RustealWidgetApiImpl.cpp) needs UMG —
-# or the manual extensions in rusteal-bindings/src/manual reference modules that do not exist.
+# UE modules to generate bindings for, by feature (see [codegen.modules]).
+# `engine` needs `input`, `slate` and `umg`: the runtime plugin links them.
 features = ["core", "engine", "input", "slate", "umg"]
 
-[codegen.paths]
-uht_input = "generated/uht"
-rust_out = "rusteal-bindings/src"
-cpp_out = "ue_plugin/Rusteal/Source/Rusteal/Generated"
-
 [codegen.modules]
-# UE Package name = { module = "rust_module", feature = "cargo_feature" }
+# UE package = { module = "rust module", feature = "cargo feature" }
 CoreUObject = { module = "core_ue", feature = "core" }
 Engine = { module = "engine", feature = "engine" }
 PhysicsCore = { module = "physics_core", feature = "physics-core" }
@@ -45,6 +35,7 @@ MovieScene = { module = "movie_scene", feature = "movie" }
 MovieSceneTracks = { module = "movie_scene_tracks", feature = "movie" }
 
 [codegen.blocklist]
+# Reflected types and functions the generated code cannot handle yet.
 classes = [
     "BlueprintTypeConversions",
     "InstancedStaticMeshComponent",
@@ -64,8 +55,8 @@ structs = [
     "ConstraintInstanceAccessor",
 ]
 functions = [
-    # UFUNCTIONs the engine does not export (no *_API on the declaration): the generated
-    # wrapper compiles but does not link. Found with UE 5.8.2 on Linux; keep sorted.
+    # UFUNCTIONs the engine does not export (no *_API on the declaration): the
+    # generated wrapper compiles but does not link. Found with UE 5.8.2; keep sorted.
     "AnimMontage.IsValidAdditiveSlot",
     "GameplayStatics.BlueprintSuggestProjectileVelocity",
     "KismetSystemLibrary.GetEnumTopLevelAssetPath",
@@ -74,12 +65,6 @@ functions = [
     "KismetSystemLibrary.StackTrace",
     "ListView.SetReturnFocusToSelection",
     "ListViewBase.CreateDragDropOperation",
-    "WidgetAnimation.UnbindAllFromAnimationFinished",
-    "WidgetAnimation.UnbindAllFromAnimationStarted",
-    "WidgetAnimationPlayCallbackProxy.CreatePlayAnimationProxyObject",
-    "WidgetAnimationPlayCallbackProxy.CreatePlayAnimationTimeRangeProxyObject",
-    "WidgetAnimationPlayCallbackProxy.NewPlayAnimationProxyObject",
-    "WidgetAnimationPlayCallbackProxy.NewPlayAnimationTimeRangeProxyObject",
     "MaterialInstanceConstant.K2_GetScalarParameterValue",
     "MaterialInstanceConstant.K2_GetTextureCollectionParameterValue",
     "MaterialInstanceConstant.K2_GetTextureParameterValue",
@@ -99,4 +84,10 @@ functions = [
     "Texture.ComputeTextureSourceChannelMinMax",
     "Texture2D.Blueprint_GetSizeX",
     "Texture2D.Blueprint_GetSizeY",
+    "WidgetAnimation.UnbindAllFromAnimationFinished",
+    "WidgetAnimation.UnbindAllFromAnimationStarted",
+    "WidgetAnimationPlayCallbackProxy.CreatePlayAnimationProxyObject",
+    "WidgetAnimationPlayCallbackProxy.CreatePlayAnimationTimeRangeProxyObject",
+    "WidgetAnimationPlayCallbackProxy.NewPlayAnimationProxyObject",
+    "WidgetAnimationPlayCallbackProxy.NewPlayAnimationTimeRangeProxyObject",
 ]

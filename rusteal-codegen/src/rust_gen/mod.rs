@@ -9,6 +9,8 @@ pub mod module;
 pub mod func_ids;
 pub mod param_helpers;
 pub mod cargo_toml;
+pub mod manual;
+pub mod prelude;
 
 use std::path::Path;
 
