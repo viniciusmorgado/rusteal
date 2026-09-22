@@ -1,12 +1,12 @@
-> ⚠️ **Maintenance Notice:** Due to my exceptionally long working hours, I no longer have the capacity to continue developing Uika. It is therefore highly unlikely that Uika will receive any further maintenance. Furthermore, with Verse expected to arrive in Unreal Engine 6, it will likely be a more suitable programming language for Unreal Engine development than Rust.
+> ⚠️ **Maintenance Notice:** Due to my exceptionally long working hours, I no longer have the capacity to continue developing Rusteal. It is therefore highly unlikely that Rusteal will receive any further maintenance. Furthermore, with Verse expected to arrive in Unreal Engine 6, it will likely be a more suitable programming language for Unreal Engine development than Rust.
 
-# Uika
+# Rusteal
 
 **Rust bindings for Unreal Engine 5.7+**
 
-Uika lets you write Unreal Engine gameplay in Rust. Your Rust code compiles to a DLL that is loaded by a small UE C++ plugin. All UE API calls cross the FFI boundary through a function pointer table — no C++ compilation required during Rust iteration.
+Rusteal lets you write Unreal Engine gameplay in Rust. Your Rust code compiles to a DLL that is loaded by a small UE C++ plugin. All UE API calls cross the FFI boundary through a function pointer table — no C++ compilation required during Rust iteration.
 
-> **⚠️ Early Stage Project** — Uika is under active development and **not ready for production use**. APIs will change without notice, documentation is incomplete, and many UE features are not yet covered. Contributions and feedback are welcome, but please do not use this for shipping projects.
+> **⚠️ Early Stage Project** — Rusteal is under active development and **not ready for production use**. APIs will change without notice, documentation is incomplete, and many UE features are not yet covered. Contributions and feedback are welcome, but please do not use this for shipping projects.
 
 
 ## Example
@@ -27,15 +27,15 @@ See [`example_game/src/game_demo.rs`](example_game/src/game_demo.rs) for the ful
 
 2. **Clone this repo** alongside your project:
    ```bash
-   git clone https://github.com/user/uika.git
-   cd uika
+   git clone https://github.com/user/rusteal.git
+   cd rusteal
    ```
 
 3. **Configure** — copy and edit the config file:
    ```bash
-   cp uika.config.toml.example uika.config.toml
+   cp rusteal.config.toml.example rusteal.config.toml
    ```
-   Edit `uika.config.toml` to set your UE engine path and project path:
+   Edit `rusteal.config.toml` to set your UE engine path and project path:
    ```toml
    [ue]
    engine_path = "C:/Program Files/Epic Games/UE_5.7"
@@ -49,12 +49,12 @@ See [`example_game/src/game_demo.rs`](example_game/src/game_demo.rs) for the ful
 
 4. **Set up the UE plugin** in your project:
    ```bash
-   cargo run -p uika-cli -- setup
+   cargo run -p rusteal-cli -- setup
    ```
 
 5. **Build everything** (UE build → codegen → UE rebuild → Rust compile → deploy DLL):
    ```bash
-   cargo run -p uika-cli -- build
+   cargo run -p rusteal-cli -- build
    ```
 
 ### Create your game crate
@@ -69,13 +69,13 @@ cargo new --lib your-game
 crate-type = ["cdylib"]
 
 [dependencies]
-uika = { path = "../uika", features = ["engine"] }
+rusteal-runtime = { path = "../rusteal-runtime", features = ["engine"] }
 glam = "0.29"
 ```
 
 **`src/lib.rs`:**
 ```rust
-uika::entry!();
+rusteal_runtime::entry!();
 
 mod my_game;
 ```
@@ -86,25 +86,25 @@ The CLI orchestrates a 5-step build:
 
 | Step | Command | What it does |
 |------|---------|-------------|
-| 1 | UE Build | Compiles UE project, triggers UikaGenerator → JSON reflection data |
+| 1 | UE Build | Compiles UE project, triggers RustealGenerator → JSON reflection data |
 | 2 | Codegen | Reads JSON → generates Rust bindings + C++ wrappers |
 | 3 | UE Rebuild | Compiles the generated C++ wrappers into the UE module |
 | 4 | Cargo Build | `cargo build --release` on your cdylib crate |
-| 5 | Deploy | Copies the DLL to `Plugins/Uika/Binaries/Win64/` |
+| 5 | Deploy | Copies the DLL to `Plugins/Rusteal/Binaries/Win64/` |
 
 Common shortcuts:
 ```bash
 # Full build
-cargo run -p uika-cli -- build
+cargo run -p rusteal-cli -- build
 
 # Rust-only rebuild (skip UE steps)
-cargo run -p uika-cli -- build --from 4
+cargo run -p rusteal-cli -- build --from 4
 
 # Codegen + everything after
-cargo run -p uika-cli -- build --from 2
+cargo run -p rusteal-cli -- build --from 2
 
 # Just regenerate bindings
-cargo run -p uika-cli -- generate
+cargo run -p rusteal-cli -- generate
 ```
 
 ## Key Concepts
@@ -168,12 +168,12 @@ call.call()?;
 During development, rebuild your Rust DLL and reload without restarting the editor:
 
 ```bash
-cargo run -p uika-cli -- build --from 4
+cargo run -p rusteal-cli -- build --from 4
 ```
 
 Then in the UE console:
 ```
-Uika.Reload
+Rusteal.Reload
 ```
 
 Function implementations update immediately. Adding/removing `uproperty` or `ufunction` requires an editor restart.

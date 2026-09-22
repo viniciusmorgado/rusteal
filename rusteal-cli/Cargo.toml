@@ -1,11 +1,15 @@
 [package]
-name = "rusteal-cli"
+name = "rusteal"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-homepage.workspace = true
+description = "CLI tool for rusteal: codegen, project setup, and build orchestration"
+build = "build.rs"
+include = ["src/**", "build.rs", "Cargo.toml", "ue_plugin_embed/**"]
 
 [dependencies]
+rusteal-codegen = { workspace = true }
+serde_json = { workspace = true }
+clap = { workspace = true }
 toml = { workspace = true }
-serde = { workspace = true }

@@ -4,13 +4,13 @@
 // 1. Set GameMode Override = GemCollectorGameMode in World Settings
 //    (DefaultPawnClass and HUDClass are configured automatically via CDO)
 
-use uika::{uclass, uclass_impl};
-use uika::runtime::{
-    ulog, Checked, DynamicCall, OwnedStruct, UObjectRef, UikaResult,
+use rusteal_runtime::{uclass, uclass_impl};
+use rusteal_runtime::runtime::{
+    ulog, Checked, DynamicCall, OwnedStruct, UObjectRef, RustealResult,
     LOG_DISPLAY, LOG_WARNING,
 };
-use uika::bindings::core_ue::{FLinearColor, FRotator, FRotatorExt, FTransform, Object};
-use uika::bindings::engine::{
+use rusteal_runtime::bindings::core_ue::{FLinearColor, FRotator, FRotatorExt, FTransform, Object};
+use rusteal_runtime::bindings::engine::{
     Actor, ActorExt, ActorComponent, CameraActor,
     DefaultPawn,
     GameModeBase, GameModeBaseExt, GameplayStatics, GameplayStaticsExt,
@@ -19,18 +19,18 @@ use uika::bindings::engine::{
     StaticMesh, StaticMeshActor, StaticMeshComponent, StaticMeshComponentExt,
     World,
 };
-use uika::bindings::manual::{
+use rusteal_runtime::bindings::manual::{
     vector::OwnedFVectorExt,
     world_ext::{self, WorldSpawnExt},
 };
-use uika::runtime::{LinearColor, Transform};
+use rusteal_runtime::runtime::{LinearColor, Transform};
 use glam::{DQuat, DVec3};
 
 // ---------------------------------------------------------------------------
 // Helper: set a component to Movable mobility via DynamicCall
 // ---------------------------------------------------------------------------
 
-fn try_set_movable(component: &UObjectRef<impl uika::runtime::UeClass>) {
+fn try_set_movable(component: &UObjectRef<impl rusteal_runtime::runtime::UeClass>) {
     match DynamicCall::new(component, "SetMobility") {
         Err(e) => {
             ulog!(LOG_WARNING, "[GemCollector] SetMobility: find_function failed: {:?}", e);
@@ -68,9 +68,9 @@ impl GemCollectorGameMode {
 impl GemCollectorGameMode {
     /// Called from ReceiveBeginPlay. Spawns floor, lights, pawn, and possesses.
     /// Camera is set up by the pawn on its first tick (after possess completes).
-    fn setup_game(&self) -> UikaResult<()> {
+    fn setup_game(&self) -> RustealResult<()> {
         let gm_actor: UObjectRef<Actor> = unsafe { UObjectRef::from_raw(self.__obj) };
-        let world_h = uika::runtime::world::get_world_raw(gm_actor.checked()?.raw())?;
+        let world_h = rusteal_runtime::runtime::world::get_world_raw(gm_actor.checked()?.raw())?;
         let world: UObjectRef<World> = unsafe { UObjectRef::from_raw(world_h) };
         let world_ctx: UObjectRef<Object> = unsafe { UObjectRef::from_raw(self.__obj) };
 
@@ -98,10 +98,10 @@ impl GemCollectorGameMode {
         ulog!(LOG_DISPLAY, "[GemCollector] Possessed pawn");
 
         // Manually create HUD — CDO HUDClass may not propagate after hot-reload
-        let hud_class_h = <GemCollectorHUD as uika::runtime::UeClass>::static_class();
+        let hud_class_h = <GemCollectorHUD as rusteal_runtime::runtime::UeClass>::static_class();
         match DynamicCall::new(&controller, "ClientSetHUD") {
             Ok(mut call) => {
-                match call.set("NewHUDClass", uika::ffi::UObjectHandle(hud_class_h.0)) {
+                match call.set("NewHUDClass", rusteal_runtime::ffi::UObjectHandle(hud_class_h.0)) {
                     Ok(()) => match call.call() {
                         Ok(_) => ulog!(LOG_DISPLAY, "[GemCollector] HUD created via ClientSetHUD"),
                         Err(e) => ulog!(LOG_WARNING, "[GemCollector] ClientSetHUD call failed: {:?}", e),
@@ -116,7 +116,7 @@ impl GemCollectorGameMode {
         Ok(())
     }
 
-    fn spawn_floor(world: &UObjectRef<World>) -> UikaResult<()> {
+    fn spawn_floor(world: &UObjectRef<World>) -> RustealResult<()> {
         let mesh: UObjectRef<StaticMesh> = world_ext::load_object("/Engine/BasicShapes/Plane")?;
 
         let transform = FTransform::from_transform(Transform::new(
@@ -127,9 +127,9 @@ impl GemCollectorGameMode {
         let floor: UObjectRef<StaticMeshActor> = world.spawn_actor(&transform)?;
         let floor_actor: UObjectRef<Actor> = floor.cast::<Actor>()?;
 
-        let smc_class = <StaticMeshComponent as uika::runtime::UeClass>::static_class();
+        let smc_class = <StaticMeshComponent as rusteal_runtime::runtime::UeClass>::static_class();
         let smc_class_ref: UObjectRef<ActorComponent> = unsafe {
-            UObjectRef::from_raw(uika::ffi::UObjectHandle(smc_class.0))
+            UObjectRef::from_raw(rusteal_runtime::ffi::UObjectHandle(smc_class.0))
         };
         let component = floor_actor.checked()?.get_component_by_class(smc_class_ref);
         let mesh_comp: UObjectRef<StaticMeshComponent> = component.cast::<StaticMeshComponent>()?;
@@ -140,7 +140,7 @@ impl GemCollectorGameMode {
         Ok(())
     }
 
-    fn spawn_lights(world: &UObjectRef<World>) -> UikaResult<()> {
+    fn spawn_lights(world: &UObjectRef<World>) -> RustealResult<()> {
         let dl_transform = FTransform::from_transform(Transform::new(
             DQuat::from_rotation_y(-std::f64::consts::FRAC_PI_4),
             DVec3::new(0.0, 0.0, 500.0),
@@ -194,7 +194,7 @@ impl GemCollectorHUD {
         unsafe { UObjectRef::from_raw(self.__obj) }
     }
 
-    fn draw_game_hud(&self, _size_x: i32, _size_y: i32) -> UikaResult<()> {
+    fn draw_game_hud(&self, _size_x: i32, _size_y: i32) -> RustealResult<()> {
         let hud = self.self_as_hud().checked()?;
 
         let pawn = hud.get_owning_pawn();
@@ -327,13 +327,13 @@ impl GemCollectorPawn {
         unsafe { UObjectRef::from_raw(self.__obj) }
     }
 
-    fn get_world(&self) -> UikaResult<UObjectRef<World>> {
+    fn get_world(&self) -> RustealResult<UObjectRef<World>> {
         let h = self.self_as_actor().checked()?.raw();
-        let world_h = uika::runtime::world::get_world_raw(h)?;
+        let world_h = rusteal_runtime::runtime::world::get_world_raw(h)?;
         Ok(unsafe { UObjectRef::from_raw(world_h) })
     }
 
-    fn init_game(&mut self) -> UikaResult<()> {
+    fn init_game(&mut self) -> RustealResult<()> {
         self.set_time_remaining(60.0);
         self.set_score(0);
         self.set_move_speed(400.0);
@@ -374,7 +374,7 @@ impl GemCollectorPawn {
     }
 
     /// Camera setup — deferred to first tick so the pawn is already possessed.
-    fn setup_camera(&mut self) -> UikaResult<()> {
+    fn setup_camera(&mut self) -> RustealResult<()> {
         self.set_camera_setup_done(true);
         ulog!(LOG_DISPLAY, "[GemCollector] setup_camera starting...");
 
@@ -411,7 +411,7 @@ impl GemCollectorPawn {
         Ok(())
     }
 
-    fn tick_game(&mut self, dt: f32) -> UikaResult<()> {
+    fn tick_game(&mut self, dt: f32) -> RustealResult<()> {
         // Countdown
         let prev_time = self.time_remaining();
         let time = (prev_time - dt).max(0.0);
@@ -454,7 +454,7 @@ impl GemCollectorPawn {
         Ok(())
     }
 
-    fn check_gem_pickup(&mut self) -> UikaResult<()> {
+    fn check_gem_pickup(&mut self) -> RustealResult<()> {
         let pawn_pos = self.self_as_actor().checked()?.k2_get_actor_location().to_dvec3();
         let world = self.get_world()?;
         let gems: Vec<UObjectRef<CollectibleGem>> = world.get_all_actors_of_class()?;
@@ -475,7 +475,7 @@ impl GemCollectorPawn {
         Ok(())
     }
 
-    fn spawn_gem_at(&self, world: &UObjectRef<World>, x: f64, y: f64) -> UikaResult<()> {
+    fn spawn_gem_at(&self, world: &UObjectRef<World>, x: f64, y: f64) -> RustealResult<()> {
         let t = FTransform::from_transform(Transform::new(
             DQuat::IDENTITY,
             DVec3::new(x, y, 50.0),
@@ -493,7 +493,7 @@ impl GemCollectorPawn {
 
         // Scale down — default sphere is 100cm diameter
         let gem_actor: UObjectRef<Actor> = unsafe { UObjectRef::from_raw(gem_raw) };
-        let scale = uika::bindings::core_ue::FVector::from_dvec3(DVec3::new(0.3, 0.3, 0.3));
+        let scale = rusteal_runtime::bindings::core_ue::FVector::from_dvec3(DVec3::new(0.3, 0.3, 0.3));
         gem_actor.checked()?.set_actor_scale3_d(&scale);
 
         Ok(())
