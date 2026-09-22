@@ -304,6 +304,53 @@ before publishing, which refreshes the snapshot the binary embeds.
 
 Commits are small — one per fix — and never mention AI authorship.
 
+### Releases and versions
+
+Everything Rusteal ships carries one version: the seven crates (they inherit
+`[workspace.package].version` through `version.workspace = true`), the two UE
+plugins and the FFI contract between them.
+
+**Where it comes from.** The release is cut from a `develop` → `main` PR. The
+`prepare-release` workflow takes the last released version from crates.io
+(`max_version` of the `rusteal` crate, the one source that cannot drift) and
+bumps it by the commits the PR adds: `BREAKING CHANGE:` → major, `feat:` →
+minor, anything else → patch. It never reads the version from the repository's
+files. If nothing that goes into a package changed since the last tag, it skips
+the release.
+
+**Where it is written.** The same bump commit writes it everywhere at once:
+
+| File | Field | 0.2.1 becomes |
+|---|---|---|
+| `Cargo.toml` | `[workspace.package].version` and the internal `{ version, path }` dependencies | `0.2.1` |
+| `ue_plugin/*/*.uplugin` | `VersionName` | `"0.2.1"` |
+| `ue_plugin/*/*.uplugin` | `Version` | `2001` |
+
+Tags (`v0.2.1`), crates.io and the manifests only ever use `major.minor.patch`.
+
+**The integer form.** Two places cannot hold `0.2.1`: the `.uplugin` `Version`
+field, which UE requires to be an integer, and `RustealApiTable::version`, a
+`u32`. Both use the same encoding, `major * 1_000_000 + minor * 1_000 + patch`
+(`rusteal_ffi::encode_version`). It is always derived from the version, never
+a source of it. Minor and patch must stay below 1000, or the number would be
+ambiguous; `encode_version` refuses such a version at compile time, so it cannot
+slip through.
+
+**How it is kept in line.**
+
+- `rusteal-cli/tests/plugin_version.rs` fails if either `.uplugin` disagrees with
+  the workspace version, so a descriptor edited by hand turns CI red.
+- At load, the plugin compares its own version with the library's
+  `rusteal_version()` export and refuses a library built against another one;
+  `rusteal_runtime::init` checks the table's `version` again.
+- Before `build`, `generate` and `setup`, the CLI compares the project's pins
+  and plugins with its own version (see [Versions](#versions)).
+
+`Cargo.lock` is not versioned: every build would rewrite the internal versions
+in it. A dependency release that breaks the workspace shows up in CI, where it
+gets fixed. `cargo install rusteal --locked` still works, because cargo packs a
+lock file of its own into the published crate.
+
 ## License
 
 Licensed under either of:
