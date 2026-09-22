@@ -1,0 +1,127 @@
+name: Release to crates.io
+
+# Publishes every crate of the workspace at the version in [workspace.package], which the
+# "Prepare release" workflow put there on the pull request that brought it to main. The
+# crates go up in dependency order, because a published crate's dependencies must already
+# be on the registry, and anything already published at that version is skipped, so a run
+# that fails halfway can simply be repeated.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+  ANCHOR_CRATE: rusteal
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Test
+        run: cargo test --workspace
+
+      # The version to release is the one in Cargo.toml. If it is already published (a push
+      # to main that skipped the PR flow), bump it here from the commits since the last "v*"
+      # tag — "BREAKING CHANGE:" -> major, "feat:" -> minor, anything else -> patch — and
+      # commit it, so Cargo.toml stays the source of truth.
+      - name: Get version to release
+        id: semver
+        run: |
+          CURRENT=$(grep -m1 '^version = ' Cargo.toml | cut -d'"' -f2)
+          UA="rusteal-release-workflow (+https://github.com/viniciusmorgado/rusteal)"
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" -A "$UA" \
+            "https://crates.io/api/v1/crates/$ANCHOR_CRATE/$CURRENT")
+          if [ "$STATUS" != "200" ]; then
+            VERSION="$CURRENT"
+            echo "Cargo.toml is at $CURRENT, not yet on crates.io: releasing it."
+          else
+            LAST_TAG=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)
+            RANGE="${LAST_TAG:+$LAST_TAG..}HEAD"
+            SUBJECTS=$(git log --format=%s "$RANGE" | grep -v '^chore: bump version' || true)
+            if echo "$SUBJECTS" | grep -q '^BREAKING CHANGE:'; then
+              BUMP=major
+            elif echo "$SUBJECTS" | grep -q '^feat'; then
+              BUMP=minor
+            else
+              BUMP=patch
+            fi
+            IFS=. read -r MAJOR MINOR PATCH <<< "$CURRENT"
+            case "$BUMP" in
+              major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
+              minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
+              patch) PATCH=$((PATCH + 1)) ;;
+            esac
+            VERSION="$MAJOR.$MINOR.$PATCH"
+            echo "Cargo.toml is at $CURRENT, already on crates.io: bumping ($BUMP) to $VERSION."
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Update the workspace version
+        run: |
+          TARGET_VERSION="${{ steps.semver.outputs.version }}"
+          CURRENT_VERSION=$(grep -m1 '^version = ' Cargo.toml | cut -d'"' -f2)
+          if [ "$CURRENT_VERSION" = "$TARGET_VERSION" ]; then
+            echo "Cargo.toml is already at version $TARGET_VERSION; skipping bump commit."
+          else
+            sed -i '0,/^version = ".*"/s//version = "'"$TARGET_VERSION"'"/' Cargo.toml
+            sed -i 's/{ version = "[^"]*", path =/{ version = "'"$TARGET_VERSION"'", path =/' Cargo.toml
+            cargo update --workspace
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add Cargo.toml Cargo.lock
+            git commit -m "chore: bump version to $TARGET_VERSION"
+            git push
+          fi
+
+      # The CLI embeds the UE plugin sources, and cargo package cannot reach
+      # outside the package directory: the snapshot inside rusteal-cli/ is what
+      # ships. It is generated, not versioned, so it is written here, from
+      # ue_plugin/, right before packaging.
+      - name: Sync the plugin snapshot
+        run: |
+          cargo run -p rusteal -- sync-plugin
+          test -f rusteal-cli/ue_plugin_embed/Rusteal/Rusteal.uplugin
+
+      - name: Publish to crates.io
+        run: |
+          VERSION="${{ steps.semver.outputs.version }}"
+          UA="rusteal-release-workflow (+https://github.com/viniciusmorgado/rusteal)"
+          for CRATE in rusteal-ue-flags rusteal-ffi rusteal-core rusteal-macros \
+                       rusteal-runtime rusteal-codegen rusteal; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" -A "$UA" \
+              "https://crates.io/api/v1/crates/$CRATE/$VERSION")
+            if [ "$STATUS" = "200" ]; then
+              echo "$CRATE $VERSION is already published; skipping."
+              continue
+            fi
+            echo "Publishing $CRATE $VERSION"
+            cargo publish -p "$CRATE"
+            # The index needs a moment before the next crate can depend on this one.
+            for _ in $(seq 1 30); do
+              STATUS=$(curl -s -o /dev/null -w "%{http_code}" -A "$UA" \
+                "https://crates.io/api/v1/crates/$CRATE/$VERSION")
+              [ "$STATUS" = "200" ] && break
+              sleep 10
+            done
+          done
+
+      - name: Create the tag
+        run: |
+          TAG="v${{ steps.semver.outputs.version }}"
+          if [ -n "$(git ls-remote --tags origin "refs/tags/$TAG")" ]; then
+            echo "Tag $TAG already exists on origin; skipping."
+          else
+            git tag "$TAG"
+            git push origin "$TAG"
+          fi

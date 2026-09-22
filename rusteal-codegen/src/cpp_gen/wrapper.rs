@@ -59,7 +59,7 @@ pub fn generate_wrapper_file(entries: &[&FuncEntry], ctx: &CodegenContext) -> St
     includes.insert("\"RustealApiTable.h\"".to_string());
 
     let has_container_params = entries.iter().any(|e| {
-        e.func.params.iter().any(|p| is_container_param(p))
+        e.func.params.iter().any(is_container_param)
     });
 
     for entry in entries {
@@ -1010,10 +1010,10 @@ fn collect_param_headers(
     .into_iter()
     .flatten()
     {
-        if let Some(cls) = ctx.classes.get(cls_name) {
-            if !cls.header.is_empty() {
-                includes.insert(format!("\"{}\"", cls.header));
-            }
+        if let Some(cls) = ctx.classes.get(cls_name)
+            && !cls.header.is_empty()
+        {
+            includes.insert(format!("\"{}\"", cls.header));
         }
     }
 
@@ -1034,10 +1034,10 @@ fn collect_param_headers(
         .into_iter()
         .flatten()
         {
-            if let Some(cls) = ctx.classes.get(cls_name) {
-                if !cls.header.is_empty() {
-                    includes.insert(format!("\"{}\"", cls.header));
-                }
+            if let Some(cls) = ctx.classes.get(cls_name)
+                && !cls.header.is_empty()
+            {
+                includes.insert(format!("\"{}\"", cls.header));
             }
         }
     }

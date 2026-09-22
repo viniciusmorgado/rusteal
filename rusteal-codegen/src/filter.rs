@@ -89,32 +89,31 @@ fn is_property_exportable(prop: &PropertyInfo, available: &HashSet<String>) -> b
     }
 
     // Check referenced types are available
-    if let Some(ref cls) = prop.class_name {
-        if !available.contains(cls) {
-            return false;
-        }
+    if let Some(ref cls) = prop.class_name
+        && !available.contains(cls)
+    {
+        return false;
     }
-    if let Some(ref sn) = prop.struct_name {
-        if !available.contains(sn) {
-            return false;
-        }
+    if let Some(ref sn) = prop.struct_name
+        && !available.contains(sn)
+    {
+        return false;
     }
-    if let Some(ref en) = prop.enum_name {
-        if !available.contains(en) {
-            return false;
-        }
+    if let Some(ref en) = prop.enum_name
+        && !available.contains(en)
+    {
+        return false;
     }
-    if let Some(ref iface) = prop.interface_name {
-        if !available.contains(iface) {
-            return false;
-        }
+    if let Some(ref iface) = prop.interface_name
+        && !available.contains(iface)
+    {
+        return false;
     }
-    if prop.prop_type == "ClassProperty" {
-        if let Some(ref meta_cls) = prop.meta_class_name {
-            if !available.contains(meta_cls) {
-                return false;
-            }
-        }
+    if prop.prop_type == "ClassProperty"
+        && let Some(ref meta_cls) = prop.meta_class_name
+            && !available.contains(meta_cls)
+    {
+            return false;
     }
 
     true
@@ -160,20 +159,20 @@ fn is_delegate_exportable(prop: &PropertyInfo, available: &HashSet<String>) -> b
         }
 
         // Check referenced types are available
-        if let Some(cls) = param_value.get("class_name").and_then(|v| v.as_str()) {
-            if !available.contains(cls) {
-                return false;
-            }
+        if let Some(cls) = param_value.get("class_name").and_then(|v| v.as_str())
+            && !available.contains(cls)
+        {
+            return false;
         }
-        if let Some(sn) = param_value.get("struct_name").and_then(|v| v.as_str()) {
-            if !available.contains(sn) {
-                return false;
-            }
+        if let Some(sn) = param_value.get("struct_name").and_then(|v| v.as_str())
+            && !available.contains(sn)
+        {
+            return false;
         }
-        if let Some(en) = param_value.get("enum_name").and_then(|v| v.as_str()) {
-            if !available.contains(en) {
-                return false;
-            }
+        if let Some(en) = param_value.get("enum_name").and_then(|v| v.as_str())
+            && !available.contains(en)
+        {
+            return false;
         }
     }
 
@@ -219,25 +218,25 @@ fn is_inner_type_exportable(inner: &PropertyInfo, available: &HashSet<String>) -
     if matches!(inner.prop_type.as_str(), "ArrayProperty" | "MapProperty" | "SetProperty") {
         return false;
     }
-    if let Some(ref cls) = inner.class_name {
-        if !available.contains(cls) {
-            return false;
-        }
+    if let Some(ref cls) = inner.class_name
+        && !available.contains(cls)
+    {
+        return false;
     }
-    if let Some(ref sn) = inner.struct_name {
-        if !available.contains(sn) {
-            return false;
-        }
+    if let Some(ref sn) = inner.struct_name
+        && !available.contains(sn)
+    {
+        return false;
     }
-    if let Some(ref en) = inner.enum_name {
-        if !available.contains(en) {
-            return false;
-        }
+    if let Some(ref en) = inner.enum_name
+        && !available.contains(en)
+    {
+        return false;
     }
-    if let Some(ref iface) = inner.interface_name {
-        if !available.contains(iface) {
-            return false;
-        }
+    if let Some(ref iface) = inner.interface_name
+        && !available.contains(iface)
+    {
+        return false;
     }
     true
 }
@@ -283,37 +282,36 @@ fn filter_functions(
                 return false;
             }
             // Check container inner types are resolvable
-            if matches!(param.prop_type.as_str(), "ArrayProperty" | "MapProperty" | "SetProperty") {
-                if !is_container_param_exportable(param, available) {
-                    return false;
-                }
+            if matches!(param.prop_type.as_str(), "ArrayProperty" | "MapProperty" | "SetProperty")
+                && !is_container_param_exportable(param, available)
+            {
+                return false;
             }
-            if let Some(ref cls) = param.class_name {
-                if !available.contains(cls) {
-                    return false;
-                }
+            if let Some(ref cls) = param.class_name
+                && !available.contains(cls)
+            {
+                return false;
             }
-            if let Some(ref sn) = param.struct_name {
-                if !available.contains(sn) || blocked_structs.contains(sn.as_str()) {
-                    return false;
-                }
+            if let Some(ref sn) = param.struct_name
+                && (!available.contains(sn) || blocked_structs.contains(sn.as_str()))
+            {
+                return false;
             }
-            if let Some(ref en) = param.enum_name {
-                if !available.contains(en) {
-                    return false;
-                }
+            if let Some(ref en) = param.enum_name
+                && !available.contains(en)
+            {
+                return false;
             }
-            if let Some(ref iface) = param.interface_name {
-                if !available.contains(iface) {
-                    return false;
-                }
+            if let Some(ref iface) = param.interface_name
+                && !available.contains(iface)
+            {
+                return false;
             }
-            if param.prop_type == "ClassProperty" {
-                if let Some(ref meta_cls) = param.meta_class_name {
-                    if !available.contains(meta_cls) {
-                        return false;
-                    }
-                }
+            if param.prop_type == "ClassProperty"
+                && let Some(ref meta_cls) = param.meta_class_name
+                    && !available.contains(meta_cls)
+            {
+                    return false;
             }
         }
 
@@ -333,12 +331,12 @@ fn filter_functions(
 
     let mut name_indices: HashMap<String, usize> = HashMap::new();
     for f in funcs.iter_mut() {
-        if let Some(&count) = name_counts.get(&f.name) {
-            if count > 1 {
-                let idx = name_indices.entry(f.name.clone()).or_insert(0);
-                *idx += 1;
-                f.name = format!("{}_{}", f.name, idx);
-            }
+        if let Some(&count) = name_counts.get(&f.name)
+            && count > 1
+        {
+            let idx = name_indices.entry(f.name.clone()).or_insert(0);
+            *idx += 1;
+            f.name = format!("{}_{}", f.name, idx);
         }
     }
 }

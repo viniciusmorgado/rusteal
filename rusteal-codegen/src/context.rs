@@ -105,31 +105,31 @@ impl CodegenContext {
 
         let mut classes_map = HashMap::new();
         for c in classes {
-            if let Some(module) = package_to_module.get(&c.package) {
-                if enabled_modules.contains(module) {
-                    classes_map.insert(c.name.clone(), c.clone());
-                    module_classes.entry(module.clone()).or_default().push(c);
-                }
+            if let Some(module) = package_to_module.get(&c.package)
+                && enabled_modules.contains(module)
+            {
+                classes_map.insert(c.name.clone(), c.clone());
+                module_classes.entry(module.clone()).or_default().push(c);
             }
         }
 
         let mut structs_map = HashMap::new();
         for s in structs {
-            if let Some(module) = package_to_module.get(&s.package) {
-                if enabled_modules.contains(module) {
-                    structs_map.insert(s.name.clone(), s.clone());
-                    module_structs.entry(module.clone()).or_default().push(s);
-                }
+            if let Some(module) = package_to_module.get(&s.package)
+                && enabled_modules.contains(module)
+            {
+                structs_map.insert(s.name.clone(), s.clone());
+                module_structs.entry(module.clone()).or_default().push(s);
             }
         }
 
         let mut enums_map = HashMap::new();
         for e in enums {
-            if let Some(module) = package_to_module.get(&e.package) {
-                if enabled_modules.contains(module) {
-                    enums_map.insert(e.name.clone(), e.clone());
-                    module_enums.entry(module.clone()).or_default().push(e);
-                }
+            if let Some(module) = package_to_module.get(&e.package)
+                && enabled_modules.contains(module)
+            {
+                enums_map.insert(e.name.clone(), e.clone());
+                module_enums.entry(module.clone()).or_default().push(e);
             }
         }
 
@@ -175,10 +175,10 @@ impl CodegenContext {
 
         for (module, classes) in &self.module_classes {
             for class in classes {
-                if let Some(parent) = &class.super_class {
-                    if let Some(pc) = self.classes.get(parent.as_str()) {
-                        self.record_dep(module, &pc.package, &mut deps);
-                    }
+                if let Some(parent) = &class.super_class
+                    && let Some(pc) = self.classes.get(parent.as_str())
+                {
+                    self.record_dep(module, &pc.package, &mut deps);
                 }
                 for iface in &class.interfaces {
                     if let Some(ic) = self.classes.get(iface.as_str()) {
@@ -198,10 +198,10 @@ impl CodegenContext {
 
         for (module, structs) in &self.module_structs {
             for s in structs {
-                if let Some(parent) = &s.super_struct {
-                    if let Some(ps) = self.structs.get(parent.as_str()) {
-                        self.record_dep(module, &ps.package, &mut deps);
-                    }
+                if let Some(parent) = &s.super_struct
+                    && let Some(ps) = self.structs.get(parent.as_str())
+                {
+                    self.record_dep(module, &ps.package, &mut deps);
                 }
                 for prop in &s.props {
                     self.walk_prop_deps(prop, module, &mut deps);
@@ -218,12 +218,12 @@ impl CodegenContext {
         target_package: &str,
         deps: &mut BTreeMap<String, std::collections::BTreeSet<String>>,
     ) {
-        if let Some(target_module) = self.package_to_module.get(target_package) {
-            if target_module != current_module && self.enabled_modules.contains(target_module) {
-                deps.entry(current_module.to_string())
-                    .or_default()
-                    .insert(target_module.clone());
-            }
+        if let Some(target_module) = self.package_to_module.get(target_package)
+            && target_module != current_module && self.enabled_modules.contains(target_module)
+        {
+            deps.entry(current_module.to_string())
+                .or_default()
+                .insert(target_module.clone());
         }
     }
 
@@ -233,30 +233,30 @@ impl CodegenContext {
         current_module: &str,
         deps: &mut BTreeMap<String, std::collections::BTreeSet<String>>,
     ) {
-        if let Some(en) = &prop.enum_name {
-            if let Some(e) = self.enums.get(en.as_str()) {
-                self.record_dep(current_module, &e.package, deps);
-            }
+        if let Some(en) = &prop.enum_name
+            && let Some(e) = self.enums.get(en.as_str())
+        {
+            self.record_dep(current_module, &e.package, deps);
         }
-        if let Some(cn) = &prop.class_name {
-            if let Some(c) = self.classes.get(cn.as_str()) {
-                self.record_dep(current_module, &c.package, deps);
-            }
+        if let Some(cn) = &prop.class_name
+            && let Some(c) = self.classes.get(cn.as_str())
+        {
+            self.record_dep(current_module, &c.package, deps);
         }
-        if let Some(mc) = &prop.meta_class_name {
-            if let Some(c) = self.classes.get(mc.as_str()) {
-                self.record_dep(current_module, &c.package, deps);
-            }
+        if let Some(mc) = &prop.meta_class_name
+            && let Some(c) = self.classes.get(mc.as_str())
+        {
+            self.record_dep(current_module, &c.package, deps);
         }
-        if let Some(sn) = &prop.struct_name {
-            if let Some(s) = self.structs.get(sn.as_str()) {
-                self.record_dep(current_module, &s.package, deps);
-            }
+        if let Some(sn) = &prop.struct_name
+            && let Some(s) = self.structs.get(sn.as_str())
+        {
+            self.record_dep(current_module, &s.package, deps);
         }
-        if let Some(in_) = &prop.interface_name {
-            if let Some(c) = self.classes.get(in_.as_str()) {
-                self.record_dep(current_module, &c.package, deps);
-            }
+        if let Some(in_) = &prop.interface_name
+            && let Some(c) = self.classes.get(in_.as_str())
+        {
+            self.record_dep(current_module, &c.package, deps);
         }
         if let Some(fi) = &prop.func_info {
             self.walk_delegate_func_info_deps(fi, current_module, deps);
@@ -281,30 +281,30 @@ impl CodegenContext {
         current_module: &str,
         deps: &mut BTreeMap<String, std::collections::BTreeSet<String>>,
     ) {
-        if let Some(en) = &param.enum_name {
-            if let Some(e) = self.enums.get(en.as_str()) {
-                self.record_dep(current_module, &e.package, deps);
-            }
+        if let Some(en) = &param.enum_name
+            && let Some(e) = self.enums.get(en.as_str())
+        {
+            self.record_dep(current_module, &e.package, deps);
         }
-        if let Some(cn) = &param.class_name {
-            if let Some(c) = self.classes.get(cn.as_str()) {
-                self.record_dep(current_module, &c.package, deps);
-            }
+        if let Some(cn) = &param.class_name
+            && let Some(c) = self.classes.get(cn.as_str())
+        {
+            self.record_dep(current_module, &c.package, deps);
         }
-        if let Some(mc) = &param.meta_class_name {
-            if let Some(c) = self.classes.get(mc.as_str()) {
-                self.record_dep(current_module, &c.package, deps);
-            }
+        if let Some(mc) = &param.meta_class_name
+            && let Some(c) = self.classes.get(mc.as_str())
+        {
+            self.record_dep(current_module, &c.package, deps);
         }
-        if let Some(sn) = &param.struct_name {
-            if let Some(s) = self.structs.get(sn.as_str()) {
-                self.record_dep(current_module, &s.package, deps);
-            }
+        if let Some(sn) = &param.struct_name
+            && let Some(s) = self.structs.get(sn.as_str())
+        {
+            self.record_dep(current_module, &s.package, deps);
         }
-        if let Some(in_) = &param.interface_name {
-            if let Some(c) = self.classes.get(in_.as_str()) {
-                self.record_dep(current_module, &c.package, deps);
-            }
+        if let Some(in_) = &param.interface_name
+            && let Some(c) = self.classes.get(in_.as_str())
+        {
+            self.record_dep(current_module, &c.package, deps);
         }
         if let Some(inner) = &param.inner_prop {
             self.walk_prop_deps(inner, current_module, deps);
@@ -328,30 +328,30 @@ impl CodegenContext {
     ) {
         let Some(params) = fi.get("params").and_then(|p| p.as_array()) else { return };
         for p in params {
-            if let Some(en) = p.get("enum_name").and_then(|v| v.as_str()) {
-                if let Some(e) = self.enums.get(en) {
-                    self.record_dep(current_module, &e.package, deps);
-                }
+            if let Some(en) = p.get("enum_name").and_then(|v| v.as_str())
+                && let Some(e) = self.enums.get(en)
+            {
+                self.record_dep(current_module, &e.package, deps);
             }
-            if let Some(cn) = p.get("class_name").and_then(|v| v.as_str()) {
-                if let Some(c) = self.classes.get(cn) {
-                    self.record_dep(current_module, &c.package, deps);
-                }
+            if let Some(cn) = p.get("class_name").and_then(|v| v.as_str())
+                && let Some(c) = self.classes.get(cn)
+            {
+                self.record_dep(current_module, &c.package, deps);
             }
-            if let Some(mc) = p.get("meta_class_name").and_then(|v| v.as_str()) {
-                if let Some(c) = self.classes.get(mc) {
-                    self.record_dep(current_module, &c.package, deps);
-                }
+            if let Some(mc) = p.get("meta_class_name").and_then(|v| v.as_str())
+                && let Some(c) = self.classes.get(mc)
+            {
+                self.record_dep(current_module, &c.package, deps);
             }
-            if let Some(sn) = p.get("struct_name").and_then(|v| v.as_str()) {
-                if let Some(s) = self.structs.get(sn) {
-                    self.record_dep(current_module, &s.package, deps);
-                }
+            if let Some(sn) = p.get("struct_name").and_then(|v| v.as_str())
+                && let Some(s) = self.structs.get(sn)
+            {
+                self.record_dep(current_module, &s.package, deps);
             }
-            if let Some(in_) = p.get("interface_name").and_then(|v| v.as_str()) {
-                if let Some(c) = self.classes.get(in_) {
-                    self.record_dep(current_module, &c.package, deps);
-                }
+            if let Some(in_) = p.get("interface_name").and_then(|v| v.as_str())
+                && let Some(c) = self.classes.get(in_)
+            {
+                self.record_dep(current_module, &c.package, deps);
             }
         }
     }

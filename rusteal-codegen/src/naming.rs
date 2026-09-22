@@ -9,14 +9,14 @@ pub fn to_snake_case(name: &str) -> String {
         if ch.is_ascii_uppercase() {
             if i > 0 {
                 let prev = chars[i - 1];
-                // Insert underscore before uppercase if preceded by lowercase/digit,
-                // or if it starts a new word in an acronym (e.g., "HTTPServer" -> "http_server").
-                if prev.is_ascii_lowercase() || prev.is_ascii_digit() {
-                    result.push('_');
-                } else if prev.is_ascii_uppercase()
-                    && i + 1 < chars.len()
-                    && chars[i + 1].is_ascii_lowercase()
-                {
+                // Underscore before an uppercase preceded by a lowercase or digit,
+                // or starting a new word in an acronym ("HTTPServer" -> "http_server").
+                let new_word = prev.is_ascii_lowercase()
+                    || prev.is_ascii_digit()
+                    || (prev.is_ascii_uppercase()
+                        && i + 1 < chars.len()
+                        && chars[i + 1].is_ascii_lowercase());
+                if new_word {
                     result.push('_');
                 }
             }

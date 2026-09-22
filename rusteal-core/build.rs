@@ -209,10 +209,10 @@ fn parse_api_table(source: &str) -> Vec<SubTable> {
     for item in &file.items {
         if let Item::Struct(s) = item {
             let name = s.ident.to_string();
-            if name.starts_with("Rusteal") && name.ends_with("Api") && name != "RustealApiTable" {
-                if let Some(table) = parse_sub_table(s) {
-                    tables.push(table);
-                }
+            if name.starts_with("Rusteal") && name.ends_with("Api") && name != "RustealApiTable"
+                && let Some(table) = parse_sub_table(s)
+            {
+                tables.push(table);
             }
         }
     }
@@ -320,23 +320,22 @@ fn parse_api_type(ty: &Type) -> Option<ApiType> {
             } else {
                 Mutability::Const
             };
-            if let Type::Path(tp) = &*ptr.elem {
-                if let Some(seg) = tp.path.segments.last() {
-                    if seg.ident == "c_void" {
-                        return Some(ApiType::CVoidPtr { mutability });
-                    }
-                    let name = seg.ident.to_string();
-                    if name.starts_with("Rusteal") || name.starts_with('F') || name.starts_with('U') {
-                        if let Some(inner) = parse_api_type(&ptr.elem) {
-                            if is_handle_type(&inner) || is_scalar_type(&inner) {
-                                return Some(ApiType::Ptr {
-                                    mutability,
-                                    pointee: Box::new(inner),
-                                });
-                            }
+            if let Type::Path(tp) = &*ptr.elem
+                && let Some(seg) = tp.path.segments.last()
+            {
+                if seg.ident == "c_void" {
+                    return Some(ApiType::CVoidPtr { mutability });
+                }
+                let name = seg.ident.to_string();
+                if name.starts_with("Rusteal") || name.starts_with('F') || name.starts_with('U') {
+                    if let Some(inner) = parse_api_type(&ptr.elem)
+                        && (is_handle_type(&inner) || is_scalar_type(&inner)) {
+                            return Some(ApiType::Ptr {
+                                mutability,
+                                pointee: Box::new(inner),
+                            });
                         }
-                        return Some(ApiType::NamedStructPtr { mutability, name });
-                    }
+                    return Some(ApiType::NamedStructPtr { mutability, name });
                 }
             }
             let pointee = parse_api_type(&ptr.elem)?;
