@@ -9,15 +9,6 @@ use crate::type_map;
 
 /// Apply all filters to the context's module_classes in place.
 pub fn apply_filters(ctx: &mut CodegenContext, blocklist: &Blocklist) {
-    // Pre-collect the set of available types to avoid borrowing ctx inside the loop.
-    let available_types: HashSet<String> = ctx
-        .classes
-        .keys()
-        .chain(ctx.structs.keys())
-        .chain(ctx.enums.keys())
-        .cloned()
-        .collect();
-
     // Build lookup sets from config blocklist
     let blocked_classes: HashSet<&str> = blocklist.classes.iter().map(|s| s.as_str()).collect();
     let blocked_structs: HashSet<&str> = blocklist.structs.iter().map(|s| s.as_str()).collect();
@@ -27,6 +18,31 @@ pub fn apply_filters(ctx: &mut CodegenContext, blocklist: &Blocklist) {
     for cls in &blocklist.classes {
         ctx.classes.remove(cls);
     }
+
+    // The types a generated signature may reference: exactly the ones that will be generated
+    // — in an enabled module and not blocked. Anything else (a class from a module whose
+    // feature is off, a blocklisted class) must make the property/function that references
+    // it drop out, or the generated crate does not compile.
+    let available_types: HashSet<String> = ctx
+        .module_classes
+        .iter()
+        .filter(|(module, _)| ctx.enabled_modules.contains(*module))
+        .flat_map(|(_, classes)| classes.iter().map(|c| c.name.clone()))
+        .filter(|name| !blocked_classes.contains(name.as_str()))
+        .chain(
+            ctx.module_structs
+                .iter()
+                .filter(|(module, _)| ctx.enabled_modules.contains(*module))
+                .flat_map(|(_, structs)| structs.iter().map(|s| s.name.clone()))
+                .filter(|name| !blocked_structs.contains(name.as_str())),
+        )
+        .chain(
+            ctx.module_enums
+                .iter()
+                .filter(|(module, _)| ctx.enabled_modules.contains(*module))
+                .flat_map(|(_, enums)| enums.iter().map(|e| e.name.clone())),
+        )
+        .collect();
 
     for classes in ctx.module_classes.values_mut() {
         // Remove blocked classes entirely
