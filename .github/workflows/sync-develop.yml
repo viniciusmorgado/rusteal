@@ -1,0 +1,48 @@
+name: Sync develop
+
+# After a release, main is one merge commit ahead of develop. This pushes main
+# back into develop so the next pull request starts from the released state.
+#
+# It runs on its own, after the release workflow finishes, so that a failure to
+# sync never touches what the release already did — and can be re-run by itself.
+
+on:
+  workflow_run:
+    workflows: ["Release to crates.io"]
+    types: [completed]
+  workflow_dispatch:
+
+concurrency:
+  group: sync-develop
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      # A fast-forward only: develop is an ancestor of main after every merge.
+      # If someone pushed to develop in the meantime, this fails instead of
+      # rewriting their work, and can be re-run once develop is merged.
+      - name: Fast-forward develop to main
+        run: |
+          git fetch origin develop
+          if git merge-base --is-ancestor origin/develop HEAD; then
+            if [ "$(git rev-parse origin/develop)" = "$(git rev-parse HEAD)" ]; then
+              echo "develop already matches main."
+            else
+              git push origin HEAD:develop
+              echo "develop fast-forwarded to $(git rev-parse --short HEAD)."
+            fi
+          else
+            echo "develop has commits that main does not: merge develop into main first." >&2
+            git log --oneline HEAD..origin/develop >&2
+            exit 1
+          fi
