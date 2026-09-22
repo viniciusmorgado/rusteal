@@ -9,4 +9,4 @@ crate-type = ["cdylib"]
 
 [dependencies]
 uika = { path = "../uika", features = ["engine"] }
-glam = "0.29"
+glam = { workspace = true }
