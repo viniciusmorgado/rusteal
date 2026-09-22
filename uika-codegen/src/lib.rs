@@ -24,12 +24,16 @@ pub fn run_generate(config_path: &Path) {
         .unwrap_or_else(|e| panic!("Failed to parse {}: {e}", config_path.display()));
     let codegen = &uika_config.codegen;
 
-    // Resolve paths relative to config file directory
-    let config_dir = config_path
-        .parent()
-        .unwrap_or(Path::new("."))
-        .canonicalize()
-        .unwrap_or_else(|e| panic!("Failed to canonicalize config dir: {e}"));
+    // Resolve paths relative to config file directory. A bare file name has an empty
+    // parent, which means the current directory.
+    let config_parent = config_path.parent().unwrap_or(Path::new("."));
+    let config_dir = if config_parent.as_os_str().is_empty() {
+        Path::new(".")
+    } else {
+        config_parent
+    }
+    .canonicalize()
+    .unwrap_or_else(|e| panic!("Failed to canonicalize config dir: {e}"));
 
     // Derive JSON paths from config (relative to config dir)
     let uht_input = config_dir.join(&codegen.paths.uht_input);
