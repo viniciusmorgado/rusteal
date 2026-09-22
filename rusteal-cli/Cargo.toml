@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "CLI tool for rusteal: codegen, project setup, and build orchestration"
+readme = "../README.md"
 build = "build.rs"
 include = ["src/**", "templates/**", "build.rs", "Cargo.toml", "ue_plugin_embed/**"]
 

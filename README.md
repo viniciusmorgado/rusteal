@@ -303,7 +303,7 @@ Changing the C++ plugin means running `cargo run -p rusteal -- sync-plugin`
 before publishing, which refreshes the snapshot the binary embeds.
 
 Engine APIs Rusteal uses that Unreal has deprecated are tracked in
-[`docs/ue-deprecations.md`](docs/ue-deprecations.md): what, since which UE
+[`docs/ue-deprecations.md`](https://github.com/viniciusmorgado/rusteal/blob/main/docs/ue-deprecations.md): what, since which UE
 version, until when and where. A new engine version means checking its
 warnings against that list.
 
@@ -360,7 +360,7 @@ lock file of its own into the published crate.
 
 Licensed under either of:
 
-- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or <http://www.apache.org/licenses/LICENSE-2.0>)
-- MIT license ([LICENSE-MIT](LICENSE-MIT) or <http://opensource.org/licenses/MIT>)
+- Apache License, Version 2.0 ([LICENSE-APACHE](https://github.com/viniciusmorgado/rusteal/blob/main/LICENSE-APACHE) or <http://www.apache.org/licenses/LICENSE-2.0>)
+- MIT license ([LICENSE-MIT](https://github.com/viniciusmorgado/rusteal/blob/main/LICENSE-MIT) or <http://opensource.org/licenses/MIT>)
 
 at your option.
