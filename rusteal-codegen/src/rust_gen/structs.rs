@@ -19,7 +19,11 @@ pub fn generate_struct(s: &StructInfo, ctx: &CodegenContext) -> String {
         .get(&s.package)
         .map(|s| s.as_str())
         .unwrap_or("");
-    for module in &ctx.enabled_modules {
+    // Sorted: the generated crate is versioned with the project, so the output
+    // has to be the same on every run (enabled_modules is a HashSet).
+    let mut modules: Vec<&String> = ctx.enabled_modules.iter().collect();
+    modules.sort();
+    for module in modules {
         if module != current_module {
             if let Some(feature) = ctx.feature_for_module(module) {
                 out.push_str(&format!("#[cfg(feature = \"{feature}\")]\n"));

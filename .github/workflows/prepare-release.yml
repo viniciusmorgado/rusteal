@@ -1,0 +1,84 @@
+name: Prepare release
+
+# Runs on every pull request that targets main. It works out the next version from the
+# commits the PR brings and commits it to [workspace.package] ON THE PR BRANCH (develop),
+# so that main receives the final version with the merge and the release workflow only has
+# to publish. A push made here re-triggers this workflow, which then finds nothing to change.
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+concurrency:
+  group: prepare-release-${{ github.head_ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # The crate whose published version anchors the workspace: they all share one version.
+  ANCHOR_CRATE: rusteal
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      # Semantic versioning: the last released version is whatever crates.io has (the only
+      # source that cannot drift from reality); the commits the PR adds on top of main decide
+      # the bump — "BREAKING CHANGE:" -> major, "feat:" -> minor, anything else -> patch.
+      # Before the first release the anchor is not on crates.io yet: the version in
+      # Cargo.toml is then taken as is.
+      - name: Get next version
+        id: semver
+        run: |
+          git fetch origin main
+          CURRENT=$(grep -m1 '^version = ' Cargo.toml | cut -d'"' -f2)
+          UA="rusteal-release-workflow (+https://github.com/viniciusmorgado/rusteal)"
+          RELEASED=$(curl -sf -A "$UA" "https://crates.io/api/v1/crates/$ANCHOR_CRATE" \
+            | grep -o '"max_version":"[^"]*"' | cut -d'"' -f4 || true)
+          if [ -z "$RELEASED" ]; then
+            echo "$ANCHOR_CRATE is not on crates.io yet: keeping $CURRENT for the first release."
+            echo "version=$CURRENT" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          SUBJECTS=$(git log --format=%s origin/main..HEAD | grep -v '^chore: bump version' || true)
+          if echo "$SUBJECTS" | grep -q '^BREAKING CHANGE:'; then
+            BUMP=major
+          elif echo "$SUBJECTS" | grep -q '^feat'; then
+            BUMP=minor
+          else
+            BUMP=patch
+          fi
+          IFS=. read -r MAJOR MINOR PATCH <<< "$RELEASED"
+          case "$BUMP" in
+            major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
+            minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
+            patch) PATCH=$((PATCH + 1)) ;;
+          esac
+          VERSION="$MAJOR.$MINOR.$PATCH"
+          echo "Released (crates.io): $RELEASED, bump: $BUMP, next: $VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      # One version for the whole workspace: [workspace.package].version, which every crate
+      # inherits, and the internal dependencies that carry it for the published manifests.
+      - name: Commit the version to the PR branch
+        run: |
+          TARGET_VERSION="${{ steps.semver.outputs.version }}"
+          CURRENT_VERSION=$(grep -m1 '^version = ' Cargo.toml | cut -d'"' -f2)
+          if [ "$CURRENT_VERSION" = "$TARGET_VERSION" ]; then
+            echo "Cargo.toml is already at version $TARGET_VERSION; nothing to commit."
+          else
+            sed -i '0,/^version = ".*"/s//version = "'"$TARGET_VERSION"'"/' Cargo.toml
+            sed -i 's/{ version = "[^"]*", path =/{ version = "'"$TARGET_VERSION"'", path =/' Cargo.toml
+            cargo update --workspace
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add Cargo.toml Cargo.lock
+            git commit -m "chore: bump version to $TARGET_VERSION"
+            git push origin HEAD:${{ github.head_ref }}
+          fi

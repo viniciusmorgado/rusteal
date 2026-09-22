@@ -62,30 +62,30 @@ pub fn collect_deduped_properties<'a>(
         }
 
         // ObjectRef: check that the referenced class/interface is available
-        if matches!(mapped.rust_to_ffi, ConversionKind::ObjectRef) {
-            if let Some(ctx) = ctx {
-                let type_available = match prop.prop_type.as_str() {
-                    "ClassProperty" => {
-                        let effective = prop.meta_class_name.as_deref().or(prop.class_name.as_deref());
-                        effective.map_or(true, |c| ctx.classes.contains_key(c))
-                    }
-                    "InterfaceProperty" => {
-                        prop.interface_name.as_deref().map_or(false, |i| ctx.classes.contains_key(i))
-                    }
-                    _ => prop.class_name.as_deref().map_or(true, |c| ctx.classes.contains_key(c)),
-                };
-                if !type_available {
-                    continue;
+        if matches!(mapped.rust_to_ffi, ConversionKind::ObjectRef)
+            && let Some(ctx) = ctx
+        {
+            let type_available = match prop.prop_type.as_str() {
+                "ClassProperty" => {
+                    let effective = prop.meta_class_name.as_deref().or(prop.class_name.as_deref());
+                    effective.is_none_or(|c| ctx.classes.contains_key(c))
                 }
+                "InterfaceProperty" => {
+                    prop.interface_name.as_deref().is_some_and(|i| ctx.classes.contains_key(i))
+                }
+                _ => prop.class_name.as_deref().is_none_or(|c| ctx.classes.contains_key(c)),
+            };
+            if !type_available {
+                continue;
             }
         }
 
         // StructOpaque: only allow if the struct is in enabled modules with static_struct
         if matches!(mapped.rust_to_ffi, ConversionKind::StructOpaque) {
             let valid = if let Some(ctx) = ctx {
-                prop.struct_name.as_deref().map_or(false, |sn| {
-                    ctx.structs.get(sn).map_or(false, |si| si.has_static_struct)
-                })
+                prop.struct_name
+                    .as_deref()
+                    .is_some_and(|sn| ctx.structs.get(sn).is_some_and(|si| si.has_static_struct))
             } else {
                 prop.struct_name.is_some()
             };
@@ -98,30 +98,30 @@ pub fn collect_deduped_properties<'a>(
         if matches!(
             mapped.rust_to_ffi,
             ConversionKind::ContainerArray | ConversionKind::ContainerMap | ConversionKind::ContainerSet
-        ) {
-            if type_map::resolve_container_rust_type(prop, ctx).is_none() {
-                continue;
-            }
+        )
+            && type_map::resolve_container_rust_type(prop, ctx).is_none()
+        {
+            continue;
+        }
             // Container properties only work on UClass contexts (need UObject owner),
             // not on struct contexts. `ctx` is None only for non-class callers.
             // More precisely: skip containers in struct property contexts.
-        }
 
         // Skip properties that reference types not in enabled modules
         if let Some(ctx) = ctx {
             match mapped.rust_to_ffi {
                 ConversionKind::EnumCast => {
-                    if let Some(en) = &prop.enum_name {
-                        if !ctx.enums.contains_key(en.as_str()) {
-                            continue;
-                        }
+                    if let Some(en) = &prop.enum_name
+                        && !ctx.enums.contains_key(en.as_str())
+                    {
+                        continue;
                     }
                 }
                 ConversionKind::ObjectRef => {
-                    if let Some(cn) = &prop.class_name {
-                        if !ctx.classes.contains_key(cn.as_str()) {
-                            continue;
-                        }
+                    if let Some(cn) = &prop.class_name
+                        && !ctx.classes.contains_key(cn.as_str())
+                    {
+                        continue;
                     }
                 }
                 _ => {}
@@ -213,10 +213,10 @@ pub fn generate_property(
         mapped.rust_to_ffi,
         ConversionKind::ContainerArray | ConversionKind::ContainerMap | ConversionKind::ContainerSet
     ) {
-        if pctx.is_class {
-            if let Some(container_type) = type_map::resolve_container_rust_type(prop, Some(ctx)) {
-                generate_container_getter(out, &rust_name, &byte_lit, prop_name_len, pctx, &container_type);
-            }
+        if pctx.is_class
+            && let Some(container_type) = type_map::resolve_container_rust_type(prop, Some(ctx))
+        {
+            generate_container_getter(out, &rust_name, &byte_lit, prop_name_len, pctx, &container_type);
         }
         return;
     }
@@ -673,6 +673,9 @@ fn generate_struct_setter(
 // Fixed array getter/setter (array_dim > 1)
 // ---------------------------------------------------------------------------
 
+// Every argument is a distinct piece of the emission context; bundling them
+// would only move the list into a struct nobody else needs.
+#[allow(clippy::too_many_arguments)]
 fn generate_fixed_array_property(
     out: &mut String,
     prop: &PropertyInfo,
@@ -692,10 +695,9 @@ fn generate_fixed_array_property(
             "bool".to_string(),
             "Ok(buf[0] != 0)".to_string(),
             "bool".to_string(),
-            format!(
-                "let mut buf = vec![0u8; elem_size];\n\
-                 \x20       if val {{ buf[0] = 1; }}"
-            ),
+            "let mut buf = vec![0u8; elem_size];\n\
+             \x20       if val { buf[0] = 1; }"
+                .to_string(),
         ),
         ConversionKind::Identity | ConversionKind::IntCast => {
             let rust_type = &mapped.rust_type;
@@ -704,7 +706,7 @@ fn generate_fixed_array_property(
                 rust_type.clone(),
                 format!("Ok({rust_type}::from_ne_bytes(buf[..{byte_count}].try_into().unwrap()))"),
                 rust_type.clone(),
-                format!("let buf = val.to_ne_bytes().to_vec();"),
+                "let buf = val.to_ne_bytes().to_vec();".to_string(),
             )
         }
         ConversionKind::ObjectRef => {
