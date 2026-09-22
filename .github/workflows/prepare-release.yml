@@ -33,6 +33,28 @@ jobs:
           ref: ${{ github.head_ref }}
           fetch-depth: 0
 
+      # A merge that changes only workflows, documentation or examples has
+      # nothing to release: the packages would be identical to the ones already
+      # on crates.io. Paths that end up inside a package (every crate, plus the
+      # UE plugin the CLI embeds and the workspace manifest) decide it.
+      - name: Is there anything to release?
+        id: guard
+        run: |
+          LAST_TAG=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)
+          if [ -z "$LAST_TAG" ]; then
+            echo "No release tag yet: releasing."
+            exit 0
+          fi
+          CHANGED=$(git diff --name-only "$LAST_TAG..HEAD" -- \
+            'rusteal-*' ue_plugin Cargo.toml Cargo.lock)
+          if [ -z "$CHANGED" ]; then
+            echo "Nothing that goes into a package changed since $LAST_TAG; skipping."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Changed since $LAST_TAG:"
+            echo "$CHANGED"
+          fi
+
       # Semantic versioning: the last released version is whatever crates.io has (the only
       # source that cannot drift from reality); the commits the PR adds on top of main decide
       # the bump — "BREAKING CHANGE:" -> major, "feat:" -> minor, anything else -> patch.
@@ -40,6 +62,7 @@ jobs:
       # Cargo.toml is then taken as is.
       - name: Get next version
         id: semver
+        if: steps.guard.outputs.skip != 'true'
         run: |
           git fetch origin main
           CURRENT=$(grep -m1 '^version = ' Cargo.toml | cut -d'"' -f2)
@@ -72,6 +95,7 @@ jobs:
       # One version for the whole workspace: [workspace.package].version, which every crate
       # inherits, and the internal dependencies that carry it for the published manifests.
       - name: Commit the version to the PR branch
+        if: steps.guard.outputs.skip != 'true'
         run: |
           TARGET_VERSION="${{ steps.semver.outputs.version }}"
           CURRENT_VERSION=$(grep -m1 '^version = ' Cargo.toml | cut -d'"' -f2)
