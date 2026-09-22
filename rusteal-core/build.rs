@@ -1,4 +1,4 @@
-//! Generates `ffi_dispatch.rs` from `rusteal-ffi/src/api_table.rs`.
+//! Generates `ffi_dispatch.rs` from rusteal-ffi's `api_table.rs`.
 //!
 //! For each sub-table function, emits a thin wrapper that dispatches through
 //! the API table and centralizes the `unsafe` boundary, e.g.:
@@ -12,10 +12,26 @@ use std::path::Path;
 use syn::{BareFnArg, Fields, File, Item, ItemStruct, Type};
 
 fn main() {
-    let api_table_path = Path::new("../rusteal-ffi/src/api_table.rs");
-    println!("cargo:rerun-if-changed={}", api_table_path.display());
+    // In the workspace the definition is read from rusteal-ffi and copied next
+    // to this build script; a published package carries only that copy, since
+    // cargo cannot reach outside the package directory.
+    let workspace_path = Path::new("../rusteal-ffi/src/api_table.rs");
+    let packaged_path = Path::new("api_table.rs");
+    println!("cargo:rerun-if-changed={}", workspace_path.display());
 
-    let source = fs::read_to_string(api_table_path).expect("Failed to read api_table.rs");
+    if workspace_path.exists() {
+        fs::copy(workspace_path, packaged_path).unwrap_or_else(|e| {
+            panic!("Failed to copy {} to {}: {e}", workspace_path.display(), packaged_path.display())
+        });
+    } else if !packaged_path.exists() {
+        panic!(
+            "Neither {} nor {} exists: nothing to generate the FFI dispatch from.",
+            workspace_path.display(),
+            packaged_path.display()
+        );
+    }
+
+    let source = fs::read_to_string(packaged_path).expect("Failed to read api_table.rs");
     let tables = parse_api_table(&source);
 
     let mut output = String::new();

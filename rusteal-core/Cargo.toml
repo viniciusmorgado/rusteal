@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Safe Rust runtime for rusteal (object refs, lifecycle, dynamic calls)"
+include = ["src/**", "build.rs", "api_table.rs", "Cargo.toml"]
 
 [dependencies]
 rusteal-ffi = { workspace = true }
