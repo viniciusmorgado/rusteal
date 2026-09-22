@@ -5,6 +5,8 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Code generator: UHT JSON to Rust bindings and C++ wrappers for rusteal"
+build = "build.rs"
+include = ["src/**", "manual/**", "build.rs", "Cargo.toml"]
 
 [dependencies]
 serde = { workspace = true }
