@@ -106,7 +106,11 @@ jobs:
               continue
             fi
             echo "Publishing $CRATE $VERSION"
-            cargo publish -p "$CRATE"
+            # --allow-dirty: two packages carry a generated copy of something
+            # that lives outside them (the FFI definition, the UE plugin
+            # sources). Both are written during this run, and a fresh checkout
+            # has nothing else uncommitted.
+            cargo publish -p "$CRATE" --allow-dirty
             # The index needs a moment before the next crate can depend on this one.
             for _ in $(seq 1 30); do
               STATUS=$(curl -s -o /dev/null -w "%{http_code}" -A "$UA" \
