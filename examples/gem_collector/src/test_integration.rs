@@ -9,14 +9,14 @@ use rusteal_runtime::runtime::{
     Transform, UeClass, UObjectRef, RustealError, RustealResult,
     LOG_DISPLAY, LOG_ERROR,
 };
-use rusteal_runtime::bindings::core_ue::{
+use bindings::core_ue::{
     FQuat, FRotator, FTransform, FVector,
 };
-use rusteal_runtime::bindings::engine::{
+use bindings::engine::{
     Actor, ActorExt, Pawn, PawnExt, World,
     EAttachmentRule,
 };
-use rusteal_runtime::bindings::manual::{
+use bindings::manual::{
     quat::OwnedFQuatExt,
     rotator::OwnedFRotatorExt,
     transform::OwnedFTransformExt,
@@ -221,7 +221,7 @@ impl RustealTestRunner {
         });
 
         run_test!(self, "A5: cast_to_object_succeeds", {
-            use rusteal_runtime::bindings::core_ue::Object;
+            use bindings::core_ue::Object;
             let copy = unsafe { UObjectRef::<Actor>::from_raw(self_ref.raw()) };
             let _obj_ref: UObjectRef<Object> = copy.cast()?;
             Ok(())
@@ -592,8 +592,8 @@ impl RustealTestRunner {
         });
 
         run_test!(self, "G3: find_object_nonexistent_returns_err", {
-            use rusteal_runtime::bindings::core_ue::Object;
-            let result = rusteal_runtime::bindings::manual::world_ext::find_object::<Object>(
+            use bindings::core_ue::Object;
+            let result = bindings::manual::world_ext::find_object::<Object>(
                 "/Game/DoesNotExist"
             );
             match result {
