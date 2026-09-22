@@ -108,6 +108,18 @@ void FUikaModule::StaticReload()
 // Module lifecycle
 // ---------------------------------------------------------------------------
 
+FString FUikaModule::HotCopyPath() const
+{
+    // Same directory and extension as the source library, numbered per (re)load so the
+    // source file is never locked while loaded.
+    return FPaths::Combine(
+        FPaths::GetPath(DllSourcePath),
+        FString::Printf(TEXT("%suika_hot_%d.%s"),
+            FPlatformProcess::GetModulePrefix(),
+            ReloadCount,
+            FPlatformProcess::GetModuleExtension()));
+}
+
 void FUikaModule::StartupModule()
 {
     // 1. Fill the API table
@@ -116,10 +128,14 @@ void FUikaModule::StartupModule()
     // 2. Locate the Rust DLL
     const FString PluginDir = FPaths::Combine(
         FPaths::ProjectPluginsDir(), TEXT("Uika"));
+    // Platform-native name: uika.dll on Windows, libuika.so on Linux, libuika.dylib on
+    // macOS. The uika-cli deploy step (HostPlatform::deployed_lib_filename) must agree.
     DllSourcePath = FPaths::Combine(
         PluginDir, TEXT("Binaries"),
         FPlatformProcess::GetBinariesSubdirectory(),
-        TEXT("uika.dll"));
+        FString::Printf(TEXT("%suika.%s"),
+            FPlatformProcess::GetModulePrefix(),
+            FPlatformProcess::GetModuleExtension()));
 
     if (!FPaths::FileExists(DllSourcePath))
     {
@@ -132,9 +148,7 @@ void FUikaModule::StartupModule()
     // 3. Copy-on-load: never lock the source DLL so that build.py / cargo
     //    can always overwrite it, and hot reload always reads the latest.
     ReloadCount++;
-    const FString InitialCopyPath = FPaths::Combine(
-        FPaths::GetPath(DllSourcePath),
-        FString::Printf(TEXT("uika_hot_%d.dll"), ReloadCount));
+    const FString InitialCopyPath = HotCopyPath();
 
     uint32 CopyResult = IFileManager::Get().Copy(*InitialCopyPath, *DllSourcePath);
     if (CopyResult != 0)
@@ -324,9 +338,7 @@ void FUikaModule::ReloadRustDll()
     }
 
     ReloadCount++;
-    const FString HotDllPath = FPaths::Combine(
-        FPaths::GetPath(DllSourcePath),
-        FString::Printf(TEXT("uika_hot_%d.dll"), ReloadCount));
+    const FString HotDllPath = HotCopyPath();
 
     uint32 CopyResult = IFileManager::Get().Copy(*HotDllPath, *DllSourcePath);
     if (CopyResult != 0)
