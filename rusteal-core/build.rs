@@ -9,7 +9,7 @@ use std::fmt::Write as FmtWrite;
 use std::fs;
 use std::path::Path;
 
-use syn::{BareFnArg, Fields, File, Item, ItemStruct, Type};
+use syn::{Fields, File, Item, ItemStruct, NamedArg, Type};
 
 fn main() {
     // In the workspace the definition is read from rusteal-ffi and copied next
@@ -283,12 +283,12 @@ fn to_snake_case(s: &str) -> String {
 }
 
 fn parse_fn_field(_name: &str, ty: &Type) -> Option<ApiFn> {
-    let bare_fn = match ty {
-        Type::BareFn(f) => f,
+    let fn_ptr = match ty {
+        Type::FnPtr(f) => f,
         _ => return None,
     };
-    let params: Vec<ApiParam> = bare_fn.inputs.iter().filter_map(parse_bare_fn_arg).collect();
-    let return_type = match &bare_fn.output {
+    let params: Vec<ApiParam> = fn_ptr.inputs.iter().filter_map(parse_fn_ptr_arg).collect();
+    let return_type = match &fn_ptr.output {
         syn::ReturnType::Default => None,
         syn::ReturnType::Type(_, ty) => parse_api_type(ty),
     };
@@ -299,7 +299,7 @@ fn parse_fn_field(_name: &str, ty: &Type) -> Option<ApiFn> {
     })
 }
 
-fn parse_bare_fn_arg(arg: &BareFnArg) -> Option<ApiParam> {
+fn parse_fn_ptr_arg(arg: &NamedArg) -> Option<ApiParam> {
     let ty = parse_api_type(&arg.ty)?;
     Some(ApiParam { ty })
 }
@@ -331,10 +331,9 @@ fn parse_api_type(ty: &Type) -> Option<ApiType> {
             }
         }
         Type::Ptr(ptr) => {
-            let mutability = if ptr.mutability.is_some() {
-                Mutability::Mut
-            } else {
-                Mutability::Const
+            let mutability = match ptr.mutability {
+                syn::PointerMutability::Mut(_) => Mutability::Mut,
+                syn::PointerMutability::Const(_) => Mutability::Const,
             };
             if let Type::Path(tp) = &*ptr.elem
                 && let Some(seg) = tp.path.segments.last()
