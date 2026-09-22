@@ -22,6 +22,11 @@ pub fn generate(ctx: &CodegenContext, out_dir: &Path) {
     // Generate per-module code
     for module_name in ctx.enabled_modules.iter() {
         let module_dir = out_dir.join(module_name);
+        // Start from an empty module directory so types dropped by this run (blocklist,
+        // engine upgrade) do not linger as stale files.
+        if module_dir.exists() {
+            std::fs::remove_dir_all(&module_dir).expect("Failed to clear module directory");
+        }
         std::fs::create_dir_all(&module_dir).expect("Failed to create module directory");
 
         // Enums
