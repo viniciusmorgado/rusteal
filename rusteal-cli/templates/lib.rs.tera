@@ -1,0 +1,8 @@
+// {{ project }}: gameplay in Rust.
+//
+// `rusteal build` compiles this crate and deploys it as the Rusteal plugin's
+// library; `rusteal.toml` in the project root holds the configuration.
+
+rusteal_runtime::entry!();
+
+mod hello;
