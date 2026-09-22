@@ -12,38 +12,28 @@ pub mod cpp_gen;
 
 use std::path::Path;
 
-use crate::config::RustealConfig;
+use crate::config::{ProjectConfig, ProjectLayout};
 use crate::schema::{ClassesFile, EnumsFile, StructsFile};
 
 /// Run the generate command. Main entry point for codegen.
-pub fn run_generate(config_path: &Path) {
-    // Load config
-    let config_str = std::fs::read_to_string(config_path)
-        .unwrap_or_else(|e| panic!("Failed to read {}: {e}", config_path.display()));
-    let rusteal_config: RustealConfig = toml::from_str(&config_str)
-        .unwrap_or_else(|e| panic!("Failed to parse {}: {e}", config_path.display()));
-    let codegen = &rusteal_config.codegen;
+///
+/// `project_root` is the directory holding the .uproject and `rusteal.toml`.
+pub fn run_generate(project_root: &Path) {
+    let config = ProjectConfig::load(project_root).unwrap_or_else(|e| {
+        eprintln!("rusteal-codegen: {e}");
+        std::process::exit(1);
+    });
+    let codegen = &config.codegen;
+    let layout = ProjectLayout::new(project_root);
 
-    // Resolve paths relative to config file directory. A bare file name has an empty
-    // parent, which means the current directory.
-    let config_parent = config_path.parent().unwrap_or(Path::new("."));
-    let config_dir = if config_parent.as_os_str().is_empty() {
-        Path::new(".")
-    } else {
-        config_parent
-    }
-    .canonicalize()
-    .unwrap_or_else(|e| panic!("Failed to canonicalize config dir: {e}"));
-
-    // Derive JSON paths from config (relative to config dir)
-    let uht_input = config_dir.join(&codegen.paths.uht_input);
+    let uht_input = layout.uht_json();
     let classes_path = uht_input.join("rusteal_classes.json");
     let structs_path = uht_input.join("rusteal_structs.json");
     let enums_path = uht_input.join("rusteal_enums.json");
-    // `rust_out` is the generated crate's directory; its sources go under `src/`.
-    let rust_out = config_dir.join(&codegen.paths.rust_out);
+    // The generated crate's directory; its sources go under `src/`.
+    let rust_out = layout.bindings_crate();
     let rust_src = rust_out.join("src");
-    let cpp_out = config_dir.join(&codegen.paths.cpp_out);
+    let cpp_out = layout.cpp_generated();
 
     eprintln!("rusteal-codegen: loading JSON...");
 
