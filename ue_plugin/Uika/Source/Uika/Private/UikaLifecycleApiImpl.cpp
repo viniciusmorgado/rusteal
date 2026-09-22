@@ -5,11 +5,10 @@
 // - register_pinned / unregister_pinned: track Pinned objects for destroy notification
 
 #include "UikaApiTable.h"
+#include "UikaModule.h"
 #include "UObject/UObjectGlobals.h"
 #include "UObject/UObjectArray.h"
 
-// Access to Rust callbacks (defined in UikaModule.cpp).
-extern const FUikaRustCallbacks* GetUikaRustCallbacks();
 
 // ---------------------------------------------------------------------------
 // GC root management
