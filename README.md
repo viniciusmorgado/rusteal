@@ -27,31 +27,49 @@ to the workspace members.
 - **Linux**: the clang toolchain and .NET runtime bundled with the engine
 - **Windows**: Visual Studio 2022 with the C++ workload
 
-### Setup
+### A new project
 
-1. **Create your UE project** (or use an existing one).
+```bash
+git clone https://github.com/viniciusmorgado/rusteal.git
+cd rusteal
+cargo run -p rusteal -- new MyGame --dir ~/Projects --runtime-path .
+```
 
-2. **Clone this repo**:
-   ```bash
-   git clone https://github.com/viniciusmorgado/rusteal.git
-   cd rusteal
-   ```
+`rusteal new` creates a UE project from the engine's Blank C++ template,
+installs the Rusteal plugins, writes the Rust workspace and runs the whole
+build pipeline. The first run asks where the engine is and keeps the answer in
+`~/.config/rusteal/config.toml` — the only per-machine setting there is.
 
-3. **Install the plugins** into your project. The first run asks where the engine
-   is and keeps the answer in `~/.config/rusteal/config.toml` — the only
-   per-machine setting there is:
-   ```bash
-   cargo run -p rusteal -- setup /path/to/YourProject
-   ```
-   This also writes a starter `rusteal.toml` next to the `.uproject`: the
-   project's versioned configuration, holding the game crate to deploy and the
-   UE modules to generate bindings for. Set `crate` to your game's package name.
+Then open `MyGame.uproject`, drop a `HelloActor` into the level and press Play:
+the Output Log shows `[MyGame] Hello from Rust`.
 
-4. **Build everything** (UE build → codegen → UE rebuild → Rust compile → deploy),
-   from anywhere inside the project:
-   ```bash
-   cargo run -p rusteal -- build
-   ```
+It does not run `git init` — versioning is your call — but it does write a
+`.gitignore` covering the Unreal and Rust build output, so a later `git init`
+picks up the right files.
+
+#### `--runtime-path`
+
+It decides where the generated project takes Rusteal from:
+
+| | without it | `--runtime-path <checkout>` |
+|---|---|---|
+| `Rust/Cargo.toml` says | `rusteal-runtime = "=x.y.z"` | `{ path = "<checkout>/rusteal-runtime" }` |
+| Crates come from | crates.io | the local checkout |
+| Works before the first release | no | yes |
+| A change in the runtime reaches the game | on the next published version | on the next build |
+| The project builds on another machine | yes | no (the path is this machine's) |
+
+So: without it for a real game, with it while working on Rusteal itself.
+
+### An existing project
+
+```bash
+cargo run -p rusteal -- setup /path/to/YourProject   # plugins + starter rusteal.toml
+cargo run -p rusteal -- build                        # from anywhere inside the project
+```
+
+`setup` does not write the Rust workspace; create it as below, or copy the
+layout `rusteal new` produces.
 
 ### Project layout
 
@@ -212,6 +230,46 @@ Function implementations update immediately. Adding/removing `uproperty` or `ufu
 | Linux (x64) | Supported (Unreal Engine 5.8.2) |
 | Windows (x64) | Supported |
 | macOS | Not yet tested |
+
+## Contributing
+
+Working on Rusteal itself, rather than on a game:
+
+```bash
+git clone https://github.com/viniciusmorgado/rusteal.git
+cd rusteal
+
+# The workspace builds, tests and lints without the engine
+cargo build --workspace
+cargo test --workspace
+cargo clippy --workspace --no-deps
+
+# A throwaway project that depends on this checkout
+cargo run -p rusteal -- new Probe --dir /tmp --runtime-path .
+
+# After changing the runtime, the macros or a game crate
+cd /tmp/Probe && cargo run --manifest-path ~/rusteal/Cargo.toml -p rusteal -- build --from 4
+```
+
+In the editor, `Rusteal.Reload` swaps the library in without restarting; adding
+or removing a `uproperty`/`ufunction` still needs a restart.
+
+What lives where:
+
+| Crate | Role |
+|---|---|
+| `rusteal-ue-flags` | UE reflection flag constants |
+| `rusteal-ffi` | `#[repr(C)]` types and the API table: the Rust ↔ C++ contract |
+| `rusteal-core` | the safe runtime: object references, lifecycle, containers, math |
+| `rusteal-macros` | `#[uclass]`, `#[uclass_impl]` and their attributes |
+| `rusteal-runtime` | what a game depends on; re-exports the above |
+| `rusteal-codegen` | reflection JSON → the `bindings` crate and the C++ wrappers; owns `manual/` |
+| `rusteal-cli` | the `rusteal` binary; owns `templates/` and embeds `ue_plugin/` |
+
+Changing the C++ plugin means running `cargo run -p rusteal -- sync-plugin`
+before publishing, which refreshes the snapshot the binary embeds.
+
+Commits are small — one per fix — and never mention AI authorship.
 
 ## License
 
