@@ -14,6 +14,11 @@ concurrency:
   group: prepare-release-${{ github.head_ref }}
   cancel-in-progress: true
 
+# The job commits the version to the pull request branch; the default token is
+# read-only in a new repository.
+permissions:
+  contents: write
+
 env:
   CARGO_TERM_COLOR: always
   # The crate whose published version anchors the workspace: they all share one version.
