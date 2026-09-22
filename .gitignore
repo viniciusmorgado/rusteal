@@ -1,6 +1,5 @@
 # Rust
 /target/
-Cargo.lock
 
 # UE plugin build artifacts
 ue_plugin/**/Binaries/
