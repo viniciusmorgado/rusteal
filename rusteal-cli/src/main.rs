@@ -1,4 +1,4 @@
-// rusteal: CLI entry point (new, setup, build, generate, sync-plugin).
+// rusteal: CLI entry point (new, setup, build, generate, upgrade, sync-plugin).
 //
 // Commands act on a Rusteal project: the directory holding the .uproject and
 // `rusteal.toml`. It is given as an argument or found by walking up from the
@@ -11,6 +11,7 @@ mod project_version;
 mod setup;
 mod sync_plugin;
 mod templates;
+mod upgrade_cmd;
 
 use std::path::{Path, PathBuf};
 
@@ -64,6 +65,13 @@ enum Commands {
         /// Project directory (default: found from the current directory).
         project: Option<PathBuf>,
     },
+    /// Move a project to this CLI's Rusteal version: the pins in Rust/Cargo.toml,
+    /// the plugins (Plugins/Rusteal and Plugins/RustealGenerator are replaced
+    /// wholesale) and a full build.
+    Upgrade {
+        /// Project directory (default: found from the current directory).
+        project: Option<PathBuf>,
+    },
     /// Sync hand-written plugin files into ue_plugin_embed/ for crates.io packaging.
     SyncPlugin,
 }
@@ -101,6 +109,10 @@ fn main() {
             let root = project_root(project.as_deref());
             check_version(&root, Scope::PinsAndPlugins);
             rusteal_codegen::run_generate(&root);
+        }
+        Commands::Upgrade { project } => {
+            let root = project_root(project.as_deref());
+            upgrade_cmd::run_upgrade(&root);
         }
         Commands::SyncPlugin => {
             sync_plugin::run_sync();
