@@ -40,7 +40,9 @@ pub fn run_generate(config_path: &Path) {
     let classes_path = uht_input.join("rusteal_classes.json");
     let structs_path = uht_input.join("rusteal_structs.json");
     let enums_path = uht_input.join("rusteal_enums.json");
+    // `rust_out` is the generated crate's directory; its sources go under `src/`.
     let rust_out = config_dir.join(&codegen.paths.rust_out);
+    let rust_src = rust_out.join("src");
     let cpp_out = config_dir.join(&codegen.paths.cpp_out);
 
     eprintln!("rusteal-codegen: loading JSON...");
@@ -105,24 +107,12 @@ pub fn run_generate(config_path: &Path) {
     build_func_table(&mut ctx);
     eprintln!("  {} functions in func_table", ctx.func_table.len());
 
-    // Generate Rust code
+    // Generate the Rust bindings crate: sources, extensions, prelude, manifest.
     eprintln!("rusteal-codegen: generating Rust code...");
-    rust_gen::generate(&ctx, &rust_out);
-
-    // Rewrite rusteal-bindings/Cargo.toml [features] from the dep graph.
-    // Sits next to the rust_out src/ directory.
-    let cargo_toml_path = rust_out
-        .parent()
-        .map(|p| p.join("Cargo.toml"))
-        .unwrap_or_else(|| rust_out.join("Cargo.toml"));
-    if cargo_toml_path.exists() {
-        rust_gen::cargo_toml::write_features_section(&cargo_toml_path, &ctx, codegen);
-    } else {
-        eprintln!(
-            "  warning: {} not found, skipping [features] regen",
-            cargo_toml_path.display()
-        );
-    }
+    rust_gen::generate(&ctx, &rust_src);
+    rust_gen::manual::write_manual_module(&rust_src);
+    rust_gen::prelude::write_prelude(&rust_src, &ctx);
+    rust_gen::cargo_toml::write_crate_files(&rust_out, &ctx, codegen);
 
     // Generate C++ code
     eprintln!("rusteal-codegen: generating C++ code...");
@@ -133,7 +123,7 @@ pub fn run_generate(config_path: &Path) {
 
     // Post-generate verification
     eprintln!("rusteal-codegen: verifying output...");
-    verify_output(&ctx, &rust_out, &cpp_out);
+    verify_output(&ctx, &rust_src, &cpp_out);
 
     eprintln!("rusteal-codegen: done!");
 }

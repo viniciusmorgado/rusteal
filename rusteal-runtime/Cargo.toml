@@ -4,27 +4,12 @@ version = "0.1.0"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Rust bindings for Unreal Engine 5.7+"
+description = "Runtime for Rust gameplay code in Unreal Engine 5"
 
 [dependencies]
 rusteal-ffi = { workspace = true }
 rusteal-core = { workspace = true }
 rusteal-macros = { workspace = true }
-rusteal-bindings = { workspace = true }
 rusteal-ue-flags = { workspace = true }
 glam = { workspace = true }
 inventory = { workspace = true }
-
-[features]
-default = ["core", "engine"]
-core = ["rusteal-bindings/core"]
-engine = ["core", "input", "rusteal-bindings/engine"]
-physics-core = ["engine", "rusteal-bindings/physics-core"]
-input = ["core", "rusteal-bindings/input"]
-slate = ["core", "rusteal-bindings/slate"]
-umg = ["slate", "rusteal-bindings/umg"]
-niagara = ["engine", "rusteal-bindings/niagara"]
-gameplay-abilities = ["engine", "rusteal-bindings/gameplay-abilities"]
-level-sequence = ["engine", "rusteal-bindings/level-sequence"]
-cinematic = ["engine", "rusteal-bindings/cinematic"]
-movie = ["engine", "rusteal-bindings/movie"]

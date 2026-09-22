@@ -6,9 +6,7 @@ members = [
     "rusteal-macros",
     "rusteal-codegen",
     "rusteal-cli",
-    "rusteal-bindings",
     "rusteal-runtime",
-    "example_game",
 ]
 resolver = "3"
 
@@ -35,4 +33,3 @@ rusteal-codegen = { version = "0.1.0", path = "rusteal-codegen" }
 rusteal-core = { version = "0.1.0", path = "rusteal-core" }
 rusteal-ffi = { version = "0.1.0", path = "rusteal-ffi" }
 rusteal-macros = { version = "0.1.0", path = "rusteal-macros" }
-rusteal-bindings = { version = "0.1.0", path = "rusteal-bindings", default-features = false }
