@@ -18,7 +18,10 @@ crate_name = "example-game"
 # --- Codegen configuration ---
 
 [codegen]
-features = ["core", "engine"]
+# Modules to generate. Must cover everything the `uika` crate's features imply — its `engine`
+# feature turns on `input`, and the hand-written runtime (UikaWidgetApiImpl.cpp) needs UMG —
+# or the manual extensions in uika-bindings/src/manual reference modules that do not exist.
+features = ["core", "engine", "input", "slate", "umg"]
 
 [codegen.paths]
 uht_input = "generated/uht"
@@ -61,12 +64,22 @@ structs = [
     "ConstraintInstanceAccessor",
 ]
 functions = [
+    # UFUNCTIONs the engine does not export (no *_API on the declaration): the generated
+    # wrapper compiles but does not link. Found with UE 5.8.2 on Linux; keep sorted.
     "AnimMontage.IsValidAdditiveSlot",
     "GameplayStatics.BlueprintSuggestProjectileVelocity",
     "KismetSystemLibrary.GetEnumTopLevelAssetPath",
     "KismetSystemLibrary.GetStructTopLevelAssetPath",
     "KismetSystemLibrary.RaiseScriptError",
     "KismetSystemLibrary.StackTrace",
+    "ListView.SetReturnFocusToSelection",
+    "ListViewBase.CreateDragDropOperation",
+    "WidgetAnimation.UnbindAllFromAnimationFinished",
+    "WidgetAnimation.UnbindAllFromAnimationStarted",
+    "WidgetAnimationPlayCallbackProxy.CreatePlayAnimationProxyObject",
+    "WidgetAnimationPlayCallbackProxy.CreatePlayAnimationTimeRangeProxyObject",
+    "WidgetAnimationPlayCallbackProxy.NewPlayAnimationProxyObject",
+    "WidgetAnimationPlayCallbackProxy.NewPlayAnimationTimeRangeProxyObject",
     "MaterialInstanceConstant.K2_GetScalarParameterValue",
     "MaterialInstanceConstant.K2_GetTextureCollectionParameterValue",
     "MaterialInstanceConstant.K2_GetTextureParameterValue",
