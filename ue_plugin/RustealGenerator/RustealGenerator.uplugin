@@ -1,7 +1,7 @@
 {
     "FileVersion": 3,
-    "Version": 2001,
-    "VersionName": "0.2.1",
+    "Version": 3000,
+    "VersionName": "0.3.0",
     "FriendlyName": "RustealGenerator",
     "Description": "UHT JSON exporter for Rusteal codegen",
     "Category": "Scripting",
