@@ -302,6 +302,11 @@ with nothing to publish in between.
 Changing the C++ plugin means running `cargo run -p rusteal -- sync-plugin`
 before publishing, which refreshes the snapshot the binary embeds.
 
+Engine APIs Rusteal uses that Unreal has deprecated are tracked in
+[`docs/ue-deprecations.md`](docs/ue-deprecations.md): what, since which UE
+version, until when and where. A new engine version means checking its
+warnings against that list.
+
 Commits are small — one per fix — and never mention AI authorship.
 
 ### Releases and versions
