@@ -33,11 +33,11 @@ pub fn run_build(project_root: &Path, engine_path: &Path, step: Option<u8>, from
         eprintln!("Error: --step and --from are mutually exclusive.");
         std::process::exit(1);
     }
-    if let Some(s) = step {
-        if !(1..=5).contains(&s) {
-            eprintln!("Error: --step must be 1-5, got {s}");
-            std::process::exit(1);
-        }
+    if let Some(s) = step
+        && !(1..=5).contains(&s)
+    {
+        eprintln!("Error: --step must be 1-5, got {s}");
+        std::process::exit(1);
     }
     if !(1..=5).contains(&from) {
         eprintln!("Error: --from must be 1-5, got {from}");
@@ -338,7 +338,7 @@ impl BuildContext {
 
 /// Run an external command, printing it and exiting on failure.
 fn run_cmd(args: &[&str]) {
-    let display: String = args.iter().map(|a| *a).collect::<Vec<_>>().join(" ");
+    let display: String = args.to_vec().join(" ");
     let truncated = if display.len() > 200 {
         format!("{}...", &display[..197])
     } else {

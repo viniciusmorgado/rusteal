@@ -198,8 +198,7 @@ fn register_uproject_plugins(project_path: &Path) {
     for name in &required {
         let already = plugins.iter().any(|p| {
             p.get("Name")
-                .and_then(|v| v.as_str())
-                .map_or(false, |n| n == *name)
+                .and_then(|v| v.as_str()) == Some(*name)
         });
         if !already {
             plugins.push(serde_json::json!({

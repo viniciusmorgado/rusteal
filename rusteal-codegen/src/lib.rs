@@ -135,11 +135,7 @@ fn generate_module_deps(config: &crate::config::CodegenConfig, cpp_out: &Path) {
         }
     }
 
-    let content = ue_modules
-        .iter()
-        .map(|m| *m)
-        .collect::<Vec<_>>()
-        .join("\n");
+    let content = ue_modules.iter().copied().collect::<Vec<_>>().join("\n");
 
     let path = cpp_out.join("module_deps.txt");
     std::fs::write(&path, &content)

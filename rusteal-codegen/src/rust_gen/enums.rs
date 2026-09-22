@@ -159,10 +159,10 @@ fn underlying_to_signed_repr(ut: &str) -> &'static str {
 /// Strip enum name prefix from variant names (e.g., "EFoo::Bar" → "Bar",
 /// or if variants have EnumName_ prefix).
 fn strip_enum_prefix<'a>(variant: &'a str, enum_name: &str) -> &'a str {
-    if let Some(rest) = variant.strip_prefix(enum_name) {
-        if let Some(rest) = rest.strip_prefix("::") {
-            return rest;
-        }
+    if let Some(rest) = variant.strip_prefix(enum_name)
+        && let Some(rest) = rest.strip_prefix("::")
+    {
+        return rest;
     }
     variant
 }

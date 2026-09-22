@@ -33,10 +33,10 @@ fn alive_registry() -> &'static Mutex<HashMap<u64, Arc<AtomicBool>>> {
 /// by DestroyActor, level unload, PIE end, etc. Sets the alive flag to false
 /// so subsequent `checked_handle()` calls return `Err(ObjectDestroyed)`.
 pub fn notify_pinned_destroyed(handle: UObjectHandle) {
-    if let Ok(registry) = alive_registry().lock() {
-        if let Some(flag) = registry.get(&handle.to_addr()) {
-            flag.store(false, Ordering::Relaxed);
-        }
+    if let Ok(registry) = alive_registry().lock()
+        && let Some(flag) = registry.get(&handle.to_addr())
+    {
+        flag.store(false, Ordering::Relaxed);
     }
 }
 

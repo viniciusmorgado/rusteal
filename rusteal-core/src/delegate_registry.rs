@@ -65,10 +65,10 @@ pub fn invoke(callback_id: u64, params: NativePtr) {
     //    removed entirely, so get_mut returns None and we drop the callback.
     if let Some(f) = cb {
         let mut reg = lock_or_recover(registry());
-        if let Some(slot) = reg.get_mut(&callback_id) {
-            if slot.is_none() {
-                *slot = Some(f);
-            }
+        if let Some(slot) = reg.get_mut(&callback_id)
+            && slot.is_none()
+        {
+            *slot = Some(f);
         }
     }
 }
