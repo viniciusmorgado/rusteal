@@ -20,6 +20,9 @@ public class Rusteal : ModuleRules
             "UMG",
         });
 
+        // IPluginManager: the plugin reads its own version from its descriptor.
+        PrivateDependencyModuleNames.Add("Projects");
+
         // Modules the generated bindings call into, listed by rusteal-codegen in
         // Generated/module_deps.txt. Absent before the first codegen run, which is fine:
         // the generated wrappers do not exist yet either.
