@@ -32,17 +32,17 @@ fn parse_uclass_args(attr: TokenStream) -> syn::Result<UClassArgs> {
 
     let mut parent_path: Option<syn::Path> = None;
     for meta in &metas {
-        if let Meta::NameValue(nv) = meta {
-            if nv.path.is_ident("parent") {
-                if let Expr::Path(expr_path) = &nv.value {
-                    parent_path = Some(expr_path.path.clone());
-                } else {
-                    return Err(syn::Error::new_spanned(
-                        &nv.value,
-                        "`parent` must be a type path, not a string literal.\n\n\
-                         Example: #[uclass(parent = Actor)]",
-                    ));
-                }
+        if let Meta::NameValue(nv) = meta
+            && nv.path.is_ident("parent")
+        {
+            if let Expr::Path(expr_path) = &nv.value {
+                parent_path = Some(expr_path.path.clone());
+            } else {
+                return Err(syn::Error::new_spanned(
+                    &nv.value,
+                    "`parent` must be a type path, not a string literal.\n\n\
+                     Example: #[uclass(parent = Actor)]",
+                ));
             }
         }
     }
@@ -95,11 +95,10 @@ fn parse_uproperty_args(attr: &syn::Attribute) -> syn::Result<UPropertyArgs> {
                     args.edit_anywhere = true;
                 }
             }
-            Meta::NameValue(nv) => {
-                if nv.path.is_ident("default") {
+            Meta::NameValue(nv)
+                if nv.path.is_ident("default") => {
                     args.default_expr = Some(nv.value.clone());
                 }
-            }
             _ => {}
         }
     }
@@ -137,8 +136,8 @@ fn parse_component_args(attr: &syn::Attribute) -> syn::Result<ComponentArgs> {
                     args.is_root = true;
                 }
             }
-            Meta::NameValue(nv) => {
-                if nv.path.is_ident("attach") {
+            Meta::NameValue(nv)
+                if nv.path.is_ident("attach") => {
                     if let Expr::Lit(syn::ExprLit {
                         lit: syn::Lit::Str(s), ..
                     }) = &nv.value
@@ -151,7 +150,6 @@ fn parse_component_args(attr: &syn::Attribute) -> syn::Result<ComponentArgs> {
                         ));
                     }
                 }
-            }
             _ => {}
         }
     }
@@ -251,7 +249,7 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
             if prop_type::map_type(&field_ty).is_none() {
                 return Err(syn::Error::new_spanned(
                     &field_ty,
-                    format!("unsupported uproperty type: only bool/i32/i64/u8/f32/f64 are supported in 9b"),
+                    "unsupported uproperty type: only bool/i32/i64/u8/f32/f64 are supported in 9b".to_string(),
                 ));
             }
             uprops.push(UPropertyField {

@@ -393,10 +393,10 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
 
 /// Check if a type is `UStructRef<T>` by examining the last path segment.
 fn is_ustruct_ref_type(ty: &Type) -> bool {
-    if let Type::Path(tp) = ty {
-        if let Some(seg) = tp.path.segments.last() {
-            return seg.ident == "UStructRef";
-        }
+    if let Type::Path(tp) = ty
+        && let Some(seg) = tp.path.segments.last()
+    {
+        return seg.ident == "UStructRef";
     }
     false
 }
@@ -407,10 +407,10 @@ fn parse_ufunction_specifiers(attr: &syn::Attribute) -> syn::Result<Vec<String>>
         Punctuated::<Meta, Token![,]>::parse_terminated,
     ) {
         for meta in &nested {
-            if let Meta::Path(p) = meta {
-                if let Some(ident) = p.get_ident() {
-                    specifiers.push(ident.to_string());
-                }
+            if let Meta::Path(p) = meta
+                && let Some(ident) = p.get_ident()
+            {
+                specifiers.push(ident.to_string());
             }
         }
     }

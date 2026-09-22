@@ -347,7 +347,7 @@ pub fn generate_delegate_structs(
                     .and_then(|fi| fi.get("params"))
                     .and_then(|ps| ps.as_array())
                     .and_then(|arr| arr.iter().find(|v| {
-                        v.get("name").and_then(|n| n.as_str()).map(|n| to_snake_case(n)) == Some(p.name.clone())
+                        v.get("name").and_then(|n| n.as_str()).map(to_snake_case) == Some(p.name.clone())
                     }))
                     .and_then(|v| v.get("name"))
                     .and_then(|n| n.as_str())

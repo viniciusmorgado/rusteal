@@ -20,7 +20,11 @@ pub fn generate_class(class: &ClassInfo, ctx: &CodegenContext) -> String {
     out.push_str("use super::*;\n");
     out.push_str("use rusteal_core::{UeClass, UeStruct, UeEnum, UeHandle, ValidHandle, Pinned, Checked};\n");
     let current_module = ctx.package_to_module.get(&class.package).map(|s| s.as_str()).unwrap_or("");
-    for module in &ctx.enabled_modules {
+    // Sorted: the generated crate is versioned with the project, so the output
+    // has to be the same on every run (enabled_modules is a HashSet).
+    let mut modules: Vec<&String> = ctx.enabled_modules.iter().collect();
+    modules.sort();
+    for module in modules {
         if module != current_module {
             if let Some(feature) = ctx.feature_for_module(module) {
                 out.push_str(&format!("#[cfg(feature = \"{feature}\")]\n"));
@@ -56,23 +60,22 @@ pub fn generate_class(class: &ClassInfo, ctx: &CodegenContext) -> String {
 
     // HasParent impl (must come before early-return — a class with no own
     // members still needs HasParent for the Deref chain)
-    if let Some(parent) = &class.super_class {
-        if ctx.classes.contains_key(parent.as_str()) {
-            // Cfg-gate if parent is in a different module
-            let parent_class = ctx.classes.get(parent.as_str()).unwrap();
-            let parent_module = ctx.package_to_module.get(&parent_class.package)
-                .map(|s| s.as_str()).unwrap_or("");
-            if parent_module != current_module {
-                if let Some(feature) = ctx.feature_for_module(parent_module) {
-                    out.push_str(&format!("#[cfg(feature = \"{feature}\")]\n"));
-                }
+    if let Some(parent) = &class.super_class
+        && ctx.classes.contains_key(parent.as_str())
+    {
+        // Cfg-gate if parent is in a different module
+        let parent_class = ctx.classes.get(parent.as_str()).unwrap();
+        let parent_module = ctx.package_to_module.get(&parent_class.package)
+            .map(|s| s.as_str()).unwrap_or("");
+        if parent_module != current_module
+            && let Some(feature) = ctx.feature_for_module(parent_module) {
+                out.push_str(&format!("#[cfg(feature = \"{feature}\")]\n"));
             }
-            out.push_str(&format!(
-                "impl rusteal_core::HasParent for {name} {{\n\
-                 \x20   type Parent = {parent};\n\
-                 }}\n\n"
-            ));
-        }
+        out.push_str(&format!(
+            "impl rusteal_core::HasParent for {name} {{\n\
+             \x20   type Parent = {parent};\n\
+             }}\n\n"
+        ));
     }
 
     // Collect own functions only (inherited methods are accessed via Deref chain)
@@ -190,12 +193,11 @@ fn build_return_type(output_types: &[String]) -> String {
 fn scalar_out_rust_type_ctx(mapped: &MappedType, struct_name: Option<&str>, ctx: &CodegenContext) -> String {
     match mapped.ffi_to_rust {
         ConversionKind::StructOpaque => {
-            if let Some(sn) = struct_name {
-                if let Some(si) = ctx.structs.get(sn) {
-                    if si.has_static_struct {
-                        return format!("rusteal_core::OwnedStruct<{}>", si.cpp_name);
-                    }
-                }
+            if let Some(sn) = struct_name
+                && let Some(si) = ctx.structs.get(sn)
+                    && si.has_static_struct
+            {
+                    return format!("rusteal_core::OwnedStruct<{}>", si.cpp_name);
             }
             // Struct not available or no static_struct — use raw pointer
             mapped.rust_type.clone()
@@ -206,9 +208,7 @@ fn scalar_out_rust_type_ctx(mapped: &MappedType, struct_name: Option<&str>, ctx:
 
 /// Check if a StructOpaque return/out can use OwnedStruct (has valid UeStruct impl).
 pub(super) fn is_struct_owned(struct_name: Option<&str>, ctx: &CodegenContext) -> bool {
-    struct_name.map_or(false, |sn| {
-        ctx.structs.get(sn).map_or(false, |si| si.has_static_struct)
-    })
+    struct_name.is_some_and(|sn| ctx.structs.get(sn).is_some_and(|si| si.has_static_struct))
 }
 
 /// Check if a scalar Out/InOut param should be included in the return tuple.
@@ -227,7 +227,7 @@ pub(super) fn is_scalar_output_returnable(dir: ParamDirection, mapped: &MappedTy
 
 /// Generate a function wrapper (direct call via func_table).
 fn generate_function(out: &mut String, entry: &FuncEntry, class_name: &str, ctx: &CodegenContext) {
-    let has_container = entry.func.params.iter().any(|p| is_container_param(p));
+    let has_container = entry.func.params.iter().any(is_container_param);
     if has_container {
         generate_container_function(out, entry, class_name, ctx);
     } else {
@@ -584,7 +584,7 @@ fn generate_scalar_function(out: &mut String, entry: &FuncEntry, class_name: &st
         let mut return_parts = Vec::new();
 
         // ReturnValue
-        if return_param.is_some() {
+        if let Some(rp) = return_param {
             let rm = ret_mapped.as_ref().expect("return param must have mapped type");
             match rm.ffi_to_rust {
                 ConversionKind::ObjectRef => {
@@ -597,7 +597,6 @@ fn generate_scalar_function(out: &mut String, entry: &FuncEntry, class_name: &st
                 }
                 ConversionKind::EnumCast => {
                     let rt = &rm.rust_type;
-                    let rp = return_param.expect("return_param must be Some in return conversion");
                     let actual_repr = rp.enum_name.as_deref()
                         .and_then(|en| ctx.enum_actual_repr(en))
                         .unwrap_or(&rm.rust_ffi_type);
@@ -605,7 +604,6 @@ fn generate_scalar_function(out: &mut String, entry: &FuncEntry, class_name: &st
                     return_parts.push("_ret_enum".to_string());
                 }
                 ConversionKind::StructOpaque => {
-                    let rp = return_param.expect("return_param must be Some in return conversion");
                     if is_struct_owned(rp.struct_name.as_deref(), ctx) {
                         out.push_str("        let _ret_owned = rusteal_core::OwnedStruct::from_bytes(_ret_struct_buf);\n");
                         return_parts.push("_ret_owned".to_string());

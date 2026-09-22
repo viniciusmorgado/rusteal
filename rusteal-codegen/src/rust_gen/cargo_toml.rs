@@ -82,10 +82,10 @@ fn render_features_section(ctx: &CodegenContext, config: &CodegenConfig) -> Stri
             for module in modules {
                 if let Some(module_deps) = ctx.module_deps.get(module) {
                     for dep_module in module_deps {
-                        if let Some(dep_feature) = ctx.feature_for_module(dep_module) {
-                            if dep_feature != feature {
-                                dep_features.insert(dep_feature.to_string());
-                            }
+                        if let Some(dep_feature) = ctx.feature_for_module(dep_module)
+                            && dep_feature != feature
+                        {
+                            dep_features.insert(dep_feature.to_string());
                         }
                     }
                 }

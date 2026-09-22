@@ -24,9 +24,7 @@ pub fn generate_fill_table(
     out.push('\n');
 
     // Global function table
-    out.push_str(&format!(
-        "static void* GRustealFuncTable[RustealFuncId::FUNC_COUNT];\n\n"
-    ));
+    out.push_str("static void* GRustealFuncTable[RustealFuncId::FUNC_COUNT];\n\n");
 
     // Fill function
     out.push_str("void RustealFillFuncTable() {\n");
@@ -45,9 +43,7 @@ pub fn generate_fill_table(
     out.push_str("    return GRustealFuncTable;\n");
     out.push_str("}\n\n");
 
-    out.push_str(&format!(
-        "uint32_t RustealGetFuncCount() {{\n    return RustealFuncId::FUNC_COUNT;\n}}\n"
-    ));
+    out.push_str("uint32_t RustealGetFuncCount() {\n    return RustealFuncId::FUNC_COUNT;\n}\n");
 
     out
 }
