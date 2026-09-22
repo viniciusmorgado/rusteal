@@ -28,7 +28,7 @@ pub struct NewOptions<'a> {
     pub name: &'a str,
     pub parent: &'a Path,
     pub engine: &'a Path,
-    /// A Rusteal checkout to depend on by path instead of crates.io.
+    /// A Rusteal checkout to depend on by path instead of the published crates.
     pub runtime_path: Option<&'a Path>,
     pub build: bool,
 }
@@ -468,6 +468,8 @@ fn write_rust_workspace(
     let mut ctx = tera::Context::new();
     ctx.insert("project", project);
     ctx.insert("crate_name", crate_name);
+    // A generated project pins the published crates to the CLI's own version:
+    // the generated bindings are tied to this runtime's FFI layout.
     ctx.insert("version", env!("CARGO_PKG_VERSION"));
     ctx.insert("glam_version", GLAM_VERSION);
     if let Some(path) = runtime_path {
