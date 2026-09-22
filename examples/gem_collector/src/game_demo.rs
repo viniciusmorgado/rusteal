@@ -9,20 +9,14 @@ use rusteal_runtime::runtime::{
     ulog, Checked, DynamicCall, OwnedStruct, UObjectRef, RustealResult,
     LOG_DISPLAY, LOG_WARNING,
 };
-use rusteal_runtime::bindings::core_ue::{FLinearColor, FRotator, FRotatorExt, FTransform, Object};
-use rusteal_runtime::bindings::engine::{
-    Actor, ActorExt, ActorComponent, CameraActor,
-    DefaultPawn,
-    GameModeBase, GameModeBaseExt, GameplayStatics, GameplayStaticsExt,
-    HUD, HUDExt, Pawn,
-    DirectionalLight, SceneComponent, SkyLight,
-    StaticMesh, StaticMeshActor, StaticMeshComponent, StaticMeshComponentExt,
-    World,
+use bindings::core_ue::Object;
+use bindings::engine::{
+    ActorComponent, CameraActor, DefaultPawn, DirectionalLight, GameModeBase, GameplayStatics,
+    GameplayStaticsExt, HUD, HUDExt, SceneComponent, SkyLight, StaticMesh, StaticMeshActor,
+    StaticMeshComponent, StaticMeshComponentExt,
 };
-use rusteal_runtime::bindings::manual::{
-    vector::OwnedFVectorExt,
-    world_ext::{self, WorldSpawnExt},
-};
+use bindings::manual::world_ext;
+use bindings::prelude::*;
 use rusteal_runtime::runtime::{LinearColor, Transform};
 use glam::{DQuat, DVec3};
 
@@ -493,7 +487,7 @@ impl GemCollectorPawn {
 
         // Scale down — default sphere is 100cm diameter
         let gem_actor: UObjectRef<Actor> = unsafe { UObjectRef::from_raw(gem_raw) };
-        let scale = rusteal_runtime::bindings::core_ue::FVector::from_dvec3(DVec3::new(0.3, 0.3, 0.3));
+        let scale = bindings::core_ue::FVector::from_dvec3(DVec3::new(0.3, 0.3, 0.3));
         gem_actor.checked()?.set_actor_scale3_d(&scale);
 
         Ok(())

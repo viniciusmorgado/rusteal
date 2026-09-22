@@ -1,0 +1,18 @@
+# Gem Collector: the original demo, kept as a reference for the runtime API and
+# as an in-editor integration test (test_integration.rs).
+#
+# It builds as a member of a project's Rust workspace: copy this directory next
+# to the generated `bindings` crate and add it to the workspace members.
+[package]
+name = "gem-collector"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+rusteal-runtime = { workspace = true }
+bindings = { path = "../bindings" }
+glam = { workspace = true }
