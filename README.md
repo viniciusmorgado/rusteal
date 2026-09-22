@@ -68,6 +68,21 @@ rusteal build                        # from anywhere inside the project
 `setup` does not write the Rust workspace; create it as below, or copy the
 layout `rusteal new` produces.
 
+### Versions
+
+A project is tied to one Rusteal version: `Rust/Cargo.toml` pins
+`rusteal-runtime`, `rusteal-core` and `rusteal-ffi` to it (`"=x.y.z"`), and the
+plugins in `Plugins/` carry it. Before doing anything, `build`, `generate` and
+`setup` check it against the CLI's own version:
+
+- the CLI is newer: `rusteal upgrade` moves the project to it — the pins, the
+  plugins (`Plugins/Rusteal` and `Plugins/RustealGenerator` are replaced
+  wholesale) and a full build;
+- the project is newer: install the CLI it uses, `cargo install rusteal@x.y.z`.
+
+The plugin checks the library as well: a `librusteal` built against another
+version is refused at load, with both versions in the Output Log.
+
 ### Project layout
 
 Everything lives in one repository; the only thing outside it is the engine path
@@ -251,6 +266,11 @@ cargo run -p rusteal -- build /tmp/Probe --from 4
 
 In the editor, `Rusteal.Reload` swaps the library in without restarting; adding
 or removing a `uproperty`/`ufunction` still needs a restart.
+
+A project made with `--runtime-path` follows that checkout: the CLI acts on it
+only when built from the same checkout, so drive it with `cargo run -p rusteal --`
+from there. After pulling, `cargo run -p rusteal -- setup /tmp/Probe` reinstalls
+the plugins at the checkout's version.
 
 ### `--runtime-path`
 
