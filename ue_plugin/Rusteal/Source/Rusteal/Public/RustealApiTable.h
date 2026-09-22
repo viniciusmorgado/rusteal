@@ -357,6 +357,8 @@ struct FRustealWorldApi
 
 struct FRustealApiTable
 {
+    // The plugin's Rusteal version (major * 1000000 + minor * 1000 + patch),
+    // which the library must match exactly.
     uint32 version;
 
     // Fixed sub-tables
@@ -396,3 +398,4 @@ struct FRustealRustCallbacks
 
 using FRustealInitFn     = const FRustealRustCallbacks* (*)(const FRustealApiTable* api_table);
 using FRustealShutdownFn = void (*)();
+using FRustealVersionFn  = uint32 (*)();

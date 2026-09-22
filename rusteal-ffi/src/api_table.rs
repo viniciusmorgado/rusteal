@@ -16,6 +16,8 @@ pub use crate::handles::FWeakObjectHandle;
 /// function-pointer flat array (one entry per codegen-exported UE function).
 #[repr(C)]
 pub struct RustealApiTable {
+    /// The plugin's Rusteal version, encoded as [`crate::RUSTEAL_VERSION`];
+    /// `rusteal_runtime::init` refuses a table carrying any other.
     pub version: u32,
 
     // ---- Fixed sub-tables (hand-written, infrastructure) ----
