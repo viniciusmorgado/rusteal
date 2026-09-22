@@ -6,8 +6,10 @@
 
 mod build_cmd;
 mod global_config;
+mod new_cmd;
 mod setup;
 mod sync_plugin;
+mod templates;
 
 use std::path::{Path, PathBuf};
 
@@ -24,6 +26,20 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Create a UE project with Rust inside and build it.
+    New {
+        /// Project name: letters and digits, 20 characters at most.
+        name: String,
+        /// Where to create it (default: the current directory).
+        #[arg(long, default_value = ".")]
+        dir: PathBuf,
+        /// Depend on a local Rusteal checkout instead of the published crates.
+        #[arg(long)]
+        runtime_path: Option<PathBuf>,
+        /// Create the project without running the build pipeline.
+        #[arg(long)]
+        no_build: bool,
+    },
     /// Install the Rusteal plugins and a starter rusteal.toml into a UE project.
     Setup {
         /// The UE project directory (the one holding the .uproject).
@@ -53,6 +69,16 @@ fn main() {
     let cli = Cli::parse();
 
     match cli.command {
+        Commands::New { name, dir, runtime_path, no_build } => {
+            let engine = global_config::engine_path();
+            new_cmd::run_new(&new_cmd::NewOptions {
+                name: &name,
+                parent: &dir,
+                engine: &engine,
+                runtime_path: runtime_path.as_deref(),
+                build: !no_build,
+            });
+        }
         Commands::Setup { project } => {
             let engine = global_config::engine_path();
             setup::run_setup(&project, &engine);
