@@ -1,0 +1,484 @@
+{
+  "enums": [
+    {
+      "cpp_form": 1,
+      "cpp_name": "ETouchIndex",
+      "name": "ETouchIndex",
+      "package": "InputCore",
+      "pairs": [
+        [
+          "Touch1",
+          0
+        ],
+        [
+          "Touch2",
+          1
+        ],
+        [
+          "Touch3",
+          2
+        ],
+        [
+          "Touch4",
+          3
+        ],
+        [
+          "Touch5",
+          4
+        ],
+        [
+          "Touch6",
+          5
+        ],
+        [
+          "Touch7",
+          6
+        ],
+        [
+          "Touch8",
+          7
+        ],
+        [
+          "Touch9",
+          8
+        ],
+        [
+          "Touch10",
+          9
+        ],
+        [
+          "CursorPointerIndex",
+          10
+        ],
+        [
+          "MAX_TOUCHES",
+          11
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 2,
+      "cpp_name": "EAttachmentRule",
+      "name": "EAttachmentRule",
+      "package": "Engine",
+      "pairs": [
+        [
+          "KeepRelative",
+          0
+        ],
+        [
+          "KeepWorld",
+          1
+        ],
+        [
+          "SnapToTarget",
+          2
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 2,
+      "cpp_name": "EDetachmentRule",
+      "name": "EDetachmentRule",
+      "package": "Engine",
+      "pairs": [
+        [
+          "KeepRelative",
+          0
+        ],
+        [
+          "KeepWorld",
+          1
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 1,
+      "cpp_name": "EAttachLocation",
+      "name": "EAttachLocation",
+      "package": "Engine",
+      "pairs": [
+        [
+          "KeepRelativeOffset",
+          0
+        ],
+        [
+          "KeepWorldPosition",
+          1
+        ],
+        [
+          "SnapToTarget",
+          2
+        ],
+        [
+          "SnapToTargetIncludingScale",
+          3
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 0,
+      "cpp_name": "ENetRole",
+      "name": "ENetRole",
+      "package": "Engine",
+      "pairs": [
+        [
+          "ROLE_None",
+          0
+        ],
+        [
+          "ROLE_SimulatedProxy",
+          1
+        ],
+        [
+          "ROLE_AutonomousProxy",
+          2
+        ],
+        [
+          "ROLE_Authority",
+          3
+        ],
+        [
+          "ROLE_MAX",
+          4
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 0,
+      "cpp_name": "ENetDormancy",
+      "name": "ENetDormancy",
+      "package": "Engine",
+      "pairs": [
+        [
+          "DORM_Never",
+          0
+        ],
+        [
+          "DORM_Awake",
+          1
+        ],
+        [
+          "DORM_DormantAll",
+          2
+        ],
+        [
+          "DORM_DormantPartial",
+          3
+        ],
+        [
+          "DORM_Initial",
+          4
+        ],
+        [
+          "DORM_MAX",
+          5
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 2,
+      "cpp_name": "EPhysicsReplicationMode",
+      "name": "EPhysicsReplicationMode",
+      "package": "Engine",
+      "pairs": [
+        [
+          "Default",
+          0
+        ],
+        [
+          "PredictiveInterpolation",
+          1
+        ],
+        [
+          "Resimulation",
+          2
+        ],
+        [
+          "None",
+          255
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 1,
+      "cpp_name": "EAutoReceiveInput",
+      "name": "EAutoReceiveInput",
+      "package": "Engine",
+      "pairs": [
+        [
+          "Disabled",
+          0
+        ],
+        [
+          "Player0",
+          1
+        ],
+        [
+          "Player1",
+          2
+        ],
+        [
+          "Player2",
+          3
+        ],
+        [
+          "Player3",
+          4
+        ],
+        [
+          "Player4",
+          5
+        ],
+        [
+          "Player5",
+          6
+        ],
+        [
+          "Player6",
+          7
+        ],
+        [
+          "Player7",
+          8
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 2,
+      "cpp_name": "EAutoPossessAI",
+      "name": "EAutoPossessAI",
+      "package": "Engine",
+      "pairs": [
+        [
+          "Disabled",
+          0
+        ],
+        [
+          "PlacedInWorld",
+          1
+        ],
+        [
+          "Spawned",
+          2
+        ],
+        [
+          "PlacedInWorldOrSpawned",
+          3
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 1,
+      "cpp_name": "EEndPlayReason",
+      "name": "EEndPlayReason",
+      "package": "Engine",
+      "pairs": [
+        [
+          "Destroyed",
+          0
+        ],
+        [
+          "LevelTransition",
+          1
+        ],
+        [
+          "EndPlayInEditor",
+          2
+        ],
+        [
+          "RemovedFromWorld",
+          3
+        ],
+        [
+          "Quit",
+          4
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 1,
+      "cpp_name": "EComponentMobility",
+      "name": "EComponentMobility",
+      "package": "Engine",
+      "pairs": [
+        [
+          "Static",
+          0
+        ],
+        [
+          "Stationary",
+          1
+        ],
+        [
+          "Movable",
+          2
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 2,
+      "cpp_name": "ESpawnActorCollisionHandlingMethod",
+      "name": "ESpawnActorCollisionHandlingMethod",
+      "package": "Engine",
+      "pairs": [
+        [
+          "Undefined",
+          0
+        ],
+        [
+          "AlwaysSpawn",
+          1
+        ],
+        [
+          "AdjustIfPossibleButAlwaysSpawn",
+          2
+        ],
+        [
+          "AdjustIfPossibleButDontSpawnIfColliding",
+          3
+        ],
+        [
+          "DontSpawnIfColliding",
+          4
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 0,
+      "cpp_name": "ETickingGroup",
+      "name": "ETickingGroup",
+      "package": "Engine",
+      "pairs": [
+        [
+          "TG_PrePhysics",
+          0
+        ],
+        [
+          "TG_StartPhysics",
+          1
+        ],
+        [
+          "TG_DuringPhysics",
+          2
+        ],
+        [
+          "TG_EndPhysics",
+          3
+        ],
+        [
+          "TG_PostPhysics",
+          4
+        ],
+        [
+          "TG_PostUpdateWork",
+          5
+        ],
+        [
+          "TG_LastDemotable",
+          6
+        ],
+        [
+          "TG_NewlySpawned",
+          7
+        ],
+        [
+          "TG_MAX",
+          8
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 0,
+      "cpp_name": "EDetailMode",
+      "name": "EDetailMode",
+      "package": "Engine",
+      "pairs": [
+        [
+          "DM_Low",
+          0
+        ],
+        [
+          "DM_Medium",
+          1
+        ],
+        [
+          "DM_High",
+          2
+        ],
+        [
+          "DM_Epic",
+          3
+        ],
+        [
+          "DM_MAX",
+          4
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 0,
+      "cpp_name": "ERelativeTransformSpace",
+      "name": "ERelativeTransformSpace",
+      "package": "Engine",
+      "pairs": [
+        [
+          "RTS_World",
+          0
+        ],
+        [
+          "RTS_Actor",
+          1
+        ],
+        [
+          "RTS_Component",
+          2
+        ],
+        [
+          "RTS_ParentBoneSpace",
+          3
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 2,
+      "cpp_name": "EComponentCreationMethod",
+      "name": "EComponentCreationMethod",
+      "package": "Engine",
+      "pairs": [
+        [
+          "Native",
+          0
+        ],
+        [
+          "SimpleConstructionScript",
+          1
+        ],
+        [
+          "UserConstructionScript",
+          2
+        ],
+        [
+          "Instance",
+          3
+        ]
+      ],
+      "underlying_type": "uint8"
+    }
+  ]
+}

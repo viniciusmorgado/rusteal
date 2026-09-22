@@ -92,10 +92,22 @@ pub static __CALLBACKS: ffi::RustealRustCallbacks = ffi::RustealRustCallbacks {
 /// Initialize the Rusteal runtime. Called by the `entry!()` generated `rusteal_init`.
 ///
 /// Stores the API table, registers all reified classes, and returns the
-/// callback table pointer. Returns null on failure.
-pub fn init(api_table: *const ffi::RustealApiTable) -> *const ffi::RustealRustCallbacks {
+/// callback table pointer. Returns null on failure, including a table from a
+/// plugin of another Rusteal version.
+///
+/// # Safety
+///
+/// `api_table` is null or points to a table the plugin keeps alive for as long
+/// as the library is loaded; at least its `version` field must be readable.
+pub unsafe fn init(api_table: *const ffi::RustealApiTable) -> *const ffi::RustealRustCallbacks {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         if api_table.is_null() {
+            return std::ptr::null();
+        }
+        // The plugin writes its own version in the first field, readable
+        // whatever the rest of the table looks like. Another version means
+        // another table: refuse it before touching anything else.
+        if unsafe { (*api_table).version } != ffi::RUSTEAL_VERSION {
             return std::ptr::null();
         }
 
@@ -144,12 +156,20 @@ macro_rules! entry {
             pub extern "C" fn rusteal_init(
                 api_table: *const $crate::ffi::RustealApiTable,
             ) -> *const $crate::ffi::RustealRustCallbacks {
-                $crate::init(api_table)
+                // SAFETY: called by the plugin with its own static table.
+                unsafe { $crate::init(api_table) }
             }
 
             #[unsafe(no_mangle)]
             pub extern "C" fn rusteal_shutdown() {
                 $crate::shutdown()
+            }
+
+            /// The Rusteal version this library was built with, encoded; the
+            /// plugin compares it with its own before calling `rusteal_init`.
+            #[unsafe(no_mangle)]
+            pub extern "C" fn rusteal_version() -> u32 {
+                $crate::ffi::RUSTEAL_VERSION
             }
         }
     };

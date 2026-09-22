@@ -5,6 +5,7 @@
 #include "HAL/PlatformFileManager.h"
 #include "HAL/FileManager.h"
 #include "Misc/Paths.h"
+#include "Interfaces/IPluginManager.h"
 
 DEFINE_LOG_CATEGORY(LogRusteal);
 
@@ -66,10 +67,24 @@ static FRustealLoggingApi GLoggingApi = { &RustealLogImpl };
 
 static FRustealApiTable GApiTable;
 
+// The Rusteal version this plugin was installed at, from its own descriptor:
+// `Version` holds major * 1000000 + minor * 1000 + patch, the encoding of
+// rusteal_ffi::RUSTEAL_VERSION. The library must carry exactly this one.
+static uint32 RustealPluginVersion()
+{
+    TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(TEXT("Rusteal"));
+    return Plugin.IsValid() ? static_cast<uint32>(Plugin->GetDescriptor().Version) : 0;
+}
+
+static FString RustealVersionString(uint32 Version)
+{
+    return FString::Printf(TEXT("%u.%u.%u"), Version / 1000000, Version / 1000 % 1000, Version % 1000);
+}
+
 static void FillApiTable()
 {
     FMemory::Memzero(GApiTable);
-    GApiTable.version = 1;
+    GApiTable.version = RustealPluginVersion();
 
     // Implemented sub-tables
     GApiTable.logging    = &GLoggingApi;
@@ -195,6 +210,23 @@ bool FRustealModule::LoadRustDll(const FString& LoadPath)
         return false;
     }
     CurrentLoadedDllPath = LoadPath;
+
+    // Plugin and library must be the same Rusteal version: the API table
+    // layout is tied to it, so anything else is refused before rusteal_init.
+    auto VersionFn = reinterpret_cast<FRustealVersionFn>(
+        FPlatformProcess::GetDllExport(DllHandle, TEXT("rusteal_version")));
+    const uint32 LibraryVersion = VersionFn ? VersionFn() : 0;
+    if (LibraryVersion != GApiTable.version)
+    {
+        UE_LOG(LogRusteal, Error,
+            TEXT("[Rusteal] Version mismatch: plugin %s, library %s. Rebuild the project with "
+                 "`rusteal build` (run `rusteal upgrade` first if the CLI is newer than the project)."),
+            *RustealVersionString(GApiTable.version),
+            VersionFn ? *RustealVersionString(LibraryVersion) : TEXT("without a version (0.2.1 or older)"));
+        FPlatformProcess::FreeDllHandle(DllHandle);
+        DllHandle = nullptr;
+        return false;
+    }
 
     // Resolve entry points
     auto InitFn = reinterpret_cast<FRustealInitFn>(
