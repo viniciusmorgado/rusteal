@@ -935,8 +935,16 @@ fn resolve_inner_cpp_type(inner: &PropertyInfo, ctx: &CodegenContext) -> String 
             format!("TWeakObjectPtr<{cls_cpp}>")
         }
         "ClassProperty" => {
-            let effective_class = inner.meta_class_name.as_deref().or(inner.class_name.as_deref());
-            resolve_object_cpp_type(ctx, effective_class)
+            // Inside a container the element type must match the engine's exactly: a
+            // `TArray<TSubclassOf<X>>` is not a `TArray<X*>` (a direct parameter gets away
+            // with `UClass*` because TSubclassOf converts implicitly; an element does not).
+            match inner.meta_class_name.as_deref() {
+                Some(meta) => {
+                    let meta_cpp = resolve_object_cpp_type_bare(ctx, Some(meta));
+                    format!("TSubclassOf<{meta_cpp}>")
+                }
+                None => "UClass*".to_string(),
+            }
         }
         "InterfaceProperty" => {
             resolve_object_cpp_type(ctx, inner.interface_name.as_deref())
