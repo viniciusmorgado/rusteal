@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Instant;
 
-use rusteal_codegen::config::RustealConfig;
+use rusteal_codegen::config::{ProjectConfig, ProjectLayout};
 
 /// Canonicalize a path, stripping the `\\?\` extended-length prefix that
 /// Windows adds. UBT's .NET XML parser chokes on that prefix.
@@ -24,10 +24,10 @@ fn canonical_no_prefix(path: &Path) -> PathBuf {
 
 /// Run the build pipeline.
 ///
-/// `config_path` is the path to rusteal.config.toml.
-/// `step` runs only that step (1-5). `from` starts from that step (1-5).
-/// `step` and `from` are mutually exclusive.
-pub fn run_build(config_path: &Path, step: Option<u8>, from: u8) {
+/// `project_root` holds the .uproject and `rusteal.toml`; `engine_path` is the
+/// UE root. `step` runs only that step (1-5), `from` starts from it; the two
+/// are mutually exclusive.
+pub fn run_build(project_root: &Path, engine_path: &Path, step: Option<u8>, from: u8) {
     // Validate step/from
     if step.is_some() && from != 1 {
         eprintln!("Error: --step and --from are mutually exclusive.");
@@ -44,22 +44,11 @@ pub fn run_build(config_path: &Path, step: Option<u8>, from: u8) {
         std::process::exit(1);
     }
 
-    // Load config
-    let config_str = fs::read_to_string(config_path)
-        .unwrap_or_else(|e| panic!("Failed to read {}: {e}", config_path.display()));
-    let config: RustealConfig = toml::from_str(&config_str)
-        .unwrap_or_else(|e| panic!("Failed to parse {}: {e}", config_path.display()));
-
-    // Resolve paths relative to config file directory
-    let config_parent = config_path.parent().unwrap_or(Path::new("."));
-    let config_dir = if config_parent.as_os_str().is_empty() {
-        Path::new(".").canonicalize()
-    } else {
-        config_parent.canonicalize()
-    }
-    .unwrap_or_else(|e| panic!("Failed to canonicalize config dir: {e}"));
-
-    let ctx = BuildContext::new(&config, &config_dir, config_path);
+    let config = ProjectConfig::load(project_root).unwrap_or_else(|e| {
+        eprintln!("Error: {e}");
+        std::process::exit(1);
+    });
+    let ctx = BuildContext::new(&config, project_root, engine_path);
 
     // Determine which steps to run
     let steps: Vec<u8> = if let Some(s) = step {
@@ -180,82 +169,30 @@ impl HostPlatform {
 /// Resolved build context with all paths pre-computed.
 struct BuildContext {
     engine_path: PathBuf,
-    project_path: PathBuf,
-    uht_input: PathBuf,
-    config_path: PathBuf,
+    layout: ProjectLayout,
     crate_name: String,
-    config_dir: PathBuf,
-    /// The game's Rust workspace (resolved, absolute): the Cargo workspace
-    /// holding the game crate and the generated `bindings` crate. `cargo build`
-    /// runs with its manifest and the library comes out of its `target/`.
-    crate_path: Option<PathBuf>,
-    /// Extra features for `cargo build` (from `[build].features`).
+    /// Extra features for `cargo build` (from `[project].features`).
     features: Vec<String>,
 }
 
 impl BuildContext {
-    fn new(config: &RustealConfig, config_dir: &Path, config_path: &Path) -> Self {
-        // Engine path (required for build)
-        let engine_path = config
-            .ue
-            .as_ref()
-            .map(|ue| PathBuf::from(&ue.engine_path))
-            .unwrap_or_else(|| {
-                eprintln!("Error: [ue].engine_path is required for build.");
-                std::process::exit(1);
-            });
-
-        // Project path (relative to config dir)
-        let project_rel = config
-            .project
-            .as_ref()
-            .map(|p| p.path.as_str())
-            .unwrap_or(".");
-        let project_path = config_dir.join(project_rel);
-
-        // UHT input path (relative to config dir)
-        let uht_input = config_dir.join(&config.codegen.paths.uht_input);
-
-        // Crate name: from config or auto-detect
-        let crate_name = config
-            .build
-            .as_ref()
-            .and_then(|b| b.crate_name.clone())
-            .unwrap_or_else(|| detect_cdylib_crate(config_dir));
-
-        let crate_path = config
-            .build
-            .as_ref()
-            .and_then(|b| b.crate_path.as_ref())
-            .map(|p| config_dir.join(p));
-
-        let features = config
-            .build
-            .as_ref()
-            .map(|b| b.features.clone())
-            .unwrap_or_default();
-
+    fn new(config: &ProjectConfig, project_root: &Path, engine_path: &Path) -> Self {
         BuildContext {
-            engine_path,
-            project_path,
-            uht_input,
-            config_path: config_path.to_path_buf(),
-            crate_name,
-            config_dir: config_dir.to_path_buf(),
-            crate_path,
-            features,
+            engine_path: engine_path.to_path_buf(),
+            layout: ProjectLayout::new(project_root),
+            crate_name: config.project.crate_name.clone(),
+            features: config.project.features.clone(),
         }
+    }
+
+    /// The directory holding the .uproject.
+    fn project_path(&self) -> &Path {
+        &self.layout.root
     }
 
     /// Find the .uproject file and derive the Editor target name.
     fn editor_target(&self) -> String {
-        let uproject = find_uproject(&self.project_path).unwrap_or_else(|| {
-            eprintln!(
-                "Error: no .uproject found in {}",
-                self.project_path.display()
-            );
-            std::process::exit(1);
-        });
+        let uproject = self.uproject_path();
         let stem = uproject
             .file_stem()
             .unwrap()
@@ -266,11 +203,8 @@ impl BuildContext {
 
     /// Full path to the .uproject file.
     fn uproject_path(&self) -> PathBuf {
-        find_uproject(&self.project_path).unwrap_or_else(|| {
-            eprintln!(
-                "Error: no .uproject found in {}",
-                self.project_path.display()
-            );
+        self.layout.uproject().unwrap_or_else(|| {
+            eprintln!("Error: no .uproject found in {}", self.project_path().display());
             std::process::exit(1);
         })
     }
@@ -302,14 +236,14 @@ impl BuildContext {
         self.run_ubt();
 
         // Copy UHT JSON files
-        let uht_intermediate = self.project_path.join(format!(
+        let uht_input = self.layout.uht_json();
+        let uht_intermediate = self.project_path().join(format!(
             "Plugins/RustealGenerator/Intermediate/Build/{}/UnrealEditor/Inc/RustealGenerator/UHT",
             HostPlatform::CURRENT.ubt_platform
         ));
 
-        fs::create_dir_all(&self.uht_input).unwrap_or_else(|e| {
-            panic!("Failed to create {}: {e}", self.uht_input.display())
-        });
+        fs::create_dir_all(&uht_input)
+            .unwrap_or_else(|e| panic!("Failed to create {}: {e}", uht_input.display()));
 
         let json_files = [
             "rusteal_classes.json",
@@ -321,7 +255,7 @@ impl BuildContext {
             let src = uht_intermediate.join(name);
             if src.exists() {
                 let size_kb = fs::metadata(&src).map(|m| m.len() / 1024).unwrap_or(0);
-                fs::copy(&src, self.uht_input.join(name)).unwrap_or_else(|e| {
+                fs::copy(&src, uht_input.join(name)).unwrap_or_else(|e| {
                     panic!("Failed to copy {}: {e}", src.display())
                 });
                 eprintln!("  Copied {name} ({size_kb} KB)");
@@ -333,13 +267,13 @@ impl BuildContext {
         eprintln!(
             "  {copied}/{} JSON files copied to {}",
             json_files.len(),
-            self.uht_input.display()
+            uht_input.display()
         );
     }
 
     /// Step 2: Run codegen (in-process).
     fn step2_codegen(&self) {
-        rusteal_codegen::run_generate(&self.config_path);
+        rusteal_codegen::run_generate(&self.layout.root);
     }
 
     /// Step 3: UE rebuild — compiles generated C++ wrappers.
@@ -347,22 +281,19 @@ impl BuildContext {
         self.run_ubt();
     }
 
-    /// Step 4: cargo build --release.
+    /// Step 4: cargo build --release of the game crate in the Rust workspace.
     fn step4_cargo_build(&self) {
-        let manifest_path_str;
-        let mut args = vec!["cargo", "build", "--release"];
-
-        // The game's Rust workspace holds the game crate and the generated
-        // bindings; build the cdylib member by name.
-        if let Some(ref crate_path) = self.crate_path {
-            let manifest = crate_path.join("Cargo.toml");
-            manifest_path_str = manifest.to_string_lossy().into_owned();
-            args.push("--manifest-path");
-            args.push(&manifest_path_str);
-        }
-        args.push("-p");
-        args.push(&self.crate_name);
-
+        let manifest = self.layout.rust_workspace().join("Cargo.toml");
+        let manifest_str = manifest.to_string_lossy().into_owned();
+        let mut args = vec![
+            "cargo",
+            "build",
+            "--release",
+            "--manifest-path",
+            &manifest_str,
+            "-p",
+            &self.crate_name,
+        ];
         let features_str = self.features.join(",");
         if !features_str.is_empty() {
             args.push("--features");
@@ -376,15 +307,14 @@ impl BuildContext {
         let platform = &HostPlatform::CURRENT;
         let dll_filename = platform.lib_filename(&self.crate_name);
 
-        // The workspace target dir, with the config dir as a fallback for a
-        // game crate that still lives inside this workspace.
-        let src = match self.crate_path {
-            Some(ref workspace) => workspace.join("target/release").join(&dll_filename),
-            None => self.config_dir.join("target/release").join(&dll_filename),
-        };
+        let src = self
+            .layout
+            .rust_workspace()
+            .join("target/release")
+            .join(&dll_filename);
 
         let dest_dir = self
-            .project_path
+            .project_path()
             .join("Plugins/Rusteal/Binaries")
             .join(platform.ubt_platform);
         let deployed_name = platform.deployed_lib_filename();
@@ -426,75 +356,4 @@ fn run_cmd(args: &[&str]) {
         eprintln!("\n  Command failed with exit code {code}");
         std::process::exit(code);
     }
-}
-
-/// Find a .uproject file in the given directory.
-fn find_uproject(dir: &Path) -> Option<PathBuf> {
-    let entries = fs::read_dir(dir).ok()?;
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.extension().map_or(false, |ext| ext == "uproject") {
-            return Some(path);
-        }
-    }
-    None
-}
-
-/// Auto-detect the cdylib crate name from workspace Cargo.toml files.
-fn detect_cdylib_crate(config_dir: &Path) -> String {
-    // Walk the workspace looking for a crate with crate-type = ["cdylib"]
-    let workspace_toml = config_dir.join("Cargo.toml");
-    if let Ok(content) = fs::read_to_string(&workspace_toml) {
-        if let Ok(doc) = content.parse::<toml::Table>() {
-            // Check workspace members
-            if let Some(workspace) = doc.get("workspace").and_then(|w| w.as_table()) {
-                if let Some(members) = workspace.get("members").and_then(|m| m.as_array()) {
-                    for member in members {
-                        if let Some(member_str) = member.as_str() {
-                            let member_toml = config_dir.join(member_str).join("Cargo.toml");
-                            if let Some(name) = check_cdylib_crate(&member_toml) {
-                                return name;
-                            }
-                        }
-                    }
-                }
-            }
-            // Check if this is a single-crate project
-            if let Some(name) = check_cdylib_crate(&workspace_toml) {
-                return name;
-            }
-        }
-    }
-
-    eprintln!("Warning: could not auto-detect cdylib crate name, using 'rusteal'.");
-    "rusteal".to_string()
-}
-
-/// Check if a Cargo.toml defines a cdylib crate, return its name.
-fn check_cdylib_crate(cargo_toml: &Path) -> Option<String> {
-    let content = fs::read_to_string(cargo_toml).ok()?;
-    let doc: toml::Table = content.parse().ok()?;
-
-    // Check [lib].crate-type for "cdylib"
-    let lib = doc.get("lib")?.as_table()?;
-    let crate_type = lib.get("crate-type").or_else(|| lib.get("crate_type"))?;
-    let types = crate_type.as_array()?;
-    let is_cdylib = types.iter().any(|t| t.as_str() == Some("cdylib"));
-
-    if !is_cdylib {
-        return None;
-    }
-
-    // Get crate name: [lib].name or [package].name
-    let name = lib
-        .get("name")
-        .and_then(|n| n.as_str())
-        .or_else(|| {
-            doc.get("package")
-                .and_then(|p| p.as_table())
-                .and_then(|p| p.get("name"))
-                .and_then(|n| n.as_str())
-        })?;
-
-    Some(name.to_string())
 }

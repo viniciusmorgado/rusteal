@@ -1,17 +1,22 @@
-// rusteal-cli: CLI entry point for Rusteal tools (codegen, setup, build, sync-plugin).
+// rusteal: CLI entry point (setup, build, generate, sync-plugin).
+//
+// Commands act on a Rusteal project: the directory holding the .uproject and
+// `rusteal.toml`. It is given as an argument or found by walking up from the
+// current directory. The engine location comes from the per-machine config.
 
+mod build_cmd;
+mod global_config;
 mod setup;
 mod sync_plugin;
-mod build_cmd;
 
 use std::path::{Path, PathBuf};
 
 use clap::{Parser, Subcommand};
 
-use rusteal_codegen::config::RustealConfig;
+use rusteal_codegen::config::find_project_root;
 
 #[derive(Parser)]
-#[command(name = "rusteal", about = "Rusteal CLI — UE binding tools for Rust")]
+#[command(name = "rusteal", about = "Rusteal CLI — Rust for Unreal Engine")]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -19,30 +24,15 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Generate Rust bindings and C++ wrapper functions from UHT JSON.
-    Generate {
-        /// Path to rusteal.config.toml.
-        #[arg(long, default_value = "rusteal.config.toml")]
-        config: PathBuf,
-    },
-    /// Extract UE plugin files into a UE project's Plugins/ directory.
+    /// Install the Rusteal plugins and a starter rusteal.toml into a UE project.
     Setup {
-        /// Path to the UE project directory.
+        /// The UE project directory (the one holding the .uproject).
         project: PathBuf,
-        /// Path to the UE engine root (e.g. "F:/UE_5.7").
-        #[arg(long)]
-        engine_path: Option<PathBuf>,
-        /// Path to rusteal.config.toml (reads [ue].engine_path as fallback).
-        #[arg(long)]
-        config: Option<PathBuf>,
     },
-    /// Sync hand-written plugin files into ue_plugin_embed/ for crates.io packaging.
-    SyncPlugin,
-    /// Run the 5-step build pipeline.
+    /// Run the build pipeline: UE build, codegen, UE rebuild, cargo build, deploy.
     Build {
-        /// Path to rusteal.config.toml.
-        #[arg(long, default_value = "rusteal.config.toml")]
-        config: PathBuf,
+        /// Project directory (default: found from the current directory).
+        project: Option<PathBuf>,
         /// Run only step N (1-5).
         #[arg(long)]
         step: Option<u8>,
@@ -50,46 +40,49 @@ enum Commands {
         #[arg(long, default_value_t = 1)]
         from: u8,
     },
+    /// Generate the bindings crate and the C++ wrappers from the reflection JSON.
+    Generate {
+        /// Project directory (default: found from the current directory).
+        project: Option<PathBuf>,
+    },
+    /// Sync hand-written plugin files into ue_plugin_embed/ for crates.io packaging.
+    SyncPlugin,
 }
 
 fn main() {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Setup { project, engine_path, config } => {
-            let engine = resolve_engine_path(engine_path, config.as_deref());
+        Commands::Setup { project } => {
+            let engine = global_config::engine_path();
             setup::run_setup(&project, &engine);
+        }
+        Commands::Build { project, step, from } => {
+            let root = project_root(project.as_deref());
+            let engine = global_config::engine_path();
+            build_cmd::run_build(&root, &engine, step, from);
+        }
+        Commands::Generate { project } => {
+            let root = project_root(project.as_deref());
+            rusteal_codegen::run_generate(&root);
         }
         Commands::SyncPlugin => {
             sync_plugin::run_sync();
         }
-        Commands::Generate { config: config_path } => {
-            rusteal_codegen::run_generate(&config_path);
-        }
-        Commands::Build { config, step, from } => {
-            build_cmd::run_build(&config, step, from);
-        }
     }
 }
 
-/// Resolve engine path from CLI flag or config file fallback.
-fn resolve_engine_path(flag: Option<PathBuf>, config_path: Option<&Path>) -> PathBuf {
-    // 1. Explicit --engine-path flag
-    if let Some(path) = flag {
-        return path;
-    }
-
-    // 2. Try reading from config file
-    let config_path = config_path.unwrap_or_else(|| Path::new("rusteal.config.toml"));
-    if let Ok(config_str) = std::fs::read_to_string(config_path) {
-        if let Ok(config) = toml::from_str::<RustealConfig>(&config_str) {
-            if let Some(ue) = config.ue {
-                return PathBuf::from(ue.engine_path);
-            }
-        }
-    }
-
-    eprintln!("Error: engine path not specified.");
-    eprintln!("Provide --engine-path or set [ue].engine_path in rusteal.config.toml.");
-    std::process::exit(1);
+/// The project root: the directory given, or the nearest ancestor of the
+/// current directory holding a .uproject.
+fn project_root(given: Option<&Path>) -> PathBuf {
+    let start = given
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| std::env::current_dir().expect("current directory"));
+    find_project_root(&start).unwrap_or_else(|| {
+        eprintln!(
+            "Error: no .uproject in {} or its parents. Pass the project directory.",
+            start.display()
+        );
+        std::process::exit(1);
+    })
 }
