@@ -74,7 +74,7 @@ pub fn run_build(config_path: &Path, step: Option<u8>, from: u8) {
         "uika-codegen (JSON -> Rust + C++)",
         "UE rebuild (compile C++ wrappers)",
         "cargo build --release (cdylib)",
-        "Copy DLL to plugin Binaries as uika.dll",
+        "Copy the shared library to plugin Binaries",
     ];
 
     let total = steps.len();
@@ -119,6 +119,62 @@ pub fn run_build(config_path: &Path, step: Option<u8>, from: u8) {
     eprintln!("{}", "=".repeat(60));
     eprintln!("  All steps completed in {overall:.1}s");
     eprintln!("{}", "=".repeat(60));
+}
+
+/// What differs between the host platforms the pipeline runs on. Chosen at compile time from
+/// the platform `uika-cli` itself was built for, which is also the platform UE builds the
+/// editor for.
+struct HostPlatform {
+    /// UBT entry script, relative to the engine root.
+    ubt_script: &'static str,
+    /// Platform name as UBT expects it (`Build.bat <Target> Win64 ...`).
+    ubt_platform: &'static str,
+    /// Prefix and extension of a shared library (`libx.so`, `x.dll`, `libx.dylib`).
+    lib_prefix: &'static str,
+    lib_extension: &'static str,
+}
+
+impl HostPlatform {
+    #[cfg(target_os = "windows")]
+    const CURRENT: HostPlatform = HostPlatform {
+        ubt_script: "Engine/Build/BatchFiles/Build.bat",
+        ubt_platform: "Win64",
+        lib_prefix: "",
+        lib_extension: "dll",
+    };
+
+    #[cfg(target_os = "linux")]
+    const CURRENT: HostPlatform = HostPlatform {
+        ubt_script: "Engine/Build/BatchFiles/Linux/Build.sh",
+        ubt_platform: "Linux",
+        lib_prefix: "lib",
+        lib_extension: "so",
+    };
+
+    #[cfg(target_os = "macos")]
+    const CURRENT: HostPlatform = HostPlatform {
+        ubt_script: "Engine/Build/BatchFiles/Mac/Build.sh",
+        ubt_platform: "Mac",
+        lib_prefix: "lib",
+        lib_extension: "dylib",
+    };
+
+    /// File name of a shared library built from `crate_name`, as Cargo names it.
+    fn lib_filename(&self, crate_name: &str) -> String {
+        // Cargo converts hyphens to underscores in output filenames.
+        format!(
+            "{}{}.{}",
+            self.lib_prefix,
+            crate_name.replace('-', "_"),
+            self.lib_extension
+        )
+    }
+
+    /// File name the Uika plugin loads (`uika.dll`, `libuika.so`, `libuika.dylib`); must match
+    /// `FUikaModule::StartupModule` in the C++ plugin.
+    fn deployed_lib_filename(&self) -> String {
+        format!("{}uika.{}", self.lib_prefix, self.lib_extension)
+    }
 }
 
 /// Resolved build context with all paths pre-computed.
@@ -218,13 +274,12 @@ impl BuildContext {
         })
     }
 
-    /// Step 1: UE build — triggers UHT export, then copies JSON.
-    fn step1_ue_build(&self) {
-        let build_bat = self
-            .engine_path
-            .join("Engine/Build/BatchFiles/Build.bat");
-        if !build_bat.exists() {
-            eprintln!("Error: Build.bat not found at {}", build_bat.display());
+    /// Build the project's Editor target with UBT for the host platform.
+    fn run_ubt(&self) {
+        let platform = &HostPlatform::CURRENT;
+        let script = self.engine_path.join(platform.ubt_script);
+        if !script.exists() {
+            eprintln!("Error: UBT script not found at {}", script.display());
             std::process::exit(1);
         }
 
@@ -233,17 +288,23 @@ impl BuildContext {
         let uproject_abs = canonical_no_prefix(&uproject);
 
         run_cmd(&[
-            build_bat.to_str().unwrap(),
+            script.to_str().unwrap(),
             &target,
-            "Win64",
+            platform.ubt_platform,
             "Development",
             &format!("-Project={}", uproject_abs.display()),
         ]);
+    }
+
+    /// Step 1: UE build — triggers UHT export, then copies JSON.
+    fn step1_ue_build(&self) {
+        self.run_ubt();
 
         // Copy UHT JSON files
-        let uht_intermediate = self
-            .project_path
-            .join("Plugins/UikaGenerator/Intermediate/Build/Win64/UnrealEditor/Inc/UikaGenerator/UHT");
+        let uht_intermediate = self.project_path.join(format!(
+            "Plugins/UikaGenerator/Intermediate/Build/{}/UnrealEditor/Inc/UikaGenerator/UHT",
+            HostPlatform::CURRENT.ubt_platform
+        ));
 
         fs::create_dir_all(&self.uht_input).unwrap_or_else(|e| {
             panic!("Failed to create {}: {e}", self.uht_input.display())
@@ -282,25 +343,7 @@ impl BuildContext {
 
     /// Step 3: UE rebuild — compiles generated C++ wrappers.
     fn step3_ue_rebuild(&self) {
-        let build_bat = self
-            .engine_path
-            .join("Engine/Build/BatchFiles/Build.bat");
-        if !build_bat.exists() {
-            eprintln!("Error: Build.bat not found at {}", build_bat.display());
-            std::process::exit(1);
-        }
-
-        let target = self.editor_target();
-        let uproject = self.uproject_path();
-        let uproject_abs = canonical_no_prefix(&uproject);
-
-        run_cmd(&[
-            build_bat.to_str().unwrap(),
-            &target,
-            "Win64",
-            "Development",
-            &format!("-Project={}", uproject_abs.display()),
-        ]);
+        self.run_ubt();
     }
 
     /// Step 4: cargo build --release.
@@ -328,10 +371,10 @@ impl BuildContext {
         run_cmd(&args);
     }
 
-    /// Step 5: Copy built DLL to UE plugin Binaries.
+    /// Step 5: Copy the built shared library to the UE plugin's Binaries.
     fn step5_copy_dll(&self) {
-        // Cargo converts hyphens to underscores in output filenames
-        let dll_filename = format!("{}.dll", self.crate_name.replace('-', "_"));
+        let platform = &HostPlatform::CURRENT;
+        let dll_filename = platform.lib_filename(&self.crate_name);
 
         // Search order for the built DLL:
         // 1. External crate's own target dir (when crate_path is set)
@@ -356,11 +399,13 @@ impl BuildContext {
 
         let dest_dir = self
             .project_path
-            .join("Plugins/Uika/Binaries/Win64");
-        let dest = dest_dir.join("uika.dll");
+            .join("Plugins/Uika/Binaries")
+            .join(platform.ubt_platform);
+        let deployed_name = platform.deployed_lib_filename();
+        let dest = dest_dir.join(&deployed_name);
 
         if !src.exists() {
-            eprintln!("Error: DLL not found at {}", src.display());
+            eprintln!("Error: library not found at {}", src.display());
             eprintln!("  Did step 4 (cargo build) succeed?");
             std::process::exit(1);
         }
@@ -371,7 +416,7 @@ impl BuildContext {
             .unwrap_or_else(|e| panic!("Failed to copy DLL: {e}"));
 
         eprintln!("  Copied {}", src.display());
-        eprintln!("      -> {} (renamed to uika.dll)", dest.display());
+        eprintln!("      -> {} (renamed to {deployed_name})", dest.display());
     }
 }
 
