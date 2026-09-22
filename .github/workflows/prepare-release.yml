@@ -46,7 +46,7 @@ jobs:
             exit 0
           fi
           CHANGED=$(git diff --name-only "$LAST_TAG..HEAD" -- \
-            'rusteal-*' ue_plugin Cargo.toml Cargo.lock)
+            'rusteal-*' ue_plugin Cargo.toml)
           if [ -z "$CHANGED" ]; then
             echo "Nothing that goes into a package changed since $LAST_TAG; skipping."
             echo "skip=true" >> "$GITHUB_OUTPUT"
@@ -104,13 +104,18 @@ jobs:
           else
             sed -i '0,/^version = ".*"/s//version = "'"$TARGET_VERSION"'"/' Cargo.toml
             sed -i 's/{ version = "[^"]*", path =/{ version = "'"$TARGET_VERSION"'", path =/' Cargo.toml
-            cargo update --workspace
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add Cargo.toml
-            # Cargo.lock is not versioned in this repository; stage it only
-            # if that ever changes.
-            git ls-files --error-unmatch Cargo.lock >/dev/null 2>&1 && git add Cargo.lock || true
+            # The plugins carry the same version (rusteal-cli/tests/plugin_version.rs):
+            # VersionName as is, Version as the integer UE requires there.
+            IFS=. read -r MAJOR MINOR PATCH <<< "$TARGET_VERSION"
+            VERSION_INT=$((MAJOR * 1000000 + MINOR * 1000 + PATCH))
+            UPLUGINS="ue_plugin/Rusteal/Rusteal.uplugin ue_plugin/RustealGenerator/RustealGenerator.uplugin"
+            for UPLUGIN in $UPLUGINS; do
+              sed -i -e 's/^\(\s*"Version": \)[0-9]*,$/\1'"$VERSION_INT"',/' \
+                -e 's/^\(\s*"VersionName": \)"[^"]*",$/\1"'"$TARGET_VERSION"'",/' "$UPLUGIN"
+            done
+            git add Cargo.toml $UPLUGINS
             git commit -m "chore: bump version to $TARGET_VERSION"
             git push origin HEAD:${{ github.head_ref }}
           fi

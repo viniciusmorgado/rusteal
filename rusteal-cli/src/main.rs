@@ -1,4 +1,4 @@
-// rusteal: CLI entry point (setup, build, generate, sync-plugin).
+// rusteal: CLI entry point (new, setup, build, generate, upgrade, sync-plugin).
 //
 // Commands act on a Rusteal project: the directory holding the .uproject and
 // `rusteal.toml`. It is given as an argument or found by walking up from the
@@ -7,15 +7,19 @@
 mod build_cmd;
 mod global_config;
 mod new_cmd;
+mod project_version;
 mod setup;
 mod sync_plugin;
 mod templates;
+mod upgrade_cmd;
 
 use std::path::{Path, PathBuf};
 
 use clap::{Parser, Subcommand};
 
 use rusteal_codegen::config::find_project_root;
+
+use project_version::Scope;
 
 #[derive(Parser)]
 #[command(name = "rusteal", about = "Rusteal CLI — Rust for Unreal Engine")]
@@ -61,6 +65,13 @@ enum Commands {
         /// Project directory (default: found from the current directory).
         project: Option<PathBuf>,
     },
+    /// Move a project to this CLI's Rusteal version: the pins in Rust/Cargo.toml,
+    /// the plugins (Plugins/Rusteal and Plugins/RustealGenerator are replaced
+    /// wholesale) and a full build.
+    Upgrade {
+        /// Project directory (default: found from the current directory).
+        project: Option<PathBuf>,
+    },
     /// Sync hand-written plugin files into ue_plugin_embed/ for crates.io packaging.
     SyncPlugin,
 }
@@ -80,21 +91,40 @@ fn main() {
             });
         }
         Commands::Setup { project } => {
+            // A project that already has its Rust workspace keeps the version
+            // it pins; the plugins this installs must be that version.
+            if project.join("Rust/Cargo.toml").exists() {
+                check_version(&project, Scope::Pins);
+            }
             let engine = global_config::engine_path();
             setup::run_setup(&project, &engine);
         }
         Commands::Build { project, step, from } => {
             let root = project_root(project.as_deref());
+            check_version(&root, Scope::PinsAndPlugins);
             let engine = global_config::engine_path();
             build_cmd::run_build(&root, &engine, step, from);
         }
         Commands::Generate { project } => {
             let root = project_root(project.as_deref());
+            check_version(&root, Scope::PinsAndPlugins);
             rusteal_codegen::run_generate(&root);
+        }
+        Commands::Upgrade { project } => {
+            let root = project_root(project.as_deref());
+            upgrade_cmd::run_upgrade(&root);
         }
         Commands::SyncPlugin => {
             sync_plugin::run_sync();
         }
+    }
+}
+
+/// Stop unless the project is at this CLI's Rusteal version.
+fn check_version(root: &Path, scope: Scope) {
+    if let Err(message) = project_version::check(root, scope) {
+        eprintln!("Error: {message}");
+        std::process::exit(1);
     }
 }
 
