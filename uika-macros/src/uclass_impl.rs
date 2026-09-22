@@ -3,7 +3,7 @@
 
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
-use syn::{parse2, FnArg, Ident, ImplItem, ImplItemFn, ItemImpl, Meta, ReturnType, Token, Type};
+use syn::{parse2, FnArg, Ident, ImplItem, ImplItemFn, ItemImpl, Meta, ReceiverKind, ReturnType, Token, Type};
 use syn::punctuated::Punctuated;
 
 use crate::prop_type;
@@ -317,9 +317,13 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
     let method_ident = method.sig.ident.clone();
     let ue_name = prop_type::to_pascal_case(&method_ident.to_string());
 
-    // Check for self receiver and its mutability
-    let is_mut = method.sig.inputs.first().map_or(false, |arg| {
-        matches!(arg, FnArg::Receiver(r) if r.mutability.is_some())
+    // Check for self receiver and its mutability. syn 3 splits `&mut self`
+    // (ReceiverKind::Reference) from `mut self` (Receiver::mutability).
+    let is_mut = method.sig.inputs.first().is_some_and(|arg| match arg {
+        FnArg::Receiver(r) => {
+            r.mutability.is_some() || matches!(r.kind, ReceiverKind::Reference(_, _, Some(_)))
+        }
+        FnArg::Typed(_) => false,
     });
 
     // Parse params (skip self)
