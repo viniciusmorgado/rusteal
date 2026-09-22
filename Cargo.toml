@@ -1,14 +1,13 @@
 [workspace]
 members = [
-    "uika-ue-flags",
-    "uika-ffi",
-    "uika-runtime",
-    "uika-macros",
-    "uika-codegen",
-    "uika-cli",
-    "uika-bindings",
-    "uika",
+    "rusteal-ue-flags",
+    "rusteal-ffi",
+    "rusteal-core",
+    "rusteal-macros",
+    "rusteal-codegen",
     "rusteal-cli",
+    "rusteal-bindings",
+    "rusteal-runtime",
     "example_game",
 ]
 resolver = "3"
@@ -16,8 +15,8 @@ resolver = "3"
 [workspace.package]
 edition = "2024"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/viniciusmorgado/uika"
-homepage = "https://github.com/viniciusmorgado/uika"
+repository = "https://github.com/viniciusmorgado/rusteal"
+homepage = "https://github.com/viniciusmorgado/rusteal"
 
 [workspace.dependencies]
 clap = { version = "4.6.7", features = ["derive"] }
@@ -31,9 +30,9 @@ proc-macro2 = "1.0.107"
 serde_json = "1.0.151"
 
 # Internal dependencies
-uika-ue-flags = { version = "0.1.0", path = "uika-ue-flags" }
-uika-codegen = { version = "0.1.0", path = "uika-codegen" }
-uika-runtime = { version = "0.1.0", path = "uika-runtime" }
-uika-ffi = { version = "0.1.0", path = "uika-ffi" }
-uika-macros = { version = "0.1.0", path = "uika-macros" }
-uika-bindings = { version = "0.1.0", path = "uika-bindings", default-features = false }
+rusteal-ue-flags = { version = "0.1.0", path = "rusteal-ue-flags" }
+rusteal-codegen = { version = "0.1.0", path = "rusteal-codegen" }
+rusteal-core = { version = "0.1.0", path = "rusteal-core" }
+rusteal-ffi = { version = "0.1.0", path = "rusteal-ffi" }
+rusteal-macros = { version = "0.1.0", path = "rusteal-macros" }
+rusteal-bindings = { version = "0.1.0", path = "rusteal-bindings", default-features = false }

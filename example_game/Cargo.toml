@@ -8,5 +8,5 @@ publish = false
 crate-type = ["cdylib"]
 
 [dependencies]
-uika = { path = "../uika", features = ["engine"] }
+rusteal-runtime = { path = "../rusteal-runtime", features = ["engine"] }
 glam = { workspace = true }

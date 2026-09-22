@@ -1,22 +1,22 @@
-// Comprehensive integration test suite for Uika.
-// This module defines a UikaTestRunner reified actor with a RunAllTests()
+// Comprehensive integration test suite for Rusteal.
+// This module defines a RustealTestRunner reified actor with a RunAllTests()
 // BlueprintCallable function. Place it in a level and wire BeginPlay to
 // RunAllTests to validate all major APIs in a live UE environment.
 
-use uika::{uclass, uclass_impl};
-use uika::runtime::{
+use rusteal_runtime::{uclass, uclass_impl};
+use rusteal_runtime::runtime::{
     ulog, DynamicCall, FName, OwnedStruct, Pinned, TWeakObjectPtr,
-    Transform, UeClass, UObjectRef, UikaError, UikaResult,
+    Transform, UeClass, UObjectRef, RustealError, RustealResult,
     LOG_DISPLAY, LOG_ERROR,
 };
-use uika::bindings::core_ue::{
+use rusteal_runtime::bindings::core_ue::{
     FQuat, FRotator, FTransform, FVector,
 };
-use uika::bindings::engine::{
+use rusteal_runtime::bindings::engine::{
     Actor, ActorExt, Pawn, PawnExt, World,
     EAttachmentRule,
 };
-use uika::bindings::manual::{
+use rusteal_runtime::bindings::manual::{
     quat::OwnedFQuatExt,
     rotator::OwnedFRotatorExt,
     transform::OwnedFTransformExt,
@@ -26,11 +26,11 @@ use uika::bindings::manual::{
 use glam::{DQuat, DVec3};
 
 // ---------------------------------------------------------------------------
-// UikaTestRunner — reified actor
+// RustealTestRunner — reified actor
 // ---------------------------------------------------------------------------
 
 #[uclass(parent = Actor)]
-pub struct UikaTestRunner {
+pub struct RustealTestRunner {
     #[uproperty(BlueprintReadWrite)]
     total_run: i32,
 
@@ -48,15 +48,15 @@ pub struct UikaTestRunner {
 macro_rules! run_test {
     ($self:expr, $name:expr, $body:expr) => {{
         $self.set_total_run($self.total_run() + 1);
-        let result: UikaResult<()> = (|| $body)();
+        let result: RustealResult<()> = (|| $body)();
         match result {
             Ok(()) => {
                 $self.set_total_passed($self.total_passed() + 1);
-                ulog!(LOG_DISPLAY, "[UikaTest] PASS: {}", $name);
+                ulog!(LOG_DISPLAY, "[RustealTest] PASS: {}", $name);
             }
             Err(e) => {
                 $self.set_total_failed($self.total_failed() + 1);
-                ulog!(LOG_ERROR, "[UikaTest] FAIL: {} -- {:?}", $name, e);
+                ulog!(LOG_ERROR, "[RustealTest] FAIL: {} -- {:?}", $name, e);
             }
         }
     }};
@@ -66,9 +66,9 @@ macro_rules! run_test {
 // Helper functions
 // ---------------------------------------------------------------------------
 
-fn get_world(actor: &UObjectRef<Actor>) -> UikaResult<UObjectRef<World>> {
+fn get_world(actor: &UObjectRef<Actor>) -> RustealResult<UObjectRef<World>> {
     let h = actor.checked()?.raw();
-    let world_h = uika::runtime::world::get_world_raw(h)?;
+    let world_h = rusteal_runtime::runtime::world::get_world_raw(h)?;
     Ok(unsafe { UObjectRef::from_raw(world_h) })
 }
 
@@ -81,9 +81,9 @@ fn transform_at(x: f64, y: f64, z: f64) -> OwnedStruct<FTransform> {
 }
 
 
-fn assert_near(a: f64, b: f64, eps: f64) -> UikaResult<()> {
+fn assert_near(a: f64, b: f64, eps: f64) -> RustealResult<()> {
     if (a - b).abs() > eps {
-        Err(UikaError::InvalidOperation(format!(
+        Err(RustealError::InvalidOperation(format!(
             "assert_near failed: {a} vs {b} (eps={eps})"
         )))
     } else {
@@ -91,19 +91,19 @@ fn assert_near(a: f64, b: f64, eps: f64) -> UikaResult<()> {
     }
 }
 
-fn assert_true(cond: bool, msg: &str) -> UikaResult<()> {
+fn assert_true(cond: bool, msg: &str) -> RustealResult<()> {
     if cond {
         Ok(())
     } else {
-        Err(UikaError::InvalidOperation(msg.into()))
+        Err(RustealError::InvalidOperation(msg.into()))
     }
 }
 
-fn assert_false(cond: bool, msg: &str) -> UikaResult<()> {
+fn assert_false(cond: bool, msg: &str) -> RustealResult<()> {
     if !cond {
         Ok(())
     } else {
-        Err(UikaError::InvalidOperation(msg.into()))
+        Err(RustealError::InvalidOperation(msg.into()))
     }
 }
 
@@ -112,12 +112,12 @@ fn assert_false(cond: bool, msg: &str) -> UikaResult<()> {
 // ---------------------------------------------------------------------------
 
 #[uclass_impl]
-impl UikaTestRunner {
+impl RustealTestRunner {
     #[ufunction(BlueprintCallable)]
     fn run_all_tests(&mut self) {
-        ulog!(LOG_DISPLAY, "[UikaTest] ========================================");
-        ulog!(LOG_DISPLAY, "[UikaTest] Starting integration tests...");
-        ulog!(LOG_DISPLAY, "[UikaTest] ========================================");
+        ulog!(LOG_DISPLAY, "[RustealTest] ========================================");
+        ulog!(LOG_DISPLAY, "[RustealTest] Starting integration tests...");
+        ulog!(LOG_DISPLAY, "[RustealTest] ========================================");
 
         self.set_total_run(0);
         self.set_total_passed(0);
@@ -185,15 +185,15 @@ impl UikaTestRunner {
         // O. Hot Reload Validation
         self.test_hot_reload();
 
-        ulog!(LOG_DISPLAY, "[UikaTest] ========================================");
+        ulog!(LOG_DISPLAY, "[RustealTest] ========================================");
         ulog!(
             LOG_DISPLAY,
-            "[UikaTest] Results: {} run, {} passed, {} failed",
+            "[RustealTest] Results: {} run, {} passed, {} failed",
             self.total_run(),
             self.total_passed(),
             self.total_failed()
         );
-        ulog!(LOG_DISPLAY, "[UikaTest] ========================================");
+        ulog!(LOG_DISPLAY, "[RustealTest] ========================================");
     }
 
     // -----------------------------------------------------------------------
@@ -221,7 +221,7 @@ impl UikaTestRunner {
         });
 
         run_test!(self, "A5: cast_to_object_succeeds", {
-            use uika::bindings::core_ue::Object;
+            use rusteal_runtime::bindings::core_ue::Object;
             let copy = unsafe { UObjectRef::<Actor>::from_raw(self_ref.raw()) };
             let _obj_ref: UObjectRef<Object> = copy.cast()?;
             Ok(())
@@ -229,13 +229,13 @@ impl UikaTestRunner {
 
         run_test!(self, "A6: cast_to_wrong_type_fails", {
             let copy = unsafe { UObjectRef::<Actor>::from_raw(self_ref.raw()) };
-            let result: UikaResult<UObjectRef<World>> = copy.cast();
+            let result: RustealResult<UObjectRef<World>> = copy.cast();
             match result {
-                Err(UikaError::InvalidCast) => Ok(()),
-                Err(e) => Err(UikaError::InvalidOperation(
+                Err(RustealError::InvalidCast) => Ok(()),
+                Err(e) => Err(RustealError::InvalidOperation(
                     format!("expected InvalidCast, got: {:?}", e),
                 )),
-                Ok(_) => Err(UikaError::InvalidOperation(
+                Ok(_) => Err(RustealError::InvalidOperation(
                     "expected cast to fail, but it succeeded".into(),
                 )),
             }
@@ -307,7 +307,7 @@ impl UikaTestRunner {
         });
 
         run_test!(self, "C2: frotator_rotator_roundtrip", {
-            let r = uika::runtime::Rotator::new(30.0, 45.0, 60.0);
+            let r = rusteal_runtime::runtime::Rotator::new(30.0, 45.0, 60.0);
             let fr = FRotator::from_rotator(r);
             let back = fr.to_rotator();
             assert_near(back.pitch, 30.0, 0.001)?;
@@ -436,7 +436,7 @@ impl UikaTestRunner {
 
         run_test!(self, "E2: set_and_get_rotation", {
             let c = self_ref.checked()?;
-            let rot = FRotator::from_rotator(uika::runtime::Rotator::new(0.0, 90.0, 0.0));
+            let rot = FRotator::from_rotator(rusteal_runtime::runtime::Rotator::new(0.0, 90.0, 0.0));
             c.k2_set_actor_rotation(&rot, true);
             let back = c.k2_get_actor_rotation().to_rotator();
             assert_near(back.yaw, 90.0, 1.0)
@@ -445,7 +445,7 @@ impl UikaTestRunner {
         run_test!(self, "E3: teleport_to", {
             let c = self_ref.checked()?;
             let dest = FVector::from_dvec3(DVec3::new(500.0, 500.0, 0.0));
-            let rot = FRotator::from_rotator(uika::runtime::Rotator::ZERO);
+            let rot = FRotator::from_rotator(rusteal_runtime::runtime::Rotator::ZERO);
             c.k2_teleport_to(&dest, &rot);
             let back = c.k2_get_actor_location().to_dvec3();
             assert_near(back.x, 500.0, 1.0)?;
@@ -491,7 +491,7 @@ impl UikaTestRunner {
         let world = match get_world(self_ref) {
             Ok(w) => w,
             Err(e) => {
-                ulog!(LOG_ERROR, "[UikaTest] SKIP lifecycle tests: cannot get world: {:?}", e);
+                ulog!(LOG_ERROR, "[RustealTest] SKIP lifecycle tests: cannot get world: {:?}", e);
                 return;
             }
         };
@@ -550,12 +550,12 @@ impl UikaTestRunner {
                 Ok(c) => {
                     let destroying = c.is_actor_being_destroyed();
                     if destroying { Ok(()) } else {
-                        Err(UikaError::InvalidOperation(
+                        Err(RustealError::InvalidOperation(
                             "actor should be destroyed or pending-destroy".into()
                         ))
                     }
                 }
-                Err(UikaError::ObjectDestroyed) => Ok(()),
+                Err(RustealError::ObjectDestroyed) => Ok(()),
                 Err(e) => Err(e),
             }
         });
@@ -587,18 +587,18 @@ impl UikaTestRunner {
             // Use DynamicCall to call K2_GetWorldSettings on the world
             let call = DynamicCall::new(&world, "K2_GetWorldSettings")?;
             let result = call.call()?;
-            let settings_h: uika::runtime::UObjectHandle = result.get("ReturnValue")?;
+            let settings_h: rusteal_runtime::runtime::UObjectHandle = result.get("ReturnValue")?;
             assert_true(!settings_h.is_null(), "world settings should not be null")
         });
 
         run_test!(self, "G3: find_object_nonexistent_returns_err", {
-            use uika::bindings::core_ue::Object;
-            let result = uika::bindings::manual::world_ext::find_object::<Object>(
+            use rusteal_runtime::bindings::core_ue::Object;
+            let result = rusteal_runtime::bindings::manual::world_ext::find_object::<Object>(
                 "/Game/DoesNotExist"
             );
             match result {
                 Err(_) => Ok(()),
-                Ok(_) => Err(UikaError::InvalidOperation(
+                Ok(_) => Err(RustealError::InvalidOperation(
                     "expected error for nonexistent path".into()
                 )),
             }
@@ -621,11 +621,11 @@ impl UikaTestRunner {
         run_test!(self, "H2: dynamic_call_nonexistent_function", {
             let result = DynamicCall::new(self_ref, "NoSuchFunction");
             match result {
-                Err(UikaError::FunctionNotFound(_)) => Ok(()),
-                Err(e) => Err(UikaError::InvalidOperation(
+                Err(RustealError::FunctionNotFound(_)) => Ok(()),
+                Err(e) => Err(RustealError::InvalidOperation(
                     format!("expected FunctionNotFound, got: {:?}", e)
                 )),
-                Ok(_) => Err(UikaError::InvalidOperation(
+                Ok(_) => Err(RustealError::InvalidOperation(
                     "expected error for nonexistent function".into()
                 )),
             }
@@ -723,7 +723,7 @@ impl UikaTestRunner {
         let world = match get_world(self_ref) {
             Ok(w) => w,
             Err(e) => {
-                ulog!(LOG_ERROR, "[UikaTest] SKIP delegate tests: {:?}", e);
+                ulog!(LOG_ERROR, "[RustealTest] SKIP delegate tests: {:?}", e);
                 return;
             }
         };
@@ -813,11 +813,11 @@ impl UikaTestRunner {
     fn test_error_handling(&mut self, self_ref: &UObjectRef<Actor>) {
         run_test!(self, "L1: checked_null_handle", {
             let null_ref: UObjectRef<Actor> = unsafe {
-                UObjectRef::from_raw(uika::runtime::UObjectHandle::null())
+                UObjectRef::from_raw(rusteal_runtime::runtime::UObjectHandle::null())
             };
             match null_ref.checked() {
-                Err(UikaError::ObjectDestroyed) => Ok(()),
-                other => Err(UikaError::InvalidOperation(
+                Err(RustealError::ObjectDestroyed) => Ok(()),
+                other => Err(RustealError::InvalidOperation(
                     format!("expected ObjectDestroyed, got: {:?}", other)
                 )),
             }
@@ -825,11 +825,11 @@ impl UikaTestRunner {
 
         run_test!(self, "L2: cast_null_fails", {
             let null_ref: UObjectRef<Actor> = unsafe {
-                UObjectRef::from_raw(uika::runtime::UObjectHandle::null())
+                UObjectRef::from_raw(rusteal_runtime::runtime::UObjectHandle::null())
             };
             match null_ref.cast::<World>() {
-                Err(UikaError::ObjectDestroyed) => Ok(()),
-                other => Err(UikaError::InvalidOperation(
+                Err(RustealError::ObjectDestroyed) => Ok(()),
+                other => Err(RustealError::InvalidOperation(
                     format!("expected ObjectDestroyed, got: {:?}", other)
                 )),
             }
@@ -837,11 +837,11 @@ impl UikaTestRunner {
 
         run_test!(self, "L3: pin_null_fails", {
             let null_ref: UObjectRef<Actor> = unsafe {
-                UObjectRef::from_raw(uika::runtime::UObjectHandle::null())
+                UObjectRef::from_raw(rusteal_runtime::runtime::UObjectHandle::null())
             };
             match null_ref.pin() {
-                Err(UikaError::ObjectDestroyed) => Ok(()),
-                other => Err(UikaError::InvalidOperation(
+                Err(RustealError::ObjectDestroyed) => Ok(()),
+                other => Err(RustealError::InvalidOperation(
                     format!("expected ObjectDestroyed, got: {:?}", other)
                 )),
             }
@@ -859,11 +859,11 @@ impl UikaTestRunner {
             // Try to DynamicCall on the destroyed actor
             let result = DynamicCall::new(&spawned, "K2_GetActorLocation");
             match result {
-                Err(UikaError::ObjectDestroyed) => Ok(()),
+                Err(RustealError::ObjectDestroyed) => Ok(()),
                 Err(e) => {
                     // Might get a different error since actor is pending destroy
                     // but not yet GC'd — that's acceptable too
-                    ulog!(LOG_DISPLAY, "[UikaTest] L4: got {:?} instead of ObjectDestroyed (acceptable)", e);
+                    ulog!(LOG_DISPLAY, "[RustealTest] L4: got {:?} instead of ObjectDestroyed (acceptable)", e);
                     Ok(())
                 }
                 Ok(call) => {
@@ -884,7 +884,7 @@ impl UikaTestRunner {
         let world = match get_world(self_ref) {
             Ok(w) => w,
             Err(e) => {
-                ulog!(LOG_ERROR, "[UikaTest] SKIP game pattern tests: {:?}", e);
+                ulog!(LOG_ERROR, "[RustealTest] SKIP game pattern tests: {:?}", e);
                 return;
             }
         };
@@ -999,7 +999,7 @@ impl UikaTestRunner {
         let world = match get_world(self_ref) {
             Ok(w) => w,
             Err(e) => {
-                ulog!(LOG_ERROR, "[UikaTest] SKIP inheritance tests: {:?}", e);
+                ulog!(LOG_ERROR, "[RustealTest] SKIP inheritance tests: {:?}", e);
                 return;
             }
         };
@@ -1220,7 +1220,7 @@ impl UikaTestRunner {
         let world = match get_world(self_ref) {
             Ok(w) => w,
             Err(e) => {
-                ulog!(LOG_ERROR, "[UikaTest] SKIP runtime instantiation tests: {:?}", e);
+                ulog!(LOG_ERROR, "[RustealTest] SKIP runtime instantiation tests: {:?}", e);
                 return;
             }
         };
@@ -1240,7 +1240,7 @@ impl UikaTestRunner {
         // R2: new_object_dynamic with runtime class handle (use Actor, not UObject which is abstract)
         run_test!(self, "R2: new_object_dynamic", {
             let class = Actor::static_class();
-            let null_outer = uika::ffi::UObjectHandle::null();
+            let null_outer = rusteal_runtime::ffi::UObjectHandle::null();
             let handle = world_ext::new_object_dynamic(null_outer, class)?;
             assert_true(!handle.is_null(), "dynamic new_object should not be null")?;
             let obj: UObjectRef<Actor> = unsafe { UObjectRef::from_raw(handle) };
@@ -1270,7 +1270,7 @@ impl UikaTestRunner {
         let world = match get_world(self_ref) {
             Ok(w) => w,
             Err(e) => {
-                ulog!(LOG_ERROR, "[UikaTest] SKIP deferred spawn tests: {:?}", e);
+                ulog!(LOG_ERROR, "[RustealTest] SKIP deferred spawn tests: {:?}", e);
                 return;
             }
         };
@@ -1308,7 +1308,7 @@ impl UikaTestRunner {
         // S3: spawn_actor_deferred_full with collision method
         run_test!(self, "S3: deferred_full_with_collision_method", {
             let t = identity_transform();
-            let null = uika::ffi::UObjectHandle::null();
+            let null = rusteal_runtime::ffi::UObjectHandle::null();
             let actor: UObjectRef<Actor> = world.spawn_actor_deferred_full(
                 &t, null, null, SpawnCollisionMethod::AlwaysSpawn,
             )?;
@@ -1340,11 +1340,11 @@ impl UikaTestRunner {
 
     fn test_hot_reload(&mut self) {
         run_test!(self, "O1: hot_reload_smoke", {
-            ulog!(LOG_DISPLAY, "[UikaTest] Hot reload test instructions:");
-            ulog!(LOG_DISPLAY, "[UikaTest]   1. Modify a test in test_integration.rs (e.g., change a log message)");
-            ulog!(LOG_DISPLAY, "[UikaTest]   2. cargo build -p uika --release");
-            ulog!(LOG_DISPLAY, "[UikaTest]   3. In UE console: Uika.Reload");
-            ulog!(LOG_DISPLAY, "[UikaTest]   4. Call RunAllTests again and verify the change");
+            ulog!(LOG_DISPLAY, "[RustealTest] Hot reload test instructions:");
+            ulog!(LOG_DISPLAY, "[RustealTest]   1. Modify a test in test_integration.rs (e.g., change a log message)");
+            ulog!(LOG_DISPLAY, "[RustealTest]   2. cargo build -p rusteal-runtime --release");
+            ulog!(LOG_DISPLAY, "[RustealTest]   3. In UE console: Rusteal.Reload");
+            ulog!(LOG_DISPLAY, "[RustealTest]   4. Call RunAllTests again and verify the change");
             Ok(())
         });
 
