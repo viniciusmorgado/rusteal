@@ -319,6 +319,10 @@ Engine APIs Rusteal uses that Unreal has deprecated are tracked in
 version, until when and where. A new engine version means checking its
 warnings against that list.
 
+What Rusteal still lacks to write Unreal's Third Person template entirely in
+Rust, in the order the template needs it, is mapped in
+[`docs/third-person-gaps.md`](https://github.com/viniciusmorgado/rusteal/blob/main/docs/third-person-gaps.md).
+
 Commits are small — one per fix — and never mention AI authorship.
 
 ### Releases and versions
