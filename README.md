@@ -1,4 +1,16 @@
+<div align="center">
+
+<img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/logo_nobg_orange.png" alt="Rusteal logo" width="256">
+
 # Rusteal
+
+[![Crates.io](https://img.shields.io/crates/v/rusteal.svg)](https://crates.io/crates/rusteal)
+[![License](https://img.shields.io/crates/l/rusteal.svg)](https://github.com/viniciusmorgado/rusteal#license)
+[![dependency status](https://deps.rs/crate/rusteal/latest/status.svg)](https://deps.rs/crate/rusteal)
+
+</div>
+
+---
 
 **Rust bindings for Unreal Engine 5.8**
 
