@@ -53,7 +53,7 @@ Three experiments on the reference port (Rusteal 0.3.0, UE 5.8.2), all reverted:
 | | |
 |---|---|
 | **Template** | The constructors set inherited defaults: capsule size, `bUseControllerRotation*`, the `CharacterMovement` tuning (`MyProjectCharacter.cpp:18-35`); the game mode's Blueprint child sets `DefaultPawnClass` and `PlayerControllerClass`. |
-| **Today** | workaround. The character applies its values in `ReceiveBeginPlay`; the game mode overrides `GetDefaultPawnClassForController`. A Blueprint child can set all of them instead (see findings). The override ignores the Blueprint's `Default Pawn Class`, so the two routes do not mix. |
+| **Today** | workaround. The game mode's classes come from its Blueprint child, as in the template: `BP_RustGameMode` sets `Default Pawn Class = BP_RustCharacter`, and the Rust `ThirdPersonGameMode` is a stub like `AMyProjectGameMode`. The character still applies its constructor values in `ReceiveBeginPlay`. |
 | **Rusteal needs** | `macros`: a class-defaults hook run at registration, where Rust sets inherited properties on the class default object, next to the `#[uproperty]` defaults the finalize step already writes. |
 | **Evidence** | `rusteal-macros/src/uclass.rs` (finalize: `reify_get_cdo`, `finalize_cdo_stmts`); `RustealReifyApiImpl.cpp` `GetCdoImpl`. The player controller is spawned by `SpawnPlayActor` before the world's `BeginPlay` (`Engine/Private/UnrealEngine.cpp` `LoadMap`, `GameInstance.cpp` PIE), so it can only be chosen by a default, not at runtime. |
 | **Depends on** | TP-GAP-07 for the `CharacterMovement` and capsule values. |
@@ -79,7 +79,7 @@ Three experiments on the reference port (Rusteal 0.3.0, UE 5.8.2), all reverted:
 | | |
 |---|---|
 | **Template** | `UInputAction*` ×4 (`MyProjectCharacter.h:38-50`), `TArray<UInputMappingContext*>` ×2 and `TSubclassOf<UUserWidget>` (`MyProjectPlayerController.h:25-33`). |
-| **Today** | blocked: input keys are hard-coded; assets are loaded by path. |
+| **Today** | blocked: input keys are hard-coded. |
 | **Rusteal needs** | `macros` + `plugin` (reify): object references (`UObjectRef<T>`), class references (`TSubclassOf`) and `TArray` of those as properties, editable in a Blueprint child. |
 | **Evidence** | `rusteal-macros/src/uclass.rs`: "unsupported uproperty type: only bool/i32/i64/u8/f32/f64". |
 | **Depends on** | — |
@@ -92,7 +92,7 @@ Three experiments on the reference port (Rusteal 0.3.0, UE 5.8.2), all reverted:
 | | |
 |---|---|
 | **Template** | `BP_ThirdPersonCharacter` and `BP_ThirdPersonGameMode` derive from the C++ classes and hold the assets. |
-| **Today** | works (see findings). The port still loads the mannequin and its anim class by path in `ReceiveBeginPlay`, which overrides what a Blueprint child sets. |
+| **Today** | used. `BP_RustCharacter` holds the mannequin (skeletal mesh, anim class, offset in the capsule) and `BP_RustGameMode` the pawn class, as `BP_ThirdPersonCharacter` and `BP_ThirdPersonGameMode` do for the C++ classes. In the class picker the Rust classes appear under their stub Blueprint's name (TP-GAP-10). |
 | **Rusteal needs** | nothing. |
 | **Evidence** | Experiment above; the reified class constructor already handles Blueprint children (`URustealReifiedClass.cpp`). |
 | **Depends on** | — |
@@ -165,6 +165,19 @@ Three experiments on the reference port (Rusteal 0.3.0, UE 5.8.2), all reverted:
 | **Status** | open, cosmetic |
 | **Last checked** | Rusteal 0.3.0, UE 5.8.2 |
 
+### TP-GAP-10 — Rust classes are listed under a `_BP` name
+
+| | |
+|---|---|
+| **Template** | — (found while creating the Blueprint children) |
+| **Today** | The class picker lists `ThirdPersonCharacter` as `ThirdPersonCharacter_BP`, easy to confuse with the template's `BP_ThirdPersonCharacter`. The class itself keeps its name (`/Script/Rusteal.ThirdPersonCharacter`). |
+| **Rusteal needs** | `plugin`: name the stub Blueprint `<Class>_RS`, so Rust classes are recognisable in the editor. Blueprint children reference the class, not the stub, so they keep working. |
+| **Evidence** | `RustealReifyApiImpl.cpp`: the stub Blueprint is created as `ClassName + "_BP"`. |
+| **Depends on** | — |
+| **Done when** | The picker lists `ThirdPersonCharacter_RS` and `ThirdPersonGameMode_RS`. |
+| **Status** | open |
+| **Last checked** | Rusteal 0.3.0, UE 5.8.2 |
+
 ## Order
 
 By what each one unblocks for the template:
@@ -179,9 +192,9 @@ By what each one unblocks for the template:
 5. **TP-GAP-07** — the character's private components.
 6. **TP-GAP-01** — defaults written from Rust; until then the Blueprint children
    carry them, as the template's do.
-7. **TP-GAP-06** and **TP-GAP-09**.
+7. **TP-GAP-06**, **TP-GAP-09** and **TP-GAP-10**.
 
-Without any of these, the Blueprint route already lets the port drop the
-`GetDefaultPawnClassForController` override and the mesh loaded by path, and
-lets a Rust player controller be selected; it would cover the touch controls
-only, since registering mapping contexts waits on TP-GAP-05 (b).
+The Blueprint route needs none of these and is applied in the port: the
+`GetDefaultPawnClassForController` override and the mannequin loaded by path are
+gone. It also lets a Rust player controller be selected, which waits for
+TP-GAP-05: without it, the controller would only cover the touch controls.
