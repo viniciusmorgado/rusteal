@@ -719,6 +719,23 @@ static ERustealErrorCode AddDefaultSubobjectImpl(
     UE_LOG(LogRusteal, Display, TEXT("[Rusteal] Registered default subobject '%s' (class: %s) on %s"),
         *Def.SubobjectName.ToString(), *CompUClass->GetName(), *RC->GetName());
 
+    // Reference the component from a property of the same name, as a C++
+    // `UPROPERTY(VisibleAnywhere) UFooComponent* Name` does. The editor saves,
+    // shows and reinstances a class's components through these references;
+    // without one, a Blueprint child drops the component when the editor
+    // regenerates it (TP-GAP-04).
+    if (!FindFProperty<FProperty>(RC, Def.SubobjectName))
+    {
+        FObjectProperty* CompProp = new FObjectProperty(FFieldVariant(RC), Def.SubobjectName, RF_Public);
+        CompProp->PropertyClass = CompUClass;
+        CompProp->PropertyFlags |= CPF_Edit | CPF_EditConst | CPF_BlueprintVisible | CPF_BlueprintReadOnly
+            | CPF_ExportObject | CPF_InstancedReference | CPF_ZeroConstructor | CPF_NoDestructor;
+#if WITH_EDITORONLY_DATA
+        CompProp->SetMetaData(TEXT("EditInline"), TEXT("true"));
+#endif
+        RC->AddCppProperty(CompProp);
+    }
+
     RC->ComponentDefs.Add(MoveTemp(Def));
 
     return ERustealErrorCode::Ok;
