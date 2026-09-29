@@ -16,7 +16,8 @@ crate = "{{ crate_name }}"
 [codegen]
 # UE modules to generate bindings for, by feature (see [codegen.modules]).
 # `engine` needs `input`, `slate` and `umg`: the runtime plugin links them.
-features = ["core", "engine", "input", "slate", "umg"]
+# `enhanced-input` is the engine's input system, used by every game template.
+features = ["core", "engine", "input", "slate", "umg", "enhanced-input"]
 
 [codegen.modules]
 # UE package = { module = "rust module", feature = "cargo feature" }
@@ -24,6 +25,7 @@ CoreUObject = { module = "core_ue", feature = "core" }
 Engine = { module = "engine", feature = "engine" }
 PhysicsCore = { module = "physics_core", feature = "physics-core" }
 InputCore = { module = "input_core", feature = "input" }
+EnhancedInput = { module = "enhanced_input", feature = "enhanced-input" }
 SlateCore = { module = "slate_core", feature = "slate" }
 Slate = { module = "slate", feature = "slate" }
 UMG = { module = "umg", feature = "umg" }

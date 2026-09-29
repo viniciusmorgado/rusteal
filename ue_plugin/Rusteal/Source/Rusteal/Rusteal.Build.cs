@@ -1,5 +1,6 @@
 using UnrealBuildTool;
 using System.IO;
+using System.Reflection;
 
 public class Rusteal : ModuleRules
 {

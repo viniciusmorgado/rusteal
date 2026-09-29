@@ -5,6 +5,9 @@
 // UE 5.8.2 project — and runs `cargo check` on it, so a change that breaks
 // manual/ fails here instead of in a game project.
 //
+// A second case turns on Enhanced Input, the module every game template uses,
+// and checks the C++ wrappers its types need (they compile only in a UE build).
+//
 // Regenerating the fixture (a new engine version, a new exporter, a new type
 // used by manual/):
 //
@@ -25,6 +28,21 @@ const CLASSES: &[&str] = &[
     "World",
     "ActorComponent",
     "SceneComponent",
+    // Enhanced Input, with the Engine parents of its classes.
+    "Subsystem",
+    "LocalPlayerSubsystem",
+    "EnhancedInputSubsystemInterface",
+    "EnhancedInputLocalPlayerSubsystem",
+    "DataAsset",
+    "PrimaryDataAsset",
+    "InputAction",
+    "InputMappingContext",
+    "InputModifier",
+    "PlayerInput",
+    "EnhancedPlayerInput",
+    "PlayerMappableInputConfig",
+    "InputComponent",
+    "EnhancedInputComponent",
 ];
 
 /// Structs manual/ extends.
@@ -40,6 +58,10 @@ const STRUCTS: &[&str] = &[
     "Plane",
     "Box2D",
     "Key",
+    // Enhanced Input.
+    "InputActionValue",
+    "ModifyContextOptions",
+    "EnhancedActionKeyMapping",
 ];
 
 const RUSTEAL_TOML: &str = r#"[project]
@@ -55,7 +77,13 @@ InputCore = { module = "input_core", feature = "input" }
 SlateCore = { module = "slate_core", feature = "slate" }
 Slate = { module = "slate", feature = "slate" }
 UMG = { module = "umg", feature = "umg" }
+EnhancedInput = { module = "enhanced_input", feature = "enhanced-input" }
 "#;
+
+/// RUSTEAL_TOML with the Enhanced Input feature on.
+fn rusteal_toml_enhanced_input() -> String {
+    RUSTEAL_TOML.replace(r#""umg"]"#, r#""umg", "enhanced-input"]"#)
+}
 
 fn crate_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -83,17 +111,17 @@ fn copy_fixture(to: &Path) {
     }
 }
 
-#[test]
-fn manual_compiles_against_generated_bindings() {
+/// A project with nothing but what codegen reads, generated with `rusteal_toml`,
+/// and `cargo check`ed. Returns the project directory.
+fn generate_and_check(case: &str, rusteal_toml: &str) -> PathBuf {
     let work = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("manual_compiles");
-    let project = work.join("project");
+    let project = work.join(case);
     if project.exists() {
         std::fs::remove_dir_all(&project).unwrap();
     }
 
-    // A project with nothing but what codegen reads.
     std::fs::create_dir_all(&project).unwrap();
-    std::fs::write(project.join("rusteal.toml"), RUSTEAL_TOML).unwrap();
+    std::fs::write(project.join("rusteal.toml"), rusteal_toml).unwrap();
     copy_fixture(&project.join("Intermediate/Rusteal/uht"));
 
     rusteal_codegen::run_generate(&project);
@@ -129,6 +157,45 @@ fn manual_compiles_against_generated_bindings() {
         "the generated bindings, manual/ included, do not compile:\n{}",
         String::from_utf8_lossy(&output.stderr)
     );
+    project
+}
+
+#[test]
+fn manual_compiles_against_generated_bindings() {
+    generate_and_check("project", RUSTEAL_TOML);
+}
+
+fn read(path: &Path) -> String {
+    std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
+}
+
+#[test]
+fn enhanced_input_bindings() {
+    let project = generate_and_check("enhanced_input", &rusteal_toml_enhanced_input());
+    let cpp = project.join("Plugins/Rusteal/Source/Rusteal/Generated");
+    let rust = project.join("Rust/bindings/src/enhanced_input");
+
+    // A UFUNCTION declared on an interface is generated on the classes
+    // implementing it, and called through the interface.
+    let subsystem = read(&cpp.join("RustealFunc_enhanced_input_EnhancedInputLocalPlayerSubsystem.cpp"));
+    assert!(subsystem.contains("static_cast<IEnhancedInputSubsystemInterface*>(Self)->AddMappingContext("));
+    assert!(read(&rust.join("enhanced_input_local_player_subsystem.rs")).contains("fn add_mapping_context("));
+
+    // A protected `_Implementation` is reached through a using-declaration.
+    let modifier = read(&cpp.join("RustealFunc_enhanced_input_InputModifier.cpp"));
+    assert!(modifier.contains("using UInputModifier::ModifyRaw_Implementation;"));
+    assert!(modifier.contains("(Self->*&FAccess::ModifyRaw_Implementation)("));
+
+    // A returned container is written as the function's own return type, and a
+    // struct the function's header only forward-declares gets its header included.
+    let config = read(&cpp.join("RustealFunc_enhanced_input_PlayerMappableInputConfig.cpp"));
+    assert!(config.contains("std::decay_t<decltype(Self->GetMappingContexts())>"));
+    assert!(config.contains("#include \"EnhancedActionKeyMapping.h\""));
+
+    // Turning the module off removes its directory, not only its `mod` line.
+    std::fs::write(project.join("rusteal.toml"), RUSTEAL_TOML).unwrap();
+    rusteal_codegen::run_generate(&project);
+    assert!(!rust.exists(), "enhanced_input/ left behind after the module was turned off");
 }
 
 /// Every `enum_name` referenced anywhere inside `value`.

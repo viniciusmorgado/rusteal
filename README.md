@@ -18,6 +18,13 @@ Rusteal lets you write Unreal Engine gameplay in Rust. Your Rust code compiles t
 
 > **⚠️ Early Stage Project** — Rusteal is under active development and **not ready for production use**. APIs will change without notice, documentation is incomplete, and many UE features are not yet covered. Contributions and feedback are welcome, but please do not use this for shipping projects.
 
+This README serves two different readers:
+
+| You want to | Read | You need |
+|---|---|---|
+| **make a game** with Rusteal | [Making a game](#making-a-game) | the `rusteal` CLI from crates.io; not this repository |
+| **work on Rusteal itself** (its crates, CLI or UE plugins) | [Working on Rusteal](#working-on-rusteal) | a clone of this repository |
+
 ## Acknowledgments
 
 Rusteal is a hard fork of [**uika**](https://github.com/VioletHelianthus/uika) by [**VioletHelianthus**](https://github.com/VioletHelianthus), who designed and wrote the foundation this project stands on: the reflection-driven code generator, the UHT exporter plugin, the reification of Rust structs as `UClass`es, and the runtime. Thank you.
@@ -30,14 +37,48 @@ Rusteal does not intend to stay compatible with the original uika, unless its au
 in this repository is a full working demo of the runtime API: copy the
 directory into a project's `Rust/` and add it to the workspace members.
 
-## Getting Started
+## Making a game
+
+Everything from here to [Platform Support](#platform-support) is about using
+Rusteal to write a game. None of it needs this repository.
 
 ### Prerequisites
 
-- **Unreal Engine 5.8** (source or installed build)
-- **Rust** (stable, latest recommended)
-- **Linux**: the clang toolchain and .NET runtime bundled with the engine
-- **Windows**: Visual Studio 2022 with the C++ workload
+The versions come from the engine's own requirements
+(`Engine/Config/Windows/Windows_SDK.json` and `Engine/Config/Linux/Linux_SDK.json`
+in UE 5.8.2) and from Rusteal's crates, which need Rust 1.88.
+
+**Linux (x64)**
+
+| Dependency | Version | Where from | What for |
+|---|---|---|---|
+| A C toolchain | any | `build-essential` (Debian, Ubuntu), `gcc` (Fedora), `base-devel` (Arch) | the linker Rust uses (`cc`) |
+| Rust | stable, 1.88 or newer | [rustup](https://rustup.rs) | installing the `rusteal` CLI, building your game crate |
+| Unreal Engine | 5.8 | Epic's Linux build ([unrealengine.com/linux](https://www.unrealengine.com/linux)) or built from source | the game |
+
+The engine brings the rest: the clang 20.1.8 toolchain UBT compiles with
+(`v26_clang-20.1.8-rockylinux8`) and the .NET 10 SDK that runs UBT and UHT.
+
+**Windows (x64)**
+
+| Dependency | Version | Where from | What for |
+|---|---|---|---|
+| Visual Studio | 2022 17.8 or newer, or 2026 18.0 or newer | [visualstudio.microsoft.com](https://visualstudio.microsoft.com) | the C++ compiler UBT uses, and the linker Rust uses |
+| Rust | stable, 1.88 or newer, `x86_64-pc-windows-msvc` | [rustup](https://rustup.rs) (`rustup-init.exe`) | installing the `rusteal` CLI, building your game crate |
+| Unreal Engine | 5.8 | the Epic Games Launcher | the game |
+
+In the Visual Studio Installer, the workloads and components the engine asks for:
+
+- workloads **Desktop development with C++**, **Game development with C++**
+  (with its Unreal Engine components) and **.NET desktop development**;
+- **MSVC v143 x64/x86 build tools 14.44** for Visual Studio 2022 (14.50 for
+  2026). The engine refuses 14.39 to 14.43, 14.44 before 14.44.35211 and 14.50
+  before 14.50.35723;
+- **Windows 11 SDK 10.0.22621** (10.0.19041 at least);
+- **.NET Framework 4.6.2 targeting pack**.
+
+Install Visual Studio before Rust: rustup uses its build tools for the MSVC
+toolchain. The engine brings the .NET SDK for UBT and UHT.
 
 ### Install
 
@@ -68,7 +109,7 @@ picks up the right files.
 Two flags: `--no-build` stops after writing the project, leaving the pipeline
 for a later `rusteal build`; `--runtime-path` makes the project depend on a
 Rusteal checkout instead of the published crates, which is for working on
-Rusteal itself — see [Contributing](#contributing).
+Rusteal itself — see [Working on Rusteal](#working-on-rusteal).
 
 ### An existing project
 
@@ -256,24 +297,118 @@ Function implementations update immediately. Adding/removing `uproperty` or `ufu
 | Windows (x64) | Supported |
 | macOS | Not yet tested |
 
-## Contributing
+## Working on Rusteal
 
-Working on Rusteal itself, rather than on a game:
+This part is for changing Rusteal itself: its crates, the `rusteal` CLI and the
+UE plugins in `ue_plugin/`. To make a game, none of it is needed; see
+[Making a game](#making-a-game).
+
+### Prerequisites
+
+Everything in [Making a game › Prerequisites](#prerequisites), plus:
+
+| Dependency | Where from | What for |
+|---|---|---|
+| Git | the distribution's package (`git`); on Windows, [Git for Windows](https://git-scm.com/download/win) | cloning the repository |
+| [clangd](https://clangd.llvm.org) (optional) | the distribution's package or LLVM; Zed downloads it on its own | C++ support in the editor, for `ue_plugin/` |
+| [.NET 10 SDK](https://dotnet.microsoft.com/download) (optional) | Microsoft, or the distribution's package (`dotnet-sdk-10.0`) | C# support in the editor, for the exporter in `ue_plugin/RustealGenerator/` |
+
+### Development environment
+
+The settings that depend on the machine live in `.env` at the repository root,
+which is not versioned; `.env.example` lists them:
+
+| Variable | What it is |
+|---|---|
+| `RUSTEAL_DEV_ENGINE_ROOT` | The Unreal Engine root, the directory holding `Engine/` |
+
+Linux:
 
 ```bash
 git clone https://github.com/viniciusmorgado/rusteal.git
 cd rusteal
+cp .env.example .env    # then fill it in
+cargo xtask dev-setup
+```
 
-# The workspace builds, tests and lints without the engine
+Windows (PowerShell):
+
+```powershell
+git clone https://github.com/viniciusmorgado/rusteal.git
+cd rusteal
+Copy-Item .env.example .env    # then fill it in
+cargo xtask dev-setup
+```
+
+Rusteal is developed against a UE project: the plugins in `ue_plugin/` are built
+inside one, and the C++ editor support reads what that build generates (UHT's
+`*.generated.h` headers and UBT's compile commands). `dev-setup` asks which one:
+
+1. **An existing project.** It must have this checkout's plugins installed and
+   built (`cargo run -p rusteal -- setup <project>`, then `build`); `dev-setup`
+   only reads it, never changes it, and stops with those commands if they are
+   missing. Plugin headers that differ from the checkout's are reported.
+2. **A new blank project**, created at the path you give with
+   `rusteal new --runtime-path` on this checkout, and built. The last component
+   of the path is the project name.
+
+To skip the question, pass the answer: `cargo xtask dev-setup --project <path>`
+or `cargo xtask dev-setup --new <path>`.
+
+Then it writes:
+
+- **`compile_commands.json`** at the repository root, for clangd: the compile
+  commands UBT gives for that project, pointed at `ue_plugin/`;
+- **the exporter's `.csproj.props`**, so C# language servers resolve the
+  engine's `EpicGames.*` assemblies, and runs a `dotnet restore` of the exporter
+  project with the .NET SDK bundled with the engine; `rusteal.sln` at the root
+  points language servers at that project.
+
+Run it again after adding a source file to the plugin, or after changing a
+header that declares a `UCLASS` or `USTRUCT` and rebuilding it in the project:
+a generated header only matches the header it was made from.
+
+`.env` is for working on Rusteal only:
+
+| | Working on Rusteal | Making a game |
+|---|---|---|
+| Engine path from | `.env` | the `rusteal` CLI, which asks once and keeps it in `~/.config/rusteal/config.toml` (the platform's config directory elsewhere) |
+| Read by | `cargo xtask` only | the `rusteal` CLI |
+| Writes the exporter's `.csproj.props` | `cargo xtask dev-setup`, in this checkout | `rusteal setup`, in the game project |
+
+The `rusteal` CLI never reads `.env`, so it does not change which engine a game
+builds with.
+
+### Testing a change
+
+The workspace builds, tests and lints without the engine:
+
+```bash
 cargo build --workspace
 cargo test --workspace
 cargo clippy --workspace --no-deps
+```
 
-# A throwaway project that depends on this checkout
+Anything that touches the engine is tested in a UE project of your choice,
+driven by this checkout's CLI (`cargo run -p rusteal --`, from the repository
+root). A new project that depends on this checkout:
+
+```bash
 cargo run -p rusteal -- new Probe --dir /tmp --runtime-path .
+```
 
-# After changing the runtime, the macros or a game crate
+After changing the runtime, the macros or a game crate:
+
+```bash
 cargo run -p rusteal -- build /tmp/Probe --from 4
+```
+
+After changing the UE plugins in `ue_plugin/`, reinstall them into the project
+and build it:
+
+```bash
+cargo run -p rusteal -- setup /tmp/Probe
+cargo run -p rusteal -- build /tmp/Probe
 ```
 
 In the editor, `Rusteal.Reload` swaps the library in without restarting; adding
@@ -281,8 +416,8 @@ or removing a `uproperty`/`ufunction` still needs a restart.
 
 A project made with `--runtime-path` follows that checkout: the CLI acts on it
 only when built from the same checkout, so drive it with `cargo run -p rusteal --`
-from there. After pulling, `cargo run -p rusteal -- setup /tmp/Probe` reinstalls
-the plugins at the checkout's version.
+from there. After pulling, `setup` reinstalls the plugins at the checkout's
+version.
 
 ### `--runtime-path`
 
@@ -296,7 +431,7 @@ It decides where the generated project takes Rusteal from:
 | The project builds on another machine | yes | no (the path is this machine's) |
 
 So: without it for a real game, with it while working on Rusteal — a change in
-`rusteal-core` shows up in the probe project on the next `build --from 4`,
+`rusteal-core` shows up in the project you test with on the next `build --from 4`,
 with nothing to publish in between.
 
 ### What lives where

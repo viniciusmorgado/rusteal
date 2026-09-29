@@ -91,6 +91,7 @@ pub fn generate_wrapper_file(entries: &[&FuncEntry], ctx: &CodegenContext) -> St
         out.push_str(&format!("#include {inc}\n"));
     }
     out.push_str("#include <string>\n");
+    out.push_str("#include <type_traits>\n");
     out.push('\n');
 
     // Suppress C4996 (deprecated API) warnings in generated wrappers.
@@ -192,12 +193,16 @@ fn generate_wrapper_function(out: &mut String, entry: &FuncEntry, ctx: &CodegenC
         ));
     }
 
-    // Extract container references from temp buffers
+    // Extract container references from temp buffers. A returned container is
+    // written in emit_return, typed after the call itself.
     for param in &func.params {
         if !is_container_param(param) {
             continue;
         }
         let dir = type_map::param_direction(param);
+        if dir == ParamDirection::Return {
+            continue;
+        }
         let name = &param.name;
         let cpp_type = resolve_container_cpp_type(param, ctx)
             .unwrap_or_else(|| "void /* ERROR */".to_string());
@@ -360,16 +365,25 @@ fn generate_wrapper_function(out: &mut String, entry: &FuncEntry, ctx: &CodegenC
         }
     }
 
+    let args = call_args.join(", ");
     let call_expr = if is_static {
-        format!("{}::{}({})", class_cpp, func_name, call_args.join(", "))
+        format!("{class_cpp}::{func_name}({args})")
+    } else if let Some(iface) = &func.interface {
+        // Declared on an interface the class implements: call it through the
+        // interface, where the UFUNCTION is public (an override in the class may not be).
+        format!("static_cast<{iface}*>(Self)->{func_name}({args})")
     } else if is_blueprint_native {
-        format!(
-            "Self->{}_Implementation({})",
-            func_name,
-            call_args.join(", ")
-        )
+        // The native implementation of a BlueprintNativeEvent, as a C++ `Super::`
+        // call would reach it. Classes often declare `_Implementation` protected
+        // (UInputModifier::ModifyRaw_Implementation), so a local type re-exports it
+        // with a using-declaration and the call goes through a member pointer,
+        // which keeps virtual dispatch.
+        out.push_str(&format!(
+            "    struct FAccess : {class_cpp} {{ using {class_cpp}::{func_name}_Implementation; }};\n"
+        ));
+        format!("(Self->*&FAccess::{func_name}_Implementation)({args})")
     } else {
-        format!("Self->{}({})", func_name, call_args.join(", "))
+        format!("Self->{func_name}({args})")
     };
 
     // Emit call + return handling
@@ -766,7 +780,16 @@ fn emit_return(out: &mut String, strategy: &ReturnStrategy, call_expr: &str) {
             );
         }
         ReturnStrategy::ContainerReturn => {
-            out.push_str(&format!("    __Container_ReturnValue = {call_expr};\n"));
+            // The reflected element types do not say everything the C++ type does
+            // (`TMap<TObjectPtr<UFoo>, int32>` and `TMap<UFoo*, int32>` reflect the
+            // same), so the returned container is written as the function's own
+            // return type; both share the property's memory layout.
+            out.push_str(&format!(
+                "    using __RustealReturnType = std::decay_t<decltype({call_expr})>;\n\
+                 \x20   *reinterpret_cast<__RustealReturnType*>(\n\
+                 \x20       static_cast<FProperty*>(OutReturnValue_Prop)->ContainerPtrToValuePtr<void>(OutReturnValue_Base))\n\
+                 \x20       = {call_expr};\n"
+            ));
         }
     }
 }
@@ -1017,6 +1040,13 @@ fn collect_param_headers(
         }
     }
 
+    // Direct struct reference: a by-value struct or a container of structs needs
+    // the complete type, which the function's own header may only forward-declare
+    // (PlayerMappableInputConfig.h and FEnhancedActionKeyMapping).
+    if let Some(sn) = param.struct_name.as_deref() {
+        include_struct_header(sn, ctx, includes);
+    }
+
     // Container inner types
     for inner in [
         param.inner_prop.as_deref(),
@@ -1040,5 +1070,16 @@ fn collect_param_headers(
                 includes.insert(format!("\"{}\"", cls.header));
             }
         }
+        if let Some(sn) = inner.struct_name.as_deref() {
+            include_struct_header(sn, ctx, includes);
+        }
+    }
+}
+
+fn include_struct_header(struct_name: &str, ctx: &CodegenContext, includes: &mut BTreeSet<String>) {
+    if let Some(st) = ctx.structs.get(struct_name)
+        && !st.header.is_empty()
+    {
+        includes.insert(format!("\"{}\"", st.header));
     }
 }

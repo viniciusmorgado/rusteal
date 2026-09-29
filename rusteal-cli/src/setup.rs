@@ -12,7 +12,7 @@ include!(concat!(env!("OUT_DIR"), "/plugin_files.rs"));
 
 const CSPROJ_PROPS_TEMPLATE: &str = r#"<Project>
   <PropertyGroup>
-    <EngineDir>{engine_path}</EngineDir>
+    <EngineDir>{engine_path}/Engine</EngineDir>
   </PropertyGroup>
 </Project>
 "#;

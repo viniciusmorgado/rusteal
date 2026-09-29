@@ -19,8 +19,9 @@ rusteal-core/api_table.rs
 # Generated C++ wrappers (codegen output)
 ue_plugin/Rusteal/Source/Rusteal/Generated/
 
-# VS solution (auto-generated)
+# VS solution (auto-generated); rusteal.sln, for C# language servers, is versioned
 *.sln
+!/rusteal.sln
 
 # IDE
 .vscode/
@@ -30,3 +31,7 @@ ue_plugin/Rusteal/Source/Rusteal/Generated/
 
 *__pycache__/
 
+# Contributor setup (cargo xtask dev-setup): machine-specific
+/.env
+/compile_commands.json
+/.cache/

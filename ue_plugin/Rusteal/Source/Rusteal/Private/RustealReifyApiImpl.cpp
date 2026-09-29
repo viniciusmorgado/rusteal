@@ -726,7 +726,7 @@ static ERustealErrorCode AddDefaultSubobjectImpl(
     // regenerates it (TP-GAP-04).
     if (!FindFProperty<FProperty>(RC, Def.SubobjectName))
     {
-        FObjectProperty* CompProp = new FObjectProperty(FFieldVariant(RC), Def.SubobjectName, RF_Public);
+        FObjectProperty* CompProp = new FObjectProperty(FFieldVariant(RC), Def.SubobjectName);
         CompProp->PropertyClass = CompUClass;
         CompProp->PropertyFlags |= CPF_Edit | CPF_EditConst | CPF_BlueprintVisible | CPF_BlueprintReadOnly
             | CPF_ExportObject | CPF_InstancedReference | CPF_ZeroConstructor | CPF_NoDestructor;

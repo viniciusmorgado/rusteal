@@ -7,6 +7,7 @@ members = [
     "rusteal-codegen",
     "rusteal-cli",
     "rusteal-runtime",
+    "xtask",
 ]
 resolver = "3"
 
