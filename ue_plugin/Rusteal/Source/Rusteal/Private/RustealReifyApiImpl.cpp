@@ -714,10 +714,10 @@ static ERustealErrorCode AddDefaultSubobjectImpl(
     RC->ComponentDefs.RemoveAll([&](const FRustealComponentDef& D) {
         return D.SubobjectName == Def.SubobjectName;
     });
-    RC->ComponentDefs.Add(MoveTemp(Def));
-
     UE_LOG(LogRusteal, Display, TEXT("[Rusteal] Registered default subobject '%s' (class: %s) on %s"),
         *Def.SubobjectName.ToString(), *CompUClass->GetName(), *RC->GetName());
+
+    RC->ComponentDefs.Add(MoveTemp(Def));
 
     return ERustealErrorCode::Ok;
 }
