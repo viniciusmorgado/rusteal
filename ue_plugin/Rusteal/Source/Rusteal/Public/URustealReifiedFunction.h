@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "UObject/ObjectMacros.h"
+#include <cstdint>
 #include "URustealReifiedFunction.generated.h"
 
 // A UFunction created at runtime by Rust via the Reify API.
