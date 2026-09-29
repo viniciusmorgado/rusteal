@@ -30,9 +30,9 @@ Entries are numbered `TP-GAP-NN` and never renumbered.
 
 Three experiments on the reference port (Rusteal 0.3.0, UE 5.8.2), all reverted:
 
-- **A Blueprint can derive from a Rust class.** `BP_RustCharacter` (parent
-  `ThirdPersonCharacter`) and `BP_RustGameMode` (parent `ThirdPersonGameMode`)
-  are created, compile and play. The Rust `#[uproperty]` fields show up as
+- **A Blueprint can derive from a Rust class** — within limits, see TP-GAP-04.
+  `BP_RustCharacter` (parent `ThirdPersonCharacter`) and `BP_RustGameMode`
+  (parent `ThirdPersonGameMode`) are created, compile and play. The Rust `#[uproperty]` fields show up as
   editable class defaults, and so do inherited ones: `Player Controller Class`,
   `Default Pawn Class`, the skeletal mesh and the anim class. This is the
   template's own pattern (a Blueprint child holds the assets and the classes),
@@ -92,12 +92,12 @@ Three experiments on the reference port (Rusteal 0.3.0, UE 5.8.2), all reverted:
 | | |
 |---|---|
 | **Template** | `BP_ThirdPersonCharacter` and `BP_ThirdPersonGameMode` derive from the C++ classes and hold the assets. |
-| **Today** | used. `BP_RustCharacter` holds the mannequin (skeletal mesh, anim class, offset in the capsule) and `BP_RustGameMode` the pawn class, as `BP_ThirdPersonCharacter` and `BP_ThirdPersonGameMode` do for the C++ classes. In the class picker the Rust classes appear under their stub Blueprint's name (TP-GAP-10). |
-| **Rusteal needs** | nothing. |
-| **Evidence** | Experiment above; the reified class constructor already handles Blueprint children (`URustealReifiedClass.cpp`). |
+| **Today** | broken in the editor. `BP_RustCharacter` works in the editor session that creates it and in a standalone game (`-game`), but in any later editor session Play logs `subobject 'CameraBoom' not found`: the pawn is built without the components the Rust class declares, and recompiling the Blueprint does not help. The Rust classes can also disappear from the class picker within a session. |
+| **Rusteal needs** | `plugin`, to be found: Rust classes pose as Blueprint-generated classes (a `UBlueprintGeneratedClass` with a stub `UBlueprint`, `CLASS_CompiledFromBlueprint`, `bCooked`) but create their components in the constructor, as native classes do; the editor's Blueprint pipeline builds a Blueprint parent's components from its construction script, which the stub does not have. Unproven: the next step is diagnostics (log the components each construction creates, and what an object holds when a lookup fails) reproduced in a project on a local checkout. |
+| **Evidence** | Editor logs of the reference port: 8 of 8 plays succeed in the creating session, every play fails in the three later sessions, and a headless `-game` run of the same assets succeeds. `RustealReifyApiImpl.cpp` `CreateClassImpl`; `URustealReifiedClass.cpp` `RustealClassConstructor`; `FindDefaultSubobjectImpl` (`GetDefaultSubobjectByName`). |
 | **Depends on** | — |
-| **Done when** | — |
-| **Status** | not a gap |
+| **Done when** | A Blueprint child of a Rust class keeps its Rust components across editor sessions and stays selectable in the class picker. |
+| **Status** | open |
 | **Last checked** | Rusteal 0.3.0, UE 5.8.2 |
 
 ### TP-GAP-05 — Enhanced Input
@@ -171,11 +171,11 @@ Three experiments on the reference port (Rusteal 0.3.0, UE 5.8.2), all reverted:
 |---|---|
 | **Template** | — (found while creating the Blueprint children) |
 | **Today** | The class picker lists `ThirdPersonCharacter` as `ThirdPersonCharacter_BP`, easy to confuse with the template's `BP_ThirdPersonCharacter`. The class itself keeps its name (`/Script/Rusteal.ThirdPersonCharacter`). |
-| **Rusteal needs** | `plugin`: name the stub Blueprint `<Class>_RS`, so Rust classes are recognisable in the editor. Blueprint children reference the class, not the stub, so they keep working. |
+| **Rusteal needs** | `plugin`: name the stub Blueprint `RS_<Class>`, so Rust classes are recognisable in the editor. Blueprint children reference the class, not the stub, so they keep working. Done; it reaches projects with the next release and `rusteal upgrade`. |
 | **Evidence** | `RustealReifyApiImpl.cpp`: the stub Blueprint is created as `ClassName + "_BP"`. |
 | **Depends on** | — |
-| **Done when** | The picker lists `ThirdPersonCharacter_RS` and `ThirdPersonGameMode_RS`. |
-| **Status** | open |
+| **Done when** | The picker lists `RS_ThirdPersonCharacter` and `RS_ThirdPersonGameMode`. |
+| **Status** | fixed, not released |
 | **Last checked** | Rusteal 0.3.0, UE 5.8.2 |
 
 ## Order
