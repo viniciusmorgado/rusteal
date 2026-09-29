@@ -37,10 +37,10 @@ Three experiments on the reference port (Rusteal 0.3.0, UE 5.8.2), all reverted:
   `Default Pawn Class`, the skeletal mesh and the anim class. This is the
   template's own pattern (a Blueprint child holds the assets and the classes),
   so several limits have a Blueprint route today; see TP-GAP-01.
-- **Enhanced Input bindings can be generated per project.** Adding
-  `EnhancedInput = { module = "enhanced_input", feature = "enhanced-input" }` to
-  `rusteal.toml` generates 43 classes, 13 structs and 17 enums, and the project
-  builds once five functions and one class are blocklisted (TP-GAP-05).
+- **Enhanced Input bindings are generated per project** (TP-GAP-05 a, b fixed).
+  `rusteal new` turns the `enhanced-input` feature on; the module generates 43
+  classes, 13 structs and 17 enums, `AddMappingContext` included, and builds
+  without a blocklist.
 - **Every value the template's constructor sets has a reflected setter**
   (`set_player_controller_class`, `set_orient_rotation_to_movement`,
   `set_target_arm_length`, ...). What is missing is reaching the private
@@ -106,11 +106,11 @@ Three experiments on the reference port (Rusteal 0.3.0, UE 5.8.2), all reverted:
 |---|---|
 | **Template** | The player controller adds the mapping contexts (`MyProjectPlayerController.cpp:46-56`); the character binds Jump, Move, Look and MouseLook in `SetupPlayerInputComponent` (`MyProjectCharacter.cpp:53-67`). |
 | **Today** | workaround: the character polls fixed keys and sticks in `ReceiveTick`; the input assets are unused. |
-| **Rusteal needs** | Four pieces: **(a)** `codegen`: generate compiling wrappers for the module — today it wraps protected `_Implementation` functions (`UInputModifier::GetVisualizationColor`, `ModifyRaw`; `UInputTrigger::GetTriggerType`, `UpdateState`), declares a `TMap<const UInputMappingContext*, int32>` return without `const` (`UPlayerMappableInputConfig::GetMappingContexts`) and misses the include for `FEnhancedActionKeyMapping` in `UPlayerMappableInputConfig`; the plugin should also declare the EnhancedInput plugin dependency (UBT warns). **(b)** `codegen`: emit the `UFUNCTION`s declared in interfaces for the classes implementing them — `AddMappingContext` lives in `IEnhancedInputSubsystemInterface` and is not generated. **(c)** `plugin` + `core` + `macros`: bind an input action to a Rust handler; `BindAction`/`BindActionValue` are C++ templates, not `UFUNCTION`s. **(d)** a hook to bind from, since `SetupPlayerInputComponent` is a C++ virtual and not a Blueprint event (`ReceiveRestarted` fires after the input component exists). |
-| **Evidence** | Experiment above; `EnhancedInputSubsystemInterface.h` (`AddMappingContext` is a `UFUNCTION`); `EnhancedInputComponent.h` (`BindActionValue` is not); `GetBoundActionValue` and `FInputActionValue` are generated. |
+| **Rusteal needs** | Four pieces, (a) and (b) done: **(a)** `codegen`: generate compiling wrappers for the module — it wrapped protected `_Implementation` functions (`UInputModifier::GetVisualizationColor`, `ModifyRaw`; `UInputTrigger::GetTriggerType`, `UpdateState`), declared the `TMap<TObjectPtr<UInputMappingContext>, int32>` return of `UPlayerMappableInputConfig::GetMappingContexts` as `TMap<UInputMappingContext*, int32>` and missed the include for `FEnhancedActionKeyMapping` in `UPlayerMappableInputConfig`; the plugin did not declare the EnhancedInput plugin dependency. Now a local type re-exports `_Implementation` with a using-declaration, a returned container takes the function's own return type, the exporter records each struct's header, and `Rusteal.uplugin` lists EnhancedInput. **(b)** `codegen`: emit the `UFUNCTION`s declared in interfaces for the classes implementing them — `AddMappingContext` lives in `IEnhancedInputSubsystemInterface`. Now each class gets the callable functions of the interfaces it implements, called through the interface. **(c)** `plugin` + `core` + `macros`: bind an input action to a Rust handler; `BindAction`/`BindActionValue` are C++ templates, not `UFUNCTION`s. **(d)** a hook to bind from, since `SetupPlayerInputComponent` is a C++ virtual and not a Blueprint event (`ReceiveRestarted` fires after the input component exists). |
+| **Evidence** | `EnhancedInputComponent.h` (`BindActionValue` is not a `UFUNCTION`); the port's bindings have `add_mapping_context` (on `EnhancedInputLocalPlayerSubsystem`) and `get_bound_action_value`; `rusteal-codegen/tests/manual_compiles.rs` (`enhanced_input_bindings`). |
 | **Depends on** | TP-GAP-03 (the actions and contexts are asset references), TP-GAP-08 for handlers that take an `FInputActionValue`. |
 | **Done when** | The character reacts to the template's `IA_*` actions through its `IMC_*` contexts, and the polling is gone. |
-| **Status** | open |
+| **Status** | (a), (b) fixed, not released; (c), (d) open |
 | **Last checked** | Rusteal 0.3.0, UE 5.8.2 |
 
 ### TP-GAP-06 — Touch interface check
@@ -157,12 +157,12 @@ Three experiments on the reference port (Rusteal 0.3.0, UE 5.8.2), all reverted:
 | | |
 |---|---|
 | **Template** | — (found while enabling and disabling Enhanced Input) |
-| **Today** | After a module is removed from `rusteal.toml`, its directory stays in `Rust/bindings/src/` (not referenced, so harmless); its C++ wrappers are removed. |
-| **Rusteal needs** | `codegen`: remove module directories that are no longer generated. |
-| **Evidence** | Experiment above. |
+| **Today** | Turning a module off removes its directory from `Rust/bindings/src/` along with its C++ wrappers; turning it back on regenerates the same files. |
+| **Rusteal needs** | `codegen`: remove module directories that are no longer generated. Done: directories whose `mod.rs` carries the codegen header and whose module is off are deleted. |
+| **Evidence** | Enhanced Input toggled off and on in the port; `rusteal-codegen/tests/manual_compiles.rs` (`enhanced_input_bindings`). |
 | **Depends on** | — |
 | **Done when** | Toggling a module leaves `bindings/src/` matching `lib.rs`. |
-| **Status** | open, cosmetic |
+| **Status** | fixed, not released |
 | **Last checked** | Rusteal 0.3.0, UE 5.8.2 |
 
 ### TP-GAP-10 — Rust classes are listed under a `_BP` name
@@ -182,7 +182,7 @@ Three experiments on the reference port (Rusteal 0.3.0, UE 5.8.2), all reverted:
 
 By what each one unblocks for the template:
 
-1. **TP-GAP-05 (a, b)** — Enhanced Input bindings that compile and include
+1. **TP-GAP-05 (a, b)**, fixed — Enhanced Input bindings that compile and include
    `AddMappingContext`: input is the core of the template.
 2. **TP-GAP-03** — asset references as properties, so the actions and contexts
    are assigned in the Blueprint children.
