@@ -50,6 +50,12 @@ void URustealReifiedClass::RustealClassConstructor(const FObjectInitializer& Obj
 
             if (!Sub) continue;
 
+            // Point the component's property at it (see AddDefaultSubobjectImpl).
+            if (FObjectProperty* CompProp = FindFProperty<FObjectProperty>(ReifiedClass, Def.SubobjectName))
+            {
+                CompProp->SetObjectPropertyValue_InContainer(Obj, Sub);
+            }
+
             USceneComponent* SceneComp = Cast<USceneComponent>(Sub);
             if (SceneComp)
             {
