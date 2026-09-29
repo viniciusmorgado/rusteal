@@ -30,7 +30,7 @@ Entries are numbered `TP-GAP-NN` and never renumbered.
 
 Three experiments on the reference port (Rusteal 0.3.0, UE 5.8.2), all reverted:
 
-- **A Blueprint can derive from a Rust class** — within limits, see TP-GAP-04.
+- **A Blueprint can derive from a Rust class** (TP-GAP-04 fixed the loss of its Rust components in the editor).
   `BP_RustCharacter` (parent `ThirdPersonCharacter`) and `BP_RustGameMode`
   (parent `ThirdPersonGameMode`) are created, compile and play. The Rust `#[uproperty]` fields show up as
   editable class defaults, and so do inherited ones: `Player Controller Class`,
@@ -70,7 +70,7 @@ Three experiments on the reference port (Rusteal 0.3.0, UE 5.8.2), all reverted:
 | **Rusteal needs** | `plugin`: resolve the attach parent among inherited components (the actor's root) and accept a socket name; `macros`: `#[component(attach = "root", socket = "SpringEndpoint")]` or similar. |
 | **Evidence** | `URustealReifiedClass.cpp` `RustealClassConstructor`: the parent is looked up only in `CreatedComponents`, the components the Rust class itself declares. |
 | **Depends on** | — |
-| **Done when** | Boom and camera are attached at construction, visible in the Blueprint child's component tree. |
+| **Done when** | Boom and camera are attached at construction, visible in the Blueprint child's component tree. Today the tree lists native (C++) components and a Blueprint parent's construction-script components, and Rust components are neither, so they exist on the pawn but do not show up there. |
 | **Status** | open |
 | **Last checked** | Rusteal 0.3.0, UE 5.8.2 |
 
@@ -92,12 +92,12 @@ Three experiments on the reference port (Rusteal 0.3.0, UE 5.8.2), all reverted:
 | | |
 |---|---|
 | **Template** | `BP_ThirdPersonCharacter` and `BP_ThirdPersonGameMode` derive from the C++ classes and hold the assets. |
-| **Today** | broken in the editor. `BP_RustCharacter` works in the editor session that creates it and in a standalone game (`-game`), but in any later editor session Play logs `subobject 'CameraBoom' not found`: the pawn is built without the components the Rust class declares, and recompiling the Blueprint does not help. The Rust classes can also disappear from the class picker within a session. |
-| **Rusteal needs** | `plugin`, to be found: Rust classes pose as Blueprint-generated classes (a `UBlueprintGeneratedClass` with a stub `UBlueprint`, `CLASS_CompiledFromBlueprint`, `bCooked`) but create their components in the constructor, as native classes do; the editor's Blueprint pipeline builds a Blueprint parent's components from its construction script, which the stub does not have. Unproven: the next step is diagnostics (log the components each construction creates, and what an object holds when a lookup fails) reproduced in a project on a local checkout. |
-| **Evidence** | Editor logs of the reference port: 8 of 8 plays succeed in the creating session, every play fails in the three later sessions, and a headless `-game` run of the same assets succeeds. `RustealReifyApiImpl.cpp` `CreateClassImpl`; `URustealReifiedClass.cpp` `RustealClassConstructor`; `FindDefaultSubobjectImpl` (`GetDefaultSubobjectByName`). |
+| **Today** | works. A Blueprint child of a Rust class keeps its Rust components across editor sessions: checked in the reference port with two sessions (create and play, then reopen and play) and headless. |
+| **Rusteal needs** | Done in the plugin. The cause: Rust components were created in the constructor but no property referenced them. A C++ component is also a `UPROPERTY` (`UPROPERTY(VisibleAnywhere) USpringArmComponent* CameraBoom`), and the editor saves and reinstances a class's components through those references. When the editor regenerates a Blueprint on load (`FLinkerLoad` → `RegenerateBlueprintClass`), the child's class default object came back without the Rust components, so each spawned pawn built its own, detached from the Blueprint's, and the lookup by name rejected them. Each `#[component]` now gets an object property of the same name (`VisibleAnywhere`/`BlueprintReadOnly` flags) that the constructor points at the component. |
+| **Evidence** | A headless editor (`-nullrhi -unattended`, no `-game`) loading `BP_RustCharacter` listed the class default object without `CameraBoom`/`FollowCamera` before the change and with them, correctly archetyped, after it. `AddDefaultSubobjectImpl` (`RustealReifyApiImpl.cpp`) and `RustealClassConstructor` (`URustealReifiedClass.cpp`). |
 | **Depends on** | — |
-| **Done when** | A Blueprint child of a Rust class keeps its Rust components across editor sessions and stays selectable in the class picker. |
-| **Status** | open |
+| **Done when** | A Blueprint child of a Rust class keeps its Rust components across editor sessions. |
+| **Status** | fixed, not released |
 | **Last checked** | Rusteal 0.3.0, UE 5.8.2 |
 
 ### TP-GAP-05 — Enhanced Input
@@ -170,11 +170,11 @@ Three experiments on the reference port (Rusteal 0.3.0, UE 5.8.2), all reverted:
 | | |
 |---|---|
 | **Template** | — (found while creating the Blueprint children) |
-| **Today** | The class picker lists `ThirdPersonCharacter` as `ThirdPersonCharacter_BP`, easy to confuse with the template's `BP_ThirdPersonCharacter`. The class itself keeps its name (`/Script/Rusteal.ThirdPersonCharacter`). |
+| **Today** | The class picker shows a Rust class under its stub Blueprint's name, `ThirdPersonCharacter_BP`, easy to confuse with the template's `BP_ThirdPersonCharacter`. Its search box matches the class name (`ThirdPersonCharacter`), not the name it shows, so searching the shown name finds nothing. The class itself keeps its name (`/Script/Rusteal.ThirdPersonCharacter`). |
 | **Rusteal needs** | `plugin`: name the stub Blueprint `RS_<Class>`, so Rust classes are recognisable in the editor. Blueprint children reference the class, not the stub, so they keep working. Done; it reaches projects with the next release and `rusteal upgrade`. |
 | **Evidence** | `RustealReifyApiImpl.cpp`: the stub Blueprint is created as `ClassName + "_BP"`. |
 | **Depends on** | — |
-| **Done when** | The picker lists `RS_ThirdPersonCharacter` and `RS_ThirdPersonGameMode`. |
+| **Done when** | The picker shows `RS_ThirdPersonCharacter` and `RS_ThirdPersonGameMode`; they are found by searching the class name (`ThirdPerson`), not `RS_`. |
 | **Status** | fixed, not released |
 | **Last checked** | Rusteal 0.3.0, UE 5.8.2 |
 
