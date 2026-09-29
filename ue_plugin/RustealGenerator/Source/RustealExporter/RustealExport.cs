@@ -4,6 +4,8 @@
 // It produces three JSON files (classes, structs, enums) consumed by rusteal-codegen.
 //
 
+#nullable disable
+
 using EpicGames.Core;
 using EpicGames.UHT.Tables;
 using EpicGames.UHT.Types;
@@ -38,11 +40,11 @@ public static class RustealExport
         EFunctionFlags.Private |
         EFunctionFlags.Delegate;
 
-    // Property flags indicating script-exposed fields 
+    // Property flags indicating script-exposed fields
     private const EPropertyFlags ScriptExposedPropFlags =
         EPropertyFlags.BlueprintVisible | EPropertyFlags.BlueprintAssignable;
 
-    // Function flags indicating script-exposed fields 
+    // Function flags indicating script-exposed fields
     private const EFunctionFlags ScriptExposedFuncFlags =
         EFunctionFlags.BlueprintCallable | EFunctionFlags.BlueprintEvent;
 
@@ -120,7 +122,7 @@ public static class RustealExport
                                 break;
 
                             case UhtScriptStruct structObj:
-                                TryExportStruct(structObj, package);
+                                TryExportStruct(structObj, package, header);
                                 break;
 
                             case UhtEnum enumObj:
@@ -167,27 +169,27 @@ public static class RustealExport
                     interfaces.Add(StripPrefix(iface.SourceName));
             }
 
-            string? superName = classObj.SuperClass != null
+            string superName = classObj.SuperClass != null
                 ? StripPrefix(classObj.SuperClass.SourceName)
                 : null;
 
             _classes.Add(new JsonObject
             {
-                ["name"]        = name,
-                ["cpp_name"]    = classObj.SourceName,
-                ["package"]     = package,
-                ["header"]      = header.IncludeFilePath ?? header.ModuleRelativeFilePath ?? "",
+                ["name"] = name,
+                ["cpp_name"] = classObj.SourceName,
+                ["package"] = package,
+                ["header"] = header.IncludeFilePath ?? header.ModuleRelativeFilePath ?? "",
                 ["class_flags"] = (long)unchecked((uint)classObj.ClassFlags),
-                ["super"]       = superName,
-                ["interfaces"]  = interfaces,
-                ["props"]       = props,
-                ["funcs"]       = funcs,
+                ["super"] = superName,
+                ["interfaces"] = interfaces,
+                ["props"] = props,
+                ["funcs"] = funcs,
             });
         }
 
         private static bool ShouldExportClass(UhtClass classObj)
         {
-            // Skip deprecated classes 
+            // Skip deprecated classes
             if (classObj.ClassFlags.HasAnyFlags(EClassFlags.Deprecated))
                 return false;
 
@@ -207,7 +209,7 @@ public static class RustealExport
 
         // ── Struct Export ───────────────────────────────────────────────
 
-        private void TryExportStruct(UhtScriptStruct structObj, string package)
+        private void TryExportStruct(UhtScriptStruct structObj, string package, UhtHeaderFile header)
         {
             string name = StripPrefix(structObj.SourceName);
             if (!_exportedStructNames.Add(name))
@@ -226,22 +228,29 @@ public static class RustealExport
                     props.Add(ExportProperty(prop));
             }
 
-            string? superName = structObj.Super is UhtScriptStruct superStruct
+            string superName = structObj.Super is UhtScriptStruct superStruct
                 ? StripPrefix(superStruct.SourceName)
                 : null;
 
             bool hasStaticStruct = !structObj.ScriptStructFlags.HasAnyFlags(EStructFlags.NoExport)
                                 || NeedRegisterStruct.Contains(name);
 
+            // A NoExport struct is only mirrored in this header (NoExportTypes.h);
+            // its real declaration is elsewhere, so there is nothing to include.
+            string structHeader = structObj.ScriptStructFlags.HasAnyFlags(EStructFlags.NoExport)
+                ? ""
+                : header.IncludeFilePath ?? header.ModuleRelativeFilePath ?? "";
+
             _structs.Add(new JsonObject
             {
-                ["name"]              = name,
-                ["cpp_name"]          = structObj.SourceName,
-                ["package"]           = package,
-                ["struct_flags"]      = (long)unchecked((uint)structObj.ScriptStructFlags),
-                ["super"]             = superName,
+                ["name"] = name,
+                ["cpp_name"] = structObj.SourceName,
+                ["package"] = package,
+                ["header"] = structHeader,
+                ["struct_flags"] = (long)unchecked((uint)structObj.ScriptStructFlags),
+                ["super"] = superName,
                 ["has_static_struct"] = hasStaticStruct,
-                ["props"]             = props,
+                ["props"] = props,
             });
         }
 
@@ -281,33 +290,33 @@ public static class RustealExport
 
             string underlyingType = enumObj.UnderlyingType switch
             {
-                UhtEnumUnderlyingType.Uint8  => "uint8",
-                UhtEnumUnderlyingType.Int8   => "int8",
-                UhtEnumUnderlyingType.Int16  => "int16",
+                UhtEnumUnderlyingType.Uint8 => "uint8",
+                UhtEnumUnderlyingType.Int8 => "int8",
+                UhtEnumUnderlyingType.Int16 => "int16",
                 UhtEnumUnderlyingType.Uint16 => "uint16",
-                UhtEnumUnderlyingType.Int32  => "int32",
+                UhtEnumUnderlyingType.Int32 => "int32",
                 UhtEnumUnderlyingType.Uint32 => "uint32",
-                UhtEnumUnderlyingType.Int64  => "int64",
+                UhtEnumUnderlyingType.Int64 => "int64",
                 UhtEnumUnderlyingType.Uint64 => "uint64",
-                _                            => "uint8",
+                _ => "uint8",
             };
 
             int cppForm = enumObj.CppForm switch
             {
-                UhtEnumCppForm.Regular    => 0,
+                UhtEnumCppForm.Regular => 0,
                 UhtEnumCppForm.Namespaced => 1,
-                UhtEnumCppForm.EnumClass  => 2,
-                _                         => 0,
+                UhtEnumCppForm.EnumClass => 2,
+                _ => 0,
             };
 
             _enums.Add(new JsonObject
             {
-                ["name"]            = name,
-                ["cpp_name"]        = name,
-                ["package"]         = package,
+                ["name"] = name,
+                ["cpp_name"] = name,
+                ["package"] = package,
                 ["underlying_type"] = underlyingType,
-                ["cpp_form"]        = cppForm,
-                ["pairs"]           = pairs,
+                ["cpp_form"] = cppForm,
+                ["pairs"] = pairs,
             });
         }
 
@@ -323,7 +332,7 @@ public static class RustealExport
         /// </summary>
         private static bool IsScriptExposed(UhtType type)
         {
-            UhtType? current = type;
+            UhtType current = type;
             while (current != null)
             {
                 if (current.MetaData.ContainsKey("BlueprintType")
@@ -335,9 +344,9 @@ public static class RustealExport
 
                 current = current switch
                 {
-                    UhtClass c        => c.SuperClass,
+                    UhtClass c => c.SuperClass,
                     UhtScriptStruct s => s.SuperScriptStruct,
-                    _                 => null,
+                    _ => null,
                 };
             }
             return false;
@@ -348,7 +357,7 @@ public static class RustealExport
         /// </summary>
         private static bool HasScriptExposedFields(UhtStruct structObj)
         {
-            UhtStruct? current = structObj;
+            UhtStruct current = structObj;
             while (current != null)
             {
                 foreach (UhtType child in current.Children)
@@ -364,9 +373,9 @@ public static class RustealExport
 
                 current = current switch
                 {
-                    UhtClass c        => c.SuperClass,
+                    UhtClass c => c.SuperClass,
                     UhtScriptStruct s => s.SuperScriptStruct,
-                    _                 => null,
+                    _ => null,
                 };
             }
             return false;
@@ -396,17 +405,17 @@ public static class RustealExport
         {
             var info = new JsonObject
             {
-                ["name"]       = prop.SourceName,
-                ["type"]       = GetPropertyTypeName(prop),
+                ["name"] = prop.SourceName,
+                ["type"] = GetPropertyTypeName(prop),
                 ["prop_flags"] = unchecked((long)(ulong)prop.PropertyFlags),
-                ["array_dim"]  = GetArrayDim(prop),
+                ["array_dim"] = GetArrayDim(prop),
             };
 
             PopulateSubTypeFields(prop, info);
 
-            info["getter"]  = GetMetaOrNull(prop, "BlueprintGetter");
-            info["setter"]  = GetMetaOrNull(prop, "BlueprintSetter");
-            info["default"] = (JsonNode?)null;
+            info["getter"] = GetMetaOrNull(prop, "BlueprintGetter");
+            info["setter"] = GetMetaOrNull(prop, "BlueprintSetter");
+            info["default"] = null;
 
             return info;
         }
@@ -416,8 +425,8 @@ public static class RustealExport
         {
             var info = new JsonObject
             {
-                ["name"]       = prop.SourceName,
-                ["type"]       = GetPropertyTypeName(prop),
+                ["name"] = prop.SourceName,
+                ["type"] = GetPropertyTypeName(prop),
                 ["prop_flags"] = unchecked((long)(ulong)prop.PropertyFlags),
             };
 
@@ -425,10 +434,10 @@ public static class RustealExport
 
             // Default value from function metadata: CPP_Default_{ParamName}
             string defaultKey = $"CPP_Default_{prop.SourceName}";
-            if (ownerFunc.MetaData.TryGetValue(defaultKey, out string? defaultVal))
+            if (ownerFunc.MetaData.TryGetValue(defaultKey, out string defaultVal))
                 info["default"] = defaultVal;
             else
-                info["default"] = (JsonNode?)null;
+                info["default"] = (JsonNode)null;
 
             return info;
         }
@@ -438,8 +447,8 @@ public static class RustealExport
         {
             var info = new JsonObject
             {
-                ["name"]       = prop.SourceName,
-                ["type"]       = GetPropertyTypeName(prop),
+                ["name"] = prop.SourceName,
+                ["type"] = GetPropertyTypeName(prop),
                 ["prop_flags"] = unchecked((long)(ulong)prop.PropertyFlags),
             };
             PopulateSubTypeFields(prop, info);
@@ -453,23 +462,23 @@ public static class RustealExport
         private static void PopulateSubTypeFields(UhtProperty prop, JsonObject info)
         {
             // Initialize all sub-type fields to null
-            info["enum_name"]            = (JsonNode?)null;
-            info["enum_cpp_name"]        = (JsonNode?)null;
-            info["enum_cpp_form"]        = (JsonNode?)null;
-            info["enum_underlying_type"] = (JsonNode?)null;
-            info["class_name"]           = (JsonNode?)null;
-            info["meta_class_name"]      = (JsonNode?)null;
-            info["struct_name"]          = (JsonNode?)null;
-            info["interface_name"]       = (JsonNode?)null;
-            info["func_info"]            = (JsonNode?)null;
-            info["inner_prop"]           = (JsonNode?)null;
-            info["key_prop"]             = (JsonNode?)null;
-            info["value_prop"]           = (JsonNode?)null;
+            info["enum_name"] = (JsonNode)null;
+            info["enum_cpp_name"] = (JsonNode)null;
+            info["enum_cpp_form"] = (JsonNode)null;
+            info["enum_underlying_type"] = (JsonNode)null;
+            info["class_name"] = (JsonNode)null;
+            info["meta_class_name"] = (JsonNode)null;
+            info["struct_name"] = (JsonNode)null;
+            info["interface_name"] = (JsonNode)null;
+            info["func_info"] = (JsonNode)null;
+            info["inner_prop"] = (JsonNode)null;
+            info["key_prop"] = (JsonNode)null;
+            info["value_prop"] = (JsonNode)null;
 
             // ByteProperty with enum
             if (prop is UhtByteProperty { Enum: not null } byteProp)
             {
-                info["enum_name"]     = byteProp.Enum.SourceName;
+                info["enum_name"] = byteProp.Enum.SourceName;
                 info["enum_cpp_name"] = byteProp.Enum.SourceName;
                 info["enum_cpp_form"] = (int)byteProp.Enum.CppForm;
             }
@@ -477,7 +486,7 @@ public static class RustealExport
             // EnumProperty
             if (prop is UhtEnumProperty enumProp)
             {
-                info["enum_name"]     = enumProp.Enum.SourceName;
+                info["enum_name"] = enumProp.Enum.SourceName;
                 info["enum_cpp_name"] = enumProp.Enum.SourceName;
                 info["enum_cpp_form"] = (int)enumProp.Enum.CppForm;
                 info["enum_underlying_type"] = enumProp.UnderlyingProperty != null
@@ -542,7 +551,7 @@ public static class RustealExport
             // MapProperty → key_prop + value_prop (recursive)
             if (prop is UhtMapProperty mapProp)
             {
-                info["key_prop"]   = ExportInnerProperty(mapProp.KeyProperty);
+                info["key_prop"] = ExportInnerProperty(mapProp.KeyProperty);
                 info["value_prop"] = ExportInnerProperty(mapProp.ValueProperty);
             }
         }
@@ -592,10 +601,10 @@ public static class RustealExport
 
             return new JsonObject
             {
-                ["name"]       = func.SourceName,
+                ["name"] = func.SourceName,
                 ["func_flags"] = (long)unchecked((uint)func.FunctionFlags),
-                ["is_static"]  = func.FunctionFlags.HasAnyFlags(EFunctionFlags.Static),
-                ["params"]     = funcParams,
+                ["is_static"] = func.FunctionFlags.HasAnyFlags(EFunctionFlags.Static),
+                ["params"] = funcParams,
             };
         }
 
@@ -614,10 +623,10 @@ public static class RustealExport
 
             return new JsonObject
             {
-                ["name"]       = func.StrippedFunctionName ?? func.SourceName,
+                ["name"] = func.StrippedFunctionName ?? func.SourceName,
                 ["func_flags"] = (long)unchecked((uint)func.FunctionFlags),
-                ["is_static"]  = false,
-                ["params"]     = funcParams,
+                ["is_static"] = false,
+                ["params"] = funcParams,
             };
         }
 
@@ -689,49 +698,49 @@ public static class RustealExport
         private static string GetPropertyTypeName(UhtProperty prop) => prop switch
         {
             // Numeric types (no inheritance issues)
-            UhtBoolProperty   => "BoolProperty",
-            UhtByteProperty   => "ByteProperty",
-            UhtInt8Property   => "Int8Property",
-            UhtInt16Property  => "Int16Property",
-            UhtIntProperty    => "IntProperty",
-            UhtInt64Property  => "Int64Property",
+            UhtBoolProperty => "BoolProperty",
+            UhtByteProperty => "ByteProperty",
+            UhtInt8Property => "Int8Property",
+            UhtInt16Property => "Int16Property",
+            UhtIntProperty => "IntProperty",
+            UhtInt64Property => "Int64Property",
             UhtUInt16Property => "UInt16Property",
             UhtUInt32Property => "UInt32Property",
             UhtUInt64Property => "UInt64Property",
-            UhtFloatProperty  => "FloatProperty",
+            UhtFloatProperty => "FloatProperty",
             UhtDoubleProperty => "DoubleProperty",
             UhtLargeWorldCoordinatesRealProperty => "DoubleProperty",
 
             // String types
-            UhtStrProperty  => "StrProperty",
+            UhtStrProperty => "StrProperty",
             UhtNameProperty => "NameProperty",
             UhtTextProperty => "TextProperty",
 
             // Enum / Struct
-            UhtEnumProperty   => "EnumProperty",
+            UhtEnumProperty => "EnumProperty",
             UhtStructProperty => "StructProperty",
 
             // Object hierarchy: most specific first
-            UhtClassProperty         => "ClassProperty",
-            UhtSoftClassProperty     => "SoftClassProperty",
-            UhtSoftObjectProperty    => "SoftObjectProperty",
+            UhtClassProperty => "ClassProperty",
+            UhtSoftClassProperty => "SoftClassProperty",
+            UhtSoftObjectProperty => "SoftObjectProperty",
             UhtWeakObjectPtrProperty => "WeakObjectProperty",
             UhtLazyObjectPtrProperty => "LazyObjectProperty",
-            UhtObjectProperty        => "ObjectProperty",
+            UhtObjectProperty => "ObjectProperty",
 
             // Interface
             UhtInterfaceProperty => "InterfaceProperty",
 
             // Delegates: most specific first
-            UhtDelegateProperty                   => "DelegateProperty",
-            UhtMulticastInlineDelegateProperty     => "MulticastInlineDelegateProperty",
-            UhtMulticastSparseDelegateProperty     => "MulticastSparseDelegateProperty",
-            UhtMulticastDelegateProperty           => "MulticastDelegateProperty",
+            UhtDelegateProperty => "DelegateProperty",
+            UhtMulticastInlineDelegateProperty => "MulticastInlineDelegateProperty",
+            UhtMulticastSparseDelegateProperty => "MulticastSparseDelegateProperty",
+            UhtMulticastDelegateProperty => "MulticastDelegateProperty",
 
             // Containers
-            UhtArrayProperty     => "ArrayProperty",
-            UhtSetProperty       => "SetProperty",
-            UhtMapProperty       => "MapProperty",
+            UhtArrayProperty => "ArrayProperty",
+            UhtSetProperty => "SetProperty",
+            UhtMapProperty => "MapProperty",
 
             // Other
             UhtFieldPathProperty => "FieldPathProperty",
@@ -748,20 +757,20 @@ public static class RustealExport
 
         private static string GetUnderlyingTypeName(UhtProperty prop) => prop switch
         {
-            UhtByteProperty   => "uint8",
-            UhtInt8Property   => "int8",
-            UhtInt16Property  => "int16",
+            UhtByteProperty => "uint8",
+            UhtInt8Property => "int8",
+            UhtInt16Property => "int16",
             UhtUInt16Property => "uint16",
-            UhtIntProperty    => "int32",
+            UhtIntProperty => "int32",
             UhtUInt32Property => "uint32",
-            UhtInt64Property  => "int64",
+            UhtInt64Property => "int64",
             UhtUInt64Property => "uint64",
-            _                 => "uint8",
+            _ => "uint8",
         };
 
-        private static string? GetMetaOrNull(UhtType type, string key)
+        private static string GetMetaOrNull(UhtType type, string key)
         {
-            return type.MetaData.TryGetValue(key, out string? value) ? value : null;
+            return type.MetaData.TryGetValue(key, out string value) ? value : null;
         }
     }
 

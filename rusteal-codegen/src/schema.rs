@@ -54,6 +54,10 @@ pub struct StructInfo {
     pub name: String,
     pub cpp_name: String,
     pub package: String,
+    /// Include path of the declaring header; empty for `NoExport` structs,
+    /// whose real declaration lives elsewhere (e.g. `FVector` in Core).
+    #[serde(default)]
+    pub header: String,
     #[serde(deserialize_with = "deser_flags_u32")]
     pub struct_flags: u32,
     #[serde(rename = "super")]
@@ -128,6 +132,11 @@ pub struct FunctionInfo {
     /// Original UE function name (before overload renaming). Set by filter.
     #[serde(skip)]
     pub ue_name: String,
+    /// For a function copied from an implemented interface: the native
+    /// interface type it is declared on (e.g. `IEnhancedInputSubsystemInterface`).
+    /// Set by the context.
+    #[serde(skip)]
+    pub interface: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
