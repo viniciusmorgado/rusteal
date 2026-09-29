@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- For IDEs only; nothing builds or ships this project. UBT compiles the plugins'
+       *.Build.cs files itself, and they are not part of any other project, so a
+       language server would analyze them with no references at all: nothing resolves
+       and every `using` looks unused. This project gives them the context UBT does.
+
+       The engine path comes from the machine-specific .props file that
+       `cargo xtask dev-setup` writes for the exporter (see the README). -->
+  <Import Project="../../ue_plugin/RustealGenerator/Source/RustealExporter/RustealExporter.ubtplugin.csproj.props" Condition="Exists('../../ue_plugin/RustealGenerator/Source/RustealExporter/RustealExporter.ubtplugin.csproj.props')" />
+  <Import Project="$(EngineDir)/Source/Programs/Shared/UnrealEngine.csproj.props" />
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Library</OutputType>
+    <AssemblyName>RustealRules</AssemblyName>
+    <RootNamespace>UnrealBuildTool.Rules</RootNamespace>
+    <!-- As UBT compiles rules assemblies: no implicit usings, nullable annotations off. -->
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <NoWarn>$(NoWarn);CS1587;CS1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="../../ue_plugin/Rusteal/Source/Rusteal/Rusteal.Build.cs" Link="Rusteal/Rusteal.Build.cs" />
+    <Compile Include="../../ue_plugin/RustealGenerator/Source/RustealGenerator/RustealGenerator.Build.cs" Link="RustealGenerator/RustealGenerator.Build.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="UnrealBuildTool">
+      <HintPath>$(EngineDir)/Binaries/DotNET/UnrealBuildTool/UnrealBuildTool.dll</HintPath>
+    </Reference>
+    <Reference Include="EpicGames.Core">
+      <HintPath>$(EngineDir)/Binaries/DotNET/UnrealBuildTool/EpicGames.Core.dll</HintPath>
+    </Reference>
+    <Reference Include="EpicGames.Build">
+      <HintPath>$(EngineDir)/Binaries/DotNET/UnrealBuildTool/EpicGames.Build.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+</Project>

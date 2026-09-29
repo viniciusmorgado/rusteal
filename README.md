@@ -360,9 +360,15 @@ Then it writes:
 - **`compile_commands.json`** at the repository root, for clangd: the compile
   commands UBT gives for that project, pointed at `ue_plugin/`;
 - **the exporter's `.csproj.props`**, so C# language servers resolve the
-  engine's `EpicGames.*` assemblies, and runs a `dotnet restore` of the exporter
-  project with the .NET SDK bundled with the engine; `rusteal.sln` at the root
-  points language servers at that project.
+  engine's `EpicGames.*` assemblies, and a `dotnet restore` of `rusteal.sln`
+  with the .NET SDK bundled with the engine. The solution has two projects, both
+  for IDEs only: the exporter (`ue_plugin/RustealGenerator/Source/RustealExporter/`),
+  and `ide/RustealRules/`, which gives the plugins' `*.Build.cs` files the context
+  UBT compiles them with. Without that project a language server analyzes those
+  files with no references at all: nothing resolves, and every `using` is
+  reported as unnecessary. UBT compiles the `Build.cs` files without implicit
+  usings, so a `using System.IO;` there is required, and the project makes the
+  editor agree.
 
 Run it again after adding a source file to the plugin, or after changing a
 header that declares a `UCLASS` or `USTRUCT` and rebuilding it in the project:

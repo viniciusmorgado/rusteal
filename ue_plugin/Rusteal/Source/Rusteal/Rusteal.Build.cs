@@ -1,6 +1,6 @@
-using UnrealBuildTool;
 using System.IO;
-using System.Reflection;
+
+namespace UnrealBuildTool.Rules;
 
 public class Rusteal : ModuleRules
 {
@@ -10,8 +10,8 @@ public class Rusteal : ModuleRules
 
         // Modules the hand-written runtime needs regardless of which bindings are generated
         // (RustealWidgetApiImpl.cpp uses UMG; UMG needs Slate/SlateCore/InputCore).
-        PublicDependencyModuleNames.AddRange(new string[]
-        {
+        PublicDependencyModuleNames.AddRange(
+        [
             "Core",
             "CoreUObject",
             "Engine",
@@ -19,7 +19,7 @@ public class Rusteal : ModuleRules
             "SlateCore",
             "Slate",
             "UMG",
-        });
+        ]);
 
         // IPluginManager: the plugin reads its own version from its descriptor.
         PrivateDependencyModuleNames.Add("Projects");

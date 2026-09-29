@@ -14,8 +14,6 @@ using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-
-// Disambiguate from EpicGames.Core.JsonObject
 using JsonObject = System.Text.Json.Nodes.JsonObject;
 using JsonArray = System.Text.Json.Nodes.JsonArray;
 
@@ -49,15 +47,15 @@ public static class RustealExport
         EFunctionFlags.BlueprintCallable | EFunctionFlags.BlueprintEvent;
 
     // NoExport structs with TBaseStructure<> registration path
-    private static readonly HashSet<string> NeedRegisterStruct = new()
-    {
+    private static readonly HashSet<string> NeedRegisterStruct =
+    [
         "Rotator", "Quat", "Transform", "Color", "LinearColor", "Plane",
         "Vector", "Vector2D", "Vector4", "RandomStream", "Guid", "Box2D",
         "FallbackStruct", "FloatRangeBound", "FloatRange", "Int32RangeBound",
         "Int32Range", "FloatInterval", "Int32Interval", "FrameNumber",
         "SoftObjectPath", "SoftClassPath", "PrimaryAssetType", "PrimaryAssetId",
         "DateTime", "PolyglotTextData",
-    };
+    ];
 
     #endregion
 
@@ -77,23 +75,16 @@ public static class RustealExport
 
     #region Exporter
 
-    private sealed class Exporter
+    private sealed class Exporter(IUhtExportFactory factory)
     {
-        private readonly IUhtExportFactory _factory;
-        private readonly UhtSession _session;
-
-        private readonly List<JsonObject> _classes = new();
-        private readonly List<JsonObject> _structs = new();
-        private readonly List<JsonObject> _enums = new();
-        private readonly HashSet<string> _exportedClassNames = new();
-        private readonly HashSet<string> _exportedStructNames = new();
-        private readonly HashSet<string> _exportedEnumNames = new();
-
-        public Exporter(IUhtExportFactory factory)
-        {
-            _factory = factory;
-            _session = factory.Session;
-        }
+        private readonly IUhtExportFactory _factory = factory;
+        private readonly UhtSession _session = factory.Session;
+        private readonly List<JsonObject> _classes = [];
+        private readonly List<JsonObject> _structs = [];
+        private readonly List<JsonObject> _enums = [];
+        private readonly HashSet<string> _exportedClassNames = [];
+        private readonly HashSet<string> _exportedStructNames = [];
+        private readonly HashSet<string> _exportedEnumNames = [];
 
         public void Run()
         {
@@ -282,9 +273,11 @@ public static class RustealExport
                 if (colonIdx >= 0)
                     valName = valName[(colonIdx + 2)..];
 
-                var pair = new JsonArray();
-                pair.Add(valName);
-                pair.Add(val.Value);
+                var pair = new JsonArray
+                {
+                    valName,
+                    val.Value
+                };
                 pairs.Add(pair);
             }
 

@@ -35,3 +35,5 @@ ue_plugin/Rusteal/Source/Rusteal/Generated/
 /.env
 /compile_commands.json
 /.cache/
+/ide/**/bin/
+/ide/**/obj/

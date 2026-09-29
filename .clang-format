@@ -1,0 +1,5 @@
+# LLVM style, except that #include lines keep the order they are written in:
+# UHT requires the .generated.h to be the last include of a header, and sorting
+# them alphabetically moves it up.
+BasedOnStyle: LLVM
+SortIncludes: Never
