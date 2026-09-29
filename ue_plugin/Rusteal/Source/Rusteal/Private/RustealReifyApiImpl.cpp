@@ -393,8 +393,10 @@ static RustealUClassHandle CreateClassImpl(
     // Create a stub UBlueprint so that FBlueprintActionDatabase registers
     // our functions.  Without this, the action database sees our class as a
     // UBlueprintGeneratedClass with null ClassGeneratedBy and skips it.
+    // The editor's class picker lists the class under this stub's name, so it
+    // is RS_<Class>: recognisable as Rust, never mistaken for a BP_ asset.
     UBlueprint* StubBP = NewObject<UBlueprint>(
-        RustealPackage, FName(*(ClassName + TEXT("_BP"))),
+        RustealPackage, FName(*(TEXT("RS_") + ClassName)),
         RF_Public | RF_Standalone);
     StubBP->GeneratedClass = NewClass;
     StubBP->SkeletonGeneratedClass = NewClass;
@@ -714,10 +716,10 @@ static ERustealErrorCode AddDefaultSubobjectImpl(
     RC->ComponentDefs.RemoveAll([&](const FRustealComponentDef& D) {
         return D.SubobjectName == Def.SubobjectName;
     });
-    RC->ComponentDefs.Add(MoveTemp(Def));
-
     UE_LOG(LogRusteal, Display, TEXT("[Rusteal] Registered default subobject '%s' (class: %s) on %s"),
         *Def.SubobjectName.ToString(), *CompUClass->GetName(), *RC->GetName());
+
+    RC->ComponentDefs.Add(MoveTemp(Def));
 
     return ERustealErrorCode::Ok;
 }
