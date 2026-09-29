@@ -1,4 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
+  <!-- EngineDir, for IDEs only: UBT passes its own when it builds this plugin.
+       The .props file is machine-specific and not versioned. In a game project,
+       `rusteal setup` writes it from the engine path the CLI keeps; in the Rusteal
+       repository, `cargo xtask dev-setup` writes it from .env (see the README). -->
   <Import Project="RustealExporter.ubtplugin.csproj.props" Condition="Exists('RustealExporter.ubtplugin.csproj.props')" />
   <Import Project="$(EngineDir)\Source\Programs\Shared\UnrealEngine.csproj.props" />
 
