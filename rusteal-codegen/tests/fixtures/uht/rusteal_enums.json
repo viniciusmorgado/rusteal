@@ -479,6 +479,135 @@
         ]
       ],
       "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 2,
+      "cpp_name": "EInputMappingRebuildType",
+      "name": "EInputMappingRebuildType",
+      "package": "EnhancedInput",
+      "pairs": [
+        [
+          "None",
+          0
+        ],
+        [
+          "Rebuild",
+          1
+        ],
+        [
+          "RebuildWithFlush",
+          2
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 2,
+      "cpp_name": "EInputActionValueType",
+      "name": "EInputActionValueType",
+      "package": "EnhancedInput",
+      "pairs": [
+        [
+          "Boolean",
+          0
+        ],
+        [
+          "Axis1D",
+          1
+        ],
+        [
+          "Axis2D",
+          2
+        ],
+        [
+          "Axis3D",
+          3
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 2,
+      "cpp_name": "EMappingQueryResult",
+      "name": "EMappingQueryResult",
+      "package": "EnhancedInput",
+      "pairs": [
+        [
+          "Error_EnhancedInputNotEnabled",
+          0
+        ],
+        [
+          "Error_InputContextNotInActiveContexts",
+          1
+        ],
+        [
+          "Error_InvalidAction",
+          2
+        ],
+        [
+          "NotMappable",
+          3
+        ],
+        [
+          "MappingAvailable",
+          4
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 2,
+      "cpp_name": "EMappingQueryIssue",
+      "name": "EMappingQueryIssue",
+      "package": "EnhancedInput",
+      "pairs": [
+        [
+          "NoIssue",
+          0
+        ],
+        [
+          "ReservedByAction",
+          1
+        ],
+        [
+          "HidesExistingMapping",
+          2
+        ],
+        [
+          "HiddenByExistingMapping",
+          4
+        ],
+        [
+          "CollisionWithMappingInSameContext",
+          8
+        ],
+        [
+          "ForcesTypePromotion",
+          16
+        ],
+        [
+          "ForcesTypeDemotion",
+          32
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 2,
+      "cpp_name": "EInputActionAccumulationBehavior",
+      "name": "EInputActionAccumulationBehavior",
+      "package": "EnhancedInput",
+      "pairs": [
+        [
+          "TakeHighestAbsoluteValue",
+          0
+        ],
+        [
+          "Cumulative",
+          1
+        ]
+      ],
+      "underlying_type": "uint8"
     }
   ]
 }
