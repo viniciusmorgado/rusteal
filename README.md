@@ -248,6 +248,14 @@ pub struct MyActor {
     #[uproperty(BlueprintReadWrite, default = 100)]
     health: i32,
 
+    // Assets and classes, assigned in a Blueprint child
+    #[uproperty(EditAnywhere)]
+    pickup_sound: UObjectRef<SoundBase>,
+    #[uproperty(EditAnywhere)]
+    projectile_class: SubclassOf<Actor>,
+    #[uproperty(EditAnywhere)]
+    materials: UeArray<UObjectRef<MaterialInterface>>,
+
     // Rust-only field (not exposed to UE)
     internal_state: Vec<String>,
 }
@@ -263,6 +271,14 @@ impl MyActor {
     }
 }
 ```
+
+A `#[uproperty]` is `bool`, `i32`, `i64`, `u8`, `f32`, `f64`, an object
+(`UObjectRef<T>`), a class (`SubclassOf<T>`, UE's `TSubclassOf<T>`) or a
+`UeArray` of any of those. Each gets a getter named after the field and, unless
+it is `BlueprintReadOnly`, a `set_` setter; an array's getter returns a view of
+the array inside the object, changed in place. `default = ...` is for the
+scalar types; objects, classes and arrays are set in a Blueprint child, as the
+engine's templates do.
 
 ### Dynamic Calls
 
