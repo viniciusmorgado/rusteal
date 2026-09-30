@@ -97,10 +97,11 @@ per-machine setting Rusteal has.
 rusteal new MyGame --dir ~/Projects
 ```
 
-`rusteal new` creates a UE project from the engine's Blank C++ template,
-installs the Rusteal plugins, writes the Rust workspace and runs the whole
-build pipeline. Then open `MyGame.uproject`, drop a `HelloActor` into the level
-and press Play: the Output Log shows `[MyGame] Hello from Rust`.
+`rusteal new` creates a UE project from one of the [templates](#templates),
+`blank` unless `--template` names another, installs the Rusteal plugins, writes
+the Rust workspace and runs the whole build pipeline. With `blank`, open
+`MyGame.uproject`, drop a `HelloActor` into the level and press Play: the
+Output Log shows `[MyGame] Hello from Rust`.
 
 It does not run `git init` — versioning is your call — but it does write a
 `.gitignore` covering the Unreal and Rust build output, so a later `git init`
@@ -110,6 +111,25 @@ Two flags: `--no-build` stops after writing the project, leaving the pipeline
 for a later `rusteal build`; `--runtime-path` makes the project depend on a
 Rusteal checkout instead of the published crates, which is for working on
 Rusteal itself — see [Working on Rusteal](#working-on-rusteal).
+
+### Templates
+
+```bash
+rusteal new MyGame --template third-person
+```
+
+A template is one of the engine's C++ templates with its gameplay written in
+Rust: the C++ classes are gone, the Rust crate in `Rust/` takes their place,
+and their Blueprint children, with the same names, have Rust parents.
+
+| Template | What it is |
+|---|---|
+| `blank` (default) | The engine's Blank template and a `HelloActor` in Rust. |
+| `third-person` | The engine's Third Person template: its character, game mode and player controller in Rust, playable as it comes (keyboard, mouse, gamepad). The variants (Combat, Platforming, SideScrolling) and the touch controls are not ported. |
+
+<img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/templates/third-person.webp" alt="The third-person template in play" width="640">
+
+`rusteal new` with an unknown template lists the available ones.
 
 ### An existing project
 
@@ -199,7 +219,7 @@ The CLI orchestrates a 5-step build:
 | 1 | UE Build | Compiles UE project, triggers RustealGenerator → JSON reflection data |
 | 2 | Codegen | Reads JSON → generates the `bindings` crate + C++ wrappers |
 | 3 | UE Rebuild | Compiles the generated C++ wrappers into the UE module |
-| 4 | Cargo Build | `cargo build --release` on your cdylib crate |
+| 4 | Cargo Build | `cargo build` of your cdylib crate, with the dev profile (`--release`: the release profile) |
 | 5 | Deploy | Copies the library to `Plugins/Rusteal/Binaries/<Platform>/` (`rusteal.dll`, `librusteal.so`) |
 
 Commands take the project directory, or find it by walking up from the current
@@ -216,7 +236,34 @@ rusteal build --from 2
 
 # Just regenerate the bindings crate and the C++ wrappers
 rusteal generate /path/to/YourProject
+
+# The game library for shipping
+rusteal build --release
 ```
+
+### Development and release builds
+
+The game library is built with Cargo's dev profile by default, which is what
+every build above does while you work on the game, and with the release
+profile when `--release` is given, which is the build to ship. The two want
+opposite things, and the templates set them up for that in the workspace's
+`Rust/Cargo.toml`, the only place Cargo reads profiles from (in the game
+crate's own `Cargo.toml` they are ignored with a warning):
+
+- **dev** (iterating): recompiling after a change must be fast, and the game
+  must still run well in the editor. Only the game crate, the one that
+  changes, is barely optimized; the runtime crates and the generated
+  bindings, which compile once, are fully optimized. A change to the game
+  crate rebuilds in about a second.
+- **release** (shipping): the fastest library possible, however long it
+  takes to build. The whole program is optimized as one unit (link-time
+  optimization, a single codegen unit), which also drops the parts of the
+  bindings the game does not use.
+
+The settings follow Bevy's recommendations for game projects
+([Bevy setup](https://bevy.org/learn/quick-start/getting-started/setup/)). The
+Rusteal crates and the `rusteal` binary are not affected: these profiles only
+shape the game's library.
 
 ## Key Concepts
 
@@ -305,6 +352,12 @@ fn class_defaults(&mut self) -> RustealResult<()> {
     Ok(())
 }
 ```
+
+In the generated bindings, an engine class reference (`TSubclassOf<T>`, such
+as a game mode's `DefaultPawnClass`) is a `SubclassOf<T>`, not an object:
+`get_default_pawn_class()` returns `SubclassOf<Pawn>`, and
+`SubclassOf::<MyPawn>::base().upcast()` passes a Rust class where a parent's is
+expected.
 
 Private engine properties that Blueprint can read (`ACharacter`'s `Mesh`,
 `CharacterMovement` and `CapsuleComponent`) have getters, and no setters when
@@ -544,6 +597,32 @@ with nothing to publish in between.
 
 Changing the C++ plugin means running `cargo run -p rusteal -- sync-plugin`
 before publishing, which refreshes the snapshot the binary embeds.
+
+### Adding a template
+
+A template is a directory under `rusteal-cli/templates/`, embedded in the
+binary when it is built; nothing else registers it. It mirrors the root of
+the project it creates:
+
+- `template.toml` names the engine template the project starts from
+  (`engine_template`), the paths of it to leave out (`exclude`: the C++
+  gameplay the template replaces), a one-line `description` and the
+  `next_step` printed at the end;
+- every other file is written into the project over the engine template's:
+  `*.tera` files are rendered with [Tera](https://keats.github.io/tera/) and
+  lose the extension, the rest (Blueprints, meshes) is copied as is;
+- `{{ variable }}` works in folder and file names too:
+  `Rust/{{crate_name}}/src/lib.rs.tera`.
+
+The context is the same for every template: `project`, `crate_name`,
+`version`, `glam_version` and, with `--runtime-path`, `runtime_path`.
+
+Each template is complete on its own. A new one starts as a copy of the
+closest existing template (a third-person shooter from `third-person`) and is
+changed from there, never layered on top of it. Its Blueprints come from a
+project where they were made and played, saved with the engine version
+Rusteal targets. A template with something to see has a screenshot in
+`assets/templates/`, shown in [Templates](#templates).
 
 Engine APIs Rusteal uses that Unreal has deprecated are tracked in
 [`docs/ue-deprecations.md`](https://github.com/viniciusmorgado/rusteal/blob/main/docs/ue-deprecations.md): what, since which UE

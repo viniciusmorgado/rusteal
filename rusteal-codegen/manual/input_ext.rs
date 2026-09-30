@@ -1,6 +1,6 @@
 // Type-safe Enhanced Input binding on top of rusteal_core::input.
 
-use rusteal_core::{Checked, RustealResult, UObjectHandle, UObjectRef, UStructRef, UeClass};
+use rusteal_core::{Checked, RustealResult, SubclassOf, UObjectRef, UStructRef, UeClass};
 
 use crate::engine::{
     LocalPlayerSubsystem, PlayerController, SubsystemBlueprintLibrary, SubsystemBlueprintLibraryExt,
@@ -75,12 +75,8 @@ pub fn enhanced_input_subsystem(
     controller: UObjectRef<PlayerController>,
 ) -> RustealResult<UObjectRef<EnhancedInputLocalPlayerSubsystem>> {
     controller.checked()?;
-    // The generated function takes the class as an object reference.
-    let class = unsafe {
-        UObjectRef::<LocalPlayerSubsystem>::from_raw(UObjectHandle(
-            EnhancedInputLocalPlayerSubsystem::static_class().0,
-        ))
-    };
+    let class: SubclassOf<LocalPlayerSubsystem> =
+        SubclassOf::<EnhancedInputLocalPlayerSubsystem>::base().upcast();
     <Checked<SubsystemBlueprintLibrary> as SubsystemBlueprintLibraryExt>::get_local_player_sub_system_from_player_controller(
         controller, class,
     )

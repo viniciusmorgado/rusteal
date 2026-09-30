@@ -193,6 +193,20 @@ fn resolve_delegate_param(
             rust_type: "String".into(),
             conversion: ParamConversion::String,
         }),
+        // A class (`TSubclassOf<T>`), typed by its meta class.
+        "ClassProperty"
+            if value
+                .get("meta_class_name")
+                .and_then(|v| v.as_str())
+                .is_some_and(|meta| ctx.classes.contains_key(meta)) =>
+        {
+            let meta = value["meta_class_name"].as_str().unwrap_or_default();
+            Some(DelegateParam {
+                name: param_name,
+                rust_type: format!("rusteal_core::SubclassOf<{meta}>"),
+                conversion: ParamConversion::ObjectRef(meta.to_string()),
+            })
+        }
         "ObjectProperty" | "ClassProperty" => {
             let cls = value.get("class_name").and_then(|v| v.as_str());
             if let Some(cls) = cls {
@@ -402,7 +416,7 @@ pub fn generate_delegate_structs(
                 }
                 ParamConversion::ObjectRef(_cls) => {
                     out.push_str(&format!(
-                        "                let {var_name} = rusteal_core::UObjectRef::from_raw(\n\
+                        "                let {var_name} = rusteal_core::ObjectPointer::from_object_handle(\n\
                          \x20                   rusteal_core::ffi_dispatch::native_mem_read::<rusteal_core::UObjectHandle>(params, param_info[{i}].0 as usize)\n\
                          \x20               );\n"
                     ));

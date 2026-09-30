@@ -37,6 +37,10 @@ enum Commands {
         /// Where to create it (default: the current directory).
         #[arg(long, default_value = ".")]
         dir: PathBuf,
+        /// What the project starts as: `blank` (an actor in Rust) or
+        /// `third-person` (the Third Person template, in Rust).
+        #[arg(long, default_value = "blank")]
+        template: String,
         /// Depend on a local Rusteal checkout instead of the published crates.
         #[arg(long)]
         runtime_path: Option<PathBuf>,
@@ -59,6 +63,10 @@ enum Commands {
         /// Start from step N (1-5, default: 1).
         #[arg(long, default_value_t = 1)]
         from: u8,
+        /// Build the game library with the release profile, to ship the game
+        /// (default: the dev profile, to iterate).
+        #[arg(long)]
+        release: bool,
     },
     /// Generate the bindings crate and the C++ wrappers from the reflection JSON.
     Generate {
@@ -80,11 +88,12 @@ fn main() {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::New { name, dir, runtime_path, no_build } => {
+        Commands::New { name, dir, template, runtime_path, no_build } => {
             let engine = global_config::engine_path();
             new_cmd::run_new(&new_cmd::NewOptions {
                 name: &name,
                 parent: &dir,
+                template: &template,
                 engine: &engine,
                 runtime_path: runtime_path.as_deref(),
                 build: !no_build,
@@ -99,11 +108,11 @@ fn main() {
             let engine = global_config::engine_path();
             setup::run_setup(&project, &engine);
         }
-        Commands::Build { project, step, from } => {
+        Commands::Build { project, step, from, release } => {
             let root = project_root(project.as_deref());
             check_version(&root, Scope::PinsAndPlugins);
             let engine = global_config::engine_path();
-            build_cmd::run_build(&root, &engine, step, from);
+            build_cmd::run_build(&root, &engine, step, from, release);
         }
         Commands::Generate { project } => {
             let root = project_root(project.as_deref());

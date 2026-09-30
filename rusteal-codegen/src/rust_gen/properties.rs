@@ -443,7 +443,7 @@ fn generate_object_getter(
     out.push_str(&format!(
         "        let mut raw = rusteal_core::UObjectHandle::null();\n\
          \x20       rusteal_core::ffi_infallible_ctx(unsafe {{ rusteal_core::ffi_dispatch::property_get_object({c}, prop, &mut raw) }}, \"{rust_name}\");\n\
-         \x20       unsafe {{ rusteal_core::UObjectRef::from_raw(raw) }}\n\
+         \x20       unsafe {{ rusteal_core::ObjectPointer::from_object_handle(raw) }}\n\
          \x20   }}\n\n"
     ));
 }
@@ -585,7 +585,7 @@ fn generate_object_setter(
     emit_prop_lookup(out, byte_lit, prop_name_len, pctx);
     emit_pre_access(out, pctx);
     out.push_str(&format!(
-        "        rusteal_core::ffi_infallible_ctx(unsafe {{ rusteal_core::ffi_dispatch::property_set_object({c}, prop, val.raw()) }}, \"{rust_name}\");\n\
+        "        rusteal_core::ffi_infallible_ctx(unsafe {{ rusteal_core::ffi_dispatch::property_set_object({c}, prop, rusteal_core::ObjectPointer::object_handle(&val)) }}, \"{rust_name}\");\n\
          \x20   }}\n\n"
     ));
 }
@@ -731,9 +731,9 @@ fn generate_fixed_array_property(
             (
                 rust_type.clone(),
                 "let handle = rusteal_core::UObjectHandle::from_addr(u64::from_ne_bytes(buf[..8].try_into().unwrap()));\n\
-                 \x20       Ok(unsafe { rusteal_core::UObjectRef::from_raw(handle) })".to_string(),
+                 \x20       Ok(unsafe { rusteal_core::ObjectPointer::from_object_handle(handle) })".to_string(),
                 rust_type.clone(),
-                "let buf = val.raw().to_addr().to_ne_bytes().to_vec();".to_string(),
+                "let buf = rusteal_core::ObjectPointer::object_handle(&val).to_addr().to_ne_bytes().to_vec();".to_string(),
             )
         }
         ConversionKind::EnumCast => {

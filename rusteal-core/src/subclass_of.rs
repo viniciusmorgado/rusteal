@@ -7,7 +7,8 @@ use std::marker::PhantomData;
 use rusteal_ffi::{UClassHandle, UObjectHandle};
 
 use crate::containers::ContainerElement;
-use crate::traits::UeClass;
+use crate::object_ref::ObjectPointer;
+use crate::traits::{HasParent, UeClass};
 
 /// A reference to `T`'s class or one of its subclasses; null when unset.
 #[repr(transparent)]
@@ -80,6 +81,26 @@ impl<T: UeClass> SubclassOf<T> {
     }
 }
 
+impl<T: HasParent> SubclassOf<T> {
+    /// The same class as a subclass of `T`'s parent. Zero-cost.
+    #[inline]
+    pub fn upcast(self) -> SubclassOf<T::Parent> {
+        unsafe { SubclassOf::from_raw(self.handle) }
+    }
+}
+
+impl<T: UeClass> ObjectPointer for SubclassOf<T> {
+    #[inline]
+    unsafe fn from_object_handle(handle: UObjectHandle) -> Self {
+        unsafe { Self::from_raw(UClassHandle(handle.0)) }
+    }
+
+    #[inline]
+    fn object_handle(&self) -> UObjectHandle {
+        UObjectHandle(self.handle.0)
+    }
+}
+
 impl<T: UeClass> Default for SubclassOf<T> {
     fn default() -> Self {
         Self::null()
@@ -131,6 +152,26 @@ mod tests {
         assert_ne!(base, SubclassOf::<Probe>::null());
         assert!(SubclassOf::<Probe>::default().is_null());
         assert_eq!(base.raw(), Probe::static_class());
+    }
+
+    struct Child;
+    impl UeClass for Child {
+        fn static_class() -> UClassHandle {
+            UClassHandle::from_addr(0x2000)
+        }
+    }
+    impl HasParent for Child {
+        type Parent = Probe;
+    }
+
+    #[test]
+    fn travels_as_an_object_pointer_and_upcasts() {
+        let child = SubclassOf::<Child>::base();
+        let handle = child.object_handle();
+        assert_eq!(handle.to_addr(), 0x2000);
+        assert_eq!(unsafe { SubclassOf::<Child>::from_object_handle(handle) }, child);
+        let as_parent: SubclassOf<Probe> = child.upcast();
+        assert_eq!(as_parent.raw(), Child::static_class());
     }
 
     #[test]

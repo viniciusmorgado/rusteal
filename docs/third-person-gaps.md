@@ -11,6 +11,12 @@ The reference port is a Third Person project whose Rust crate provides
 Each entry records how that port copes today and what Rusteal would need so the
 workaround, and then the C++ class, can go.
 
+**The port is closed.** It has no gameplay C++ left: the three C++ classes are
+gone and their Blueprint children (`BP_ThirdPersonCharacter`,
+`BP_ThirdPersonGameMode`, `BP_ThirdPersonPlayerController`) have Rust parents.
+It is what `rusteal new <Name> --template third-person` creates. Open, beyond
+this template's scope: TP-GAP-06 (touch controls).
+
 ## How to read an entry
 
 | Field | Meaning |
@@ -79,7 +85,7 @@ Three experiments on the reference port (Rusteal 0.3.0, UE 5.8.2), all reverted:
 | | |
 |---|---|
 | **Template** | `UInputAction*` ×4 (`MyProjectCharacter.h:38-50`), `TArray<UInputMappingContext*>` ×2 and `TSubclassOf<UUserWidget>` (`MyProjectPlayerController.h:25-33`). |
-| **Today** | The character declares `jump_action`, `move_action`, `look_action` and `mouse_look_action` (`UObjectRef<InputAction>`), assigned in `BP_RustCharacter` and logged at BeginPlay; they are bound to handlers with TP-GAP-05 (c, d). |
+| **Today** | The character declares `jump_action`, `move_action`, `look_action` and `mouse_look_action` (`UObjectRef<InputAction>`), assigned in `BP_ThirdPersonCharacter` and bound to its handlers in `ReceiveRestarted` (TP-GAP-05); the player controller's mapping contexts are `UeArray<UObjectRef<InputMappingContext>>`. |
 | **Rusteal needs** | `macros` + `plugin` (reify): object references (`UObjectRef<T>`), class references (`TSubclassOf`) and `TArray` of those as properties, editable in a Blueprint child. Done: `#[uproperty]` takes `UObjectRef<T>`, `SubclassOf<T>` (new in `core`) and `UeArray<E>` of those or of the scalars; the plugin creates the `TArray` property (`RustealReifyPropType::Array`). `default = ...` stays scalar-only: the others are set in the Blueprint child. |
 | **Evidence** | `rusteal-codegen/tests/manual_compiles.rs` (`uproperty_types_compile`); in the port, the four properties on the class and, in a temporary run, a `SubclassOf` and arrays of classes, objects and floats written and read back from Rust. |
 | **Depends on** | — |
@@ -196,12 +202,12 @@ Three experiments on the reference port (Rusteal 0.3.0, UE 5.8.2), all reverted:
 | | |
 |---|---|
 | **Template** | `ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(...)`; `TSubclassOf` properties such as `DefaultPawnClass`. |
-| **Today** | workaround: codegen types every `TSubclassOf<T>` (property, parameter, return, container element) as `UObjectRef<T>`, an object of class `T`, while it holds a class. The bindings' `enhanced_input_subsystem` and the port's `helpers::class_of` convert a class to that type by hand. |
-| **Rusteal needs** | `codegen`: map class properties to `SubclassOf<T>` (added to `core` for `#[uproperty]`), which the generated conversions (`ConversionKind::ObjectRef`, about 30 places) do not know yet. |
-| **Evidence** | `rusteal-codegen/src/type_map.rs` (`ClassProperty` → `rusteal_core::UObjectRef<{cls}>`). |
+| **Today** | The bindings type every class reference as `SubclassOf<T>`: `get_default_pawn_class()` returns `SubclassOf<Pawn>`, and `enhanced_input_subsystem` passes `SubclassOf::<EnhancedInputLocalPlayerSubsystem>::base().upcast()`, without the hand conversion. |
+| **Rusteal needs** | `codegen`: map class properties to `SubclassOf<T>`. They were `UObjectRef<T>`, an object of class `T` while the engine held a class, so calling `T`'s methods on it compiled and went to the wrong object. Done: class properties, parameters, returns, container elements and delegate parameters are `SubclassOf<T>`. The generated conversions go through `rusteal_core::ObjectPointer`, which `UObjectRef<T>` and `SubclassOf<T>` implement (both travel as a `UObject*`), and `SubclassOf<T>::upcast()` reaches the parent class as `UObjectRef<T>::upcast()` does. |
+| **Evidence** | `rusteal-codegen/src/type_map.rs` (`ClassProperty`); `rusteal-codegen/tests/manual_compiles.rs` (`use_generated_classes`); a UE 5.8.2 project's bindings compile with 300 `SubclassOf` uses and no warning. |
 | **Depends on** | — |
 | **Done when** | Generated class references are `SubclassOf<T>` and the hand conversions are gone. |
-| **Status** | workaround |
+| **Status** | fixed, not released |
 | **Last checked** | Rusteal 0.3.0, UE 5.8.2 |
 
 ## Order
@@ -221,5 +227,6 @@ By what each one unblocks for the template:
 
 The Blueprint route needs none of these and is applied in the port: the
 `GetDefaultPawnClassForController` override and the mannequin loaded by path are
-gone. It also lets the Rust player controller be selected: `BP_RustGameMode`
-sets `BP_RustPlayerController` as its Player Controller Class.
+gone. It also lets the Rust player controller be selected:
+`BP_ThirdPersonGameMode` sets `BP_ThirdPersonPlayerController` as its Player
+Controller Class.

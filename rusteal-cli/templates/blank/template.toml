@@ -1,0 +1,13 @@
+# `rusteal new <Name>`: the engine's Blank C++ project with an actor in Rust.
+description = "An empty project with a HelloActor written in Rust."
+
+# The engine template the project starts from, copied with the engine's own
+# recipe (its Config/TemplateDefs.ini), as the editor's New Project dialog does.
+engine_template = "TP_Blank"
+
+# Paths of the engine template to leave out, relative to it; %TEMPLATENAME%
+# stands for its name, and a folder leaves out everything under it.
+exclude = []
+
+# Printed when the project is ready (Tera, same context as the files).
+next_step = "open {{ project }}.uproject, drop a HelloActor into the level, press Play"

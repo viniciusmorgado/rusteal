@@ -136,7 +136,7 @@ fn generate_config(project_path: &Path) {
     let crate_name = default_crate_name(project_path);
     let mut ctx = tera::Context::new();
     ctx.insert("crate_name", &crate_name);
-    fs::write(&config_path, templates::render("rusteal.toml.tera", &ctx))
+    fs::write(&config_path, templates::render_rusteal_toml(&ctx))
         .unwrap_or_else(|e| panic!("Failed to write {}: {e}", config_path.display()));
     eprintln!("  Generated {} (crate = \"{crate_name}\")", config_path.display());
 }

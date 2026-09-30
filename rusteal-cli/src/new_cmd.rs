@@ -1,10 +1,12 @@
 // `rusteal new`: a UE project with Rust inside, built and ready to open.
 //
-// The UE side comes from the engine's own Blank C++ template. The editor's
-// New Project dialog is a recipe every template ships in its
+// The UE side comes from one of the engine's C++ templates, the one the
+// Rusteal template names (`templates/<name>/template.toml`). The editor's New
+// Project dialog is a recipe every engine template ships in its
 // `Config/TemplateDefs.ini` (copy, ignore, rename, replace, shared content);
-// this reproduces it, then installs the Rusteal plugins, writes the Rust
-// workspace and runs the build pipeline.
+// this reproduces it, leaving out what the Rusteal template excludes (the C++
+// gameplay it replaces), then writes the Rusteal template's files, installs
+// the Rusteal plugins and runs the build pipeline.
 
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -13,10 +15,6 @@ use std::path::{Path, PathBuf};
 use rusteal_codegen::config::ProjectLayout;
 
 use crate::{build_cmd, setup, templates};
-
-/// The engine template a new project starts from: the C++ one, so that UBT has
-/// a module and an Editor target to build the plugins with.
-const TEMPLATE: &str = "TP_Blank";
 
 /// Extensions the template recipe renames and rewrites inside.
 const TEXT_EXTENSIONS: &[&str] = &["cpp", "h", "ini", "cs"];
@@ -27,6 +25,8 @@ const GLAM_VERSION: &str = "0.33";
 pub struct NewOptions<'a> {
     pub name: &'a str,
     pub parent: &'a Path,
+    /// The Rusteal template (`templates/<name>/`).
+    pub template: &'a str,
     pub engine: &'a Path,
     /// A Rusteal checkout to depend on by path instead of the published crates.
     pub runtime_path: Option<&'a Path>,
@@ -35,6 +35,13 @@ pub struct NewOptions<'a> {
 
 pub fn run_new(opts: &NewOptions) {
     validate_name(opts.name);
+    let Some(manifest) = templates::manifest(opts.template) else {
+        eprintln!("Error: there is no template '{}'. The templates are:", opts.template);
+        for (name, manifest) in templates::available() {
+            eprintln!("  {name:<14} {}", manifest.description);
+        }
+        std::process::exit(1);
+    };
     let root = opts.parent.join(opts.name);
     if root.exists() {
         eprintln!("Error: {} already exists.", root.display());
@@ -42,25 +49,27 @@ pub fn run_new(opts: &NewOptions) {
     }
 
     eprintln!(
-        "rusteal new: creating {} from the {TEMPLATE} template",
-        root.display()
+        "rusteal new: creating {} from the {} template ({})",
+        root.display(),
+        opts.template,
+        manifest.engine_template
     );
-    let template = Template::load(opts.engine, TEMPLATE);
+    let template = Template::load(opts.engine, &manifest.engine_template, &manifest.exclude);
     template.instantiate(opts.name, &root);
     write_uproject(&template, opts.name, opts.engine, &root);
     write_project_ini(&template, opts.name, &root);
-    std::fs::write(root.join(".gitignore"), templates::raw("project.gitignore"))
-        .unwrap_or_else(|e| panic!("Failed to write .gitignore: {e}"));
+
+    let crate_name = setup::default_crate_name(&root);
+    let context = template_context(opts.name, &crate_name, opts.runtime_path);
+    let written = templates::write_project_files(opts.template, &root, &context);
+    eprintln!("rusteal new: {written} files from the {} template (crate {crate_name})", opts.template);
+    write_bindings_placeholder(&root);
 
     eprintln!("rusteal new: installing the Rusteal plugins");
     setup::run_setup(&root, opts.engine);
 
-    let crate_name = setup::default_crate_name(&root);
-    eprintln!("rusteal new: writing Rust/ (crate {crate_name})");
-    write_rust_workspace(&root, opts.name, &crate_name, opts.runtime_path);
-
     if opts.build {
-        build_cmd::run_build(&root, opts.engine, None, 1);
+        build_cmd::run_build(&root, opts.engine, None, 1, false);
     }
 
     eprintln!("\nrusteal new: done.");
@@ -68,10 +77,9 @@ pub fn run_new(opts: &NewOptions) {
     if !opts.build {
         eprintln!("  rusteal build      # UE build, bindings, plugin, cargo, deploy");
     }
-    eprintln!(
-        "  # open {}.uproject, drop a HelloActor into the level, press Play",
-        opts.name
-    );
+    let next_step = tera::Tera::one_off(&manifest.next_step, &context, false)
+        .unwrap_or_else(|e| panic!("Failed to render next_step: {e}"));
+    eprintln!("  # {next_step}");
 }
 
 /// UE project names: letters and digits, starting with a letter, 20 at most.
@@ -112,10 +120,12 @@ struct Template {
     /// Classes the template declares with its own prefix: the project needs a
     /// redirect for each, or its assets fail to load.
     prefixed_classes: Vec<String>,
+    /// Paths the Rusteal template leaves out (see `templates::Manifest::exclude`).
+    exclude: Vec<String>,
 }
 
 impl Template {
-    fn load(engine: &Path, name: &str) -> Self {
+    fn load(engine: &Path, name: &str, exclude: &[String]) -> Self {
         let dir = engine.join("Templates").join(name);
         let defs_path = dir.join("Config/TemplateDefs.ini");
         let defs = std::fs::read_to_string(&defs_path).unwrap_or_else(|e| {
@@ -134,6 +144,7 @@ impl Template {
             content_replacements: Vec::new(),
             shared_packs: Vec::new(),
             prefixed_classes: Vec::new(),
+            exclude: exclude.to_vec(),
         };
 
         for raw in defs.trim_start_matches('\u{feff}').lines() {
@@ -183,7 +194,8 @@ impl Template {
         if let Ok(entries) = std::fs::read_dir(dir.join("Source").join(name)) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                if path.extension().is_some_and(|ext| ext == "h") {
+                let rel = format!("Source/{name}/{}", entry.file_name().to_string_lossy());
+                if path.extension().is_some_and(|ext| ext == "h") && !t.is_excluded(&rel, "") {
                     let stem = path.file_stem().unwrap().to_string_lossy().into_owned();
                     if stem != name && stem.starts_with(name) {
                         t.prefixed_classes.push(stem);
@@ -193,6 +205,15 @@ impl Template {
         }
         t.prefixed_classes.sort();
         t
+    }
+
+    /// Whether the Rusteal template leaves this path of the engine template out.
+    fn is_excluded(&self, rel: &str, project: &str) -> bool {
+        let rel = rel.to_lowercase();
+        self.exclude.iter().any(|path| {
+            let path = self.expand(path, project).to_lowercase();
+            rel == path || rel.starts_with(&format!("{path}/"))
+        })
     }
 
     /// Expand the `%TEMPLATENAME%` / `%PROJECTNAME%` placeholders.
@@ -236,7 +257,7 @@ impl Template {
                 .files_to_ignore
                 .iter()
                 .any(|file| self.expand(file, project).to_lowercase() == rel_lower);
-            if ignored_folder || ignored_file {
+            if ignored_folder || ignored_file || self.is_excluded(&rel_str, project) {
                 continue;
             }
 
@@ -453,18 +474,8 @@ fn project_id(project: &str) -> String {
 // Rust workspace
 // ---------------------------------------------------------------------------
 
-fn write_rust_workspace(
-    root: &Path,
-    project: &str,
-    crate_name: &str,
-    runtime_path: Option<&Path>,
-) {
-    let layout = ProjectLayout::new(root);
-    let rust = layout.rust_workspace();
-    let game = rust.join(crate_name);
-    std::fs::create_dir_all(game.join("src"))
-        .unwrap_or_else(|e| panic!("Failed to create {}: {e}", game.display()));
-
+/// The context every template's files and paths are rendered with.
+fn template_context(project: &str, crate_name: &str, runtime_path: Option<&Path>) -> tera::Context {
     let mut ctx = tera::Context::new();
     ctx.insert("project", project);
     ctx.insert("crate_name", crate_name);
@@ -486,26 +497,25 @@ fn write_rust_workspace(
         }
         ctx.insert("runtime_path", &checkout.to_string_lossy().replace('\\', "/"));
     }
+    ctx
+}
 
-    write(&rust.join("Cargo.toml"), &templates::render("workspace.Cargo.toml.tera", &ctx));
-    write(&game.join("Cargo.toml"), &templates::render("game.Cargo.toml.tera", &ctx));
-    write(&game.join("src/lib.rs"), &templates::render("lib.rs.tera", &ctx));
-    write(&game.join("src/hello.rs"), &templates::render("hello.rs.tera", &ctx));
-
-    // The bindings crate is written by the build; leave a placeholder so the
-    // workspace resolves before the first `rusteal build`.
-    let bindings = layout.bindings_crate();
-    if !bindings.join("Cargo.toml").exists() {
-        std::fs::create_dir_all(bindings.join("src"))
-            .unwrap_or_else(|e| panic!("Failed to create {}: {e}", bindings.display()));
-        write(
-            &bindings.join("Cargo.toml"),
-            "# Placeholder, replaced by the codegen step of `rusteal build`.\n\n\
-             [package]\nname = \"bindings\"\nversion = \"0.0.0\"\nedition = \"2024\"\npublish = false\n\n\
-             [dependencies]\nrusteal-core = { workspace = true }\nrusteal-ffi = { workspace = true }\n",
-        );
-        write(&bindings.join("src/lib.rs"), "// Written by `rusteal build`.\n");
+/// The bindings crate is written by the build; leave a placeholder so the
+/// workspace resolves before the first `rusteal build`.
+fn write_bindings_placeholder(root: &Path) {
+    let bindings = ProjectLayout::new(root).bindings_crate();
+    if bindings.join("Cargo.toml").exists() {
+        return;
     }
+    std::fs::create_dir_all(bindings.join("src"))
+        .unwrap_or_else(|e| panic!("Failed to create {}: {e}", bindings.display()));
+    write(
+        &bindings.join("Cargo.toml"),
+        "# Placeholder, replaced by the codegen step of `rusteal build`.\n\n\
+         [package]\nname = \"bindings\"\nversion = \"0.0.0\"\nedition = \"2024\"\npublish = false\n\n\
+         [dependencies]\nrusteal-core = { workspace = true }\nrusteal-ffi = { workspace = true }\n",
+    );
+    write(&bindings.join("src/lib.rs"), "// Written by `rusteal build`.\n");
 }
 
 fn write(path: &Path, contents: &str) {
