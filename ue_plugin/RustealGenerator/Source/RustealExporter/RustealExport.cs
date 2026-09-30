@@ -264,6 +264,11 @@ public static class RustealExport
                 return;
             }
 
+            // UHT stores -1 for the values it did not parse; recompute those.
+            Dictionary<string, long> evaluated = enumObj.EnumValues.Any(v => v.Value == -1)
+                ? RustealEnumValues.Evaluate(enumObj)
+                : null;
+
             var pairs = new JsonArray();
             foreach (UhtEnumValue val in enumObj.EnumValues)
             {
@@ -273,10 +278,16 @@ public static class RustealExport
                 if (colonIdx >= 0)
                     valName = valName[(colonIdx + 2)..];
 
+                long value = val.Value;
+                if (value == -1 && evaluated != null && evaluated.TryGetValue(valName, out long computed))
+                {
+                    value = computed;
+                }
+
                 var pair = new JsonArray
                 {
                     valName,
-                    val.Value
+                    value
                 };
                 pairs.Add(pair);
             }

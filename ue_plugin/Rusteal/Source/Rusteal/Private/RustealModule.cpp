@@ -19,6 +19,7 @@ extern FRustealLifecycleApi GLifecycleApi;
 extern FRustealReifyApi GReifyApi;
 extern FRustealWorldApi GWorldApi;
 extern FRustealWidgetApi GWidgetApi;
+extern FRustealInputApi GInputApi;
 
 // Reify helpers (defined in RustealReifyApiImpl.cpp)
 extern void RustealReifyRegisterDeleteListener();
@@ -102,6 +103,7 @@ static void FillApiTable() {
   GApiTable.reify = &GReifyApi;
   GApiTable.world = &GWorldApi;
   GApiTable.widget = &GWidgetApi;
+  GApiTable.input = &GInputApi;
 
   // Fill generated func_table (Phase 6)
   RustealFillFuncTable();

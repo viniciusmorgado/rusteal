@@ -225,6 +225,11 @@ struct FRustealReflectionApi {
   // Destroy struct memory (calls C++ destructors for non-trivial members).
   ERustealErrorCode (*destroy_struct)(RustealUStructHandle ustruct,
                                       uint8 *data);
+
+  // Copy the struct at src over the initialized struct at dest with the
+  // UScriptStruct's copy semantics (deep for strings, arrays and the like).
+  ERustealErrorCode (*copy_struct)(RustealUStructHandle ustruct, uint8 *dest,
+                                   const uint8 *src);
 };
 
 // ---------------------------------------------------------------------------
@@ -425,6 +430,21 @@ struct FRustealWidgetApi {
   RustealUObjectHandle (*get_widget_tree)(RustealUObjectHandle user_widget);
 };
 
+// ---------------------------------------------------------------------------
+// FRustealInputApi — Enhanced Input bindings
+// ---------------------------------------------------------------------------
+
+struct FRustealInputApi {
+  // Bind TriggerEvent (an ETriggerEvent value) of Action on Actor's Enhanced
+  // Input component to Actor's UFUNCTION FunctionName, which takes no
+  // parameters or one FInputActionValue.
+  ERustealErrorCode (*bind_action)(RustealUObjectHandle actor,
+                                   RustealUObjectHandle action,
+                                   uint8 trigger_event,
+                                   const uint8 *function_name,
+                                   uint32 function_name_len);
+};
+
 struct FRustealWorldApi {
   RustealUObjectHandle (*spawn_actor)(RustealUObjectHandle world,
                                       RustealUClassHandle cls,
@@ -482,6 +502,7 @@ struct FRustealApiTable {
   const FRustealWorldApi *world;
   const FRustealLoggingApi *logging;
   const FRustealWidgetApi *widget;
+  const FRustealInputApi *input;
 
   // Generated function-pointer array
   const void *const *func_table;

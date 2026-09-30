@@ -40,6 +40,10 @@ const ENTRIES: &[(&str, &str)] = &[
     ("engine", "crate::manual::world_ext::{WorldSpawnExt, find_object, load_object}"),
     ("input", "crate::input_core::FKey"),
     ("input", "crate::manual::fkey::FKeyExt"),
+    (
+        "enhanced-input",
+        "crate::manual::input_ext::{InputActionValueExt, bind_action, enhanced_input_subsystem}",
+    ),
 ];
 
 /// Write `src/prelude.rs`, keeping only the entries whose feature exists in

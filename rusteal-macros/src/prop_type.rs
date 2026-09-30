@@ -8,7 +8,8 @@ use syn::Type;
 pub struct PropTypeInfo {
     /// Token for the RustealReifyPropType variant (e.g. `RustealReifyPropType::Float`).
     pub prop_type_expr: TokenStream,
-    /// The Rust type used for the getter's return value and the setter's parameter.
+    /// The Rust type used for the getter's return value and the setter's parameter:
+    /// the type as written, so the imports it names count as used.
     pub rust_type: TokenStream,
     pub kind: PropKind,
 }
@@ -30,6 +31,9 @@ pub enum PropKind {
     Class { meta_class: Type },
     /// `UeArray<E>`: a `TArray` of a scalar, object or class element.
     Array { element: Box<PropTypeInfo> },
+    /// `UStructRef<T>`: a UE struct, by reference to its memory. Only as a
+    /// `#[ufunction]` parameter, where it points into the call's parameters.
+    Struct { strukt: Type },
 }
 
 impl PropTypeInfo {
@@ -43,6 +47,9 @@ impl PropTypeInfo {
             }),
             PropKind::Class { meta_class } => Some(quote! {
                 meta_class_handle: <#meta_class as ::rusteal_runtime::runtime::UeClass>::static_class(),
+            }),
+            PropKind::Struct { strukt } => Some(quote! {
+                struct_handle: <#strukt as ::rusteal_runtime::runtime::UeStruct>::static_struct(),
             }),
             PropKind::Array { element } => {
                 let inner_type = &element.prop_type_expr;
@@ -82,7 +89,7 @@ pub fn map_type(ty: &Type) -> Option<PropTypeInfo> {
             let class = single_type_arg(seg)?;
             return Some(PropTypeInfo {
                 prop_type_expr: quote! { ::rusteal_runtime::ffi::RustealReifyPropType::Object },
-                rust_type: quote! { ::rusteal_runtime::runtime::UObjectRef<#class> },
+                rust_type: quote! { #ty },
                 kind: PropKind::Object { class },
             });
         }
@@ -90,19 +97,26 @@ pub fn map_type(ty: &Type) -> Option<PropTypeInfo> {
             let meta_class = single_type_arg(seg)?;
             return Some(PropTypeInfo {
                 prop_type_expr: quote! { ::rusteal_runtime::ffi::RustealReifyPropType::Class },
-                rust_type: quote! { ::rusteal_runtime::runtime::SubclassOf<#meta_class> },
+                rust_type: quote! { #ty },
                 kind: PropKind::Class { meta_class },
+            });
+        }
+        "UStructRef" => {
+            let strukt = single_type_arg(seg)?;
+            return Some(PropTypeInfo {
+                prop_type_expr: quote! { ::rusteal_runtime::ffi::RustealReifyPropType::Struct },
+                rust_type: quote! { #ty },
+                kind: PropKind::Struct { strukt },
             });
         }
         "UeArray" => {
             let element = map_type(&single_type_arg(seg)?)?;
-            if matches!(element.kind, PropKind::Array { .. }) {
-                return None; // UE has no arrays of arrays
+            if matches!(element.kind, PropKind::Array { .. } | PropKind::Struct { .. }) {
+                return None; // no arrays of arrays; struct elements are not supported
             }
-            let element_rust = &element.rust_type;
             return Some(PropTypeInfo {
                 prop_type_expr: quote! { ::rusteal_runtime::ffi::RustealReifyPropType::Array },
-                rust_type: quote! { ::rusteal_runtime::runtime::UeArray<#element_rust> },
+                rust_type: quote! { #ty },
                 kind: PropKind::Array { element: Box::new(element) },
             });
         }
@@ -175,6 +189,7 @@ mod tests {
             PropKind::Object { .. } => "object",
             PropKind::Class { .. } => "class",
             PropKind::Array { .. } => "array",
+            PropKind::Struct { .. } => "struct",
         })
     }
 
@@ -187,6 +202,7 @@ mod tests {
         assert_eq!(kind(parse_quote!(UeArray<UObjectRef<InputMappingContext>>)), Some("array"));
         assert_eq!(kind(parse_quote!(UeArray<SubclassOf<Actor>>)), Some("array"));
         assert_eq!(kind(parse_quote!(UeArray<f32>)), Some("array"));
+        assert_eq!(kind(parse_quote!(UStructRef<FInputActionValue>)), Some("struct"));
     }
 
     #[test]
@@ -195,6 +211,7 @@ mod tests {
         assert_eq!(kind(parse_quote!(UObjectRef)), None);
         assert_eq!(kind(parse_quote!(UeArray<UeArray<f32>>)), None);
         assert_eq!(kind(parse_quote!(UeArray<String>)), None);
+        assert_eq!(kind(parse_quote!(UeArray<UStructRef<FVector>>)), None);
         assert_eq!(kind(parse_quote!(Vec<UObjectRef<InputAction>>)), None);
     }
 

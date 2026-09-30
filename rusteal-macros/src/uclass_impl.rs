@@ -3,6 +3,7 @@
 
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
+use syn::ext::IdentExt;
 use syn::{parse2, FnArg, Ident, ImplItem, ImplItemFn, ItemImpl, Meta, ReceiverKind, ReturnType, Token, Type};
 use syn::punctuated::Punctuated;
 
@@ -131,20 +132,31 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
             let rust_name = &param.rust_name;
             let rust_ty = &param.rust_ty;
             let idx = syn::Index::from(i);
-            if is_ustruct_ref_type(rust_ty) {
-                // UStructRef<T>: create a typed reference to struct data in the params buffer
-                param_reads.push(quote! {
-                    let #rust_name: #rust_ty = unsafe {
-                        ::rusteal_runtime::runtime::struct_ref_from_param(params, offsets[#idx] as usize)
-                    };
-                });
-            } else {
-                param_reads.push(quote! {
-                    let #rust_name: #rust_ty = unsafe {
-                        ::rusteal_runtime::runtime::ffi_dispatch::native_mem_read::<#rust_ty>(params, offsets[#idx] as usize)
-                    };
-                });
-            }
+            let read_handle = quote! {
+                ::rusteal_runtime::runtime::ffi_dispatch::native_mem_read::<::rusteal_runtime::ffi::UObjectHandle>(
+                    params, offsets[#idx] as usize,
+                )
+            };
+            let read = match prop_type::map_type(rust_ty).map(|info| info.kind) {
+                // A typed reference to the struct inside the params buffer.
+                Some(prop_type::PropKind::Struct { .. }) => quote! {
+                    ::rusteal_runtime::runtime::struct_ref_from_param(params, offsets[#idx] as usize)
+                },
+                // Objects and classes travel as pointers; the parameter's type
+                // only admits `T` (and its subclasses).
+                Some(prop_type::PropKind::Object { .. }) => quote! {
+                    <#rust_ty>::from_raw(#read_handle)
+                },
+                Some(prop_type::PropKind::Class { .. }) => quote! {
+                    <#rust_ty>::from_raw(::rusteal_runtime::ffi::UClassHandle(#read_handle.0))
+                },
+                _ => quote! {
+                    ::rusteal_runtime::runtime::ffi_dispatch::native_mem_read::<#rust_ty>(params, offsets[#idx] as usize)
+                },
+            };
+            param_reads.push(quote! {
+                let #rust_name: #rust_ty = unsafe { #read };
+            });
             param_idents.push(rust_name);
         }
 
@@ -154,21 +166,28 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
         let (return_zero_init, return_write) = if let Some(ref ret) = uf.return_type {
             let ret_ty = &ret.rust_ty;
             let ret_idx = syn::Index::from(uf.params.len());
-            (
-                quote! {
-                    unsafe {
-                        ::rusteal_runtime::runtime::ffi_dispatch::native_mem_write(
-                            params, offsets[#ret_idx] as usize,
-                            unsafe { std::mem::zeroed::<#ret_ty>() },
-                        );
-                    }
-                },
-                quote! {
-                    unsafe {
-                        ::rusteal_runtime::runtime::ffi_dispatch::native_mem_write(params, offsets[#ret_idx] as usize, __ret);
-                    }
-                },
-            )
+            let write = |value: TokenStream| quote! {
+                unsafe {
+                    ::rusteal_runtime::runtime::ffi_dispatch::native_mem_write(
+                        params, offsets[#ret_idx] as usize, #value,
+                    );
+                }
+            };
+            match prop_type::map_type(ret_ty).map(|info| info.kind) {
+                // Objects and classes are written as pointers.
+                Some(prop_type::PropKind::Object { .. }) => (
+                    write(quote! { ::rusteal_runtime::ffi::UObjectHandle::null() }),
+                    write(quote! { __ret.raw() }),
+                ),
+                Some(prop_type::PropKind::Class { .. }) => (
+                    write(quote! { ::rusteal_runtime::ffi::UObjectHandle::null() }),
+                    write(quote! { ::rusteal_runtime::ffi::UObjectHandle(__ret.raw().0) }),
+                ),
+                _ => (
+                    write(quote! { unsafe { std::mem::zeroed::<#ret_ty>() } }),
+                    write(quote! { __ret }),
+                ),
+            }
         } else {
             (quote! {}, quote! {})
         };
@@ -243,6 +262,7 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
                 let param_ue_bytes = param_ue_name.as_bytes();
                 let param_ue_len = param_ue_name.len() as u32;
                 let prop_type_expr = &info.prop_type_expr;
+                let extra_expr = extra_expr(&info);
 
                 register_stmts.push(quote! {
                     unsafe {
@@ -252,7 +272,7 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
                             #param_ue_len,
                             #prop_type_expr as u32,
                             ::rusteal_runtime::ffi::CPF_PARM,
-                            std::ptr::null(),
+                            #extra_expr,
                         );
                     }
                 });
@@ -262,6 +282,7 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
             if let Some(ref ret) = uf.return_type {
                 let info = prop_type::map_type(&ret.rust_ty).unwrap();
                 let prop_type_expr = &info.prop_type_expr;
+                let extra_expr = extra_expr(&info);
 
                 register_stmts.push(quote! {
                     unsafe {
@@ -271,7 +292,7 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
                             11u32,
                             #prop_type_expr as u32,
                             ::rusteal_runtime::ffi::CPF_PARM | ::rusteal_runtime::ffi::CPF_OUT_PARM | ::rusteal_runtime::ffi::CPF_RETURN_PARM,
-                            std::ptr::null(),
+                            #extra_expr,
                         );
                     }
                 });
@@ -315,7 +336,8 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
     let is_override = specifiers.iter().any(|s| s == "Override");
 
     let method_ident = method.sig.ident.clone();
-    let ue_name = prop_type::to_pascal_case(&method_ident.to_string());
+    // `fn r#move` is `Move`, as the template names its handler.
+    let ue_name = prop_type::to_pascal_case(&method_ident.unraw().to_string());
 
     // Check for self receiver and its mutability. syn 3 splits `&mut self`
     // (ReceiverKind::Reference) from `mut self` (Receiver::mutability).
@@ -343,13 +365,14 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
                 // Override functions get their param types from the parent UFunction
                 // (C++ copies them), so any Copy+repr(C) type is valid.
                 // Non-override functions must use types known to reify_add_function_param.
-                if !is_override && prop_type::map_type(&ty).is_none() {
+                if !is_override && !supported_param(&ty) {
                     return Err(syn::Error::new_spanned(
                         &ty,
-                        "unsupported ufunction parameter type: only bool/i32/i64/u8/f32/f64 are supported",
+                        "unsupported ufunction parameter type: supported are bool/i32/i64/u8/f32/f64, \
+                         UObjectRef<T>, SubclassOf<T> and UStructRef<T>",
                     ));
                 }
-                let ue_name = prop_type::to_pascal_case(&name.to_string());
+                let ue_name = prop_type::to_pascal_case(&name.unraw().to_string());
                 params.push(ParamInfo { rust_name: name, ue_name, rust_ty: ty });
             }
         }
@@ -366,10 +389,11 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
                     return Err(syn::Error::new_spanned(ty, "tuple return types not supported"));
                 }
             } else {
-                if !is_override && prop_type::map_type(ty).is_none() {
+                if !is_override && !supported_return(ty) {
                     return Err(syn::Error::new_spanned(
                         ty,
-                        "unsupported ufunction return type: only bool/i32/i64/u8/f32/f64 are supported",
+                        "unsupported ufunction return type: supported are bool/i32/i64/u8/f32/f64, \
+                         UObjectRef<T> and SubclassOf<T>",
                     ));
                 }
                 Some(ParamInfo {
@@ -391,14 +415,30 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
     })
 }
 
-/// Check if a type is `UStructRef<T>` by examining the last path segment.
-fn is_ustruct_ref_type(ty: &Type) -> bool {
-    if let Type::Path(tp) = ty
-        && let Some(seg) = tp.path.segments.last()
-    {
-        return seg.ident == "UStructRef";
+/// Parameters: scalars, objects, classes and structs (by reference into the
+/// call's parameters). Arrays are not supported.
+fn supported_param(ty: &Type) -> bool {
+    prop_type::map_type(ty).is_some_and(|info| !matches!(info.kind, prop_type::PropKind::Array { .. }))
+}
+
+/// Returns: scalars, objects and classes. A struct cannot be returned by reference.
+fn supported_return(ty: &Type) -> bool {
+    prop_type::map_type(ty).is_some_and(|info| {
+        !matches!(info.kind, prop_type::PropKind::Array { .. } | prop_type::PropKind::Struct { .. })
+    })
+}
+
+/// The `RustealReifyPropExtra` argument for a parameter of this type.
+fn extra_expr(info: &prop_type::PropTypeInfo) -> TokenStream {
+    match info.extra_fields() {
+        Some(fields) => quote! {
+            &::rusteal_runtime::ffi::RustealReifyPropExtra {
+                #fields
+                ..::core::default::Default::default()
+            }
+        },
+        None => quote! { std::ptr::null() },
     }
-    false
 }
 
 fn parse_ufunction_specifiers(attr: &syn::Attribute) -> syn::Result<Vec<String>> {

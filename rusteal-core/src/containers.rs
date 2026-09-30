@@ -1059,6 +1059,20 @@ impl<T: UeStruct> OwnedStruct<T> {
         }
     }
 
+    /// A copy of the struct `src` points to, made with the struct's own copy
+    /// semantics (deep for strings, arrays and the like).
+    pub fn copy_from(src: &UStructRef<T>) -> Self {
+        let mut owned = Self::new();
+        ffi_infallible(unsafe {
+            ffi_dispatch::reflection_copy_struct(
+                T::static_struct(),
+                owned.data.as_mut_ptr(),
+                src.as_ptr().0 as *const u8,
+            )
+        });
+        owned
+    }
+
     /// Get a `UStructRef<T>` for property access on this struct data.
     pub fn as_ref(&self) -> UStructRef<T> {
         unsafe { UStructRef::from_raw(self.data.as_ptr() as *mut u8) }

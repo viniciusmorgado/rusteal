@@ -280,6 +280,50 @@ the array inside the object, changed in place. `default = ...` is for the
 scalar types; objects, classes and arrays are set in a Blueprint child, as the
 engine's templates do.
 
+A `#[ufunction]` takes the scalar types, objects (`UObjectRef<T>`), classes
+(`SubclassOf<T>`) and structs (`UStructRef<T>`, a reference into the call's
+parameters; `to_owned()` keeps a copy), and returns a scalar, an object or a
+class. An `Override` takes whatever the engine function it overrides takes.
+
+### Input
+
+With the `enhanced-input` feature (on in new projects), input works as in the
+engine's C++ templates: a Blueprint child assigns the input actions and mapping
+contexts, the player controller adds the contexts, and the pawn binds the
+actions to its functions once its input component exists, in
+`receive_restarted` (C++ does it in `SetupPlayerInputComponent`):
+
+```rust
+use bindings::enhanced_input::{ETriggerEvent, FInputActionValue, InputAction};
+use bindings::prelude::*; // bind_action, enhanced_input_subsystem, InputActionValueExt
+
+#[uclass(parent = Character)]
+pub struct MyCharacter {
+    #[uproperty(EditAnywhere)]
+    move_action: UObjectRef<InputAction>,
+}
+
+#[uclass_impl]
+impl MyCharacter {
+    #[ufunction(Override)]
+    fn receive_restarted(&mut self) {
+        let me = self.as_ref();
+        let _ = bind_action(&me, self.move_action(), ETriggerEvent::Triggered, "Move");
+    }
+
+    #[ufunction(BlueprintCallable)]
+    fn r#move(&mut self, value: UStructRef<FInputActionValue>) {
+        let axis = value.axis2d(); // Value.Get<FVector2D>()
+        // ...
+    }
+}
+```
+
+`bind_action` names the function by its UE name (`fn r#move` is `Move`), which
+takes nothing or an `FInputActionValue`; engine functions work too (`"Jump"`).
+`enhanced_input_subsystem(controller)` is where a player controller adds its
+mapping contexts.
+
 ### Dynamic Calls
 
 For Blueprint-defined functions or APIs not covered by generated bindings:
