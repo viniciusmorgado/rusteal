@@ -361,6 +361,9 @@ enum class ERustealReifyPropType : uint32 {
   Class = 15,
   Struct = 16,
   Enum = 17,
+  // TArray of the type in FRustealReifyPropExtra::inner_prop_type, whose
+  // class/struct/enum fields describe the element.
+  Array = 18,
 };
 
 struct FRustealReifyPropExtra {
@@ -369,6 +372,7 @@ struct FRustealReifyPropExtra {
   RustealUStructHandle struct_handle;    // Struct property struct
   RustealUClassHandle enum_handle;       // Enum type (UEnum* cast)
   uint32 enum_underlying;                // Enum backing type
+  uint32 inner_prop_type;                // Array element type (not Array)
 };
 
 // ---------------------------------------------------------------------------

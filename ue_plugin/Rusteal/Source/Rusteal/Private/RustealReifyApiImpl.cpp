@@ -103,17 +103,18 @@ static FProperty *CreatePropertyByType(FFieldVariant Owner, FName PropName,
   }
   case ERustealReifyPropType::Class: {
     FClassProperty *ClsProp = new FClassProperty(Owner, PropName, RF_Public);
+    // The value is a UClass, restricted to MetaClass and its subclasses.
     if (Extra) {
       ClsProp->PropertyClass =
           Extra->class_handle.ptr
               ? static_cast<UClass *>(Extra->class_handle.ptr)
-              : UObject::StaticClass();
+              : UClass::StaticClass();
       ClsProp->MetaClass =
           Extra->meta_class_handle.ptr
               ? static_cast<UClass *>(Extra->meta_class_handle.ptr)
               : UObject::StaticClass();
     } else {
-      ClsProp->PropertyClass = UObject::StaticClass();
+      ClsProp->PropertyClass = UClass::StaticClass();
       ClsProp->MetaClass = UObject::StaticClass();
     }
     Prop = ClsProp;
@@ -152,6 +153,29 @@ static FProperty *CreatePropertyByType(FFieldVariant Owner, FName PropName,
         new FByteProperty(EnumProp, TEXT("UnderlyingType"), RF_Public);
     EnumProp->AddCppProperty(UnderlyingProp);
     Prop = EnumProp;
+    break;
+  }
+  case ERustealReifyPropType::Array: {
+    const ERustealReifyPropType InnerType =
+        Extra ? static_cast<ERustealReifyPropType>(Extra->inner_prop_type)
+              : ERustealReifyPropType::Array;
+    if (InnerType == ERustealReifyPropType::Array) {
+      UE_LOG(LogRusteal, Error,
+             TEXT("[Rusteal] CreatePropertyByType(Array): missing or nested "
+                  "element type for %s"),
+             *PropName.ToString());
+      return nullptr;
+    }
+    FArrayProperty *ArrayProp = new FArrayProperty(Owner, PropName);
+    // The element is named after the array, as UHT names it.
+    FProperty *Inner = CreatePropertyByType(FFieldVariant(ArrayProp), PropName,
+                                            InnerType, Extra);
+    if (!Inner) {
+      delete ArrayProp;
+      return nullptr;
+    }
+    ArrayProp->AddCppProperty(Inner);
+    Prop = ArrayProp;
     break;
   }
   default:
@@ -392,6 +416,11 @@ AddPropertyImpl(RustealUClassHandle Cls, const uint8 *Name, uint32 NameLen,
   }
 
   Prop->PropertyFlags |= static_cast<EPropertyFlags>(PropFlags);
+  // The element of an array takes the flags UHT passes on to it.
+  if (FArrayProperty *ArrayProp = CastField<FArrayProperty>(Prop)) {
+    ArrayProp->Inner->PropertyFlags |=
+        static_cast<EPropertyFlags>(PropFlags) & CPF_PropagateToArrayInner;
+  }
   Class->AddCppProperty(Prop);
 
   return RustealFPropertyHandle{Prop};
