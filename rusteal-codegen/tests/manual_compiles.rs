@@ -8,7 +8,8 @@
 // A second case turns on Enhanced Input, the module every game template uses,
 // and checks the C++ wrappers its types need (they compile only in a UE build).
 // A third adds a game crate whose `#[uclass]` declares every kind of
-// `#[uproperty]`, so the macro's expansion is type-checked against real bindings.
+// `#[uproperty]` and `#[ufunction]` parameter and binds input actions, so the
+// macros' expansion and manual/input_ext.rs are type-checked against real bindings.
 //
 // Regenerating the fixture (a new engine version, a new exporter, a new type
 // used by manual/):
@@ -45,7 +46,20 @@ const CLASSES: &[&str] = &[
     "PlayerMappableInputConfig",
     "InputComponent",
     "EnhancedInputComponent",
+    // What manual/input_ext.rs calls: the subsystem lookup and the value reader.
+    // `Class` is the type of the `TSubclassOf` parameter of the lookup.
+    "Field",
+    "Struct",
+    "Class",
+    "Controller",
+    "PlayerController",
+    "BlueprintFunctionLibrary",
+    "SubsystemBlueprintLibrary",
+    "EnhancedInputLibrary",
 ];
+
+/// Enums manual/ names that no class or struct above references.
+const ENUMS: &[&str] = &["ETriggerEvent", "EInputActionValueType"];
 
 /// Structs manual/ extends.
 const STRUCTS: &[&str] = &[
@@ -257,7 +271,7 @@ fn regenerate_fixture() {
     let classes = select(&classes, "classes", CLASSES);
     let structs = select(&structs, "structs", STRUCTS);
 
-    let mut enum_names = BTreeSet::new();
+    let mut enum_names: BTreeSet<String> = ENUMS.iter().map(|e| e.to_string()).collect();
     classes.iter().chain(&structs).for_each(|r| referenced_enums(r, &mut enum_names));
     let enums: Vec<Value> = enums["enums"]
         .as_array()
@@ -280,13 +294,18 @@ fn regenerate_fixture() {
     write("rusteal_enums.json", "enums", enums);
 }
 
-/// A game class with one `#[uproperty]` of each supported kind, and code using
-/// every accessor the macro generates for them.
-const UPROPERTY_GAME: &str = r#"
-use bindings::engine::{Actor, Pawn};
-use bindings::enhanced_input::{InputAction, InputMappingContext};
-use rusteal_runtime::runtime::{SubclassOf, UObjectRef, UeArray};
-use rusteal_runtime::uclass;
+/// A game class with one `#[uproperty]` of each supported kind, `#[ufunction]`s
+/// taking and returning each supported kind, and code using every accessor the
+/// macros generate and the Enhanced Input helpers.
+const UCLASS_GAME: &str = r#"
+use bindings::engine::{Actor, Pawn, PlayerController};
+use bindings::enhanced_input::{
+    ETriggerEvent, EnhancedInputLocalPlayerSubsystemExt, FInputActionValue, InputAction,
+    InputMappingContext,
+};
+use bindings::prelude::*;
+use rusteal_runtime::runtime::{OwnedStruct, RustealResult, SubclassOf, UObjectRef, UStructRef, UeArray};
+use rusteal_runtime::{uclass, uclass_impl};
 
 #[uclass(parent = Pawn)]
 pub struct Probe {
@@ -306,6 +325,49 @@ pub struct Probe {
     weights: UeArray<f32>,
 }
 
+#[uclass_impl]
+impl Probe {
+    #[ufunction(Override)]
+    fn receive_restarted(&mut self) {
+        let _ = self.bind_input();
+    }
+
+    #[ufunction(BlueprintCallable)]
+    fn r#move(&mut self, value: UStructRef<FInputActionValue>) {
+        let axis = value.axis2d();
+        self.set_speed(axis.x as f32 + value.axis1d() as f32 + value.axis3d().z as f32);
+        let _ = value.get_bool();
+    }
+
+    #[ufunction(BlueprintCallable)]
+    fn take_objects(&mut self, action: UObjectRef<InputAction>, class: SubclassOf<Pawn>) -> UObjectRef<InputAction> {
+        self.set_pawn_class(class);
+        action
+    }
+
+    #[ufunction(BlueprintCallable)]
+    fn pick_class(&mut self, index: i32) -> SubclassOf<Actor> {
+        self.classes().get(index as usize).unwrap_or_default()
+    }
+}
+
+impl Probe {
+    fn bind_input(&self) -> RustealResult<()> {
+        let me = self.as_ref();
+        bind_action(&me, self.jump_action(), ETriggerEvent::Started, "Jump")?;
+        bind_action(&me, self.jump_action(), ETriggerEvent::Completed, "StopJumping")?;
+        bind_action(&me, self.jump_action(), ETriggerEvent::Triggered, "Move")
+    }
+}
+
+pub fn add_contexts(controller: UObjectRef<PlayerController>, contexts: UeArray<UObjectRef<InputMappingContext>>) -> RustealResult<()> {
+    let subsystem = enhanced_input_subsystem(controller)?.checked()?;
+    for context in contexts.to_vec()? {
+        subsystem.add_mapping_context(context, 0, &OwnedStruct::new());
+    }
+    Ok(())
+}
+
 pub fn use_accessors(p: &Probe) {
     p.set_speed(p.speed() * 2.0);
     let action: UObjectRef<InputAction> = p.jump_action();
@@ -321,8 +383,8 @@ pub fn use_accessors(p: &Probe) {
 "#;
 
 #[test]
-fn uproperty_types_compile() {
-    let project = generate_and_check("uproperty", &rusteal_toml_enhanced_input());
+fn uclass_types_compile() {
+    let project = generate_and_check("uclass", &rusteal_toml_enhanced_input());
     let rust = project.join("Rust");
 
     // A game crate next to the bindings, as `rusteal new` lays it out.
@@ -348,12 +410,12 @@ fn uproperty_types_compile() {
          bindings = { path = \"../bindings\" }\n",
     )
     .unwrap();
-    std::fs::write(rust.join("game/src/lib.rs"), UPROPERTY_GAME).unwrap();
+    std::fs::write(rust.join("game/src/lib.rs"), UCLASS_GAME).unwrap();
 
     let output = cargo_check(&project, "game");
     assert!(
         output.status.success(),
-        "a #[uclass] with every #[uproperty] kind does not compile:\n{}",
+        "a #[uclass] with every #[uproperty] and #[ufunction] kind does not compile:\n{}",
         String::from_utf8_lossy(&output.stderr)
     );
 }

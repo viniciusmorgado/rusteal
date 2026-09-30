@@ -31,3 +31,6 @@ pub mod world_ext;
 
 #[cfg(feature = "umg")]
 pub mod widget_ext;
+
+#[cfg(feature = "enhanced-input")]
+pub mod input_ext;

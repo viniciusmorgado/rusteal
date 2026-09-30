@@ -26,6 +26,7 @@ pub mod ue_math;
 pub mod fname;
 pub mod weak_ptr;
 pub mod widget;
+pub mod input;
 pub mod world;
 
 // Re-export the primary public API surface.

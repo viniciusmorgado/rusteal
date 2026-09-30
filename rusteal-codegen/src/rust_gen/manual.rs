@@ -25,3 +25,22 @@ pub fn write_manual_module(src_dir: &Path) {
     }
     eprintln!("  manual/: {} files", MANUAL_FILES.len());
 }
+
+/// The Cargo features `manual/` gates its modules on (`#[cfg(feature = "...")]`).
+/// A project enables only some of them, so the generated manifest declares all
+/// of them as expected `cfg` values.
+pub fn gating_features() -> std::collections::BTreeSet<&'static str> {
+    const MARKER: &str = "feature = \"";
+    let mut features = std::collections::BTreeSet::new();
+    for (_, contents) in MANUAL_FILES {
+        let mut rest = *contents;
+        while let Some(at) = rest.find(MARKER) {
+            rest = &rest[at + MARKER.len()..];
+            if let Some(end) = rest.find('"') {
+                features.insert(&rest[..end]);
+                rest = &rest[end..];
+            }
+        }
+    }
+    features
+}

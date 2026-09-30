@@ -182,6 +182,15 @@ static ERustealErrorCode DestroyStructImpl(RustealUStructHandle UStructHandle,
   return ERustealErrorCode::Ok;
 }
 
+static ERustealErrorCode CopyStructImpl(RustealUStructHandle UStructHandle,
+                                        uint8 *Dest, const uint8 *Src) {
+  UScriptStruct *Struct = static_cast<UScriptStruct *>(UStructHandle.ptr);
+  if (!Struct || !Dest || !Src)
+    return ERustealErrorCode::NullArgument;
+  Struct->CopyScriptStruct(Dest, Src);
+  return ERustealErrorCode::Ok;
+}
+
 // ---------------------------------------------------------------------------
 // Static instance
 // ---------------------------------------------------------------------------
@@ -192,5 +201,5 @@ FRustealReflectionApi GReflectionApi = {
     &FindFunctionImpl,        &AllocParamsImpl,      &FreeParamsImpl,
     &CallFunctionImpl,        &GetFunctionParamImpl, &GetPropertyOffsetImpl,
     &FindFunctionByClassImpl, &GetElementSizeImpl,   &GetStructSizeImpl,
-    &InitializeStructImpl,    &DestroyStructImpl,
+    &InitializeStructImpl,    &DestroyStructImpl,    &CopyStructImpl,
 };

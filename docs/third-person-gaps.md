@@ -7,7 +7,7 @@ template is the guide: a feature earns a place here because the template needs
 it, not because it exists in the engine.
 
 The reference port is a Third Person project whose Rust crate provides
-`ThirdPersonCharacter` and `ThirdPersonGameMode`, built with the published CLI.
+`ThirdPersonCharacter`, `ThirdPersonGameMode` and `ThirdPersonPlayerController`.
 Each entry records how that port copes today and what Rusteal would need so the
 workaround, and then the C++ class, can go.
 
@@ -105,12 +105,12 @@ Three experiments on the reference port (Rusteal 0.3.0, UE 5.8.2), all reverted:
 | | |
 |---|---|
 | **Template** | The player controller adds the mapping contexts (`MyProjectPlayerController.cpp:46-56`); the character binds Jump, Move, Look and MouseLook in `SetupPlayerInputComponent` (`MyProjectCharacter.cpp:53-67`). |
-| **Today** | workaround: the character polls fixed keys and sticks in `ReceiveTick`; the input assets are unused. |
-| **Rusteal needs** | Four pieces, (a) and (b) done: **(a)** `codegen`: generate compiling wrappers for the module — it wrapped protected `_Implementation` functions (`UInputModifier::GetVisualizationColor`, `ModifyRaw`; `UInputTrigger::GetTriggerType`, `UpdateState`), declared the `TMap<TObjectPtr<UInputMappingContext>, int32>` return of `UPlayerMappableInputConfig::GetMappingContexts` as `TMap<UInputMappingContext*, int32>` and missed the include for `FEnhancedActionKeyMapping` in `UPlayerMappableInputConfig`; the plugin did not declare the EnhancedInput plugin dependency. Now a local type re-exports `_Implementation` with a using-declaration, a returned container takes the function's own return type, the exporter records each struct's header, and `Rusteal.uplugin` lists EnhancedInput. **(b)** `codegen`: emit the `UFUNCTION`s declared in interfaces for the classes implementing them — `AddMappingContext` lives in `IEnhancedInputSubsystemInterface`. Now each class gets the callable functions of the interfaces it implements, called through the interface. **(c)** `plugin` + `core` + `macros`: bind an input action to a Rust handler; `BindAction`/`BindActionValue` are C++ templates, not `UFUNCTION`s. **(d)** a hook to bind from, since `SetupPlayerInputComponent` is a C++ virtual and not a Blueprint event (`ReceiveRestarted` fires after the input component exists). |
-| **Evidence** | `EnhancedInputComponent.h` (`BindActionValue` is not a `UFUNCTION`); the port's bindings have `add_mapping_context` (on `EnhancedInputLocalPlayerSubsystem`) and `get_bound_action_value`; `rusteal-codegen/tests/manual_compiles.rs` (`enhanced_input_bindings`). |
+| **Today** | As in the template: `ThirdPersonPlayerController` adds the mapping contexts its Blueprint child lists (in `ReceiveBeginPlay`), and the character binds Jump, Move, Look and MouseLook to `Jump`/`StopJumping` and its `Move`/`Look` handlers in `ReceiveRestarted`. The polling is gone. |
+| **Rusteal needs** | Four pieces, all done: **(a)** `codegen`: generate compiling wrappers for the module — it wrapped protected `_Implementation` functions (`UInputModifier::GetVisualizationColor`, `ModifyRaw`; `UInputTrigger::GetTriggerType`, `UpdateState`), declared the `TMap<TObjectPtr<UInputMappingContext>, int32>` return of `UPlayerMappableInputConfig::GetMappingContexts` as `TMap<UInputMappingContext*, int32>` and missed the include for `FEnhancedActionKeyMapping` in `UPlayerMappableInputConfig`; the plugin did not declare the EnhancedInput plugin dependency. Now a local type re-exports `_Implementation` with a using-declaration, a returned container takes the function's own return type, the exporter records each struct's header, and `Rusteal.uplugin` lists EnhancedInput. **(b)** `codegen`: emit the `UFUNCTION`s declared in interfaces for the classes implementing them — `AddMappingContext` lives in `IEnhancedInputSubsystemInterface`. Now each class gets the callable functions of the interfaces it implements, called through the interface. **(c)** `plugin` + `core` + `macros`: bind an input action to a Rust handler; `BindAction`/`BindActionValue` are C++ templates, not `UFUNCTION`s. Now `bind_action(actor, action, trigger_event, "Function")` (bindings' `manual/`, over a plugin helper) binds a `UFUNCTION` taking nothing or an `FInputActionValue`, idempotently per input component; `enhanced_input_subsystem(controller)` and `InputActionValueExt::axis2d()` stand for the C++ templates `ULocalPlayer::GetSubsystem<>` and `FInputActionValue::Get<>`. **(d)** a hook to bind from, since `SetupPlayerInputComponent` is a C++ virtual and not a Blueprint event. `ReceiveRestarted` is it: `APawn::DispatchRestart` runs `PawnClientRestart`, which creates the input component and calls `SetupPlayerInputComponent`, before `NotifyRestarted`. |
+| **Evidence** | `EnhancedInputComponent.h` (`BindActionValue` is not a `UFUNCTION`); `Pawn.cpp` (`DispatchRestart`); `rusteal-codegen/tests/manual_compiles.rs` (`enhanced_input_bindings`, `uclass_types_compile`); in the port, input injected with `InjectInputForAction` reached the Rust `Look` and `Move` handlers. |
 | **Depends on** | TP-GAP-03 (the actions and contexts are asset references), TP-GAP-08 for handlers that take an `FInputActionValue`. |
 | **Done when** | The character reacts to the template's `IA_*` actions through its `IMC_*` contexts, and the polling is gone. |
-| **Status** | (a), (b) fixed, not released; (c), (d) open |
+| **Status** | fixed, not released |
 | **Last checked** | Rusteal 0.3.0, UE 5.8.2 |
 
 ### TP-GAP-06 — Touch interface check
@@ -144,12 +144,12 @@ Three experiments on the reference port (Rusteal 0.3.0, UE 5.8.2), all reverted:
 | | |
 |---|---|
 | **Template** | `Move`/`Look` take a `const FInputActionValue&`; `DoMove`/`DoLook` take floats. |
-| **Today** | the float functions work; nothing takes a struct or an object. |
-| **Rusteal needs** | `macros`: struct and object parameters and returns in `#[ufunction]`. |
-| **Evidence** | `rusteal-macros/src/uclass_impl.rs`: "only bool/i32/i64/u8/f32/f64 are supported". |
+| **Today** | `Move`/`Look` take a `UStructRef<FInputActionValue>`, as the template's take the value. |
+| **Rusteal needs** | `macros`: struct and object parameters and returns in `#[ufunction]`. Done: parameters may be `UStructRef<T>` (a reference into the call's parameters; `to_owned()` copies it), `UObjectRef<T>` and `SubclassOf<T>`; returns may be `UObjectRef<T>` and `SubclassOf<T>`. A struct cannot be returned yet. |
+| **Evidence** | `rusteal-codegen/tests/manual_compiles.rs` (`uclass_types_compile`); the port's handlers. |
 | **Depends on** | — |
 | **Done when** | Input handlers can take the action value as the template's do. |
-| **Status** | open |
+| **Status** | fixed, not released |
 | **Last checked** | Rusteal 0.3.0, UE 5.8.2 |
 
 ### TP-GAP-09 — Disabled modules leave their bindings behind
@@ -178,6 +178,32 @@ Three experiments on the reference port (Rusteal 0.3.0, UE 5.8.2), all reverted:
 | **Status** | fixed, not released |
 | **Last checked** | Rusteal 0.3.0, UE 5.8.2 |
 
+### TP-GAP-11 — Enum values UHT does not parse
+
+| | |
+|---|---|
+| **Template** | `ETriggerEvent` (`Started`, `Completed`, `Triggered`), which the input bindings take. |
+| **Today** | The exporter computes the values UHT leaves as -1; `ETriggerEvent` is `None = 0, Triggered = 1, Started = 2, ...`. |
+| **Rusteal needs** | `exporter`: UHT records a value only when it is a plain literal and stores -1 otherwise (`(1 << 0)`, `X \| Y`, `BLEND_Translucent`), and so does every implicit value after it; codegen then kept one variant per value, so `ETriggerEvent` had only `None = -1`. Done: the exporter evaluates the enum's initializers from its header (literals, parentheses, arithmetic and bitwise operators, earlier values). 175 of 3186 enums of a UE 5.8.2 project had unparsed values; 22 remain, whose initializers name macros or other enums' values. |
+| **Evidence** | `UhtEnumParser.cs` ("-1 if not parsed"); `ue_plugin/RustealGenerator/Source/RustealExporter/RustealEnumValues.cs`. |
+| **Depends on** | — |
+| **Done when** | The enums the template uses have their engine values. |
+| **Status** | fixed, not released |
+| **Last checked** | Rusteal 0.3.0, UE 5.8.2 |
+
+### TP-GAP-12 — Generated class references are typed as objects
+
+| | |
+|---|---|
+| **Template** | `ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(...)`; `TSubclassOf` properties such as `DefaultPawnClass`. |
+| **Today** | workaround: codegen types every `TSubclassOf<T>` (property, parameter, return, container element) as `UObjectRef<T>`, an object of class `T`, while it holds a class. The bindings' `enhanced_input_subsystem` and the port's `helpers::class_of` convert a class to that type by hand. |
+| **Rusteal needs** | `codegen`: map class properties to `SubclassOf<T>` (added to `core` for `#[uproperty]`), which the generated conversions (`ConversionKind::ObjectRef`, about 30 places) do not know yet. |
+| **Evidence** | `rusteal-codegen/src/type_map.rs` (`ClassProperty` → `rusteal_core::UObjectRef<{cls}>`). |
+| **Depends on** | — |
+| **Done when** | Generated class references are `SubclassOf<T>` and the hand conversions are gone. |
+| **Status** | workaround |
+| **Last checked** | Rusteal 0.3.0, UE 5.8.2 |
+
 ## Order
 
 By what each one unblocks for the template:
@@ -186,15 +212,15 @@ By what each one unblocks for the template:
    `AddMappingContext`: input is the core of the template.
 2. **TP-GAP-03**, fixed — asset references as properties, so the actions and
    contexts are assigned in the Blueprint children.
-3. **TP-GAP-08** and **TP-GAP-05 (c, d)** — binding actions to Rust handlers;
-   the polling goes.
+3. **TP-GAP-08** and **TP-GAP-05 (c, d)**, fixed — binding actions to Rust
+   handlers; the polling goes.
 4. **TP-GAP-02** — attach at construction.
 5. **TP-GAP-07** — the character's private components.
 6. **TP-GAP-01** — defaults written from Rust; until then the Blueprint children
    carry them, as the template's do.
-7. **TP-GAP-06**, **TP-GAP-09** and **TP-GAP-10**.
+7. **TP-GAP-06**, **TP-GAP-09**, **TP-GAP-10**, **TP-GAP-11** and **TP-GAP-12**.
 
 The Blueprint route needs none of these and is applied in the port: the
 `GetDefaultPawnClassForController` override and the mannequin loaded by path are
-gone. It also lets a Rust player controller be selected, which waits for
-TP-GAP-05: without it, the controller would only cover the touch controls.
+gone. It also lets the Rust player controller be selected: `BP_RustGameMode`
+sets `BP_RustPlayerController` as its Player Controller Class.

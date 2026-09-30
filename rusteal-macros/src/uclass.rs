@@ -253,6 +253,12 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
                      UObjectRef<T>, SubclassOf<T> and UeArray of those",
                 ));
             };
+            if matches!(info.kind, prop_type::PropKind::Struct { .. }) {
+                return Err(syn::Error::new_spanned(
+                    &field_ty,
+                    "UStructRef is only supported as a #[ufunction] parameter, not as a uproperty",
+                ));
+            }
             if pargs.default_expr.is_some() && !matches!(info.kind, prop_type::PropKind::Scalar { .. }) {
                 return Err(syn::Error::new_spanned(
                     &field_ty,
@@ -408,6 +414,7 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
                 quote! { <#rust_ty>::new(self.__obj, prop) },
                 None,
             ),
+            prop_type::PropKind::Struct { .. } => unreachable!("rejected when the field was parsed"),
         };
 
         // Getter (always generated)
