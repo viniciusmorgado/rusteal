@@ -640,11 +640,10 @@ static RustealUObjectHandle GetCdoImpl(RustealUClassHandle Cls) {
 // Default subobject registration
 // ---------------------------------------------------------------------------
 
-static ERustealErrorCode
-AddDefaultSubobjectImpl(RustealUClassHandle Cls, const uint8 *Name,
-                        uint32 NameLen, RustealUClassHandle CompClass,
-                        uint32 Flags, const uint8 *AttachParent,
-                        uint32 AttachLen) {
+static ERustealErrorCode AddDefaultSubobjectImpl(
+    RustealUClassHandle Cls, const uint8 *Name, uint32 NameLen,
+    RustealUClassHandle CompClass, uint32 Flags, const uint8 *AttachParent,
+    uint32 AttachLen, const uint8 *AttachSocket, uint32 SocketLen) {
   URustealReifiedClass *RC =
       Cast<URustealReifiedClass>(static_cast<UClass *>(Cls.ptr));
   if (!RC)
@@ -661,6 +660,9 @@ AddDefaultSubobjectImpl(RustealUClassHandle Cls, const uint8 *Name,
   Def.bIsTransient = (Flags & 2) != 0;
   Def.AttachParentName =
       AttachLen > 0 ? FName(ReifyUtf8ToFString(AttachParent, AttachLen))
+                    : NAME_None;
+  Def.AttachSocketName =
+      SocketLen > 0 ? FName(ReifyUtf8ToFString(AttachSocket, SocketLen))
                     : NAME_None;
 
   // Hot reload: avoid duplicate defs

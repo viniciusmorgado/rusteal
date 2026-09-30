@@ -9,6 +9,7 @@ struct FRustealComponentDef {
   bool bIsRoot = false;
   bool bIsTransient = false;
   FName AttachParentName; // NAME_None = no parent
+  FName AttachSocketName; // NAME_None = no socket
 };
 
 // A UClass created at runtime by Rust via the Reify API.
