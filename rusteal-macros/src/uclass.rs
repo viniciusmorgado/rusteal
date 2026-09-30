@@ -246,10 +246,18 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
         } else if let Some(attr) = uprop_attr {
             let pargs = parse_uproperty_args(attr)?;
             // Validate type is supported
-            if prop_type::map_type(&field_ty).is_none() {
+            let Some(info) = prop_type::map_type(&field_ty) else {
                 return Err(syn::Error::new_spanned(
                     &field_ty,
-                    "unsupported uproperty type: only bool/i32/i64/u8/f32/f64 are supported in 9b".to_string(),
+                    "unsupported uproperty type: supported are bool/i32/i64/u8/f32/f64, \
+                     UObjectRef<T>, SubclassOf<T> and UeArray of those",
+                ));
+            };
+            if pargs.default_expr.is_some() && !matches!(info.kind, prop_type::PropKind::Scalar { .. }) {
+                return Err(syn::Error::new_spanned(
+                    &field_ty,
+                    "`default = ...` is only supported for bool/i32/i64/u8/f32/f64 properties; \
+                     object, class and array properties are set in a Blueprint child",
                 ));
             }
             uprops.push(UPropertyField {
@@ -341,44 +349,85 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
         let ue_name_bytes = ue_name.as_bytes();
         let ue_name_len = ue_name.len() as u32;
         let rust_ty = &info.rust_type;
-        let zero = &info.zero_expr;
-        let getter_fn = &info.getter_fn;
-        let setter_fn = &info.setter_fn;
+
+        // The FProperty, looked up once per accessor.
+        let find_prop = quote! {
+            static PROP: std::sync::OnceLock<::rusteal_runtime::ffi::FPropertyHandle> = std::sync::OnceLock::new();
+            let prop = *PROP.get_or_init(|| unsafe {
+                ::rusteal_runtime::runtime::ffi_dispatch::reflection_find_property(
+                    <Self as ::rusteal_runtime::runtime::UeClass>::static_class(),
+                    [#(#ue_name_bytes),*].as_ptr(),
+                    #ue_name_len,
+                )
+            });
+        };
+
+        let (getter_body, setter_body) = match &info.kind {
+            prop_type::PropKind::Scalar { getter_fn, setter_fn, zero_expr } => {
+                let getter_dispatch = format_ident!("property_{}", getter_fn);
+                let setter_dispatch = format_ident!("property_{}", setter_fn);
+                (
+                    quote! {
+                        let mut val: #rust_ty = #zero_expr;
+                        unsafe { ::rusteal_runtime::runtime::ffi_dispatch::#getter_dispatch(self.__obj, prop, &mut val); }
+                        val
+                    },
+                    Some(quote! {
+                        unsafe { ::rusteal_runtime::runtime::ffi_dispatch::#setter_dispatch(self.__obj, prop, val); }
+                    }),
+                )
+            }
+            prop_type::PropKind::Object { .. } => (
+                quote! {
+                    let mut h = ::rusteal_runtime::ffi::UObjectHandle::null();
+                    unsafe { ::rusteal_runtime::runtime::ffi_dispatch::property_get_object(self.__obj, prop, &mut h); }
+                    // The property only holds objects of its class.
+                    unsafe { <#rust_ty>::from_raw(h) }
+                },
+                Some(quote! {
+                    unsafe { ::rusteal_runtime::runtime::ffi_dispatch::property_set_object(self.__obj, prop, val.raw()); }
+                }),
+            ),
+            prop_type::PropKind::Class { .. } => (
+                quote! {
+                    let mut h = ::rusteal_runtime::ffi::UObjectHandle::null();
+                    unsafe { ::rusteal_runtime::runtime::ffi_dispatch::property_get_object(self.__obj, prop, &mut h); }
+                    // The property only holds its meta class and subclasses.
+                    unsafe { <#rust_ty>::from_raw(::rusteal_runtime::ffi::UClassHandle(h.0)) }
+                },
+                Some(quote! {
+                    unsafe {
+                        ::rusteal_runtime::runtime::ffi_dispatch::property_set_object(
+                            self.__obj, prop, ::rusteal_runtime::ffi::UObjectHandle(val.raw().0),
+                        );
+                    }
+                }),
+            ),
+            // A view of the array inside the object: it is read and changed in place.
+            prop_type::PropKind::Array { .. } => (
+                quote! { <#rust_ty>::new(self.__obj, prop) },
+                None,
+            ),
+        };
 
         // Getter (always generated)
         let getter_ident = format_ident!("{}", field_ident);
-        let getter_dispatch = format_ident!("property_{}", getter_fn);
         accessor_methods.push(quote! {
             pub fn #getter_ident(&self) -> #rust_ty {
-                static PROP: std::sync::OnceLock<::rusteal_runtime::ffi::FPropertyHandle> = std::sync::OnceLock::new();
-                let prop = *PROP.get_or_init(|| unsafe {
-                    ::rusteal_runtime::runtime::ffi_dispatch::reflection_find_property(
-                        <Self as ::rusteal_runtime::runtime::UeClass>::static_class(),
-                        [#(#ue_name_bytes),*].as_ptr(),
-                        #ue_name_len,
-                    )
-                });
-                let mut val: #rust_ty = #zero;
-                unsafe { ::rusteal_runtime::runtime::ffi_dispatch::#getter_dispatch(self.__obj, prop, &mut val); }
-                val
+                #find_prop
+                #getter_body
             }
         });
 
         // Setter (only if not read-only)
-        if !prop.args.blueprint_read_only {
+        if let Some(setter_body) = setter_body
+            && !prop.args.blueprint_read_only
+        {
             let setter_ident = format_ident!("set_{}", field_ident);
-            let setter_dispatch = format_ident!("property_{}", setter_fn);
             accessor_methods.push(quote! {
                 pub fn #setter_ident(&self, val: #rust_ty) {
-                    static PROP: std::sync::OnceLock<::rusteal_runtime::ffi::FPropertyHandle> = std::sync::OnceLock::new();
-                    let prop = *PROP.get_or_init(|| unsafe {
-                        ::rusteal_runtime::runtime::ffi_dispatch::reflection_find_property(
-                            <Self as ::rusteal_runtime::runtime::UeClass>::static_class(),
-                            [#(#ue_name_bytes),*].as_ptr(),
-                            #ue_name_len,
-                        )
-                    });
-                    unsafe { ::rusteal_runtime::runtime::ffi_dispatch::#setter_dispatch(self.__obj, prop, val); }
+                    #find_prop
+                    #setter_body
                 }
             });
         }
@@ -506,6 +555,18 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
         }
         let flags_expr = quote! { #(#flag_parts)|* };
 
+        // What the plugin needs beyond the type: the class of an object, the
+        // meta class of a class, the element of an array.
+        let extra_expr = match info.extra_fields() {
+            Some(fields) => quote! {
+                &::rusteal_runtime::ffi::RustealReifyPropExtra {
+                    #fields
+                    ..::core::default::Default::default()
+                }
+            },
+            None => quote! { std::ptr::null() },
+        };
+
         add_prop_stmts.push(quote! {
             let #prop_var = unsafe {
                 ::rusteal_runtime::runtime::ffi_dispatch::reify_add_property(
@@ -514,14 +575,16 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
                     #ue_name_len,
                     #prop_type_expr as u32,
                     #flags_expr,
-                    std::ptr::null(),
+                    #extra_expr,
                 )
             };
         });
 
         // CDO default (unused — defaults are set in finalize)
-        if let Some(ref default_expr) = prop.args.default_expr {
-            let setter_dispatch = format_ident!("property_{}", info.setter_fn);
+        if let Some(ref default_expr) = prop.args.default_expr
+            && let prop_type::PropKind::Scalar { setter_fn, .. } = &info.kind
+        {
+            let setter_dispatch = format_ident!("property_{}", setter_fn);
             cdo_default_stmts.push(quote! {
                 if !#prop_var.is_null() {
                     unsafe { ::rusteal_runtime::runtime::ffi_dispatch::#setter_dispatch(cdo, #prop_var, #default_expr); }
@@ -571,12 +634,13 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
     // Generate CDO default stmts for finalize (re-find properties by name)
     let mut finalize_cdo_stmts: Vec<TokenStream> = Vec::new();
     for prop in &uprops {
-        if let Some(ref default_expr) = prop.args.default_expr {
-            let info = prop_type::map_type(&prop.ty).unwrap();
+        if let Some(ref default_expr) = prop.args.default_expr
+            && let prop_type::PropKind::Scalar { setter_fn, .. } = prop_type::map_type(&prop.ty).unwrap().kind
+        {
             let ue_name = prop_type::to_pascal_case(&prop.ident.to_string());
             let ue_name_bytes = ue_name.as_bytes();
             let ue_name_len = ue_name.len() as u32;
-            let setter_dispatch = format_ident!("property_{}", info.setter_fn);
+            let setter_dispatch = format_ident!("property_{}", setter_fn);
             finalize_cdo_stmts.push(quote! {
                 {
                     let prop = unsafe {

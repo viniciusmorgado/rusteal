@@ -8,72 +8,128 @@ use syn::Type;
 pub struct PropTypeInfo {
     /// Token for the RustealReifyPropType variant (e.g. `RustealReifyPropType::Float`).
     pub prop_type_expr: TokenStream,
-    /// The Rust type used for the getter out-variable and setter parameter.
+    /// The Rust type used for the getter's return value and the setter's parameter.
     pub rust_type: TokenStream,
-    /// Identifier for the PropertyApi getter (e.g. `get_f32`).
-    pub getter_fn: syn::Ident,
-    /// Identifier for the PropertyApi setter (e.g. `set_f32`).
-    pub setter_fn: syn::Ident,
-    /// Default zero-value expression for the getter's out variable.
-    pub zero_expr: TokenStream,
+    pub kind: PropKind,
+}
+
+/// How a property is described to the plugin and read and written from Rust.
+pub enum PropKind {
+    /// `bool`/`i32`/`i64`/`u8`/`f32`/`f64`, read and written by value.
+    Scalar {
+        /// Identifier for the PropertyApi getter (e.g. `get_f32`).
+        getter_fn: syn::Ident,
+        /// Identifier for the PropertyApi setter (e.g. `set_f32`).
+        setter_fn: syn::Ident,
+        /// Default zero-value expression for the getter's out variable.
+        zero_expr: TokenStream,
+    },
+    /// `UObjectRef<T>`: an object reference restricted to `T`.
+    Object { class: Type },
+    /// `SubclassOf<T>`: a class reference restricted to `T` and its subclasses.
+    Class { meta_class: Type },
+    /// `UeArray<E>`: a `TArray` of a scalar, object or class element.
+    Array { element: Box<PropTypeInfo> },
+}
+
+impl PropTypeInfo {
+    /// Field initializers for a `RustealReifyPropExtra` describing this type, or
+    /// `None` when the plugin needs no more than the type discriminator.
+    pub fn extra_fields(&self) -> Option<TokenStream> {
+        match &self.kind {
+            PropKind::Scalar { .. } => None,
+            PropKind::Object { class } => Some(quote! {
+                class_handle: <#class as ::rusteal_runtime::runtime::UeClass>::static_class(),
+            }),
+            PropKind::Class { meta_class } => Some(quote! {
+                meta_class_handle: <#meta_class as ::rusteal_runtime::runtime::UeClass>::static_class(),
+            }),
+            PropKind::Array { element } => {
+                let inner_type = &element.prop_type_expr;
+                let inner_fields = element.extra_fields().unwrap_or_default();
+                Some(quote! {
+                    #inner_fields
+                    inner_prop_type: #inner_type as u32,
+                })
+            }
+        }
+    }
+}
+
+/// The single type argument of a path segment (`T` in `UObjectRef<T>`).
+fn single_type_arg(seg: &syn::PathSegment) -> Option<Type> {
+    let syn::PathArguments::AngleBracketed(args) = &seg.arguments else {
+        return None;
+    };
+    let mut types = args.args.iter().filter_map(|a| match a {
+        syn::GenericArgument::Type(t) => Some(t.clone()),
+        _ => None,
+    });
+    let ty = types.next()?;
+    types.next().is_none().then_some(ty)
 }
 
 /// Try to map a Rust type to UE property type info.
 /// Returns None for unsupported types.
 pub fn map_type(ty: &Type) -> Option<PropTypeInfo> {
-    let type_str = match ty {
-        Type::Path(tp) => {
-            let seg = tp.path.segments.last()?;
-            seg.ident.to_string()
-        }
+    let seg = match ty {
+        Type::Path(tp) => tp.path.segments.last()?,
         _ => return None,
     };
 
-    let ident = |s: &str| syn::Ident::new(s, proc_macro2::Span::call_site());
+    match seg.ident.to_string().as_str() {
+        "UObjectRef" => {
+            let class = single_type_arg(seg)?;
+            return Some(PropTypeInfo {
+                prop_type_expr: quote! { ::rusteal_runtime::ffi::RustealReifyPropType::Object },
+                rust_type: quote! { ::rusteal_runtime::runtime::UObjectRef<#class> },
+                kind: PropKind::Object { class },
+            });
+        }
+        "SubclassOf" => {
+            let meta_class = single_type_arg(seg)?;
+            return Some(PropTypeInfo {
+                prop_type_expr: quote! { ::rusteal_runtime::ffi::RustealReifyPropType::Class },
+                rust_type: quote! { ::rusteal_runtime::runtime::SubclassOf<#meta_class> },
+                kind: PropKind::Class { meta_class },
+            });
+        }
+        "UeArray" => {
+            let element = map_type(&single_type_arg(seg)?)?;
+            if matches!(element.kind, PropKind::Array { .. }) {
+                return None; // UE has no arrays of arrays
+            }
+            let element_rust = &element.rust_type;
+            return Some(PropTypeInfo {
+                prop_type_expr: quote! { ::rusteal_runtime::ffi::RustealReifyPropType::Array },
+                rust_type: quote! { ::rusteal_runtime::runtime::UeArray<#element_rust> },
+                kind: PropKind::Array { element: Box::new(element) },
+            });
+        }
+        _ => {}
+    }
 
-    let info = match type_str.as_str() {
-        "bool" => PropTypeInfo {
-            prop_type_expr: quote! { ::rusteal_runtime::ffi::RustealReifyPropType::Bool },
-            rust_type: quote! { bool },
-            getter_fn: ident("get_bool"),
-            setter_fn: ident("set_bool"),
-            zero_expr: quote! { false },
-        },
-        "i32" => PropTypeInfo {
-            prop_type_expr: quote! { ::rusteal_runtime::ffi::RustealReifyPropType::Int32 },
-            rust_type: quote! { i32 },
-            getter_fn: ident("get_i32"),
-            setter_fn: ident("set_i32"),
-            zero_expr: quote! { 0i32 },
-        },
-        "i64" => PropTypeInfo {
-            prop_type_expr: quote! { ::rusteal_runtime::ffi::RustealReifyPropType::Int64 },
-            rust_type: quote! { i64 },
-            getter_fn: ident("get_i64"),
-            setter_fn: ident("set_i64"),
-            zero_expr: quote! { 0i64 },
-        },
-        "u8" => PropTypeInfo {
-            prop_type_expr: quote! { ::rusteal_runtime::ffi::RustealReifyPropType::UInt8 },
-            rust_type: quote! { u8 },
-            getter_fn: ident("get_u8"),
-            setter_fn: ident("set_u8"),
-            zero_expr: quote! { 0u8 },
-        },
-        "f32" => PropTypeInfo {
-            prop_type_expr: quote! { ::rusteal_runtime::ffi::RustealReifyPropType::Float },
-            rust_type: quote! { f32 },
-            getter_fn: ident("get_f32"),
-            setter_fn: ident("set_f32"),
-            zero_expr: quote! { 0.0f32 },
-        },
-        "f64" => PropTypeInfo {
-            prop_type_expr: quote! { ::rusteal_runtime::ffi::RustealReifyPropType::Double },
-            rust_type: quote! { f64 },
-            getter_fn: ident("get_f64"),
-            setter_fn: ident("set_f64"),
-            zero_expr: quote! { 0.0f64 },
-        },
+    let ident = |s: &str| syn::Ident::new(s, proc_macro2::Span::call_site());
+    let scalar = |variant: &str, rust: TokenStream, get: &str, set: &str, zero: TokenStream| {
+        let variant = ident(variant);
+        PropTypeInfo {
+            prop_type_expr: quote! { ::rusteal_runtime::ffi::RustealReifyPropType::#variant },
+            rust_type: rust,
+            kind: PropKind::Scalar {
+                getter_fn: ident(get),
+                setter_fn: ident(set),
+                zero_expr: zero,
+            },
+        }
+    };
+
+    let info = match seg.ident.to_string().as_str() {
+        "bool" => scalar("Bool", quote! { bool }, "get_bool", "set_bool", quote! { false }),
+        "i32" => scalar("Int32", quote! { i32 }, "get_i32", "set_i32", quote! { 0i32 }),
+        "i64" => scalar("Int64", quote! { i64 }, "get_i64", "set_i64", quote! { 0i64 }),
+        "u8" => scalar("UInt8", quote! { u8 }, "get_u8", "set_u8", quote! { 0u8 }),
+        "f32" => scalar("Float", quote! { f32 }, "get_f32", "set_f32", quote! { 0.0f32 }),
+        "f64" => scalar("Double", quote! { f64 }, "get_f64", "set_f64", quote! { 0.0f64 }),
         _ => return None,
     };
     Some(info)
@@ -106,4 +162,48 @@ pub fn fnv1a_hash(s: &str) -> u64 {
         hash = hash.wrapping_mul(FNV_PRIME);
     }
     hash
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use syn::parse_quote;
+
+    fn kind(ty: Type) -> Option<&'static str> {
+        map_type(&ty).map(|info| match info.kind {
+            PropKind::Scalar { .. } => "scalar",
+            PropKind::Object { .. } => "object",
+            PropKind::Class { .. } => "class",
+            PropKind::Array { .. } => "array",
+        })
+    }
+
+    #[test]
+    fn maps_supported_types() {
+        assert_eq!(kind(parse_quote!(f32)), Some("scalar"));
+        assert_eq!(kind(parse_quote!(UObjectRef<InputAction>)), Some("object"));
+        assert_eq!(kind(parse_quote!(rusteal_runtime::runtime::UObjectRef<InputAction>)), Some("object"));
+        assert_eq!(kind(parse_quote!(SubclassOf<Pawn>)), Some("class"));
+        assert_eq!(kind(parse_quote!(UeArray<UObjectRef<InputMappingContext>>)), Some("array"));
+        assert_eq!(kind(parse_quote!(UeArray<SubclassOf<Actor>>)), Some("array"));
+        assert_eq!(kind(parse_quote!(UeArray<f32>)), Some("array"));
+    }
+
+    #[test]
+    fn rejects_unsupported_types() {
+        assert_eq!(kind(parse_quote!(String)), None);
+        assert_eq!(kind(parse_quote!(UObjectRef)), None);
+        assert_eq!(kind(parse_quote!(UeArray<UeArray<f32>>)), None);
+        assert_eq!(kind(parse_quote!(UeArray<String>)), None);
+        assert_eq!(kind(parse_quote!(Vec<UObjectRef<InputAction>>)), None);
+    }
+
+    #[test]
+    fn array_extra_describes_the_element() {
+        let info = map_type(&parse_quote!(UeArray<UObjectRef<InputAction>>)).unwrap();
+        let extra = info.extra_fields().unwrap().to_string();
+        assert!(extra.contains("class_handle"), "{extra}");
+        assert!(extra.contains("inner_prop_type"), "{extra}");
+        assert!(extra.contains("RustealReifyPropType :: Object"), "{extra}");
+    }
 }
