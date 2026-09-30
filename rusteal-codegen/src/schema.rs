@@ -170,6 +170,7 @@ pub struct ParamInfo {
 // ---------------------------------------------------------------------------
 
 pub use rusteal_ue_flags::{
+    CPF_BLUEPRINT_READ_ONLY, CPF_BLUEPRINT_VISIBLE,
     CPF_CONST_PARM, CPF_OUT_PARM, CPF_REFERENCE_PARM, CPF_RETURN_PARM,
     CPF_NATIVE_ACCESS_SPECIFIER_PRIVATE as CPF_NATIVE_ACCESS_PRIVATE,
     CPF_NATIVE_ACCESS_SPECIFIER_PROTECTED as CPF_NATIVE_ACCESS_PROTECTED,

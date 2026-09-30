@@ -32,6 +32,23 @@ pub struct PropertyContext {
     pub is_class: bool,
 }
 
+/// The Rust accessor stem of a property: `bFoo` → `foo`, `FooBar` → `foo_bar`.
+pub fn rust_property_name(prop: &PropertyInfo) -> String {
+    if prop.prop_type == "BoolProperty" {
+        strip_bool_prefix(&prop.name)
+    } else {
+        to_snake_case(&prop.name)
+    }
+}
+
+/// Private or protected in C++ and `BlueprintReadOnly`: exported for reading
+/// only (`AllowPrivateAccess` components).
+pub fn is_read_only_non_public(prop: &PropertyInfo) -> bool {
+    use crate::schema::{CPF_BLUEPRINT_READ_ONLY, CPF_NATIVE_ACCESS_PRIVATE, CPF_NATIVE_ACCESS_PROTECTED};
+    prop.prop_flags & (CPF_NATIVE_ACCESS_PRIVATE | CPF_NATIVE_ACCESS_PROTECTED) != 0
+        && prop.prop_flags & CPF_BLUEPRINT_READ_ONLY != 0
+}
+
 /// Collect supported, deduplicated properties, returning their getter name set and the property list.
 /// Properties referencing types not in the context (e.g., enums/classes from non-enabled modules)
 /// are filtered out.
@@ -822,4 +839,36 @@ fn generate_container_getter(
         "        {turbofish_type}::new(h, prop)\n\
          \x20   }}\n\n"
     ));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rusteal_ue_flags::{
+        CPF_BLUEPRINT_READ_ONLY, CPF_BLUEPRINT_VISIBLE, CPF_NATIVE_ACCESS_SPECIFIER_PRIVATE,
+        CPF_NATIVE_ACCESS_SPECIFIER_PUBLIC,
+    };
+
+    fn prop(name: &str, prop_type: &str, flags: u64) -> PropertyInfo {
+        serde_json::from_value(serde_json::json!({
+            "name": name,
+            "type": prop_type,
+            "prop_flags": flags,
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn only_non_public_read_only_properties_lose_their_setter() {
+        let read_only = CPF_BLUEPRINT_VISIBLE | CPF_BLUEPRINT_READ_ONLY;
+        assert!(is_read_only_non_public(&prop("Mesh", "ObjectProperty", CPF_NATIVE_ACCESS_SPECIFIER_PRIVATE | read_only)));
+        assert!(!is_read_only_non_public(&prop("Mesh", "ObjectProperty", CPF_NATIVE_ACCESS_SPECIFIER_PRIVATE | CPF_BLUEPRINT_VISIBLE)));
+        assert!(!is_read_only_non_public(&prop("Speed", "FloatProperty", CPF_NATIVE_ACCESS_SPECIFIER_PUBLIC | read_only)));
+    }
+
+    #[test]
+    fn accessor_stems() {
+        assert_eq!(rust_property_name(&prop("CharacterMovement", "ObjectProperty", 0)), "character_movement");
+        assert_eq!(rust_property_name(&prop("bUseControllerRotationYaw", "BoolProperty", 0)), "use_controller_rotation_yaw");
+    }
 }
