@@ -280,6 +280,36 @@ the array inside the object, changed in place. `default = ...` is for the
 scalar types; objects, classes and arrays are set in a Blueprint child, as the
 engine's templates do.
 
+A `#[component]` is created with the object. `attach` names its parent: a
+component the class declares before it, or an inherited one by its field-style
+name (`root_component`, `mesh`); `socket` names a socket on that parent:
+
+```rust
+#[component(attach = "root_component")]
+camera_boom: SpringArmComponent,
+#[component(attach = "camera_boom", socket = "SpringEndpoint")]
+follow_camera: CameraComponent,
+```
+
+What a C++ constructor sets on inherited properties goes in a
+`#[class_defaults]` method of the `#[uclass_impl]` block. It runs once, on the
+class default object, which every instance and Blueprint child starts from:
+
+```rust
+#[class_defaults]
+fn class_defaults(&mut self) -> RustealResult<()> {
+    let me = self.as_ref().checked()?;
+    me.set_use_controller_rotation_yaw(false);
+    me.get_character_movement().checked()?.set_max_walk_speed(500.0);
+    self.camera_boom()?.checked()?.set_target_arm_length(400.0);
+    Ok(())
+}
+```
+
+Private engine properties that Blueprint can read (`ACharacter`'s `Mesh`,
+`CharacterMovement` and `CapsuleComponent`) have getters, and no setters when
+they are read-only.
+
 A `#[ufunction]` takes the scalar types, objects (`UObjectRef<T>`), classes
 (`SubclassOf<T>`) and structs (`UStructRef<T>`, a reference into the call's
 parameters; `to_owned()` keeps a copy), and returns a scalar, an object or a

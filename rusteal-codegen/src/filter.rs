@@ -75,11 +75,11 @@ fn is_property_exportable(prop: &PropertyInfo, available: &HashSet<String>) -> b
         }
     }
 
-    // Skip private/protected
-    if prop.prop_flags & CPF_NATIVE_ACCESS_PRIVATE != 0 {
-        return false;
-    }
-    if prop.prop_flags & CPF_NATIVE_ACCESS_PROTECTED != 0 {
+    // Skip private/protected, unless Blueprint can reach them (AllowPrivateAccess):
+    // they are read through reflection, like any other property.
+    if prop.prop_flags & (CPF_NATIVE_ACCESS_PRIVATE | CPF_NATIVE_ACCESS_PROTECTED) != 0
+        && prop.prop_flags & CPF_BLUEPRINT_VISIBLE == 0
+    {
         return false;
     }
 
@@ -338,5 +338,39 @@ fn filter_functions(
             *idx += 1;
             f.name = format!("{}_{}", f.name, idx);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rusteal_ue_flags::{CPF_BLUEPRINT_READ_ONLY, CPF_BLUEPRINT_VISIBLE};
+
+    fn object_prop(name: &str, flags: u64) -> PropertyInfo {
+        serde_json::from_value(serde_json::json!({
+            "name": name,
+            "type": "ObjectProperty",
+            "prop_flags": flags,
+            "class_name": "CharacterMovementComponent",
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn private_properties_only_when_blueprint_can_reach_them() {
+        let available: HashSet<String> = ["CharacterMovementComponent".to_string()].into();
+        let read_only = CPF_BLUEPRINT_VISIBLE | CPF_BLUEPRINT_READ_ONLY;
+
+        assert!(is_property_exportable(&object_prop("Public", 0), &available));
+        assert!(!is_property_exportable(&object_prop("Hidden", CPF_NATIVE_ACCESS_PRIVATE), &available));
+        assert!(!is_property_exportable(&object_prop("Guarded", CPF_NATIVE_ACCESS_PROTECTED), &available));
+        assert!(is_property_exportable(
+            &object_prop("CharacterMovement", CPF_NATIVE_ACCESS_PRIVATE | read_only),
+            &available
+        ));
+        assert!(is_property_exportable(
+            &object_prop("Guarded", CPF_NATIVE_ACCESS_PROTECTED | CPF_BLUEPRINT_VISIBLE),
+            &available
+        ));
     }
 }

@@ -113,12 +113,14 @@ fn parse_uproperty_args(attr: &syn::Attribute) -> syn::Result<UPropertyArgs> {
 struct ComponentArgs {
     is_root: bool,
     attach_to: Option<String>,
+    socket: Option<String>,
 }
 
 fn parse_component_args(attr: &syn::Attribute) -> syn::Result<ComponentArgs> {
     let mut args = ComponentArgs {
         is_root: false,
         attach_to: None,
+        socket: None,
     };
 
     // #[component] with no parens → defaults
@@ -150,8 +152,28 @@ fn parse_component_args(attr: &syn::Attribute) -> syn::Result<ComponentArgs> {
                         ));
                     }
                 }
+            Meta::NameValue(nv)
+                if nv.path.is_ident("socket") => {
+                    if let Expr::Lit(syn::ExprLit {
+                        lit: syn::Lit::Str(s), ..
+                    }) = &nv.value
+                    {
+                        args.socket = Some(s.value());
+                    } else {
+                        return Err(syn::Error::new_spanned(
+                            &nv.value,
+                            "socket must be a string literal, e.g. socket = \"SpringEndpoint\"",
+                        ));
+                    }
+                }
             _ => {}
         }
+    }
+    if args.socket.is_some() && args.attach_to.is_none() {
+        return Err(syn::Error::new_spanned(
+            attr,
+            "socket needs attach, e.g. attach = \"camera_boom\", socket = \"SpringEndpoint\"",
+        ));
     }
     Ok(args)
 }
@@ -176,6 +198,7 @@ struct ComponentField {
     component_type: syn::Path,
     is_root: bool,
     attach_to: Option<String>,
+    socket: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -242,6 +265,7 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
                 component_type,
                 is_root: cargs.is_root,
                 attach_to: cargs.attach_to,
+                socket: cargs.socket,
             });
         } else if let Some(attr) = uprop_attr {
             let pargs = parse_uproperty_args(attr)?;
@@ -613,14 +637,19 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
             flags |= 1; // RUSTEAL_COMP_ROOT
         }
 
-        let (attach_ptr, attach_len) = if let Some(ref attach_name) = comp.attach_to {
-            let attach_pascal = prop_type::to_pascal_case(attach_name);
-            let attach_bytes = attach_pascal.as_bytes().to_vec();
-            let alen = attach_bytes.len() as u32;
-            (quote! { [#(#attach_bytes),*].as_ptr() }, quote! { #alen })
-        } else {
-            (quote! { std::ptr::null() }, quote! { 0u32 })
+        // The parent is named like a field (`root_component`, `camera_boom`)
+        // and registered under its UE name; the socket is a UE name as is.
+        let name_arg = |name: Option<String>| match name {
+            Some(name) => {
+                let bytes = name.into_bytes();
+                let len = bytes.len() as u32;
+                (quote! { [#(#bytes),*].as_ptr() }, quote! { #len })
+            }
+            None => (quote! { std::ptr::null() }, quote! { 0u32 }),
         };
+        let (attach_ptr, attach_len) =
+            name_arg(comp.attach_to.as_deref().map(prop_type::to_pascal_case));
+        let (socket_ptr, socket_len) = name_arg(comp.socket.clone());
 
         add_comp_stmts.push(quote! {
             {
@@ -632,6 +661,7 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
                         comp_class,
                         #flags,
                         #attach_ptr, #attach_len,
+                        #socket_ptr, #socket_len,
                     );
                 }
             }

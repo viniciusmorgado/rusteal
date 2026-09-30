@@ -23,6 +23,10 @@ extern FRustealInputApi GInputApi;
 
 // Reify helpers (defined in RustealReifyApiImpl.cpp)
 extern void RustealReifyRegisterDeleteListener();
+
+// Blueprint children's component lists (defined in URustealReifiedClass.cpp)
+extern void RustealRegisterComponentListResync();
+extern void RustealUnregisterComponentListResync();
 extern void RustealReifyUnregisterDeleteListener();
 
 // Pinned lifecycle helpers (defined in RustealLifecycleApiImpl.cpp)
@@ -144,6 +148,7 @@ FString FRustealModule::HotCopyPath() const {
 void FRustealModule::StartupModule() {
   // 1. Fill the API table
   FillApiTable();
+  RustealRegisterComponentListResync();
 
   // 2. Locate the Rust DLL
   const FString PluginDir =
@@ -191,6 +196,7 @@ void FRustealModule::StartupModule() {
 }
 
 void FRustealModule::ShutdownModule() {
+  RustealUnregisterComponentListResync();
   UnloadRustDll();
 
   // Clean up the hot-copy DLL (now unlocked).

@@ -22,13 +22,38 @@ pub struct ClassRegistration {
 }
 inventory::collect!(ClassRegistration);
 
-/// Submitted by `#[uclass_impl]` — holds register_functions fn pointer.
+/// Submitted by `#[uclass_impl]` — holds register_functions fn pointer, and the
+/// `#[class_defaults]` method's caller when the block has one.
 pub struct ClassFunctionRegistration {
     pub register_functions: fn(),
+    pub class_defaults: Option<fn()>,
 }
 inventory::collect!(ClassFunctionRegistration);
 
-/// Three-phase iteration: register all → register all functions → finalize all.
+/// What a `#[class_defaults]` method may return: nothing, or a result whose
+/// error is logged.
+pub trait ClassDefaultsOutcome {
+    fn report(self, class: &str);
+}
+
+impl ClassDefaultsOutcome for () {
+    fn report(self, _class: &str) {}
+}
+
+impl ClassDefaultsOutcome for crate::error::RustealResult<()> {
+    fn report(self, class: &str) {
+        if let Err(e) = self {
+            let msg = format!("[Rusteal] {class}: class defaults failed: {e}");
+            let bytes = msg.as_bytes();
+            unsafe {
+                crate::ffi_dispatch::logging_log(1, bytes.as_ptr(), bytes.len() as u32);
+            }
+        }
+    }
+}
+
+/// Four-phase iteration: register all → register all functions → finalize all
+/// → class defaults, which run on class default objects that now exist.
 pub fn register_all_from_inventory() {
     let mut class_count = 0u32;
     for reg in inventory::iter::<ClassRegistration> {
@@ -42,6 +67,11 @@ pub fn register_all_from_inventory() {
     }
     for reg in inventory::iter::<ClassRegistration> {
         (reg.finalize)();
+    }
+    for freg in inventory::iter::<ClassFunctionRegistration> {
+        if let Some(class_defaults) = freg.class_defaults {
+            class_defaults();
+        }
     }
 
     // Log registration summary (helps diagnose hot-reload issues).

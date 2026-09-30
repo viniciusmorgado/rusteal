@@ -53,12 +53,12 @@ Three experiments on the reference port (Rusteal 0.3.0, UE 5.8.2), all reverted:
 | | |
 |---|---|
 | **Template** | The constructors set inherited defaults: capsule size, `bUseControllerRotation*`, the `CharacterMovement` tuning (`MyProjectCharacter.cpp:18-35`); the game mode's Blueprint child sets `DefaultPawnClass` and `PlayerControllerClass`. |
-| **Today** | workaround. The game mode's classes come from its Blueprint child, as in the template: `BP_RustGameMode` sets `Default Pawn Class = BP_RustCharacter`, and the Rust `ThirdPersonGameMode` is a stub like `AMyProjectGameMode`. The character still applies its constructor values in `ReceiveBeginPlay`. |
-| **Rusteal needs** | `macros`: a class-defaults hook run at registration, where Rust sets inherited properties on the class default object, next to the `#[uproperty]` defaults the finalize step already writes. |
+| **Today** | The character's `#[class_defaults]` writes the template constructor's values (capsule size, `bUseControllerRotation*`, the `CharacterMovement` tuning, the boom and camera settings) on the class default object, which instances and Blueprint children start from; nothing is configured in `ReceiveBeginPlay`. The game mode's classes come from its Blueprint child, as in the template. |
+| **Rusteal needs** | `macros`: a class-defaults hook run at registration, where Rust sets inherited properties on the class default object, next to the `#[uproperty]` defaults the finalize step already writes. Done: a `#[class_defaults] fn(&mut self)` in `#[uclass_impl]` runs on the class default object once every class is finalized; it may return `RustealResult<()>`, whose error is logged. |
 | **Evidence** | `rusteal-macros/src/uclass.rs` (finalize: `reify_get_cdo`, `finalize_cdo_stmts`); `RustealReifyApiImpl.cpp` `GetCdoImpl`. The player controller is spawned by `SpawnPlayActor` before the world's `BeginPlay` (`Engine/Private/UnrealEngine.cpp` `LoadMap`, `GameInstance.cpp` PIE), so it can only be chosen by a default, not at runtime. |
 | **Depends on** | TP-GAP-07 for the `CharacterMovement` and capsule values. |
 | **Done when** | The Rust classes carry the template's defaults with no Blueprint child and no `BeginPlay` configuration. |
-| **Status** | workaround (Blueprint child) |
+| **Status** | fixed, not released |
 | **Last checked** | Rusteal 0.3.0, UE 5.8.2 |
 
 ### TP-GAP-02 — `#[component(attach)]` to inherited components and sockets
@@ -66,12 +66,12 @@ Three experiments on the reference port (Rusteal 0.3.0, UE 5.8.2), all reverted:
 | | |
 |---|---|
 | **Template** | `CameraBoom->SetupAttachment(RootComponent)`, `FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName)` (`MyProjectCharacter.cpp:40, 46`). |
-| **Today** | workaround: both components are attached with `k2_attach_to_component` in `ReceiveBeginPlay`. |
-| **Rusteal needs** | `plugin`: resolve the attach parent among inherited components (the actor's root) and accept a socket name; `macros`: `#[component(attach = "root", socket = "SpringEndpoint")]` or similar. |
-| **Evidence** | `URustealReifiedClass.cpp` `RustealClassConstructor`: the parent is looked up only in `CreatedComponents`, the components the Rust class itself declares. |
+| **Today** | As in the template: `#[component(attach = "root_component")] camera_boom` and `#[component(attach = "camera_boom", socket = "SpringEndpoint")] follow_camera`, attached when the object is constructed. |
+| **Rusteal needs** | `plugin`: resolve the attach parent among inherited components (the actor's root) and accept a socket name; `macros`: `#[component(attach = "root", socket = "SpringEndpoint")]` or similar. Done: the parent is a component the class declared earlier, or an inherited one by its property or subobject name (`root_component`, `mesh`); `socket` names the socket on it. A Blueprint child's default object also lost the Rust components from its component list (`AActor::OwnedComponents`) while the editor loaded or compiled it, though they stayed its subobjects, so the Blueprint editor's component tree did not show them; the plugin rebuilds that list after a Blueprint loads (`OnAssetLoaded`) and after its default object is compiled (`OnObjectPostCDOCompiled`). |
+| **Evidence** | `URustealReifiedClass.cpp` (`RustealClassConstructor`, `ResyncOwnedComponents`); the Blueprint editor's tree reads the default object's `GetComponents()` (`FBlueprintEditor::GetSubobjectEditorObjectContext`, `USubobjectDataSubsystem::GatherSubobjectData`); in the port, the boom attached to `CollisionCylinder` and the camera to `CameraBoom` at `SpringEndpoint`. |
 | **Depends on** | — |
-| **Done when** | Boom and camera are attached at construction, visible in the Blueprint child's component tree. Today the tree lists native (C++) components and a Blueprint parent's construction-script components, and Rust components are neither, so they exist on the pawn but do not show up there. |
-| **Status** | open |
+| **Done when** | Boom and camera are attached at construction, visible in the Blueprint child's component tree. |
+| **Status** | fixed, not released |
 | **Last checked** | Rusteal 0.3.0, UE 5.8.2 |
 
 ### TP-GAP-03 — `#[uproperty]` of object, class and array types
@@ -131,12 +131,12 @@ Three experiments on the reference port (Rusteal 0.3.0, UE 5.8.2), all reverted:
 | | |
 |---|---|
 | **Template** | `GetCapsuleComponent()`, `GetCharacterMovement()`, `GetMesh()`. |
-| **Today** | workaround: `GetComponentByClass` through a helper in the port. |
-| **Rusteal needs** | `exporter`: export private properties marked `AllowPrivateAccess` / `BlueprintReadOnly` (`CapsuleComponent`, `CharacterMovement`, `Mesh`), which the exporter skips today. |
-| **Evidence** | The generated `Character` has no `get_character_movement`, `get_mesh` or `get_capsule_component`. |
+| **Today** | The port reaches them through the generated `get_capsule_component()`, `get_character_movement()` and `get_mesh()`; the `GetComponentByClass` helper is gone. |
+| **Rusteal needs** | `exporter`: export private properties marked `AllowPrivateAccess` / `BlueprintReadOnly` (`CapsuleComponent`, `CharacterMovement`, `Mesh`), which the exporter skips today. Done: private and protected properties are exported when Blueprint can reach them (`BlueprintReadOnly`/`ReadWrite`, which UHT allows on a private member only with `AllowPrivateAccess`); read-only ones get a getter and no setter. |
+| **Evidence** | The generated `Character` has `get_character_movement`, `get_mesh` and `get_capsule_component`, without setters; `rusteal-codegen/src/filter.rs` and `rust_gen/properties.rs` tests. |
 | **Depends on** | — |
 | **Done when** | The port reaches the three components through the generated accessors. |
-| **Status** | workaround |
+| **Status** | fixed, not released |
 | **Last checked** | Rusteal 0.3.0, UE 5.8.2 |
 
 ### TP-GAP-08 — `#[ufunction]` parameter and return types
@@ -214,10 +214,9 @@ By what each one unblocks for the template:
    contexts are assigned in the Blueprint children.
 3. **TP-GAP-08** and **TP-GAP-05 (c, d)**, fixed — binding actions to Rust
    handlers; the polling goes.
-4. **TP-GAP-02** — attach at construction.
-5. **TP-GAP-07** — the character's private components.
-6. **TP-GAP-01** — defaults written from Rust; until then the Blueprint children
-   carry them, as the template's do.
+4. **TP-GAP-02**, fixed — attach at construction.
+5. **TP-GAP-07**, fixed — the character's private components.
+6. **TP-GAP-01**, fixed — defaults written from Rust.
 7. **TP-GAP-06**, **TP-GAP-09**, **TP-GAP-10**, **TP-GAP-11** and **TP-GAP-12**.
 
 The Blueprint route needs none of these and is applied in the port: the

@@ -298,7 +298,7 @@ fn regenerate_fixture() {
 /// taking and returning each supported kind, and code using every accessor the
 /// macros generate and the Enhanced Input helpers.
 const UCLASS_GAME: &str = r#"
-use bindings::engine::{Actor, Pawn, PlayerController};
+use bindings::engine::{Actor, Pawn, PlayerController, SceneComponent};
 use bindings::enhanced_input::{
     ETriggerEvent, EnhancedInputLocalPlayerSubsystemExt, FInputActionValue, InputAction,
     InputMappingContext,
@@ -309,6 +309,10 @@ use rusteal_runtime::{uclass, uclass_impl};
 
 #[uclass(parent = Pawn)]
 pub struct Probe {
+    #[component(attach = "root_component")]
+    arm: SceneComponent,
+    #[component(attach = "arm", socket = "Tip")]
+    tip: SceneComponent,
     #[uproperty(EditAnywhere, default = 2.5)]
     speed: f32,
     #[uproperty(EditAnywhere, BlueprintReadWrite)]
@@ -327,6 +331,14 @@ pub struct Probe {
 
 #[uclass_impl]
 impl Probe {
+    #[class_defaults]
+    fn class_defaults(&mut self) -> RustealResult<()> {
+        self.set_speed(1.0);
+        let _ = self.arm()?;
+        let _ = self.tip()?;
+        Ok(())
+    }
+
     #[ufunction(Override)]
     fn receive_restarted(&mut self) {
         let _ = self.bind_input();
@@ -349,6 +361,15 @@ impl Probe {
     fn pick_class(&mut self, index: i32) -> SubclassOf<Actor> {
         self.classes().get(index as usize).unwrap_or_default()
     }
+}
+
+#[uclass(parent = Actor)]
+pub struct Plain {}
+
+#[uclass_impl]
+impl Plain {
+    #[class_defaults]
+    fn class_defaults(&mut self) {}
 }
 
 impl Probe {

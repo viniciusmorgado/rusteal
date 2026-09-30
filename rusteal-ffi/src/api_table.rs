@@ -464,13 +464,17 @@ pub struct RustealReifyApi {
 
     /// Register a default subobject to be created during class construction.
     /// `flags`: bitfield — RUSTEAL_COMP_ROOT=1, RUSTEAL_COMP_TRANSIENT=2.
-    /// `attach_parent`/`attach_len`: name of parent subobject (0-len = none).
+    /// `attach_parent`/`attach_len`: the component to attach to (0-len = none):
+    /// one the class declares, or an inherited one by its property or
+    /// subobject name (`RootComponent`, `Mesh`).
+    /// `attach_socket`/`socket_len`: the socket on it (0-len = none).
     pub add_default_subobject: unsafe extern "C" fn(
         cls: UClassHandle,
         name: *const u8, name_len: u32,
         component_class: UClassHandle,
         flags: u32,
         attach_parent: *const u8, attach_len: u32,
+        attach_socket: *const u8, socket_len: u32,
     ) -> RustealErrorCode,
 
     /// Find a default subobject by name on an existing instance.

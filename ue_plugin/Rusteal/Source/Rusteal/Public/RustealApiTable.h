@@ -407,10 +407,14 @@ struct FRustealReifyApi {
 
   RustealUObjectHandle (*get_cdo)(RustealUClassHandle cls);
 
+  // attach_parent: a component the class declares, or an inherited one by its
+  // property or subobject name (RootComponent, Mesh); attach_socket: the
+  // socket on it. Both empty for none.
   ERustealErrorCode (*add_default_subobject)(
       RustealUClassHandle cls, const uint8 *name, uint32 name_len,
       RustealUClassHandle component_class, uint32 flags,
-      const uint8 *attach_parent, uint32 attach_len);
+      const uint8 *attach_parent, uint32 attach_len, const uint8 *attach_socket,
+      uint32 socket_len);
 
   RustealUObjectHandle (*find_default_subobject)(RustealUObjectHandle owner,
                                                  const uint8 *name,

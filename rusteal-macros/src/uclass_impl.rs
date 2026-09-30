@@ -48,8 +48,10 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
     let rust_data_name = format_ident!("__{}RustData", struct_name);
     let class_handle_name = format_ident!("__RUSTEAL_CLASS_HANDLE_{}", to_screaming_snake(&struct_name_str));
 
-    // Classify methods: collect #[ufunction] info, strip attrs
+    // Classify methods: collect #[ufunction] info and the #[class_defaults]
+    // method, strip attrs
     let mut ufunctions: Vec<UFunctionInfo> = Vec::new();
+    let mut class_defaults: Option<&ImplItemFn> = None;
     let mut clean_impl = input.clone();
 
     for item in &input.items {
@@ -58,13 +60,33 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
             if has_ufunction {
                 ufunctions.push(parse_ufunction(method)?);
             }
+            if method.attrs.iter().any(|a| a.path().is_ident("class_defaults")) {
+                if class_defaults.is_some() {
+                    return Err(syn::Error::new_spanned(
+                        &method.sig,
+                        "only one #[class_defaults] method per impl block",
+                    ));
+                }
+                let takes_only_self = method.sig.inputs.len() == 1
+                    && matches!(method.sig.inputs.first(), Some(FnArg::Receiver(_)));
+                if !takes_only_self || has_ufunction {
+                    return Err(syn::Error::new_spanned(
+                        &method.sig,
+                        "#[class_defaults] takes `&mut self` (the class default object) and nothing else, \
+                         and is not a #[ufunction]",
+                    ));
+                }
+                class_defaults = Some(method);
+            }
         }
     }
 
-    // Strip #[ufunction] attrs from the emitted impl block
+    // Strip #[ufunction] and #[class_defaults] attrs from the emitted impl block
     for item in &mut clean_impl.items {
         if let ImplItem::Fn(method) = item {
-            method.attrs.retain(|a| !a.path().is_ident("ufunction"));
+            method
+                .attrs
+                .retain(|a| !a.path().is_ident("ufunction") && !a.path().is_ident("class_defaults"));
         }
     }
 
@@ -311,13 +333,51 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
         }
     };
 
+    // The #[class_defaults] method, run on the class default object once the
+    // class is finalized: what a C++ constructor sets on inherited properties.
+    let (class_defaults_fn, class_defaults_entry) = match class_defaults {
+        Some(method) => {
+            let method_ident = &method.sig.ident;
+            let fn_name = format_ident!("__rusteal_class_defaults_{}", to_snake_case(&struct_name_str));
+            (
+                quote! {
+                    #[doc(hidden)]
+                    pub fn #fn_name() {
+                        let cls = match #class_handle_name.get() {
+                            Some(&c) if !c.is_null() => c,
+                            _ => return,
+                        };
+                        let cdo = unsafe { ::rusteal_runtime::runtime::ffi_dispatch::reify_get_cdo(cls) };
+                        if cdo.is_null() {
+                            return;
+                        }
+                        let rust_data = ::rusteal_runtime::runtime::reify_registry::get_instance_data(cdo);
+                        #[allow(unused_mut)]
+                        let mut __this = #struct_name {
+                            __obj: cdo,
+                            __rust_data: rust_data as *mut #rust_data_name,
+                        };
+                        ::rusteal_runtime::runtime::reify_registry::ClassDefaultsOutcome::report(
+                            __this.#method_ident(),
+                            #struct_name_str,
+                        );
+                    }
+                },
+                quote! { Some(#fn_name) },
+            )
+        }
+        None => (quote! {}, quote! { None }),
+    };
+
     Ok(quote! {
         #clean_impl
         #register_functions_fn
+        #class_defaults_fn
 
         ::rusteal_runtime::__inventory::submit! {
             ::rusteal_runtime::runtime::reify_registry::ClassFunctionRegistration {
                 register_functions: #register_fns_name,
+                class_defaults: #class_defaults_entry,
             }
         }
     })

@@ -389,8 +389,12 @@ public static class RustealExport
 
         private static bool ShouldExportProperty(UhtProperty prop)
         {
-            // Skip private/protected
-            if (prop.PropertyFlags.HasAnyFlags(NoExportPropFlags))
+            // Skip private/protected, unless Blueprint can reach them: UHT allows
+            // BlueprintReadOnly/ReadWrite on a private member only with
+            // AllowPrivateAccess (ACharacter's Mesh, CharacterMovement,
+            // CapsuleComponent), and Rust reaches them the same way, by reflection.
+            if (prop.PropertyFlags.HasAnyFlags(NoExportPropFlags)
+                && !prop.PropertyFlags.HasAnyFlags(EPropertyFlags.BlueprintVisible))
                 return false;
 
             // Skip deprecated

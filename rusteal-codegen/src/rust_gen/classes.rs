@@ -107,11 +107,20 @@ pub fn generate_class(class: &ClassInfo, ctx: &CodegenContext) -> String {
         .map(|e| escape_reserved(&e.rust_func_name))
         .collect();
 
-    let suppress_setters: HashSet<String> = prop_names
+    let mut suppress_setters: HashSet<String> = prop_names
         .iter()
         .filter(|n| n.starts_with("set_") && func_names.contains(n.as_str()))
         .cloned()
         .collect();
+
+    // A private or protected property Blueprint may only read (a component such
+    // as ACharacter's CharacterMovement) gets no setter either.
+    suppress_setters.extend(
+        deduped_props
+            .iter()
+            .filter(|p| properties::is_read_only_non_public(p))
+            .map(|p| format!("set_{}", properties::rust_property_name(p))),
+    );
 
     // Remove suppressed setters from prop_names so they don't block UFUNCTIONs
     for setter in &suppress_setters {
