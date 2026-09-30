@@ -3,7 +3,10 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::config::CodegenConfig;
-use crate::schema::{ClassInfo, EnumInfo, FunctionInfo, PropertyInfo, StructInfo};
+use crate::schema::{
+    ClassInfo, EnumInfo, FunctionInfo, PropertyInfo, StructInfo, FUNC_BLUEPRINT_EVENT, FUNC_NATIVE,
+    FUNC_STATIC,
+};
 
 /// Central build context for the codegen pipeline.
 pub struct CodegenContext {
@@ -144,6 +147,8 @@ impl CodegenContext {
             enums.sort_by(|a, b| a.name.cmp(&b.name));
         }
 
+        add_interface_functions(&mut module_classes, &mut classes_map);
+
         let mut ctx = CodegenContext {
             classes: classes_map,
             structs: structs_map,
@@ -181,7 +186,7 @@ impl CodegenContext {
                     self.record_dep(module, &pc.package, &mut deps);
                 }
                 for iface in &class.interfaces {
-                    if let Some(ic) = self.classes.get(iface.as_str()) {
+                    if let Some(ic) = self.classes.get(interface_class_name(iface)) {
                         self.record_dep(module, &ic.package, &mut deps);
                     }
                 }
@@ -405,5 +410,64 @@ impl CodegenContext {
                 _ => "u8",
             }
         })
+    }
+}
+
+/// The reflected class name of a native interface listed in `ClassInfo::interfaces`:
+/// the exporter lists the `I`-prefixed native type (`IEnhancedInputSubsystemInterface`),
+/// the class is exported under its `UInterface` name (`EnhancedInputSubsystemInterface`).
+pub fn interface_class_name(native: &str) -> &str {
+    native.strip_prefix('I').unwrap_or(native)
+}
+
+/// Give each class the callable functions of the interfaces it implements.
+///
+/// Interfaces get no wrappers of their own, so a `UFUNCTION` declared only on an
+/// interface (`IEnhancedInputSubsystemInterface::AddMappingContext`) would be
+/// unreachable. It is copied to every class listing the interface, and the C++
+/// wrapper calls it through the interface type. Blueprint events are left out:
+/// on an interface they are only callable through the static `Execute_` thunks.
+/// Only interfaces in enabled modules are considered.
+fn add_interface_functions(
+    module_classes: &mut BTreeMap<String, Vec<ClassInfo>>,
+    classes_map: &mut HashMap<String, ClassInfo>,
+) {
+    let interfaces: HashMap<String, ClassInfo> = classes_map
+        .values()
+        .filter(|c| c.super_class.as_deref() == Some("Interface"))
+        .map(|c| (c.name.clone(), c.clone()))
+        .collect();
+
+    for classes in module_classes.values_mut() {
+        for class in classes.iter_mut() {
+            if class.super_class.as_deref() == Some("Interface") {
+                continue;
+            }
+            let mut added = Vec::new();
+            for native in &class.interfaces {
+                let Some(iface) = interfaces.get(interface_class_name(native)) else {
+                    continue;
+                };
+                for func in &iface.funcs {
+                    let callable = func.func_flags & FUNC_NATIVE != 0
+                        && func.func_flags & FUNC_BLUEPRINT_EVENT == 0
+                        && func.func_flags & FUNC_STATIC == 0
+                        && !func.is_static;
+                    let taken = class.funcs.iter().chain(&added).any(|f: &FunctionInfo| f.name == func.name);
+                    if callable && !taken {
+                        let mut func = func.clone();
+                        func.interface = Some(native.clone());
+                        added.push(func);
+                    }
+                }
+            }
+            if added.is_empty() {
+                continue;
+            }
+            class.funcs.extend(added);
+            if let Some(mapped) = classes_map.get_mut(&class.name) {
+                mapped.funcs = class.funcs.clone();
+            }
+        }
     }
 }

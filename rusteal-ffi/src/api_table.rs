@@ -31,6 +31,7 @@ pub struct RustealApiTable {
     pub world: *const RustealWorldApi,
     pub logging: *const RustealLoggingApi,
     pub widget: *const RustealWidgetApi,
+    pub input: *const RustealInputApi,
 
     // ---- Generated function-pointer array (codegen) ----
     /// Flat array indexed by codegen-assigned FuncId. Each pointer targets a
@@ -261,6 +262,10 @@ pub struct RustealReflectionApi {
 
     /// Destroy struct memory (calls C++ destructors for non-trivial members).
     pub destroy_struct: unsafe extern "C" fn(ustruct: UStructHandle, data: *mut u8) -> RustealErrorCode,
+
+    /// Copy the struct at `src` over the initialized struct at `dest` with the
+    /// UScriptStruct's copy semantics (deep for strings, arrays and the like).
+    pub copy_struct: unsafe extern "C" fn(ustruct: UStructHandle, dest: *mut u8, src: *const u8) -> RustealErrorCode,
 }
 
 /// Phase 7: Container operations (TArray / TMap / TSet).
@@ -459,13 +464,17 @@ pub struct RustealReifyApi {
 
     /// Register a default subobject to be created during class construction.
     /// `flags`: bitfield — RUSTEAL_COMP_ROOT=1, RUSTEAL_COMP_TRANSIENT=2.
-    /// `attach_parent`/`attach_len`: name of parent subobject (0-len = none).
+    /// `attach_parent`/`attach_len`: the component to attach to (0-len = none):
+    /// one the class declares, or an inherited one by its property or
+    /// subobject name (`RootComponent`, `Mesh`).
+    /// `attach_socket`/`socket_len`: the socket on it (0-len = none).
     pub add_default_subobject: unsafe extern "C" fn(
         cls: UClassHandle,
         name: *const u8, name_len: u32,
         component_class: UClassHandle,
         flags: u32,
         attach_parent: *const u8, attach_len: u32,
+        attach_socket: *const u8, socket_len: u32,
     ) -> RustealErrorCode,
 
     /// Find a default subobject by name on an existing instance.
@@ -501,6 +510,27 @@ pub struct RustealWidgetApi {
     pub get_widget_tree: unsafe extern "C" fn(
         user_widget: UObjectHandle,
     ) -> UObjectHandle,
+}
+
+/// Enhanced Input bindings.
+///
+/// `UEnhancedInputComponent::BindAction` is a C++ template, not in UE
+/// reflection, so the binding is exposed manually.
+#[repr(C)]
+pub struct RustealInputApi {
+    /// Bind `trigger_event` (an `ETriggerEvent` value) of `action` on `actor`'s
+    /// Enhanced Input component to `actor`'s UFUNCTION `function_name`, which
+    /// takes no parameters or one `FInputActionValue`. `InvalidOperation` when
+    /// the actor has no Enhanced Input component yet, `TypeMismatch` when the
+    /// function takes anything else. Binding the same function to the same
+    /// action and event on the same component again does nothing.
+    pub bind_action: unsafe extern "C" fn(
+        actor: UObjectHandle,
+        action: UObjectHandle,
+        trigger_event: u8,
+        function_name: *const u8,
+        function_name_len: u32,
+    ) -> RustealErrorCode,
 }
 
 /// World-level queries (spawn, find actors, etc.).

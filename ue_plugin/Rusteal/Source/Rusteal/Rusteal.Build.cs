@@ -1,5 +1,6 @@
-using UnrealBuildTool;
 using System.IO;
+
+namespace UnrealBuildTool.Rules;
 
 public class Rusteal : ModuleRules
 {
@@ -8,9 +9,10 @@ public class Rusteal : ModuleRules
         PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 
         // Modules the hand-written runtime needs regardless of which bindings are generated
-        // (RustealWidgetApiImpl.cpp uses UMG; UMG needs Slate/SlateCore/InputCore).
-        PublicDependencyModuleNames.AddRange(new string[]
-        {
+        // (RustealWidgetApiImpl.cpp uses UMG; UMG needs Slate/SlateCore/InputCore;
+        // RustealInputApiImpl.cpp uses EnhancedInput, which Rusteal.uplugin enables).
+        PublicDependencyModuleNames.AddRange(
+        [
             "Core",
             "CoreUObject",
             "Engine",
@@ -18,7 +20,8 @@ public class Rusteal : ModuleRules
             "SlateCore",
             "Slate",
             "UMG",
-        });
+            "EnhancedInput",
+        ]);
 
         // IPluginManager: the plugin reads its own version from its descriptor.
         PrivateDependencyModuleNames.Add("Projects");

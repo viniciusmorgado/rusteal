@@ -74,7 +74,7 @@ fn parse_object_default(s: &str, mapped: &MappedType) -> Option<String> {
     if s == "None" {
         // Check if this is a typed UObjectRef or an untyped UObjectHandle
         if mapped.rust_to_ffi == ConversionKind::ObjectRef {
-            Some("unsafe { rusteal_core::UObjectRef::from_raw(rusteal_core::UObjectHandle::null()) }".into())
+            Some("unsafe { rusteal_core::ObjectPointer::from_object_handle(rusteal_core::UObjectHandle::null()) }".into())
         } else {
             // Untyped UObjectHandle (Identity conversion)
             Some("rusteal_core::UObjectHandle::null()".into())

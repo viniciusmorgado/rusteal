@@ -44,6 +44,12 @@ impl<T: UeStruct> UStructRef<T> {
     pub fn as_ptr(&self) -> UObjectHandle {
         UObjectHandle(self.ptr as *mut std::ffi::c_void)
     }
+
+    /// An owned copy of the struct, for the generated functions that take
+    /// `&OwnedStruct<T>` or to keep it past the call it came with.
+    pub fn to_owned(&self) -> crate::containers::OwnedStruct<T> {
+        crate::containers::OwnedStruct::copy_from(self)
+    }
 }
 
 /// Create a `UStructRef<T>` from a native parameter buffer pointer + byte offset.

@@ -135,6 +135,33 @@ impl<T: HasParent> UObjectRef<T> {
     }
 }
 
+/// A typed reference the engine passes as a `UObject*`: an object
+/// (`UObjectRef<T>`) or a class (`SubclassOf<T>`, a `UClass*`). The generated
+/// bindings convert through it, so the declared type decides which one.
+pub trait ObjectPointer: Sized {
+    /// Wrap a pointer the engine returned.
+    ///
+    /// # Safety
+    /// The handle must be null or an object the type admits: an instance of
+    /// `T` for `UObjectRef<T>`, `T`'s class or a subclass for `SubclassOf<T>`.
+    unsafe fn from_object_handle(handle: UObjectHandle) -> Self;
+
+    /// The pointer to hand to the engine.
+    fn object_handle(&self) -> UObjectHandle;
+}
+
+impl<T: UeClass> ObjectPointer for UObjectRef<T> {
+    #[inline]
+    unsafe fn from_object_handle(handle: UObjectHandle) -> Self {
+        unsafe { UObjectRef::from_raw(handle) }
+    }
+
+    #[inline]
+    fn object_handle(&self) -> UObjectHandle {
+        self.handle
+    }
+}
+
 /// Blanket Deref: `UObjectRef<Child>` auto-derefs to `UObjectRef<Parent>`.
 /// Safe because `UObjectRef<T>` is `#[repr(transparent)]` over `UObjectHandle`.
 impl<T: HasParent> Deref for UObjectRef<T> {

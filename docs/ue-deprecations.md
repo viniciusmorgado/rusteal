@@ -111,10 +111,11 @@ The files are generated per project; **Where** names the generated wrapper.
 | UE-DEP-014 | `APawn::IsControlled` | function | UE 4.24 | `IsPawnControlled`, `IsPlayerControlled` | `RustealFunc_engine_Pawn.cpp` |
 | UE-DEP-015 | `UKismetInputLibrary::PointerEvent_GetTouchpadIndex` | function | UE 5.8 | none: retired | `RustealFunc_engine_KismetInputLibrary.cpp` |
 | UE-DEP-016 | `UDataLayerSubsystem::SetDataLayerRuntimeState` (label/instance overload), `SetDataLayerRuntimeStateByLabel` | function | UE 5.1 | the `UDataLayerAsset*` overload, `SetDataLayerInstanceRuntimeState` | `RustealFunc_engine_DataLayerSubsystem.cpp` |
+| UE-DEP-017 | `UPlayerMappableInputConfig` | class | UE 5.3 | `UEnhancedInputUserSettings` | `RustealFunc_enhanced_input_PlayerMappableInputConfig.cpp` |
 
-Last checked: Rusteal 0.2.1, UE 5.8.2, with the modules `rusteal new` enables
-(`core`, `engine`, `input`, `slate`, `umg`). Status of all: open, followed by the
-engine.
+Last checked: Rusteal 0.3.0, UE 5.8.2, with the modules `rusteal new` enables
+(`core`, `engine`, `input`, `slate`, `umg`, `enhanced-input`). Status of all:
+open, followed by the engine.
 
 ## Fixed
 

@@ -3,6 +3,7 @@
 
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
+use syn::ext::IdentExt;
 use syn::{parse2, FnArg, Ident, ImplItem, ImplItemFn, ItemImpl, Meta, ReceiverKind, ReturnType, Token, Type};
 use syn::punctuated::Punctuated;
 
@@ -47,8 +48,10 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
     let rust_data_name = format_ident!("__{}RustData", struct_name);
     let class_handle_name = format_ident!("__RUSTEAL_CLASS_HANDLE_{}", to_screaming_snake(&struct_name_str));
 
-    // Classify methods: collect #[ufunction] info, strip attrs
+    // Classify methods: collect #[ufunction] info and the #[class_defaults]
+    // method, strip attrs
     let mut ufunctions: Vec<UFunctionInfo> = Vec::new();
+    let mut class_defaults: Option<&ImplItemFn> = None;
     let mut clean_impl = input.clone();
 
     for item in &input.items {
@@ -57,13 +60,33 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
             if has_ufunction {
                 ufunctions.push(parse_ufunction(method)?);
             }
+            if method.attrs.iter().any(|a| a.path().is_ident("class_defaults")) {
+                if class_defaults.is_some() {
+                    return Err(syn::Error::new_spanned(
+                        &method.sig,
+                        "only one #[class_defaults] method per impl block",
+                    ));
+                }
+                let takes_only_self = method.sig.inputs.len() == 1
+                    && matches!(method.sig.inputs.first(), Some(FnArg::Receiver(_)));
+                if !takes_only_self || has_ufunction {
+                    return Err(syn::Error::new_spanned(
+                        &method.sig,
+                        "#[class_defaults] takes `&mut self` (the class default object) and nothing else, \
+                         and is not a #[ufunction]",
+                    ));
+                }
+                class_defaults = Some(method);
+            }
         }
     }
 
-    // Strip #[ufunction] attrs from the emitted impl block
+    // Strip #[ufunction] and #[class_defaults] attrs from the emitted impl block
     for item in &mut clean_impl.items {
         if let ImplItem::Fn(method) = item {
-            method.attrs.retain(|a| !a.path().is_ident("ufunction"));
+            method
+                .attrs
+                .retain(|a| !a.path().is_ident("ufunction") && !a.path().is_ident("class_defaults"));
         }
     }
 
@@ -131,20 +154,31 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
             let rust_name = &param.rust_name;
             let rust_ty = &param.rust_ty;
             let idx = syn::Index::from(i);
-            if is_ustruct_ref_type(rust_ty) {
-                // UStructRef<T>: create a typed reference to struct data in the params buffer
-                param_reads.push(quote! {
-                    let #rust_name: #rust_ty = unsafe {
-                        ::rusteal_runtime::runtime::struct_ref_from_param(params, offsets[#idx] as usize)
-                    };
-                });
-            } else {
-                param_reads.push(quote! {
-                    let #rust_name: #rust_ty = unsafe {
-                        ::rusteal_runtime::runtime::ffi_dispatch::native_mem_read::<#rust_ty>(params, offsets[#idx] as usize)
-                    };
-                });
-            }
+            let read_handle = quote! {
+                ::rusteal_runtime::runtime::ffi_dispatch::native_mem_read::<::rusteal_runtime::ffi::UObjectHandle>(
+                    params, offsets[#idx] as usize,
+                )
+            };
+            let read = match prop_type::map_type(rust_ty).map(|info| info.kind) {
+                // A typed reference to the struct inside the params buffer.
+                Some(prop_type::PropKind::Struct { .. }) => quote! {
+                    ::rusteal_runtime::runtime::struct_ref_from_param(params, offsets[#idx] as usize)
+                },
+                // Objects and classes travel as pointers; the parameter's type
+                // only admits `T` (and its subclasses).
+                Some(prop_type::PropKind::Object { .. }) => quote! {
+                    <#rust_ty>::from_raw(#read_handle)
+                },
+                Some(prop_type::PropKind::Class { .. }) => quote! {
+                    <#rust_ty>::from_raw(::rusteal_runtime::ffi::UClassHandle(#read_handle.0))
+                },
+                _ => quote! {
+                    ::rusteal_runtime::runtime::ffi_dispatch::native_mem_read::<#rust_ty>(params, offsets[#idx] as usize)
+                },
+            };
+            param_reads.push(quote! {
+                let #rust_name: #rust_ty = unsafe { #read };
+            });
             param_idents.push(rust_name);
         }
 
@@ -154,21 +188,28 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
         let (return_zero_init, return_write) = if let Some(ref ret) = uf.return_type {
             let ret_ty = &ret.rust_ty;
             let ret_idx = syn::Index::from(uf.params.len());
-            (
-                quote! {
-                    unsafe {
-                        ::rusteal_runtime::runtime::ffi_dispatch::native_mem_write(
-                            params, offsets[#ret_idx] as usize,
-                            unsafe { std::mem::zeroed::<#ret_ty>() },
-                        );
-                    }
-                },
-                quote! {
-                    unsafe {
-                        ::rusteal_runtime::runtime::ffi_dispatch::native_mem_write(params, offsets[#ret_idx] as usize, __ret);
-                    }
-                },
-            )
+            let write = |value: TokenStream| quote! {
+                unsafe {
+                    ::rusteal_runtime::runtime::ffi_dispatch::native_mem_write(
+                        params, offsets[#ret_idx] as usize, #value,
+                    );
+                }
+            };
+            match prop_type::map_type(ret_ty).map(|info| info.kind) {
+                // Objects and classes are written as pointers.
+                Some(prop_type::PropKind::Object { .. }) => (
+                    write(quote! { ::rusteal_runtime::ffi::UObjectHandle::null() }),
+                    write(quote! { __ret.raw() }),
+                ),
+                Some(prop_type::PropKind::Class { .. }) => (
+                    write(quote! { ::rusteal_runtime::ffi::UObjectHandle::null() }),
+                    write(quote! { ::rusteal_runtime::ffi::UObjectHandle(__ret.raw().0) }),
+                ),
+                _ => (
+                    write(quote! { unsafe { std::mem::zeroed::<#ret_ty>() } }),
+                    write(quote! { __ret }),
+                ),
+            }
         } else {
             (quote! {}, quote! {})
         };
@@ -243,6 +284,7 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
                 let param_ue_bytes = param_ue_name.as_bytes();
                 let param_ue_len = param_ue_name.len() as u32;
                 let prop_type_expr = &info.prop_type_expr;
+                let extra_expr = extra_expr(&info);
 
                 register_stmts.push(quote! {
                     unsafe {
@@ -252,7 +294,7 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
                             #param_ue_len,
                             #prop_type_expr as u32,
                             ::rusteal_runtime::ffi::CPF_PARM,
-                            std::ptr::null(),
+                            #extra_expr,
                         );
                     }
                 });
@@ -262,6 +304,7 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
             if let Some(ref ret) = uf.return_type {
                 let info = prop_type::map_type(&ret.rust_ty).unwrap();
                 let prop_type_expr = &info.prop_type_expr;
+                let extra_expr = extra_expr(&info);
 
                 register_stmts.push(quote! {
                     unsafe {
@@ -271,7 +314,7 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
                             11u32,
                             #prop_type_expr as u32,
                             ::rusteal_runtime::ffi::CPF_PARM | ::rusteal_runtime::ffi::CPF_OUT_PARM | ::rusteal_runtime::ffi::CPF_RETURN_PARM,
-                            std::ptr::null(),
+                            #extra_expr,
                         );
                     }
                 });
@@ -290,13 +333,51 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
         }
     };
 
+    // The #[class_defaults] method, run on the class default object once the
+    // class is finalized: what a C++ constructor sets on inherited properties.
+    let (class_defaults_fn, class_defaults_entry) = match class_defaults {
+        Some(method) => {
+            let method_ident = &method.sig.ident;
+            let fn_name = format_ident!("__rusteal_class_defaults_{}", to_snake_case(&struct_name_str));
+            (
+                quote! {
+                    #[doc(hidden)]
+                    pub fn #fn_name() {
+                        let cls = match #class_handle_name.get() {
+                            Some(&c) if !c.is_null() => c,
+                            _ => return,
+                        };
+                        let cdo = unsafe { ::rusteal_runtime::runtime::ffi_dispatch::reify_get_cdo(cls) };
+                        if cdo.is_null() {
+                            return;
+                        }
+                        let rust_data = ::rusteal_runtime::runtime::reify_registry::get_instance_data(cdo);
+                        #[allow(unused_mut)]
+                        let mut __this = #struct_name {
+                            __obj: cdo,
+                            __rust_data: rust_data as *mut #rust_data_name,
+                        };
+                        ::rusteal_runtime::runtime::reify_registry::ClassDefaultsOutcome::report(
+                            __this.#method_ident(),
+                            #struct_name_str,
+                        );
+                    }
+                },
+                quote! { Some(#fn_name) },
+            )
+        }
+        None => (quote! {}, quote! { None }),
+    };
+
     Ok(quote! {
         #clean_impl
         #register_functions_fn
+        #class_defaults_fn
 
         ::rusteal_runtime::__inventory::submit! {
             ::rusteal_runtime::runtime::reify_registry::ClassFunctionRegistration {
                 register_functions: #register_fns_name,
+                class_defaults: #class_defaults_entry,
             }
         }
     })
@@ -315,7 +396,8 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
     let is_override = specifiers.iter().any(|s| s == "Override");
 
     let method_ident = method.sig.ident.clone();
-    let ue_name = prop_type::to_pascal_case(&method_ident.to_string());
+    // `fn r#move` is `Move`, as the template names its handler.
+    let ue_name = prop_type::to_pascal_case(&method_ident.unraw().to_string());
 
     // Check for self receiver and its mutability. syn 3 splits `&mut self`
     // (ReceiverKind::Reference) from `mut self` (Receiver::mutability).
@@ -343,13 +425,14 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
                 // Override functions get their param types from the parent UFunction
                 // (C++ copies them), so any Copy+repr(C) type is valid.
                 // Non-override functions must use types known to reify_add_function_param.
-                if !is_override && prop_type::map_type(&ty).is_none() {
+                if !is_override && !supported_param(&ty) {
                     return Err(syn::Error::new_spanned(
                         &ty,
-                        "unsupported ufunction parameter type: only bool/i32/i64/u8/f32/f64 are supported",
+                        "unsupported ufunction parameter type: supported are bool/i32/i64/u8/f32/f64, \
+                         UObjectRef<T>, SubclassOf<T> and UStructRef<T>",
                     ));
                 }
-                let ue_name = prop_type::to_pascal_case(&name.to_string());
+                let ue_name = prop_type::to_pascal_case(&name.unraw().to_string());
                 params.push(ParamInfo { rust_name: name, ue_name, rust_ty: ty });
             }
         }
@@ -366,10 +449,11 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
                     return Err(syn::Error::new_spanned(ty, "tuple return types not supported"));
                 }
             } else {
-                if !is_override && prop_type::map_type(ty).is_none() {
+                if !is_override && !supported_return(ty) {
                     return Err(syn::Error::new_spanned(
                         ty,
-                        "unsupported ufunction return type: only bool/i32/i64/u8/f32/f64 are supported",
+                        "unsupported ufunction return type: supported are bool/i32/i64/u8/f32/f64, \
+                         UObjectRef<T> and SubclassOf<T>",
                     ));
                 }
                 Some(ParamInfo {
@@ -391,14 +475,30 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
     })
 }
 
-/// Check if a type is `UStructRef<T>` by examining the last path segment.
-fn is_ustruct_ref_type(ty: &Type) -> bool {
-    if let Type::Path(tp) = ty
-        && let Some(seg) = tp.path.segments.last()
-    {
-        return seg.ident == "UStructRef";
+/// Parameters: scalars, objects, classes and structs (by reference into the
+/// call's parameters). Arrays are not supported.
+fn supported_param(ty: &Type) -> bool {
+    prop_type::map_type(ty).is_some_and(|info| !matches!(info.kind, prop_type::PropKind::Array { .. }))
+}
+
+/// Returns: scalars, objects and classes. A struct cannot be returned by reference.
+fn supported_return(ty: &Type) -> bool {
+    prop_type::map_type(ty).is_some_and(|info| {
+        !matches!(info.kind, prop_type::PropKind::Array { .. } | prop_type::PropKind::Struct { .. })
+    })
+}
+
+/// The `RustealReifyPropExtra` argument for a parameter of this type.
+fn extra_expr(info: &prop_type::PropTypeInfo) -> TokenStream {
+    match info.extra_fields() {
+        Some(fields) => quote! {
+            &::rusteal_runtime::ffi::RustealReifyPropExtra {
+                #fields
+                ..::core::default::Default::default()
+            }
+        },
+        None => quote! { std::ptr::null() },
     }
-    false
 }
 
 fn parse_ufunction_specifiers(attr: &syn::Attribute) -> syn::Result<Vec<String>> {

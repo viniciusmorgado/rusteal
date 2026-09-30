@@ -18,6 +18,13 @@ Rusteal lets you write Unreal Engine gameplay in Rust. Your Rust code compiles t
 
 > **⚠️ Early Stage Project** — Rusteal is under active development and **not ready for production use**. APIs will change without notice, documentation is incomplete, and many UE features are not yet covered. Contributions and feedback are welcome, but please do not use this for shipping projects.
 
+This README serves two different readers:
+
+| You want to | Read | You need |
+|---|---|---|
+| **make a game** with Rusteal | [Making a game](#making-a-game) | the `rusteal` CLI from crates.io; not this repository |
+| **work on Rusteal itself** (its crates, CLI or UE plugins) | [Working on Rusteal](#working-on-rusteal) | a clone of this repository |
+
 ## Acknowledgments
 
 Rusteal is a hard fork of [**uika**](https://github.com/VioletHelianthus/uika) by [**VioletHelianthus**](https://github.com/VioletHelianthus), who designed and wrote the foundation this project stands on: the reflection-driven code generator, the UHT exporter plugin, the reification of Rust structs as `UClass`es, and the runtime. Thank you.
@@ -30,14 +37,48 @@ Rusteal does not intend to stay compatible with the original uika, unless its au
 in this repository is a full working demo of the runtime API: copy the
 directory into a project's `Rust/` and add it to the workspace members.
 
-## Getting Started
+## Making a game
+
+Everything from here to [Platform Support](#platform-support) is about using
+Rusteal to write a game. None of it needs this repository.
 
 ### Prerequisites
 
-- **Unreal Engine 5.8** (source or installed build)
-- **Rust** (stable, latest recommended)
-- **Linux**: the clang toolchain and .NET runtime bundled with the engine
-- **Windows**: Visual Studio 2022 with the C++ workload
+The versions come from the engine's own requirements
+(`Engine/Config/Windows/Windows_SDK.json` and `Engine/Config/Linux/Linux_SDK.json`
+in UE 5.8.2) and from Rusteal's crates, which need Rust 1.88.
+
+**Linux (x64)**
+
+| Dependency | Version | Where from | What for |
+|---|---|---|---|
+| A C toolchain | any | `build-essential` (Debian, Ubuntu), `gcc` (Fedora), `base-devel` (Arch) | the linker Rust uses (`cc`) |
+| Rust | stable, 1.88 or newer | [rustup](https://rustup.rs) | installing the `rusteal` CLI, building your game crate |
+| Unreal Engine | 5.8 | Epic's Linux build ([unrealengine.com/linux](https://www.unrealengine.com/linux)) or built from source | the game |
+
+The engine brings the rest: the clang 20.1.8 toolchain UBT compiles with
+(`v26_clang-20.1.8-rockylinux8`) and the .NET 10 SDK that runs UBT and UHT.
+
+**Windows (x64)**
+
+| Dependency | Version | Where from | What for |
+|---|---|---|---|
+| Visual Studio | 2022 17.8 or newer, or 2026 18.0 or newer | [visualstudio.microsoft.com](https://visualstudio.microsoft.com) | the C++ compiler UBT uses, and the linker Rust uses |
+| Rust | stable, 1.88 or newer, `x86_64-pc-windows-msvc` | [rustup](https://rustup.rs) (`rustup-init.exe`) | installing the `rusteal` CLI, building your game crate |
+| Unreal Engine | 5.8 | the Epic Games Launcher | the game |
+
+In the Visual Studio Installer, the workloads and components the engine asks for:
+
+- workloads **Desktop development with C++**, **Game development with C++**
+  (with its Unreal Engine components) and **.NET desktop development**;
+- **MSVC v143 x64/x86 build tools 14.44** for Visual Studio 2022 (14.50 for
+  2026). The engine refuses 14.39 to 14.43, 14.44 before 14.44.35211 and 14.50
+  before 14.50.35723;
+- **Windows 11 SDK 10.0.22621** (10.0.19041 at least);
+- **.NET Framework 4.6.2 targeting pack**.
+
+Install Visual Studio before Rust: rustup uses its build tools for the MSVC
+toolchain. The engine brings the .NET SDK for UBT and UHT.
 
 ### Install
 
@@ -56,10 +97,11 @@ per-machine setting Rusteal has.
 rusteal new MyGame --dir ~/Projects
 ```
 
-`rusteal new` creates a UE project from the engine's Blank C++ template,
-installs the Rusteal plugins, writes the Rust workspace and runs the whole
-build pipeline. Then open `MyGame.uproject`, drop a `HelloActor` into the level
-and press Play: the Output Log shows `[MyGame] Hello from Rust`.
+`rusteal new` creates a UE project from one of the [templates](#templates),
+`blank` unless `--template` names another, installs the Rusteal plugins, writes
+the Rust workspace and runs the whole build pipeline. With `blank`, open
+`MyGame.uproject`, drop a `HelloActor` into the level and press Play: the
+Output Log shows `[MyGame] Hello from Rust`.
 
 It does not run `git init` — versioning is your call — but it does write a
 `.gitignore` covering the Unreal and Rust build output, so a later `git init`
@@ -68,7 +110,26 @@ picks up the right files.
 Two flags: `--no-build` stops after writing the project, leaving the pipeline
 for a later `rusteal build`; `--runtime-path` makes the project depend on a
 Rusteal checkout instead of the published crates, which is for working on
-Rusteal itself — see [Contributing](#contributing).
+Rusteal itself — see [Working on Rusteal](#working-on-rusteal).
+
+### Templates
+
+```bash
+rusteal new MyGame --template third-person
+```
+
+A template is one of the engine's C++ templates with its gameplay written in
+Rust: the C++ classes are gone, the Rust crate in `Rust/` takes their place,
+and their Blueprint children, with the same names, have Rust parents.
+
+| Template | What it is |
+|---|---|
+| `blank` (default) | The engine's Blank template and a `HelloActor` in Rust. |
+| `third-person` | The engine's Third Person template: its character, game mode and player controller in Rust, playable as it comes (keyboard, mouse, gamepad). The variants (Combat, Platforming, SideScrolling) and the touch controls are not ported. |
+
+<img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/templates/third-person.webp" alt="The third-person template in play" width="640">
+
+`rusteal new` with an unknown template lists the available ones.
 
 ### An existing project
 
@@ -158,7 +219,7 @@ The CLI orchestrates a 5-step build:
 | 1 | UE Build | Compiles UE project, triggers RustealGenerator → JSON reflection data |
 | 2 | Codegen | Reads JSON → generates the `bindings` crate + C++ wrappers |
 | 3 | UE Rebuild | Compiles the generated C++ wrappers into the UE module |
-| 4 | Cargo Build | `cargo build --release` on your cdylib crate |
+| 4 | Cargo Build | `cargo build` of your cdylib crate, with the dev profile (`--release`: the release profile) |
 | 5 | Deploy | Copies the library to `Plugins/Rusteal/Binaries/<Platform>/` (`rusteal.dll`, `librusteal.so`) |
 
 Commands take the project directory, or find it by walking up from the current
@@ -175,7 +236,34 @@ rusteal build --from 2
 
 # Just regenerate the bindings crate and the C++ wrappers
 rusteal generate /path/to/YourProject
+
+# The game library for shipping
+rusteal build --release
 ```
+
+### Development and release builds
+
+The game library is built with Cargo's dev profile by default, which is what
+every build above does while you work on the game, and with the release
+profile when `--release` is given, which is the build to ship. The two want
+opposite things, and the templates set them up for that in the workspace's
+`Rust/Cargo.toml`, the only place Cargo reads profiles from (in the game
+crate's own `Cargo.toml` they are ignored with a warning):
+
+- **dev** (iterating): recompiling after a change must be fast, and the game
+  must still run well in the editor. Only the game crate, the one that
+  changes, is barely optimized; the runtime crates and the generated
+  bindings, which compile once, are fully optimized. A change to the game
+  crate rebuilds in about a second.
+- **release** (shipping): the fastest library possible, however long it
+  takes to build. The whole program is optimized as one unit (link-time
+  optimization, a single codegen unit), which also drops the parts of the
+  bindings the game does not use.
+
+The settings follow Bevy's recommendations for game projects
+([Bevy setup](https://bevy.org/learn/quick-start/getting-started/setup/)). The
+Rusteal crates and the `rusteal` binary are not affected: these profiles only
+shape the game's library.
 
 ## Key Concepts
 
@@ -207,6 +295,14 @@ pub struct MyActor {
     #[uproperty(BlueprintReadWrite, default = 100)]
     health: i32,
 
+    // Assets and classes, assigned in a Blueprint child
+    #[uproperty(EditAnywhere)]
+    pickup_sound: UObjectRef<SoundBase>,
+    #[uproperty(EditAnywhere)]
+    projectile_class: SubclassOf<Actor>,
+    #[uproperty(EditAnywhere)]
+    materials: UeArray<UObjectRef<MaterialInterface>>,
+
     // Rust-only field (not exposed to UE)
     internal_state: Vec<String>,
 }
@@ -222,6 +318,94 @@ impl MyActor {
     }
 }
 ```
+
+A `#[uproperty]` is `bool`, `i32`, `i64`, `u8`, `f32`, `f64`, an object
+(`UObjectRef<T>`), a class (`SubclassOf<T>`, UE's `TSubclassOf<T>`) or a
+`UeArray` of any of those. Each gets a getter named after the field and, unless
+it is `BlueprintReadOnly`, a `set_` setter; an array's getter returns a view of
+the array inside the object, changed in place. `default = ...` is for the
+scalar types; objects, classes and arrays are set in a Blueprint child, as the
+engine's templates do.
+
+A `#[component]` is created with the object. `attach` names its parent: a
+component the class declares before it, or an inherited one by its field-style
+name (`root_component`, `mesh`); `socket` names a socket on that parent:
+
+```rust
+#[component(attach = "root_component")]
+camera_boom: SpringArmComponent,
+#[component(attach = "camera_boom", socket = "SpringEndpoint")]
+follow_camera: CameraComponent,
+```
+
+What a C++ constructor sets on inherited properties goes in a
+`#[class_defaults]` method of the `#[uclass_impl]` block. It runs once, on the
+class default object, which every instance and Blueprint child starts from:
+
+```rust
+#[class_defaults]
+fn class_defaults(&mut self) -> RustealResult<()> {
+    let me = self.as_ref().checked()?;
+    me.set_use_controller_rotation_yaw(false);
+    me.get_character_movement().checked()?.set_max_walk_speed(500.0);
+    self.camera_boom()?.checked()?.set_target_arm_length(400.0);
+    Ok(())
+}
+```
+
+In the generated bindings, an engine class reference (`TSubclassOf<T>`, such
+as a game mode's `DefaultPawnClass`) is a `SubclassOf<T>`, not an object:
+`get_default_pawn_class()` returns `SubclassOf<Pawn>`, and
+`SubclassOf::<MyPawn>::base().upcast()` passes a Rust class where a parent's is
+expected.
+
+Private engine properties that Blueprint can read (`ACharacter`'s `Mesh`,
+`CharacterMovement` and `CapsuleComponent`) have getters, and no setters when
+they are read-only.
+
+A `#[ufunction]` takes the scalar types, objects (`UObjectRef<T>`), classes
+(`SubclassOf<T>`) and structs (`UStructRef<T>`, a reference into the call's
+parameters; `to_owned()` keeps a copy), and returns a scalar, an object or a
+class. An `Override` takes whatever the engine function it overrides takes.
+
+### Input
+
+With the `enhanced-input` feature (on in new projects), input works as in the
+engine's C++ templates: a Blueprint child assigns the input actions and mapping
+contexts, the player controller adds the contexts, and the pawn binds the
+actions to its functions once its input component exists, in
+`receive_restarted` (C++ does it in `SetupPlayerInputComponent`):
+
+```rust
+use bindings::enhanced_input::{ETriggerEvent, FInputActionValue, InputAction};
+use bindings::prelude::*; // bind_action, enhanced_input_subsystem, InputActionValueExt
+
+#[uclass(parent = Character)]
+pub struct MyCharacter {
+    #[uproperty(EditAnywhere)]
+    move_action: UObjectRef<InputAction>,
+}
+
+#[uclass_impl]
+impl MyCharacter {
+    #[ufunction(Override)]
+    fn receive_restarted(&mut self) {
+        let me = self.as_ref();
+        let _ = bind_action(&me, self.move_action(), ETriggerEvent::Triggered, "Move");
+    }
+
+    #[ufunction(BlueprintCallable)]
+    fn r#move(&mut self, value: UStructRef<FInputActionValue>) {
+        let axis = value.axis2d(); // Value.Get<FVector2D>()
+        // ...
+    }
+}
+```
+
+`bind_action` names the function by its UE name (`fn r#move` is `Move`), which
+takes nothing or an `FInputActionValue`; engine functions work too (`"Jump"`).
+`enhanced_input_subsystem(controller)` is where a player controller adds its
+mapping contexts.
 
 ### Dynamic Calls
 
@@ -256,24 +440,124 @@ Function implementations update immediately. Adding/removing `uproperty` or `ufu
 | Windows (x64) | Supported |
 | macOS | Not yet tested |
 
-## Contributing
+## Working on Rusteal
 
-Working on Rusteal itself, rather than on a game:
+This part is for changing Rusteal itself: its crates, the `rusteal` CLI and the
+UE plugins in `ue_plugin/`. To make a game, none of it is needed; see
+[Making a game](#making-a-game).
+
+### Prerequisites
+
+Everything in [Making a game › Prerequisites](#prerequisites), plus:
+
+| Dependency | Where from | What for |
+|---|---|---|
+| Git | the distribution's package (`git`); on Windows, [Git for Windows](https://git-scm.com/download/win) | cloning the repository |
+| [clangd](https://clangd.llvm.org) (optional) | the distribution's package or LLVM; Zed downloads it on its own | C++ support in the editor, for `ue_plugin/` |
+| [.NET 10 SDK](https://dotnet.microsoft.com/download) (optional) | Microsoft, or the distribution's package (`dotnet-sdk-10.0`) | C# support in the editor, for the exporter in `ue_plugin/RustealGenerator/` |
+
+### Development environment
+
+The settings that depend on the machine live in `.env` at the repository root,
+which is not versioned; `.env.example` lists them:
+
+| Variable | What it is |
+|---|---|
+| `RUSTEAL_DEV_ENGINE_ROOT` | The Unreal Engine root, the directory holding `Engine/` |
+
+Linux:
 
 ```bash
 git clone https://github.com/viniciusmorgado/rusteal.git
 cd rusteal
+cp .env.example .env    # then fill it in
+cargo xtask dev-setup
+```
 
-# The workspace builds, tests and lints without the engine
+Windows (PowerShell):
+
+```powershell
+git clone https://github.com/viniciusmorgado/rusteal.git
+cd rusteal
+Copy-Item .env.example .env    # then fill it in
+cargo xtask dev-setup
+```
+
+Rusteal is developed against a UE project: the plugins in `ue_plugin/` are built
+inside one, and the C++ editor support reads what that build generates (UHT's
+`*.generated.h` headers and UBT's compile commands). `dev-setup` asks which one:
+
+1. **An existing project.** It must have this checkout's plugins installed and
+   built (`cargo run -p rusteal -- setup <project>`, then `build`); `dev-setup`
+   only reads it, never changes it, and stops with those commands if they are
+   missing. Plugin headers that differ from the checkout's are reported.
+2. **A new blank project**, created at the path you give with
+   `rusteal new --runtime-path` on this checkout, and built. The last component
+   of the path is the project name.
+
+To skip the question, pass the answer: `cargo xtask dev-setup --project <path>`
+or `cargo xtask dev-setup --new <path>`.
+
+Then it writes:
+
+- **`compile_commands.json`** at the repository root, for clangd: the compile
+  commands UBT gives for that project, pointed at `ue_plugin/`;
+- **the exporter's `.csproj.props`**, so C# language servers resolve the
+  engine's `EpicGames.*` assemblies, and a `dotnet restore` of `rusteal.sln`
+  with the .NET SDK bundled with the engine. The solution has two projects, both
+  for IDEs only: the exporter (`ue_plugin/RustealGenerator/Source/RustealExporter/`),
+  and `ide/RustealRules/`, which gives the plugins' `*.Build.cs` files the context
+  UBT compiles them with. Without that project a language server analyzes those
+  files with no references at all: nothing resolves, and every `using` is
+  reported as unnecessary. UBT compiles the `Build.cs` files without implicit
+  usings, so a `using System.IO;` there is required, and the project makes the
+  editor agree.
+
+Run it again after adding a source file to the plugin, or after changing a
+header that declares a `UCLASS` or `USTRUCT` and rebuilding it in the project:
+a generated header only matches the header it was made from.
+
+`.env` is for working on Rusteal only:
+
+| | Working on Rusteal | Making a game |
+|---|---|---|
+| Engine path from | `.env` | the `rusteal` CLI, which asks once and keeps it in `~/.config/rusteal/config.toml` (the platform's config directory elsewhere) |
+| Read by | `cargo xtask` only | the `rusteal` CLI |
+| Writes the exporter's `.csproj.props` | `cargo xtask dev-setup`, in this checkout | `rusteal setup`, in the game project |
+
+The `rusteal` CLI never reads `.env`, so it does not change which engine a game
+builds with.
+
+### Testing a change
+
+The workspace builds, tests and lints without the engine:
+
+```bash
 cargo build --workspace
 cargo test --workspace
 cargo clippy --workspace --no-deps
+```
 
-# A throwaway project that depends on this checkout
+Anything that touches the engine is tested in a UE project of your choice,
+driven by this checkout's CLI (`cargo run -p rusteal --`, from the repository
+root). A new project that depends on this checkout:
+
+```bash
 cargo run -p rusteal -- new Probe --dir /tmp --runtime-path .
+```
 
-# After changing the runtime, the macros or a game crate
+After changing the runtime, the macros or a game crate:
+
+```bash
 cargo run -p rusteal -- build /tmp/Probe --from 4
+```
+
+After changing the UE plugins in `ue_plugin/`, reinstall them into the project
+and build it:
+
+```bash
+cargo run -p rusteal -- setup /tmp/Probe
+cargo run -p rusteal -- build /tmp/Probe
 ```
 
 In the editor, `Rusteal.Reload` swaps the library in without restarting; adding
@@ -281,8 +565,8 @@ or removing a `uproperty`/`ufunction` still needs a restart.
 
 A project made with `--runtime-path` follows that checkout: the CLI acts on it
 only when built from the same checkout, so drive it with `cargo run -p rusteal --`
-from there. After pulling, `cargo run -p rusteal -- setup /tmp/Probe` reinstalls
-the plugins at the checkout's version.
+from there. After pulling, `setup` reinstalls the plugins at the checkout's
+version.
 
 ### `--runtime-path`
 
@@ -296,7 +580,7 @@ It decides where the generated project takes Rusteal from:
 | The project builds on another machine | yes | no (the path is this machine's) |
 
 So: without it for a real game, with it while working on Rusteal — a change in
-`rusteal-core` shows up in the probe project on the next `build --from 4`,
+`rusteal-core` shows up in the project you test with on the next `build --from 4`,
 with nothing to publish in between.
 
 ### What lives where
@@ -314,10 +598,44 @@ with nothing to publish in between.
 Changing the C++ plugin means running `cargo run -p rusteal -- sync-plugin`
 before publishing, which refreshes the snapshot the binary embeds.
 
+### Adding a template
+
+A template is a directory under `rusteal-cli/templates/`, embedded in the
+binary when it is built; nothing else registers it. It mirrors the root of
+the project it creates:
+
+- `template.toml` names the engine template the project starts from
+  (`engine_template`), the paths of it to leave out (`exclude`: the C++
+  gameplay the template replaces), a one-line `description` and the
+  `next_step` printed at the end;
+- every other file is written into the project over the engine template's:
+  `*.tera` files are rendered with [Tera](https://keats.github.io/tera/) and
+  lose the extension, the rest (Blueprints, meshes) is copied as is;
+- `{{ variable }}` works in folder and file names too:
+  `Rust/{{crate_name}}/src/lib.rs.tera`.
+
+The context is the same for every template: `project`, `crate_name`,
+`version`, `glam_version` and, with `--runtime-path`, `runtime_path`.
+
+Each template is complete on its own. A new one starts as a copy of the
+closest existing template (a third-person shooter from `third-person`) and is
+changed from there, never layered on top of it. Its Blueprints come from a
+project where they were made and played, saved with the engine version
+Rusteal targets. A template with something to see has a screenshot in
+`assets/templates/`, shown in [Templates](#templates).
+
 Engine APIs Rusteal uses that Unreal has deprecated are tracked in
 [`docs/ue-deprecations.md`](https://github.com/viniciusmorgado/rusteal/blob/main/docs/ue-deprecations.md): what, since which UE
 version, until when and where. A new engine version means checking its
 warnings against that list.
+
+What Rusteal still lacks to write Unreal's Third Person template entirely in
+Rust, in the order the template needs it, is mapped in
+[`docs/third-person-gaps.md`](https://github.com/viniciusmorgado/rusteal/blob/main/docs/third-person-gaps.md).
+
+What Unreal Engine 6 changes for Rusteal — Verse, Scene Graph, the end of
+Blueprints — and the open questions to check as Epic publishes details are in
+[`docs/ue6-radar.md`](https://github.com/viniciusmorgado/rusteal/blob/main/docs/ue6-radar.md).
 
 Commits are small — one per fix — and never mention AI authorship.
 

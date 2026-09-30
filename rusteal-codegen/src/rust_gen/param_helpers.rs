@@ -65,7 +65,7 @@ pub fn emit_out_param_conversion(
     let pname = escape_reserved(&to_snake_case(&param.name));
     match mapped.ffi_to_rust {
         ConversionKind::ObjectRef => {
-            format!("unsafe {{ rusteal_core::UObjectRef::from_raw({pname}) }}")
+            format!("unsafe {{ rusteal_core::ObjectPointer::from_object_handle({pname}) }}")
         }
         ConversionKind::StringUtf8 => {
             out.push_str(&format!("        {pname}_buf.truncate({pname}_len as usize);\n"));

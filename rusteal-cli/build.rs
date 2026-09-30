@@ -68,24 +68,21 @@ fn main() {
     embed_templates(&manifest_dir, &out_dir);
 }
 
-/// Embed `templates/` as `TEMPLATE_FILES: &[(&str, &str)]`: the Tera templates
-/// and the verbatim files `rusteal new` writes into a project.
+/// Embed `templates/` as `TEMPLATE_FILES: &[(&str, &[u8])]`, every file by its
+/// path under `templates/`: `common/` goes into every project, `<name>/` is the
+/// template `rusteal new --template <name>` adds on top (see src/templates.rs).
 fn embed_templates(manifest_dir: &Path, out_dir: &Path) {
     let templates_dir = manifest_dir.join("templates");
     println!("cargo:rerun-if-changed={}", templates_dir.display());
 
-    let mut files: Vec<(String, PathBuf)> = fs::read_dir(&templates_dir)
-        .unwrap_or_else(|e| panic!("Failed to read {}: {e}", templates_dir.display()))
-        .map(|entry| entry.expect("readable directory entry").path())
-        .filter(|path| path.is_file())
-        .map(|path| (path.file_name().unwrap().to_string_lossy().into_owned(), path))
-        .collect();
-    files.sort();
+    let mut files: Vec<(String, PathBuf)> = Vec::new();
+    collect_files(&templates_dir, &templates_dir, &mut files);
+    files.sort_by(|a, b| a.0.cmp(&b.0));
 
-    let mut out = String::from("pub const TEMPLATE_FILES: &[(&str, &str)] = &[\n");
-    for (name, path) in &files {
+    let mut out = String::from("pub const TEMPLATE_FILES: &[(&str, &[u8])] = &[\n");
+    for (rel_path, path) in &files {
         let abs = path.to_str().expect("non-UTF8 path").replace('\\', "/");
-        writeln!(out, "    ({name:?}, include_str!({abs:?})),").unwrap();
+        writeln!(out, "    ({rel_path:?}, include_bytes!({abs:?})),").unwrap();
     }
     out.push_str("];\n");
 
@@ -93,7 +90,7 @@ fn embed_templates(manifest_dir: &Path, out_dir: &Path) {
     fs::write(&out_file, out)
         .unwrap_or_else(|e| panic!("Failed to write {}: {e}", out_file.display()));
 
-    eprintln!("rusteal build.rs: embedded {} templates", files.len());
+    eprintln!("rusteal build.rs: embedded {} template files", files.len());
 }
 
 fn collect_files(root: &Path, dir: &Path, out: &mut Vec<(String, PathBuf)>) {

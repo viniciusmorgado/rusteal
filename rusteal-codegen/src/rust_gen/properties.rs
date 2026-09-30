@@ -32,6 +32,23 @@ pub struct PropertyContext {
     pub is_class: bool,
 }
 
+/// The Rust accessor stem of a property: `bFoo` → `foo`, `FooBar` → `foo_bar`.
+pub fn rust_property_name(prop: &PropertyInfo) -> String {
+    if prop.prop_type == "BoolProperty" {
+        strip_bool_prefix(&prop.name)
+    } else {
+        to_snake_case(&prop.name)
+    }
+}
+
+/// Private or protected in C++ and `BlueprintReadOnly`: exported for reading
+/// only (`AllowPrivateAccess` components).
+pub fn is_read_only_non_public(prop: &PropertyInfo) -> bool {
+    use crate::schema::{CPF_BLUEPRINT_READ_ONLY, CPF_NATIVE_ACCESS_PRIVATE, CPF_NATIVE_ACCESS_PROTECTED};
+    prop.prop_flags & (CPF_NATIVE_ACCESS_PRIVATE | CPF_NATIVE_ACCESS_PROTECTED) != 0
+        && prop.prop_flags & CPF_BLUEPRINT_READ_ONLY != 0
+}
+
 /// Collect supported, deduplicated properties, returning their getter name set and the property list.
 /// Properties referencing types not in the context (e.g., enums/classes from non-enabled modules)
 /// are filtered out.
@@ -426,7 +443,7 @@ fn generate_object_getter(
     out.push_str(&format!(
         "        let mut raw = rusteal_core::UObjectHandle::null();\n\
          \x20       rusteal_core::ffi_infallible_ctx(unsafe {{ rusteal_core::ffi_dispatch::property_get_object({c}, prop, &mut raw) }}, \"{rust_name}\");\n\
-         \x20       unsafe {{ rusteal_core::UObjectRef::from_raw(raw) }}\n\
+         \x20       unsafe {{ rusteal_core::ObjectPointer::from_object_handle(raw) }}\n\
          \x20   }}\n\n"
     ));
 }
@@ -568,7 +585,7 @@ fn generate_object_setter(
     emit_prop_lookup(out, byte_lit, prop_name_len, pctx);
     emit_pre_access(out, pctx);
     out.push_str(&format!(
-        "        rusteal_core::ffi_infallible_ctx(unsafe {{ rusteal_core::ffi_dispatch::property_set_object({c}, prop, val.raw()) }}, \"{rust_name}\");\n\
+        "        rusteal_core::ffi_infallible_ctx(unsafe {{ rusteal_core::ffi_dispatch::property_set_object({c}, prop, rusteal_core::ObjectPointer::object_handle(&val)) }}, \"{rust_name}\");\n\
          \x20   }}\n\n"
     ));
 }
@@ -714,9 +731,9 @@ fn generate_fixed_array_property(
             (
                 rust_type.clone(),
                 "let handle = rusteal_core::UObjectHandle::from_addr(u64::from_ne_bytes(buf[..8].try_into().unwrap()));\n\
-                 \x20       Ok(unsafe { rusteal_core::UObjectRef::from_raw(handle) })".to_string(),
+                 \x20       Ok(unsafe { rusteal_core::ObjectPointer::from_object_handle(handle) })".to_string(),
                 rust_type.clone(),
-                "let buf = val.raw().to_addr().to_ne_bytes().to_vec();".to_string(),
+                "let buf = rusteal_core::ObjectPointer::object_handle(&val).to_addr().to_ne_bytes().to_vec();".to_string(),
             )
         }
         ConversionKind::EnumCast => {
@@ -822,4 +839,36 @@ fn generate_container_getter(
         "        {turbofish_type}::new(h, prop)\n\
          \x20   }}\n\n"
     ));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rusteal_ue_flags::{
+        CPF_BLUEPRINT_READ_ONLY, CPF_BLUEPRINT_VISIBLE, CPF_NATIVE_ACCESS_SPECIFIER_PRIVATE,
+        CPF_NATIVE_ACCESS_SPECIFIER_PUBLIC,
+    };
+
+    fn prop(name: &str, prop_type: &str, flags: u64) -> PropertyInfo {
+        serde_json::from_value(serde_json::json!({
+            "name": name,
+            "type": prop_type,
+            "prop_flags": flags,
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn only_non_public_read_only_properties_lose_their_setter() {
+        let read_only = CPF_BLUEPRINT_VISIBLE | CPF_BLUEPRINT_READ_ONLY;
+        assert!(is_read_only_non_public(&prop("Mesh", "ObjectProperty", CPF_NATIVE_ACCESS_SPECIFIER_PRIVATE | read_only)));
+        assert!(!is_read_only_non_public(&prop("Mesh", "ObjectProperty", CPF_NATIVE_ACCESS_SPECIFIER_PRIVATE | CPF_BLUEPRINT_VISIBLE)));
+        assert!(!is_read_only_non_public(&prop("Speed", "FloatProperty", CPF_NATIVE_ACCESS_SPECIFIER_PUBLIC | read_only)));
+    }
+
+    #[test]
+    fn accessor_stems() {
+        assert_eq!(rust_property_name(&prop("CharacterMovement", "ObjectProperty", 0)), "character_movement");
+        assert_eq!(rust_property_name(&prop("bUseControllerRotationYaw", "BoolProperty", 0)), "use_controller_rotation_yaw");
+    }
 }

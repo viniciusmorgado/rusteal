@@ -39,8 +39,11 @@ pub fn write_crate_files(crate_dir: &Path, ctx: &CodegenContext, config: &Codege
          rusteal-ffi = {{ workspace = true }}\n\
          glam = {{ workspace = true }}\n\
          \n\
-         {features}",
+         {features}\
+         \n\
+         {lints}",
         features = render_features_section(ctx, config),
+        lints = render_lints_section(),
     );
 
     let manifest_path = crate_dir.join("Cargo.toml");
@@ -98,6 +101,20 @@ fn render_features_section(ctx: &CodegenContext, config: &CodegenConfig) -> Stri
     }
 
     out
+}
+
+/// `manual/` is the same in every project and gates modules on features this
+/// project may not generate; they are declared so rustc does not warn.
+fn render_lints_section() -> String {
+    let features: Vec<String> = super::manual::gating_features()
+        .into_iter()
+        .map(|f| format!("\"{f}\""))
+        .collect();
+    format!(
+        "[lints.rust]\n\
+         unexpected_cfgs = {{ level = \"warn\", check-cfg = ['cfg(feature, values({}))'] }}\n",
+        features.join(", ")
+    )
 }
 
 fn format_dep_array(deps: &[String]) -> String {

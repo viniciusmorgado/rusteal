@@ -107,11 +107,20 @@ pub fn generate_class(class: &ClassInfo, ctx: &CodegenContext) -> String {
         .map(|e| escape_reserved(&e.rust_func_name))
         .collect();
 
-    let suppress_setters: HashSet<String> = prop_names
+    let mut suppress_setters: HashSet<String> = prop_names
         .iter()
         .filter(|n| n.starts_with("set_") && func_names.contains(n.as_str()))
         .cloned()
         .collect();
+
+    // A private or protected property Blueprint may only read (a component such
+    // as ACharacter's CharacterMovement) gets no setter either.
+    suppress_setters.extend(
+        deduped_props
+            .iter()
+            .filter(|p| properties::is_read_only_non_public(p))
+            .map(|p| format!("set_{}", properties::rust_property_name(p))),
+    );
 
     // Remove suppressed setters from prop_names so they don't block UFUNCTIONs
     for setter in &suppress_setters {
@@ -525,7 +534,7 @@ fn generate_scalar_function(out: &mut String, entry: &FuncEntry, class_name: &st
                         }
                     }
                     ConversionKind::ObjectRef => {
-                        out.push_str(&format!("{pname}.raw(), "));
+                        out.push_str(&format!("rusteal_core::ObjectPointer::object_handle(&{pname}), "));
                     }
                     ConversionKind::EnumCast => {
                         out.push_str(&format!("{pname} as {}, ", mapped.rust_ffi_type));
@@ -588,7 +597,7 @@ fn generate_scalar_function(out: &mut String, entry: &FuncEntry, class_name: &st
             let rm = ret_mapped.as_ref().expect("return param must have mapped type");
             match rm.ffi_to_rust {
                 ConversionKind::ObjectRef => {
-                    return_parts.push("unsafe { rusteal_core::UObjectRef::from_raw(_ret) }".to_string());
+                    return_parts.push("unsafe { rusteal_core::ObjectPointer::from_object_handle(_ret) }".to_string());
                 }
                 ConversionKind::StringUtf8 => {
                     out.push_str("        _ret_buf.truncate(_ret_len as usize);\n");
@@ -996,7 +1005,7 @@ fn generate_container_function(out: &mut String, entry: &FuncEntry, class_name: 
                             }
                         }
                         ConversionKind::ObjectRef => {
-                            out.push_str(&format!("{pname}.raw(), "));
+                            out.push_str(&format!("rusteal_core::ObjectPointer::object_handle(&{pname}), "));
                         }
                         ConversionKind::EnumCast => {
                             out.push_str(&format!("{pname} as {}, ", mapped.rust_ffi_type));
@@ -1193,7 +1202,7 @@ fn emit_container_return(
         } else if let Some(rm) = ret_mapped {
             match rm.ffi_to_rust {
                 ConversionKind::ObjectRef => {
-                    return_parts.push("unsafe { rusteal_core::UObjectRef::from_raw(__scalar_ret) }".to_string());
+                    return_parts.push("unsafe { rusteal_core::ObjectPointer::from_object_handle(__scalar_ret) }".to_string());
                 }
                 ConversionKind::StringUtf8 => {
                     out.push_str("        __scalar_ret_buf.truncate(__scalar_ret_len as usize);\n");

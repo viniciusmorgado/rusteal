@@ -5,6 +5,12 @@
 // UE 5.8.2 project — and runs `cargo check` on it, so a change that breaks
 // manual/ fails here instead of in a game project.
 //
+// A second case turns on Enhanced Input, the module every game template uses,
+// and checks the C++ wrappers its types need (they compile only in a UE build).
+// A third adds a game crate whose `#[uclass]` declares every kind of
+// `#[uproperty]` and `#[ufunction]` parameter and binds input actions, so the
+// macros' expansion and manual/input_ext.rs are type-checked against real bindings.
+//
 // Regenerating the fixture (a new engine version, a new exporter, a new type
 // used by manual/):
 //
@@ -25,7 +31,35 @@ const CLASSES: &[&str] = &[
     "World",
     "ActorComponent",
     "SceneComponent",
+    // Enhanced Input, with the Engine parents of its classes.
+    "Subsystem",
+    "LocalPlayerSubsystem",
+    "EnhancedInputSubsystemInterface",
+    "EnhancedInputLocalPlayerSubsystem",
+    "DataAsset",
+    "PrimaryDataAsset",
+    "InputAction",
+    "InputMappingContext",
+    "InputModifier",
+    "PlayerInput",
+    "EnhancedPlayerInput",
+    "PlayerMappableInputConfig",
+    "InputComponent",
+    "EnhancedInputComponent",
+    // What manual/input_ext.rs calls: the subsystem lookup and the value reader.
+    // `Class` is the type of the `TSubclassOf` parameter of the lookup.
+    "Field",
+    "Struct",
+    "Class",
+    "Controller",
+    "PlayerController",
+    "BlueprintFunctionLibrary",
+    "SubsystemBlueprintLibrary",
+    "EnhancedInputLibrary",
 ];
+
+/// Enums manual/ names that no class or struct above references.
+const ENUMS: &[&str] = &["ETriggerEvent", "EInputActionValueType"];
 
 /// Structs manual/ extends.
 const STRUCTS: &[&str] = &[
@@ -40,6 +74,10 @@ const STRUCTS: &[&str] = &[
     "Plane",
     "Box2D",
     "Key",
+    // Enhanced Input.
+    "InputActionValue",
+    "ModifyContextOptions",
+    "EnhancedActionKeyMapping",
 ];
 
 const RUSTEAL_TOML: &str = r#"[project]
@@ -55,7 +93,13 @@ InputCore = { module = "input_core", feature = "input" }
 SlateCore = { module = "slate_core", feature = "slate" }
 Slate = { module = "slate", feature = "slate" }
 UMG = { module = "umg", feature = "umg" }
+EnhancedInput = { module = "enhanced_input", feature = "enhanced-input" }
 "#;
+
+/// RUSTEAL_TOML with the Enhanced Input feature on.
+fn rusteal_toml_enhanced_input() -> String {
+    RUSTEAL_TOML.replace(r#""umg"]"#, r#""umg", "enhanced-input"]"#)
+}
 
 fn crate_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -83,17 +127,17 @@ fn copy_fixture(to: &Path) {
     }
 }
 
-#[test]
-fn manual_compiles_against_generated_bindings() {
+/// A project with nothing but what codegen reads, generated with `rusteal_toml`,
+/// and `cargo check`ed. Returns the project directory.
+fn generate_and_check(case: &str, rusteal_toml: &str) -> PathBuf {
     let work = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("manual_compiles");
-    let project = work.join("project");
+    let project = work.join(case);
     if project.exists() {
         std::fs::remove_dir_all(&project).unwrap();
     }
 
-    // A project with nothing but what codegen reads.
     std::fs::create_dir_all(&project).unwrap();
-    std::fs::write(project.join("rusteal.toml"), RUSTEAL_TOML).unwrap();
+    std::fs::write(project.join("rusteal.toml"), rusteal_toml).unwrap();
     copy_fixture(&project.join("Intermediate/Rusteal/uht"));
 
     rusteal_codegen::run_generate(&project);
@@ -115,20 +159,65 @@ fn manual_compiles_against_generated_bindings() {
     );
     std::fs::write(project.join("Rust/Cargo.toml"), workspace).unwrap();
 
-    let output = Command::new(env!("CARGO"))
-        .arg("check")
-        .arg("--manifest-path")
-        .arg(project.join("Rust/Cargo.toml"))
-        .arg("--target-dir")
-        .arg(work.join("target"))
-        .args(["-p", "bindings", "--all-features"])
-        .output()
-        .expect("run cargo check");
+    let output = cargo_check(&project, "bindings");
     assert!(
         output.status.success(),
         "the generated bindings, manual/ included, do not compile:\n{}",
         String::from_utf8_lossy(&output.stderr)
     );
+    project
+}
+
+/// `cargo check` one package of a generated project's Rust workspace.
+fn cargo_check(project: &Path, package: &str) -> std::process::Output {
+    let work = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("manual_compiles");
+    Command::new(env!("CARGO"))
+        .arg("check")
+        .arg("--manifest-path")
+        .arg(project.join("Rust/Cargo.toml"))
+        .arg("--target-dir")
+        .arg(work.join("target"))
+        .args(["-p", package, "--all-features"])
+        .output()
+        .expect("run cargo check")
+}
+
+#[test]
+fn manual_compiles_against_generated_bindings() {
+    generate_and_check("project", RUSTEAL_TOML);
+}
+
+fn read(path: &Path) -> String {
+    std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
+}
+
+#[test]
+fn enhanced_input_bindings() {
+    let project = generate_and_check("enhanced_input", &rusteal_toml_enhanced_input());
+    let cpp = project.join("Plugins/Rusteal/Source/Rusteal/Generated");
+    let rust = project.join("Rust/bindings/src/enhanced_input");
+
+    // A UFUNCTION declared on an interface is generated on the classes
+    // implementing it, and called through the interface.
+    let subsystem = read(&cpp.join("RustealFunc_enhanced_input_EnhancedInputLocalPlayerSubsystem.cpp"));
+    assert!(subsystem.contains("static_cast<IEnhancedInputSubsystemInterface*>(Self)->AddMappingContext("));
+    assert!(read(&rust.join("enhanced_input_local_player_subsystem.rs")).contains("fn add_mapping_context("));
+
+    // A protected `_Implementation` is reached through a using-declaration.
+    let modifier = read(&cpp.join("RustealFunc_enhanced_input_InputModifier.cpp"));
+    assert!(modifier.contains("using UInputModifier::ModifyRaw_Implementation;"));
+    assert!(modifier.contains("(Self->*&FAccess::ModifyRaw_Implementation)("));
+
+    // A returned container is written as the function's own return type, and a
+    // struct the function's header only forward-declares gets its header included.
+    let config = read(&cpp.join("RustealFunc_enhanced_input_PlayerMappableInputConfig.cpp"));
+    assert!(config.contains("std::decay_t<decltype(Self->GetMappingContexts())>"));
+    assert!(config.contains("#include \"EnhancedActionKeyMapping.h\""));
+
+    // Turning the module off removes its directory, not only its `mod` line.
+    std::fs::write(project.join("rusteal.toml"), RUSTEAL_TOML).unwrap();
+    rusteal_codegen::run_generate(&project);
+    assert!(!rust.exists(), "enhanced_input/ left behind after the module was turned off");
 }
 
 /// Every `enum_name` referenced anywhere inside `value`.
@@ -182,7 +271,7 @@ fn regenerate_fixture() {
     let classes = select(&classes, "classes", CLASSES);
     let structs = select(&structs, "structs", STRUCTS);
 
-    let mut enum_names = BTreeSet::new();
+    let mut enum_names: BTreeSet<String> = ENUMS.iter().map(|e| e.to_string()).collect();
     classes.iter().chain(&structs).for_each(|r| referenced_enums(r, &mut enum_names));
     let enums: Vec<Value> = enums["enums"]
         .as_array()
@@ -203,4 +292,159 @@ fn regenerate_fixture() {
     write("rusteal_classes.json", "classes", classes);
     write("rusteal_structs.json", "structs", structs);
     write("rusteal_enums.json", "enums", enums);
+}
+
+/// A game class with one `#[uproperty]` of each supported kind, `#[ufunction]`s
+/// taking and returning each supported kind, and code using every accessor the
+/// macros generate and the Enhanced Input helpers.
+const UCLASS_GAME: &str = r#"
+use bindings::engine::{Actor, Controller, Pawn, PawnExt, PlayerController, SceneComponent};
+use bindings::enhanced_input::{
+    ETriggerEvent, EnhancedInputLocalPlayerSubsystemExt, FInputActionValue, InputAction,
+    InputMappingContext,
+};
+use bindings::prelude::*;
+use rusteal_runtime::runtime::{OwnedStruct, RustealResult, SubclassOf, UObjectRef, UStructRef, UeArray};
+use rusteal_runtime::{uclass, uclass_impl};
+
+#[uclass(parent = Pawn)]
+pub struct Probe {
+    #[component(attach = "root_component")]
+    arm: SceneComponent,
+    #[component(attach = "arm", socket = "Tip")]
+    tip: SceneComponent,
+    #[uproperty(EditAnywhere, default = 2.5)]
+    speed: f32,
+    #[uproperty(EditAnywhere, BlueprintReadWrite)]
+    jump_action: UObjectRef<InputAction>,
+    #[uproperty(EditAnywhere, BlueprintReadOnly)]
+    fixed_action: UObjectRef<InputAction>,
+    #[uproperty(EditAnywhere)]
+    pawn_class: SubclassOf<Pawn>,
+    #[uproperty(EditAnywhere)]
+    contexts: UeArray<UObjectRef<InputMappingContext>>,
+    #[uproperty(EditAnywhere)]
+    classes: UeArray<SubclassOf<Actor>>,
+    #[uproperty(EditAnywhere)]
+    weights: UeArray<f32>,
+}
+
+#[uclass_impl]
+impl Probe {
+    #[class_defaults]
+    fn class_defaults(&mut self) -> RustealResult<()> {
+        self.set_speed(1.0);
+        let _ = self.arm()?;
+        let _ = self.tip()?;
+        Ok(())
+    }
+
+    #[ufunction(Override)]
+    fn receive_restarted(&mut self) {
+        let _ = self.bind_input();
+    }
+
+    #[ufunction(BlueprintCallable)]
+    fn r#move(&mut self, value: UStructRef<FInputActionValue>) {
+        let axis = value.axis2d();
+        self.set_speed(axis.x as f32 + value.axis1d() as f32 + value.axis3d().z as f32);
+        let _ = value.get_bool();
+    }
+
+    #[ufunction(BlueprintCallable)]
+    fn take_objects(&mut self, action: UObjectRef<InputAction>, class: SubclassOf<Pawn>) -> UObjectRef<InputAction> {
+        self.set_pawn_class(class);
+        action
+    }
+
+    #[ufunction(BlueprintCallable)]
+    fn pick_class(&mut self, index: i32) -> SubclassOf<Actor> {
+        self.classes().get(index as usize).unwrap_or_default()
+    }
+}
+
+#[uclass(parent = Actor)]
+pub struct Plain {}
+
+#[uclass_impl]
+impl Plain {
+    #[class_defaults]
+    fn class_defaults(&mut self) {}
+}
+
+impl Probe {
+    fn bind_input(&self) -> RustealResult<()> {
+        let me = self.as_ref();
+        bind_action(&me, self.jump_action(), ETriggerEvent::Started, "Jump")?;
+        bind_action(&me, self.jump_action(), ETriggerEvent::Completed, "StopJumping")?;
+        bind_action(&me, self.jump_action(), ETriggerEvent::Triggered, "Move")
+    }
+}
+
+pub fn add_contexts(controller: UObjectRef<PlayerController>, contexts: UeArray<UObjectRef<InputMappingContext>>) -> RustealResult<()> {
+    let subsystem = enhanced_input_subsystem(controller)?.checked()?;
+    for context in contexts.to_vec()? {
+        subsystem.add_mapping_context(context, 0, &OwnedStruct::new());
+    }
+    Ok(())
+}
+
+/// Generated class references are `SubclassOf<T>` (TSubclassOf), not objects.
+pub fn use_generated_classes(p: &Probe) -> RustealResult<()> {
+    let pawn = p.as_ref().checked()?;
+    let class: SubclassOf<Controller> = pawn.get_ai_controller_class();
+    pawn.set_ai_controller_class(class);
+    Ok(())
+}
+
+pub fn use_accessors(p: &Probe) {
+    p.set_speed(p.speed() * 2.0);
+    let action: UObjectRef<InputAction> = p.jump_action();
+    p.set_jump_action(action);
+    let _: UObjectRef<InputAction> = p.fixed_action();
+    let class: SubclassOf<Pawn> = p.pawn_class();
+    p.set_pawn_class(class);
+    let contexts: UeArray<UObjectRef<InputMappingContext>> = p.contexts();
+    let _ = contexts.len();
+    let _ = p.classes().to_vec();
+    let _ = p.weights().push(&1.0);
+}
+"#;
+
+#[test]
+fn uclass_types_compile() {
+    let project = generate_and_check("uclass", &rusteal_toml_enhanced_input());
+    let rust = project.join("Rust");
+
+    // A game crate next to the bindings, as `rusteal new` lays it out.
+    let checkout = crate_dir().join("..").canonicalize().unwrap();
+    let manifest = read(&rust.join("Cargo.toml"))
+        .replace(r#"members = ["bindings"]"#, r#"members = ["bindings", "game"]"#)
+        + &format!(
+            "rusteal-runtime = {{ path = {:?} }}\n",
+            checkout.join("rusteal-runtime")
+        );
+    std::fs::write(rust.join("Cargo.toml"), manifest).unwrap();
+    std::fs::create_dir_all(rust.join("game/src")).unwrap();
+    std::fs::write(
+        rust.join("game/Cargo.toml"),
+        "[package]\n\
+         name = \"game\"\n\
+         version = \"0.1.0\"\n\
+         edition = \"2024\"\n\
+         publish = false\n\
+         \n\
+         [dependencies]\n\
+         rusteal-runtime = { workspace = true }\n\
+         bindings = { path = \"../bindings\" }\n",
+    )
+    .unwrap();
+    std::fs::write(rust.join("game/src/lib.rs"), UCLASS_GAME).unwrap();
+
+    let output = cargo_check(&project, "game");
+    assert!(
+        output.status.success(),
+        "a #[uclass] with every #[uproperty] and #[ufunction] kind does not compile:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }

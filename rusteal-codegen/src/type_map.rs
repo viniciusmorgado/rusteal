@@ -250,7 +250,8 @@ pub fn map_property_type(
             let effective_class = meta_class_name.or(class_name);
             if let Some(cls) = effective_class {
                 MappedType {
-                    rust_type: format!("rusteal_core::UObjectRef<{cls}>"),
+                    // A class (`TSubclassOf<T>`), not an object of it.
+                    rust_type: format!("rusteal_core::SubclassOf<{cls}>"),
                     rust_ffi_type: "rusteal_core::UObjectHandle".into(),
                     cpp_type: format!("{cls}*"),
                     property_getter: "get_object".into(),
@@ -516,7 +517,7 @@ pub fn container_element_rust_type(
                 {
                     return None;
                 }
-                Some(format!("rusteal_core::UObjectRef<{cls}>"))
+                Some(format!("rusteal_core::SubclassOf<{cls}>"))
             } else {
                 Some("rusteal_core::UObjectHandle".into())
             }

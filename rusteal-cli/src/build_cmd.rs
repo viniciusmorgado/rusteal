@@ -26,8 +26,9 @@ fn canonical_no_prefix(path: &Path) -> PathBuf {
 ///
 /// `project_root` holds the .uproject and `rusteal.toml`; `engine_path` is the
 /// UE root. `step` runs only that step (1-5), `from` starts from it; the two
-/// are mutually exclusive.
-pub fn run_build(project_root: &Path, engine_path: &Path, step: Option<u8>, from: u8) {
+/// are mutually exclusive. `release` builds the game library with Cargo's
+/// release profile, for shipping; otherwise with the dev profile, for iterating.
+pub fn run_build(project_root: &Path, engine_path: &Path, step: Option<u8>, from: u8, release: bool) {
     // Validate step/from
     if step.is_some() && from != 1 {
         eprintln!("Error: --step and --from are mutually exclusive.");
@@ -48,7 +49,7 @@ pub fn run_build(project_root: &Path, engine_path: &Path, step: Option<u8>, from
         eprintln!("Error: {e}");
         std::process::exit(1);
     });
-    let ctx = BuildContext::new(&config, project_root, engine_path);
+    let ctx = BuildContext::new(&config, project_root, engine_path, release);
 
     // Determine which steps to run
     let steps: Vec<u8> = if let Some(s) = step {
@@ -57,12 +58,13 @@ pub fn run_build(project_root: &Path, engine_path: &Path, step: Option<u8>, from
         (from..=5).collect()
     };
 
+    let cargo_step = format!("cargo build, {} profile (cdylib)", ctx.profile());
     let step_descs: &[&str] = &[
         "",
         "UE build (UHT export to JSON)",
         "rusteal-codegen (JSON -> Rust + C++)",
         "UE rebuild (compile C++ wrappers)",
-        "cargo build --release (cdylib)",
+        &cargo_step,
         "Copy the shared library to plugin Binaries",
     ];
 
@@ -173,16 +175,29 @@ struct BuildContext {
     crate_name: String,
     /// Extra features for `cargo build` (from `[project].features`).
     features: Vec<String>,
+    /// Cargo's release profile instead of dev for the game library.
+    release: bool,
 }
 
 impl BuildContext {
-    fn new(config: &ProjectConfig, project_root: &Path, engine_path: &Path) -> Self {
+    fn new(config: &ProjectConfig, project_root: &Path, engine_path: &Path, release: bool) -> Self {
         BuildContext {
             engine_path: engine_path.to_path_buf(),
             layout: ProjectLayout::new(project_root),
             crate_name: config.project.crate_name.clone(),
             features: config.project.features.clone(),
+            release,
         }
+    }
+
+    /// The Cargo profile the game library is built with, as named in
+    /// `target/<dir>`.
+    fn profile(&self) -> &'static str {
+        if self.release { "release" } else { "dev" }
+    }
+
+    fn target_dir(&self) -> &'static str {
+        if self.release { "release" } else { "debug" }
     }
 
     /// The directory holding the .uproject.
@@ -281,19 +296,22 @@ impl BuildContext {
         self.run_ubt();
     }
 
-    /// Step 4: cargo build --release of the game crate in the Rust workspace.
+    /// Step 4: cargo build of the game crate in the Rust workspace, with the
+    /// profile the project's `Rust/Cargo.toml` sets.
     fn step4_cargo_build(&self) {
         let manifest = self.layout.rust_workspace().join("Cargo.toml");
         let manifest_str = manifest.to_string_lossy().into_owned();
         let mut args = vec![
             "cargo",
             "build",
-            "--release",
             "--manifest-path",
             &manifest_str,
             "-p",
             &self.crate_name,
         ];
+        if self.release {
+            args.push("--release");
+        }
         let features_str = self.features.join(",");
         if !features_str.is_empty() {
             args.push("--features");
@@ -310,7 +328,8 @@ impl BuildContext {
         let src = self
             .layout
             .rust_workspace()
-            .join("target/release")
+            .join("target")
+            .join(self.target_dir())
             .join(&dll_filename);
 
         let dest_dir = self
