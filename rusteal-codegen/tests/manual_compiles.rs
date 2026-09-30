@@ -7,6 +7,8 @@
 //
 // A second case turns on Enhanced Input, the module every game template uses,
 // and checks the C++ wrappers its types need (they compile only in a UE build).
+// A third adds a game crate whose `#[uclass]` declares every kind of
+// `#[uproperty]`, so the macro's expansion is type-checked against real bindings.
 //
 // Regenerating the fixture (a new engine version, a new exporter, a new type
 // used by manual/):
@@ -143,21 +145,27 @@ fn generate_and_check(case: &str, rusteal_toml: &str) -> PathBuf {
     );
     std::fs::write(project.join("Rust/Cargo.toml"), workspace).unwrap();
 
-    let output = Command::new(env!("CARGO"))
-        .arg("check")
-        .arg("--manifest-path")
-        .arg(project.join("Rust/Cargo.toml"))
-        .arg("--target-dir")
-        .arg(work.join("target"))
-        .args(["-p", "bindings", "--all-features"])
-        .output()
-        .expect("run cargo check");
+    let output = cargo_check(&project, "bindings");
     assert!(
         output.status.success(),
         "the generated bindings, manual/ included, do not compile:\n{}",
         String::from_utf8_lossy(&output.stderr)
     );
     project
+}
+
+/// `cargo check` one package of a generated project's Rust workspace.
+fn cargo_check(project: &Path, package: &str) -> std::process::Output {
+    let work = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("manual_compiles");
+    Command::new(env!("CARGO"))
+        .arg("check")
+        .arg("--manifest-path")
+        .arg(project.join("Rust/Cargo.toml"))
+        .arg("--target-dir")
+        .arg(work.join("target"))
+        .args(["-p", package, "--all-features"])
+        .output()
+        .expect("run cargo check")
 }
 
 #[test]
@@ -270,4 +278,82 @@ fn regenerate_fixture() {
     write("rusteal_classes.json", "classes", classes);
     write("rusteal_structs.json", "structs", structs);
     write("rusteal_enums.json", "enums", enums);
+}
+
+/// A game class with one `#[uproperty]` of each supported kind, and code using
+/// every accessor the macro generates for them.
+const UPROPERTY_GAME: &str = r#"
+use bindings::engine::{Actor, Pawn};
+use bindings::enhanced_input::{InputAction, InputMappingContext};
+use rusteal_runtime::runtime::{SubclassOf, UObjectRef, UeArray};
+use rusteal_runtime::uclass;
+
+#[uclass(parent = Pawn)]
+pub struct Probe {
+    #[uproperty(EditAnywhere, default = 2.5)]
+    speed: f32,
+    #[uproperty(EditAnywhere, BlueprintReadWrite)]
+    jump_action: UObjectRef<InputAction>,
+    #[uproperty(EditAnywhere, BlueprintReadOnly)]
+    fixed_action: UObjectRef<InputAction>,
+    #[uproperty(EditAnywhere)]
+    pawn_class: SubclassOf<Pawn>,
+    #[uproperty(EditAnywhere)]
+    contexts: UeArray<UObjectRef<InputMappingContext>>,
+    #[uproperty(EditAnywhere)]
+    classes: UeArray<SubclassOf<Actor>>,
+    #[uproperty(EditAnywhere)]
+    weights: UeArray<f32>,
+}
+
+pub fn use_accessors(p: &Probe) {
+    p.set_speed(p.speed() * 2.0);
+    let action: UObjectRef<InputAction> = p.jump_action();
+    p.set_jump_action(action);
+    let _: UObjectRef<InputAction> = p.fixed_action();
+    let class: SubclassOf<Pawn> = p.pawn_class();
+    p.set_pawn_class(class);
+    let contexts: UeArray<UObjectRef<InputMappingContext>> = p.contexts();
+    let _ = contexts.len();
+    let _ = p.classes().to_vec();
+    let _ = p.weights().push(&1.0);
+}
+"#;
+
+#[test]
+fn uproperty_types_compile() {
+    let project = generate_and_check("uproperty", &rusteal_toml_enhanced_input());
+    let rust = project.join("Rust");
+
+    // A game crate next to the bindings, as `rusteal new` lays it out.
+    let checkout = crate_dir().join("..").canonicalize().unwrap();
+    let manifest = read(&rust.join("Cargo.toml"))
+        .replace(r#"members = ["bindings"]"#, r#"members = ["bindings", "game"]"#)
+        + &format!(
+            "rusteal-runtime = {{ path = {:?} }}\n",
+            checkout.join("rusteal-runtime")
+        );
+    std::fs::write(rust.join("Cargo.toml"), manifest).unwrap();
+    std::fs::create_dir_all(rust.join("game/src")).unwrap();
+    std::fs::write(
+        rust.join("game/Cargo.toml"),
+        "[package]\n\
+         name = \"game\"\n\
+         version = \"0.1.0\"\n\
+         edition = \"2024\"\n\
+         publish = false\n\
+         \n\
+         [dependencies]\n\
+         rusteal-runtime = { workspace = true }\n\
+         bindings = { path = \"../bindings\" }\n",
+    )
+    .unwrap();
+    std::fs::write(rust.join("game/src/lib.rs"), UPROPERTY_GAME).unwrap();
+
+    let output = cargo_check(&project, "game");
+    assert!(
+        output.status.success(),
+        "a #[uclass] with every #[uproperty] kind does not compile:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
