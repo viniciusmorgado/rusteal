@@ -13,6 +13,7 @@ pub mod ffi_dispatch {
     include!(concat!(env!("OUT_DIR"), "/ffi_dispatch.rs"));
 }
 pub mod object_ref;
+pub mod subclass_of;
 pub mod struct_ref;
 pub mod pinned;
 pub mod dynamic_call;
@@ -32,6 +33,7 @@ pub use api::{api, init_api};
 pub use error::{check_ffi, check_ffi_ctx, ffi_infallible, ffi_infallible_ctx, RustealError, RustealResult};
 pub use traits::{UeClass, UeStruct, UeEnum, UeHandle, ValidHandle, HasParent};
 pub use object_ref::{Checked, UObjectRef};
+pub use subclass_of::SubclassOf;
 pub use struct_ref::UStructRef;
 pub use pinned::Pinned;
 pub use dynamic_call::{DynamicCall, DynamicCallResult};

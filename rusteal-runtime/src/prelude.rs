@@ -5,7 +5,7 @@
 
 // Core runtime types
 pub use rusteal_core::{
-    UObjectRef, Pinned, RustealResult, RustealError, UeClass, UeStruct, UeEnum,
+    UObjectRef, SubclassOf, Pinned, RustealResult, RustealError, UeClass, UeStruct, UeEnum,
     OwnedStruct, UStructRef, UeArray, UeMap, UeSet,
     DynamicCall, DynamicCallResult, DelegateBinding,
     FName, TWeakObjectPtr,
