@@ -31,7 +31,8 @@ or from the environment, and asks for the UE project Rusteal is developed agains
                     (the last component of the path is the project name)
 
 Then writes compile_commands.json (clangd) and the exporter's .csproj.props
-(C# language servers), and restores the exporter project.";
+(C# language servers), and restores rusteal.sln (the exporter and the *.Build.cs
+projects).";
 
 const BASE_PROJECT: &str = "\
 Rusteal is developed against an Unreal Engine project: the plugins in ue_plugin/
@@ -98,7 +99,7 @@ fn dev_setup(args: &[String]) {
     );
     write_exporter_props(&env.engine_root, &props);
     eprintln!("xtask: EngineDir -> {}", props.display());
-    restore_exporter(&env.engine_root, &props.with_file_name("RustealExporter.ubtplugin.csproj"));
+    restore_solution(&env.engine_root, &repo.join("rusteal.sln"));
 
     eprintln!("\nxtask: done. Restart the IDE's language servers to pick the files up.");
 }
@@ -289,22 +290,23 @@ fn write_exporter_props(engine_root: &Path, props: &Path) {
         .unwrap_or_else(|e| fail(&format!("cannot write {}: {e}", props.display())));
 }
 
-/// `dotnet restore` the exporter project, so a C# language server can load it right
-/// away. Uses the .NET SDK bundled with the engine, the one UBT builds the exporter
-/// with, or `dotnet` from PATH. Not fatal: language servers restore on their own too.
-fn restore_exporter(engine_root: &Path, csproj: &Path) {
+/// `dotnet restore` the solution (the exporter and the `*.Build.cs` projects), so a C#
+/// language server can load them right away. Uses the .NET SDK bundled with the engine,
+/// the one UBT builds the exporter with, or `dotnet` from PATH. Not fatal: language
+/// servers restore on their own too.
+fn restore_solution(engine_root: &Path, solution: &Path) {
     let dotnet = bundled_dotnet(engine_root).unwrap_or_else(|| PathBuf::from("dotnet"));
     let ok = Command::new(&dotnet)
         .args(["restore", "--verbosity", "quiet"])
-        .arg(csproj)
+        .arg(solution)
         .status()
         .is_ok_and(|s| s.success());
     if ok {
-        eprintln!("xtask: restored {}", csproj.display());
+        eprintln!("xtask: restored {}", solution.display());
     } else {
         eprintln!(
             "xtask: warning: `{} restore` failed; the C# language server will restore the \
-             exporter project itself.",
+             projects itself.",
             dotnet.display()
         );
     }
