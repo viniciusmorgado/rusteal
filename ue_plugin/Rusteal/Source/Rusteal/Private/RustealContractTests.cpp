@@ -55,3 +55,14 @@ static_assert(offsetof(RustealFWeakObjectHandle, object_index) == 0,
               "FWeakObjectHandle::object_index at offset 0");
 static_assert(offsetof(RustealFWeakObjectHandle, object_serial_number) == 4,
               "FWeakObjectHandle::object_serial_number at offset 4");
+
+// ---------------------------------------------------------------------------
+// Reify property metadata layout (rusteal-ffi/src/reify_types.rs)
+// ---------------------------------------------------------------------------
+
+static_assert(sizeof(FRustealReifyPropExtra) == 40,
+              "FRustealReifyPropExtra must be 40 bytes");
+static_assert(offsetof(FRustealReifyPropExtra, enum_underlying) == 32,
+              "FRustealReifyPropExtra::enum_underlying at offset 32");
+static_assert(offsetof(FRustealReifyPropExtra, inner_prop_type) == 36,
+              "FRustealReifyPropExtra::inner_prop_type at offset 36");

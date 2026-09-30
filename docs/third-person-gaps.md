@@ -79,12 +79,12 @@ Three experiments on the reference port (Rusteal 0.3.0, UE 5.8.2), all reverted:
 | | |
 |---|---|
 | **Template** | `UInputAction*` ×4 (`MyProjectCharacter.h:38-50`), `TArray<UInputMappingContext*>` ×2 and `TSubclassOf<UUserWidget>` (`MyProjectPlayerController.h:25-33`). |
-| **Today** | blocked: input keys are hard-coded. |
-| **Rusteal needs** | `macros` + `plugin` (reify): object references (`UObjectRef<T>`), class references (`TSubclassOf`) and `TArray` of those as properties, editable in a Blueprint child. |
-| **Evidence** | `rusteal-macros/src/uclass.rs`: "unsupported uproperty type: only bool/i32/i64/u8/f32/f64". |
+| **Today** | The character declares `jump_action`, `move_action`, `look_action` and `mouse_look_action` (`UObjectRef<InputAction>`), assigned in `BP_RustCharacter` and logged at BeginPlay; they are bound to handlers with TP-GAP-05 (c, d). |
+| **Rusteal needs** | `macros` + `plugin` (reify): object references (`UObjectRef<T>`), class references (`TSubclassOf`) and `TArray` of those as properties, editable in a Blueprint child. Done: `#[uproperty]` takes `UObjectRef<T>`, `SubclassOf<T>` (new in `core`) and `UeArray<E>` of those or of the scalars; the plugin creates the `TArray` property (`RustealReifyPropType::Array`). `default = ...` stays scalar-only: the others are set in the Blueprint child. |
+| **Evidence** | `rusteal-codegen/tests/manual_compiles.rs` (`uproperty_types_compile`); in the port, the four properties on the class and, in a temporary run, a `SubclassOf` and arrays of classes, objects and floats written and read back from Rust. |
 | **Depends on** | — |
 | **Done when** | The input actions, mapping contexts and widget class are assigned in the Blueprint children, as in the template. |
-| **Status** | open |
+| **Status** | fixed, not released |
 | **Last checked** | Rusteal 0.3.0, UE 5.8.2 |
 
 ### TP-GAP-04 — Blueprint child of a Rust class
@@ -184,8 +184,8 @@ By what each one unblocks for the template:
 
 1. **TP-GAP-05 (a, b)**, fixed — Enhanced Input bindings that compile and include
    `AddMappingContext`: input is the core of the template.
-2. **TP-GAP-03** — asset references as properties, so the actions and contexts
-   are assigned in the Blueprint children.
+2. **TP-GAP-03**, fixed — asset references as properties, so the actions and
+   contexts are assigned in the Blueprint children.
 3. **TP-GAP-08** and **TP-GAP-05 (c, d)** — binding actions to Rust handlers;
    the polling goes.
 4. **TP-GAP-02** — attach at construction.

@@ -24,9 +24,12 @@ pub enum RustealReifyPropType {
     Class = 15,
     Struct = 16,
     Enum = 17,
+    /// `TArray` of the type in `RustealReifyPropExtra::inner_prop_type`, whose
+    /// class/struct/enum fields describe the element.
+    Array = 18,
 }
 
-/// Extra metadata for Object/Class/Struct/Enum properties.
+/// Extra metadata for Object/Class/Struct/Enum/Array properties.
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
 pub struct RustealReifyPropExtra {
@@ -40,6 +43,8 @@ pub struct RustealReifyPropExtra {
     pub enum_handle: UClassHandle,
     /// Enum backing type size.
     pub enum_underlying: u32,
+    /// Array property element type (a `RustealReifyPropType`, not `Array`).
+    pub inner_prop_type: u32,
 }
 
 impl Default for RustealReifyPropExtra {
@@ -50,7 +55,7 @@ impl Default for RustealReifyPropExtra {
             struct_handle: UStructHandle::null(),
             enum_handle: UClassHandle::null(),
             enum_underlying: 0,
+            inner_prop_type: 0,
         }
     }
 }
-
