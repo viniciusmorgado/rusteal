@@ -534,7 +534,7 @@ fn generate_scalar_function(out: &mut String, entry: &FuncEntry, class_name: &st
                         }
                     }
                     ConversionKind::ObjectRef => {
-                        out.push_str(&format!("{pname}.raw(), "));
+                        out.push_str(&format!("rusteal_core::ObjectPointer::object_handle(&{pname}), "));
                     }
                     ConversionKind::EnumCast => {
                         out.push_str(&format!("{pname} as {}, ", mapped.rust_ffi_type));
@@ -597,7 +597,7 @@ fn generate_scalar_function(out: &mut String, entry: &FuncEntry, class_name: &st
             let rm = ret_mapped.as_ref().expect("return param must have mapped type");
             match rm.ffi_to_rust {
                 ConversionKind::ObjectRef => {
-                    return_parts.push("unsafe { rusteal_core::UObjectRef::from_raw(_ret) }".to_string());
+                    return_parts.push("unsafe { rusteal_core::ObjectPointer::from_object_handle(_ret) }".to_string());
                 }
                 ConversionKind::StringUtf8 => {
                     out.push_str("        _ret_buf.truncate(_ret_len as usize);\n");
@@ -1005,7 +1005,7 @@ fn generate_container_function(out: &mut String, entry: &FuncEntry, class_name: 
                             }
                         }
                         ConversionKind::ObjectRef => {
-                            out.push_str(&format!("{pname}.raw(), "));
+                            out.push_str(&format!("rusteal_core::ObjectPointer::object_handle(&{pname}), "));
                         }
                         ConversionKind::EnumCast => {
                             out.push_str(&format!("{pname} as {}, ", mapped.rust_ffi_type));
@@ -1202,7 +1202,7 @@ fn emit_container_return(
         } else if let Some(rm) = ret_mapped {
             match rm.ffi_to_rust {
                 ConversionKind::ObjectRef => {
-                    return_parts.push("unsafe { rusteal_core::UObjectRef::from_raw(__scalar_ret) }".to_string());
+                    return_parts.push("unsafe { rusteal_core::ObjectPointer::from_object_handle(__scalar_ret) }".to_string());
                 }
                 ConversionKind::StringUtf8 => {
                     out.push_str("        __scalar_ret_buf.truncate(__scalar_ret_len as usize);\n");

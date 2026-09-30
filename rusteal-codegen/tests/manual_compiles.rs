@@ -298,7 +298,7 @@ fn regenerate_fixture() {
 /// taking and returning each supported kind, and code using every accessor the
 /// macros generate and the Enhanced Input helpers.
 const UCLASS_GAME: &str = r#"
-use bindings::engine::{Actor, Pawn, PlayerController, SceneComponent};
+use bindings::engine::{Actor, Controller, Pawn, PawnExt, PlayerController, SceneComponent};
 use bindings::enhanced_input::{
     ETriggerEvent, EnhancedInputLocalPlayerSubsystemExt, FInputActionValue, InputAction,
     InputMappingContext,
@@ -386,6 +386,14 @@ pub fn add_contexts(controller: UObjectRef<PlayerController>, contexts: UeArray<
     for context in contexts.to_vec()? {
         subsystem.add_mapping_context(context, 0, &OwnedStruct::new());
     }
+    Ok(())
+}
+
+/// Generated class references are `SubclassOf<T>` (TSubclassOf), not objects.
+pub fn use_generated_classes(p: &Probe) -> RustealResult<()> {
+    let pawn = p.as_ref().checked()?;
+    let class: SubclassOf<Controller> = pawn.get_ai_controller_class();
+    pawn.set_ai_controller_class(class);
     Ok(())
 }
 
