@@ -54,7 +54,7 @@ pub fn run_upgrade(root: &Path) {
         }
     }
     setup::run_setup(root, &engine);
-    build_cmd::run_build(root, &engine, None, 1);
+    build_cmd::run_build(root, &engine, None, 1, false);
 
     eprintln!("\nrusteal upgrade: done, the project is at {cli}.");
 }
