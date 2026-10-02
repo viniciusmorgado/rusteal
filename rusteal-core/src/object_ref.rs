@@ -54,7 +54,23 @@ impl<T: UeClass> std::hash::Hash for UObjectRef<T> {
 // !Sync: enforced by PhantomData<*const T> — no shared references across threads.
 unsafe impl<T: UeClass> Send for UObjectRef<T> {}
 
+impl<T: UeClass> Default for UObjectRef<T> {
+    /// No object: `nullptr`.
+    fn default() -> Self {
+        Self::null()
+    }
+}
+
 impl<T: UeClass> UObjectRef<T> {
+    /// No object: what C++ returns as `nullptr`. Never valid.
+    #[inline]
+    pub fn null() -> Self {
+        UObjectRef {
+            handle: UObjectHandle::null(),
+            _marker: PhantomData,
+        }
+    }
+
     /// Create from a raw FFI handle.
     ///
     /// # Safety
