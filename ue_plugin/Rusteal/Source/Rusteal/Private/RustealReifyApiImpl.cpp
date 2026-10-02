@@ -265,6 +265,12 @@ static void CopyParamsFromParentFunction(UFunction *NewFunc,
 
     if (NewProp) {
       NewProp->PropertyFlags = SrcProp->PropertyFlags;
+      // As UHT flags a function with out parameters: ProcessEvent hands a
+      // native function the caller's out addresses only then.
+      if (NewProp->HasAnyPropertyFlags(CPF_OutParm) &&
+          !NewProp->HasAnyPropertyFlags(CPF_ReturnParm)) {
+        NewFunc->FunctionFlags |= FUNC_HasOutParms;
+      }
 
       // Append to end of ChildProperties (preserve parameter order)
       if (!NewFunc->ChildProperties) {
@@ -536,6 +542,10 @@ AddFunctionParamImpl(RustealUFunctionHandle Func, const uint8 *Name,
 
   // Set parameter flags (CPF_Parm must always be set for function parameters).
   Param->PropertyFlags |= static_cast<EPropertyFlags>(ParamFlags) | CPF_Parm;
+  if (Param->HasAnyPropertyFlags(CPF_OutParm) &&
+      !Param->HasAnyPropertyFlags(CPF_ReturnParm)) {
+    Function->FunctionFlags |= FUNC_HasOutParms;
+  }
 
   // Append to the END of ChildProperties instead of using AddCppProperty
   // (which prepends). This keeps parameters in declaration order, matching
