@@ -366,7 +366,19 @@ fn generate_wrapper_function(out: &mut String, entry: &FuncEntry, ctx: &CodegenC
     }
 
     let args = call_args.join(", ");
-    let call_expr = if is_static {
+    let is_protected = func.func_flags & FUNC_PROTECTED != 0;
+    let call_expr = if is_protected && func.interface.is_none() && !is_blueprint_native {
+        // A protected function a Blueprint child may call (FinishTask): a
+        // local type re-exports it with a using-declaration, as below.
+        out.push_str(&format!(
+            "    struct FAccess : {class_cpp} {{ using {class_cpp}::{func_name}; }};\n"
+        ));
+        if is_static {
+            format!("FAccess::{func_name}({args})")
+        } else {
+            format!("(Self->*&FAccess::{func_name})({args})")
+        }
+    } else if is_static {
         format!("{class_cpp}::{func_name}({args})")
     } else if let Some(iface) = &func.interface {
         // Declared on an interface the class implements: call it through the

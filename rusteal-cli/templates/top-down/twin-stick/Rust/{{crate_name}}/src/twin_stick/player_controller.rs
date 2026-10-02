@@ -1,0 +1,146 @@
+// TwinStickPlayerController: the TwinStick variant's
+// `ATwinStickPlayerController` in Rust. Manages the input mappings and the
+// touch controls, and respawns the pawn at the level's PlayerStart when it
+// is destroyed.
+//
+// `SetupInputComponent` and `OnPossess` are C++ virtuals; here their work
+// happens in `ReceiveBeginPlay` and `ReceivePossess`. The Blueprint child
+// `BP_TwinStickPlayerController` lists the mapping contexts, the mobile
+// controls widget and the character class to respawn.
+
+use bindings::engine::{
+    Actor, ActorExt, ControllerExt, GameplayStatics, Pawn, PlayerController, PlayerStart,
+};
+use bindings::enhanced_input::{EnhancedInputLocalPlayerSubsystemExt, InputMappingContext};
+use bindings::prelude::*;
+use bindings::umg::{UserWidget, UserWidgetExt};
+use rusteal_runtime::runtime::input::should_display_touch_interface;
+use rusteal_runtime::runtime::{
+    LOG_ERROR, LOG_WARNING, OwnedStruct, RustealResult, SubclassOf, UObjectRef, UeArray, ulog,
+};
+use rusteal_runtime::{uclass, uclass_impl};
+
+use super::character::TwinStickCharacter;
+
+#[uclass(parent = PlayerController)]
+pub struct TwinStickPlayerController {
+    /// Input Mapping Contexts
+    #[uproperty(EditAnywhere, category = "Input|Input Mappings")]
+    default_mapping_contexts: UeArray<UObjectRef<InputMappingContext>>,
+
+    /// Input Mapping Contexts
+    #[uproperty(EditAnywhere, category = "Input|Input Mappings")]
+    mobile_excluded_mapping_contexts: UeArray<UObjectRef<InputMappingContext>>,
+
+    /// Mobile controls widget to spawn
+    #[uproperty(EditAnywhere, category = "Input|Touch Controls")]
+    mobile_controls_widget_class: SubclassOf<UserWidget>,
+
+    /// Pointer to the mobile controls widget
+    #[uproperty]
+    mobile_controls_widget: UObjectRef<UserWidget>,
+
+    /// If true, the player will use UMG touch controls even if not playing on mobile platforms
+    #[uproperty(EditAnywhere, category = "Input|Touch Controls", default = false)]
+    b_force_touch_controls: bool,
+
+    /// Character class to respawn when the possessed pawn is destroyed
+    #[uproperty(EditAnywhere, category = "Respawn")]
+    character_class: SubclassOf<TwinStickCharacter>,
+}
+
+#[uclass_impl]
+impl TwinStickPlayerController {
+    /// Gameplay initialization and input mapping context setup
+    #[ufunction(Override)]
+    fn receive_begin_play(&mut self) {
+        if let Err(e) = self.setup_input() {
+            ulog!(LOG_WARNING, "[TwinStick] input mapping contexts failed: {e}");
+        }
+    }
+
+    /// Pawn initialization
+    #[ufunction(Override)]
+    fn receive_possess(&mut self, possessed_pawn: UObjectRef<Pawn>) {
+        // subscribe to the pawn's OnDestroyed delegate
+        let controller: UObjectRef<PlayerController> = self.as_ref();
+        let bound = possessed_pawn.checked().and_then(|pawn| {
+            pawn.on_destroyed().add(move |destroyed_actor| {
+                if let Ok(mut me) = TwinStickPlayerController::from_obj(controller) {
+                    me.on_pawn_destroyed(destroyed_actor);
+                }
+            })
+        });
+        match bound {
+            Ok(binding) => binding.detach(),
+            Err(e) => ulog!(LOG_WARNING, "[TwinStick] cannot watch the pawn: {e}"),
+        }
+    }
+}
+
+impl TwinStickPlayerController {
+    /// Called if the possessed pawn is destroyed
+    fn on_pawn_destroyed(&mut self, _destroyed_actor: UObjectRef<Actor>) {
+        if let Err(e) = self.respawn() {
+            ulog!(LOG_WARNING, "[TwinStick] respawn failed: {e}");
+        }
+    }
+
+    fn respawn(&mut self) -> RustealResult<()> {
+        // find the player start
+        let me = self.as_ref();
+        let player_starts =
+            GameplayStatics::get_all_actors_of_class(me.upcast_to(), SubclassOf::<PlayerStart>::base().upcast_to());
+        let Some(player_start) = player_starts.first() else {
+            return Ok(());
+        };
+
+        // spawn a character at the player start
+        let transform = player_start.checked()?.get_transform();
+        let respawned_character = me.get_world()?.spawn_actor_of_class(self.character_class(), &transform)?;
+
+        // possess the character
+        me.checked()?.possess(respawned_character.upcast_to());
+        Ok(())
+    }
+
+    /// `BeginPlay` and `SetupInputComponent`: the touch controls and the
+    /// mapping contexts, on a local player controller.
+    fn setup_input(&mut self) -> RustealResult<()> {
+        let me: UObjectRef<PlayerController> = self.as_ref();
+        // only spawn touch controls and add IMCs for local player controllers
+        if !me.checked()?.is_local_player_controller() {
+            return Ok(());
+        }
+
+        if self.should_use_touch_controls() {
+            // spawn the mobile controls widget
+            match create_widget_of_class(&me, self.mobile_controls_widget_class()) {
+                Ok(widget) => {
+                    // add the controls to the player screen
+                    widget.checked()?.add_to_player_screen(Some(0));
+                    self.set_mobile_controls_widget(widget);
+                }
+                Err(_) => ulog!(LOG_ERROR, "Could not spawn mobile controls widget."),
+            }
+        }
+
+        // Add Input Mapping Contexts
+        let subsystem = enhanced_input_subsystem(me)?.checked()?;
+        let mut contexts = self.default_mapping_contexts().to_vec()?;
+        // only add these IMCs if we're not using mobile touch input
+        if !self.should_use_touch_controls() {
+            contexts.extend(self.mobile_excluded_mapping_contexts().to_vec()?);
+        }
+        for context in contexts {
+            subsystem.add_mapping_context(context, 0, &OwnedStruct::new());
+        }
+        Ok(())
+    }
+
+    /// Returns true if the player should use UMG touch controls
+    fn should_use_touch_controls(&self) -> bool {
+        // are we on a mobile platform? Should we force touch?
+        should_display_touch_interface() || self.b_force_touch_controls()
+    }
+}

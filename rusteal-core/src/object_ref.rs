@@ -20,18 +20,57 @@ use crate::traits::{HasParent, UeClass, UeHandle, ValidHandle};
 /// - `!Sync` — must only be *used* on the game thread.
 /// - Does not prevent garbage collection; call [`is_valid`](Self::is_valid)
 ///   before use, or upgrade to [`Pinned<T>`] via [`pin`](Self::pin).
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct UObjectRef<T: UeClass> {
     handle: UObjectHandle,
     _marker: PhantomData<*const T>, // *const T makes it !Sync
 }
 
+// By hand: derives would require the same traits of `T`, which classes lack,
+// and leave `UObjectRef<Actor>` neither Copy nor comparable.
+impl<T: UeClass> Clone for UObjectRef<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<T: UeClass> Copy for UObjectRef<T> {}
+
+impl<T: UeClass> PartialEq for UObjectRef<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.handle == other.handle
+    }
+}
+
+impl<T: UeClass> Eq for UObjectRef<T> {}
+
+impl<T: UeClass> std::hash::Hash for UObjectRef<T> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.handle.hash(state);
+    }
+}
+
 // Send: handles are raw identifiers safe to move between threads.
 // !Sync: enforced by PhantomData<*const T> — no shared references across threads.
 unsafe impl<T: UeClass> Send for UObjectRef<T> {}
 
+impl<T: UeClass> Default for UObjectRef<T> {
+    /// No object: `nullptr`.
+    fn default() -> Self {
+        Self::null()
+    }
+}
+
 impl<T: UeClass> UObjectRef<T> {
+    /// No object: what C++ returns as `nullptr`. Never valid.
+    #[inline]
+    pub fn null() -> Self {
+        UObjectRef {
+            handle: UObjectHandle::null(),
+            _marker: PhantomData,
+        }
+    }
+
     /// Create from a raw FFI handle.
     ///
     /// # Safety
@@ -131,6 +170,18 @@ impl<T: HasParent> UObjectRef<T> {
     /// Infallible upcast to the parent class. Zero-cost (same handle).
     #[inline]
     pub fn upcast(self) -> UObjectRef<T::Parent> {
+        unsafe { UObjectRef::from_raw(self.handle) }
+    }
+}
+
+impl<T: UeClass> UObjectRef<T> {
+    /// Infallible upcast to any ancestor class, checked at compile time
+    /// (`character.upcast_to::<Object>()` for a world context). Zero-cost.
+    #[inline]
+    pub fn upcast_to<U: UeClass>(self) -> UObjectRef<U>
+    where
+        T: crate::traits::Inherits<U>,
+    {
         unsafe { UObjectRef::from_raw(self.handle) }
     }
 }

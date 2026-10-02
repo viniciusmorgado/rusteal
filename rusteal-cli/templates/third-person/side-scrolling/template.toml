@@ -1,0 +1,39 @@
+# `rusteal new <Name> --template third-person --variant side-scrolling`: UE's
+# Third Person template and its SideScrolling variant, their gameplay classes
+# in Rust.
+description = "SideScrolling: a side view platformer with pickups, soft platforms and an AI NPC."
+
+# The engine template the project starts from, copied with the engine's own
+# recipe (its Config/TemplateDefs.ini), as the editor's New Project dialog does.
+engine_template = "TP_ThirdPerson"
+
+# Paths of the engine template to leave out, relative to it; %TEMPLATENAME%
+# stands for its name, and a folder leaves out everything under it. The C++
+# gameplay classes are replaced by the Rust crate, their Blueprint children by
+# this variant's (same names, Rust parents; the animation Blueprint, the UI,
+# the NPC's StateTree and the level's actors too, which name Rust classes),
+# and the other variants are left to their own `--variant`s.
+exclude = [
+    "Source/%TEMPLATENAME%/%TEMPLATENAME%Character.cpp",
+    "Source/%TEMPLATENAME%/%TEMPLATENAME%Character.h",
+    "Source/%TEMPLATENAME%/%TEMPLATENAME%GameMode.cpp",
+    "Source/%TEMPLATENAME%/%TEMPLATENAME%GameMode.h",
+    "Source/%TEMPLATENAME%/%TEMPLATENAME%PlayerController.cpp",
+    "Source/%TEMPLATENAME%/%TEMPLATENAME%PlayerController.h",
+    "Source/%TEMPLATENAME%/Variant_Combat",
+    "Source/%TEMPLATENAME%/Variant_Platforming",
+    "Source/%TEMPLATENAME%/Variant_SideScrolling",
+    "Content/ThirdPerson/Blueprints",
+    "Content/Variant_Combat",
+    "Content/Variant_Platforming",
+    "Content/__ExternalActors__/Variant_Combat",
+    "Content/__ExternalActors__/Variant_Platforming",
+    "Content/__ExternalObjects__/Variant_Combat",
+    "Content/__ExternalObjects__/Variant_Platforming",
+]
+
+# The level the project opens and plays.
+default_map = "/Game/Variant_SideScrolling/Lvl_SideScrolling"
+
+# Printed when the project is ready (Tera, same context as the files).
+next_step = "open {{ project }}.uproject and press Play: A/D / left stick move, Space / A jump (again in the air: double jump, against a wall: wall jump), S / stick down + Space drop through a platform, F / X interact"

@@ -41,6 +41,10 @@ pub struct CodegenConfig {
 pub struct ModuleMapping {
     pub module: String,
     pub feature: String,
+    /// The engine plugin the UE module belongs to (`StateTree`), for a module
+    /// outside the engine's own: the Rusteal plugin must list it.
+    #[serde(default)]
+    pub plugin: Option<String>,
 }
 
 #[derive(Deserialize, Default)]
@@ -107,6 +111,11 @@ impl ProjectLayout {
     /// The generated C++ wrappers, compiled into the Rusteal plugin.
     pub fn cpp_generated(&self) -> PathBuf {
         self.root.join("Plugins/Rusteal/Source/Rusteal/Generated")
+    }
+
+    /// The Rusteal plugin's descriptor in the project.
+    pub fn plugin_descriptor(&self) -> PathBuf {
+        self.root.join("Plugins/Rusteal/Rusteal.uplugin")
     }
 
     /// The reflection JSON the codegen reads: build output, not versioned.

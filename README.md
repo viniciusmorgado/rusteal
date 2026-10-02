@@ -116,20 +116,77 @@ Rusteal itself — see [Working on Rusteal](#working-on-rusteal).
 
 ```bash
 rusteal new MyGame --template third-person
+rusteal new MyGame --template third-person --variant combat
 ```
 
 A template is one of the engine's C++ templates with its gameplay written in
 Rust: the C++ classes are gone, the Rust crate in `Rust/` takes their place,
 and their Blueprint children, with the same names, have Rust parents.
 
-| Template | What it is |
-|---|---|
-| `blank` (default) | The engine's Blank template and a `HelloActor` in Rust. |
-| `third-person` | The engine's Third Person template: its character, game mode and player controller in Rust, playable as it comes (keyboard, mouse, gamepad). The variants (Combat, Platforming, SideScrolling) and the touch controls are not ported. |
+The engine's templates come with variants, genre starting points the C++
+version puts all in one project. Here each is its own project: `--variant`
+picks one, and without it the project is the template alone (`base`). A
+variant project is the template plus that variant, as the engine's Blueprint
+templates make it, and opens and plays the variant's level.
 
-<img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/templates/third-person.webp" alt="The third-person template in play" width="640">
+| Template | Variant | What it is |
+|---|---|---|
+| `blank` (default) | | The engine's Blank template and a `HelloActor` in Rust. |
+| `first-person` | | The engine's First Person template: its character, camera manager, game mode and player controller in Rust, playable as it comes (keyboard, mouse, gamepad, touch). |
+| `first-person` | `horror` | A dark level explored with a flashlight and a sprint that runs on stamina, its meter on screen. |
+| `first-person` | `shooter` | An arena shooter: weapon pickups from a data table, projectiles and grenades, team scores, and NPCs run by a StateTree that sense, snipe and shoot. |
+| `top-down` | | The engine's Top Down template: its character, game mode and point and click player controller in Rust (the engine's Blueprint-only base Blueprints made their children), playable as it comes (mouse, touch). |
+| `top-down` | `strategy` | A real-time strategy start: units selected with clicks, boxes and touches, sent along the navigation mesh by EnvQueries, and interacting with the units they reach. |
+| `top-down` | `twin-stick` | A twin stick shooter: projectiles, dashes and area attacks against waves of enemies run by a StateTree, pickups and a combo score. |
+| `third-person` | | The engine's Third Person template: its character, game mode and player controller in Rust, playable as it comes (keyboard, mouse, gamepad, touch). |
+| `third-person` | `combat` | Melee combat: combo and charged attacks, enemies run by a StateTree, spawners, checkpoints, damageable props. |
+| `third-person` | `platforming` | Double jump, wall jump, coyote time, a dash, local multiplayer and respawn. |
+| `third-person` | `side-scrolling` | A side view platformer: soft platforms, jump pads, moving platforms, pickups with a counter and an NPC run by a StateTree. |
 
-`rusteal new` with an unknown template lists the available ones.
+Names are matched loosely (`side-scrolling`, `SideScrolling`), and `rusteal
+new` with an unknown template or variant lists them all.
+
+### Screenshots
+
+#### `first-person`
+
+<img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/templates/first-person.png" alt="The first-person template in play" width="800">
+
+#### `first-person` `horror`
+
+<img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/templates/first-person-horror.png" alt="The first-person template's horror variant in play" width="800">
+
+#### `first-person` `shooter`
+
+<img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/templates/first-person-shooter.png" alt="The first-person template's shooter variant in play" width="800">
+
+#### `top-down`
+
+<img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/templates/topdown.png" alt="The top-down template in play" width="800">
+
+#### `top-down` `strategy`
+
+<img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/templates/topdown-strategy.png" alt="The top-down template's strategy variant in play" width="800">
+
+#### `top-down` `twin-stick`
+
+<img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/templates/topdown-twinstick.png" alt="The top-down template's twin-stick variant in play" width="800">
+
+#### `third-person`
+
+<img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/templates/third-person.png" alt="The third-person template in play" width="800">
+
+#### `third-person` `combat`
+
+<img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/templates/third-person-combat.png" alt="The third-person template's combat variant in play" width="800">
+
+#### `third-person` `platforming`
+
+<img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/templates/third-person-platforming.png" alt="The third-person template's platforming variant in play" width="800">
+
+#### `third-person` `side-scrolling`
+
+<img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/templates/third-person-sidescrolling.png" alt="The third-person template's side-scrolling variant in play" width="800">
 
 ### An existing project
 
@@ -146,7 +203,7 @@ layout `rusteal new` produces.
 A project is tied to one Rusteal version: `Rust/Cargo.toml` pins
 `rusteal-runtime`, `rusteal-core` and `rusteal-ffi` to it (`"=x.y.z"`), and the
 plugins in `Plugins/` carry it. Before doing anything, `build`, `generate` and
-`setup` check it against the CLI's own version:
+`setup` check it against the CLI's own version (`rusteal --version`):
 
 - the CLI is newer: `rusteal upgrade` moves the project to it — the pins, the
   plugins (`Plugins/Rusteal` and `Plugins/RustealGenerator` are replaced
@@ -279,6 +336,10 @@ let pinned: Pinned<Actor> = actor.pin()?;
 // Checked access — verifies the object is still alive before use.
 let checked = actor.checked()?;
 checked.k2_get_actor_location();
+
+// Upcast to any ancestor, checked at compile time (a Character is an Actor);
+// downcast with `cast::<T>()`, checked at runtime.
+let as_object: UObjectRef<Object> = actor.upcast_to::<Object>();
 ```
 
 ### Defining UE Classes
@@ -320,12 +381,27 @@ impl MyActor {
 ```
 
 A `#[uproperty]` is `bool`, `i32`, `i64`, `u8`, `f32`, `f64`, an object
-(`UObjectRef<T>`), a class (`SubclassOf<T>`, UE's `TSubclassOf<T>`) or a
-`UeArray` of any of those. Each gets a getter named after the field and, unless
-it is `BlueprintReadOnly`, a `set_` setter; an array's getter returns a view of
-the array inside the object, changed in place. `default = ...` is for the
-scalar types; objects, classes and arrays are set in a Blueprint child, as the
-engine's templates do.
+(`UObjectRef<T>`), a class (`SubclassOf<T>`, UE's `TSubclassOf<T>`), a
+`UeArray` of any of those or of `FName`s, a struct (`OwnedStruct<FVector>`), an `FName`, a
+`String` (`FString`) or an engine enum (`ECollisionChannel`). Each gets a
+getter named after the field and a `set_` setter (`BlueprintReadOnly` is
+about Blueprints; the class's own code writes it, as C++ does); an array's
+getter returns a view of the array inside the object, changed in place, and
+a struct's a copy. `default = ...` is for the scalar
+types and enums; the others are set in `#[class_defaults]` or a Blueprint
+child, as the engine's templates do. `EditAnywhere`, `EditDefaultsOnly`,
+`VisibleAnywhere`, `BlueprintReadWrite` and `BlueprintReadOnly` are UE's
+specifiers.
+
+A field with no attribute is Rust's alone, kept outside UE's object: its
+getter returns a copy (a clone), `set_` replaces it, and `<field>_mut()`
+changes it in place (a map, a vector).
+
+The UE name is the field's in PascalCase, with a `b_` prefix as UE's bool
+`b` (`b_force_touch_controls` is `bForceTouchControls`, as the bindings name
+UE's own); `name = "NPC"` gives another, and `category = "..."` the property's
+category. Matching the C++ names keeps the values a Blueprint saved when its
+parent moves from C++ to Rust.
 
 A `#[component]` is created with the object. `attach` names its parent: a
 component the class declares before it, or an inherited one by its field-style
@@ -337,6 +413,10 @@ camera_boom: SpringArmComponent,
 #[component(attach = "camera_boom", socket = "SpringEndpoint")]
 follow_camera: CameraComponent,
 ```
+
+A component's subobject is named after its field too, or as
+`#[component(name = "Collision Check Box")]` says: a Blueprint child's
+changes to an inherited component are kept by that name.
 
 What a C++ constructor sets on inherited properties goes in a
 `#[class_defaults]` method of the `#[uclass_impl]` block. It runs once, on the
@@ -353,11 +433,32 @@ fn class_defaults(&mut self) -> RustealResult<()> {
 }
 ```
 
+A Rust class's parent may be a Rust class, as a C++ class's may be a C++
+class: `#[uclass(parent = FirstPersonCharacter)]` makes a class with the
+parent's properties, components and functions, whose components may attach to
+the parent's by their field names (`attach = "first_person_camera_component"`)
+and whose class defaults start from the parent's. An event both override runs
+the child's code, which calls the parent's as C++ calls `Super::`:
+
+```rust
+#[ufunction(Override)]
+fn receive_begin_play(&mut self) {
+    if let Ok(mut parent) = FirstPersonCharacter::from_obj(self.as_ref()) {
+        parent.receive_begin_play(); // pub(crate) in the parent's impl
+    }
+    // ...
+}
+```
+
 In the generated bindings, an engine class reference (`TSubclassOf<T>`, such
 as a game mode's `DefaultPawnClass`) is a `SubclassOf<T>`, not an object:
 `get_default_pawn_class()` returns `SubclassOf<Pawn>`, and
 `SubclassOf::<MyPawn>::base().upcast()` passes a Rust class where a parent's is
 expected.
+
+Static functions, such as a function library's (`UGameplayStatics`,
+`UKismetSystemLibrary`), are called on the class, as in C++:
+`GameplayStatics::get_player_controller(world, 0)`.
 
 Private engine properties that Blueprint can read (`ACharacter`'s `Mesh`,
 `CharacterMovement` and `CapsuleComponent`) have getters, and no setters when
@@ -366,7 +467,55 @@ they are read-only.
 A `#[ufunction]` takes the scalar types, objects (`UObjectRef<T>`), classes
 (`SubclassOf<T>`) and structs (`UStructRef<T>`, a reference into the call's
 parameters; `to_owned()` keeps a copy), and returns a scalar, an object or a
-class. An `Override` takes whatever the engine function it overrides takes.
+class. It is `BlueprintCallable` unless it says otherwise:
+
+- `BlueprintPure`: callable without execution pins;
+- `Override`: Rust code for an engine event of a parent class, taking what it
+  takes (an enum as its type or `u8`, an out struct as a `UStructRef` written
+  in place, a scalar out parameter as an `OutRef<T>`). A C++ virtual has its
+  event: `Landed` is `OnLanded`, `Tick` is `ReceiveTick`, `EndPlay` is
+  `ReceiveEndPlay`, `OnPossess` is `ReceivePossess`;
+- `BlueprintImplementableEvent`: an event a Blueprint child implements; the
+  method's body is empty, and calling it runs the Blueprint's graph. It
+  takes structs as `&OwnedStruct<T>`.
+
+`name = "K2_OnMovementModeChanged"` gives the UE name when the method's name
+in PascalCase is not it.
+
+### Defining UE Structs
+
+A data table's rows, or a struct a class's properties hold, can be declared in
+Rust too, as UHT's `USTRUCT()`:
+
+```rust
+#[ustruct]
+pub struct WeaponTableRow {
+    /// Mesh to display on the pickup
+    #[uproperty(EditAnywhere)]
+    static_mesh: SoftObjectRef<StaticMesh>,
+
+    /// Weapon class to grant on pickup
+    #[uproperty(EditAnywhere)]
+    weapon_to_spawn: SubclassOf<ShooterWeapon>,
+}
+```
+
+Every field is a `#[uproperty]` of the kinds a class's are (no `default`: a
+struct starts zeroed), since the struct's memory is UE's: a data table's, an
+object property's, an `OwnedStruct`'s. The type itself is a marker, like the
+bindings' engine structs, and the fields are read and written through the
+generated `WeaponTableRowExt` trait on `UStructRef<WeaponTableRow>` and
+`OwnedStruct<WeaponTableRow>`. A data table's row is found as C++'s
+`FindRow<T>`, by the table and row name or by an `FDataTableRowHandle`:
+
+```rust
+let Some(row) = self.weapon_type().get_row::<WeaponTableRow>() else { return };
+let mesh = row.static_mesh().load_synchronous()?;
+self.set_weapon_class(row.weapon_to_spawn());
+```
+
+`SoftObjectRef<T>` is UE's `TSoftObjectPtr<T>`: an object by path, loaded on
+demand (`load_synchronous`), or `get` if it already is.
 
 ### Input
 
@@ -406,6 +555,27 @@ impl MyCharacter {
 takes nothing or an `FInputActionValue`; engine functions work too (`"Jump"`).
 `enhanced_input_subsystem(controller)` is where a player controller adds its
 mapping contexts.
+
+Touch controls follow the same template: `runtime::input::should_display_touch_interface()`
+is the C++ `SVirtualJoystick::ShouldDisplayTouchInterface()` (a Slate check,
+not in reflection), and `create_widget_of_class(&controller, class)` spawns a
+widget whose class a Blueprint child assigns, as `CreateWidget<T>(this, Class)`
+does.
+
+### Delegates
+
+An engine delegate (`OnActorBeginOverlap`, `OnDestroyed`, a component's
+`OnComponentBeginOverlap`) takes a Rust closure, or a `#[ufunction]` by name
+as C++'s `AddDynamic` does: once, however many times it is bound.
+
+```rust
+// A closure; dropping the binding unbinds it, detach() keeps it for as long
+// as the actor lives.
+actor.checked()?.on_destroyed().add(move |destroyed| { /* ... */ })?.detach();
+
+// A #[ufunction] of this class taking the delegate's parameters.
+me.checked()?.on_actor_begin_overlap().add_ufunction(&me, "BeginOverlap")?;
+```
 
 ### Dynamic Calls
 
@@ -600,14 +770,16 @@ before publishing, which refreshes the snapshot the binary embeds.
 
 ### Adding a template
 
-A template is a directory under `rusteal-cli/templates/`, embedded in the
-binary when it is built; nothing else registers it. It mirrors the root of
-the project it creates:
+A template is a directory under `rusteal-cli/templates/`, one directory per
+variant inside it, `base` being the template without `--variant`; they are
+embedded in the binary when it is built, and nothing else registers them. A
+variant directory mirrors the root of the project it creates:
 
 - `template.toml` names the engine template the project starts from
   (`engine_template`), the paths of it to leave out (`exclude`: the C++
-  gameplay the template replaces), a one-line `description` and the
-  `next_step` printed at the end;
+  gameplay the template replaces, the other variants), the level to open
+  when it is not the engine template's own (`default_map`), a one-line
+  `description` and the `next_step` printed at the end;
 - every other file is written into the project over the engine template's:
   `*.tera` files are rendered with [Tera](https://keats.github.io/tera/) and
   lose the extension, the rest (Blueprints, meshes) is copied as is;
@@ -617,12 +789,12 @@ the project it creates:
 The context is the same for every template: `project`, `crate_name`,
 `version`, `glam_version` and, with `--runtime-path`, `runtime_path`.
 
-Each template is complete on its own. A new one starts as a copy of the
-closest existing template (a third-person shooter from `third-person`) and is
-changed from there, never layered on top of it. Its Blueprints come from a
-project where they were made and played, saved with the engine version
-Rusteal targets. A template with something to see has a screenshot in
-`assets/templates/`, shown in [Templates](#templates).
+Each variant is complete on its own. A new one starts as a copy of the
+closest existing one (a variant from its template's `base`) and is changed
+from there, never layered on top of it. Its Blueprints come from a project
+where they were made and played, saved with the engine version Rusteal
+targets. A variant with something to see has a screenshot in
+`assets/templates/`, shown in [Screenshots](#screenshots).
 
 Engine APIs Rusteal uses that Unreal has deprecated are tracked in
 [`docs/ue-deprecations.md`](https://github.com/viniciusmorgado/rusteal/blob/main/docs/ue-deprecations.md): what, since which UE
@@ -633,11 +805,15 @@ What Rusteal still lacks to write Unreal's Third Person template entirely in
 Rust, in the order the template needs it, is mapped in
 [`docs/third-person-gaps.md`](https://github.com/viniciusmorgado/rusteal/blob/main/docs/third-person-gaps.md).
 
+How the engine templates' variants were ported, where the Rust ports differ
+from the C++ and what they still work around is in
+[`docs/template-variants.md`](https://github.com/viniciusmorgado/rusteal/blob/main/docs/template-variants.md).
+
 What Unreal Engine 6 changes for Rusteal — Verse, Scene Graph, the end of
 Blueprints — and the open questions to check as Epic publishes details are in
 [`docs/ue6-radar.md`](https://github.com/viniciusmorgado/rusteal/blob/main/docs/ue6-radar.md).
 
-Commits are small — one per fix — and never mention AI authorship.
+Commits are small — one per fix.
 
 ### Releases and versions
 

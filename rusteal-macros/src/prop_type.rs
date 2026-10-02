@@ -29,11 +29,33 @@ pub enum PropKind {
     Object { class: Type },
     /// `SubclassOf<T>`: a class reference restricted to `T` and its subclasses.
     Class { meta_class: Type },
+    /// `SoftObjectRef<T>`: a `TSoftObjectPtr<T>`, an object by path. Only as
+    /// a `#[uproperty]`.
+    SoftObject { class: Type },
     /// `UeArray<E>`: a `TArray` of a scalar, object or class element.
     Array { element: Box<PropTypeInfo> },
     /// `UStructRef<T>`: a UE struct, by reference to its memory. Only as a
     /// `#[ufunction]` parameter, where it points into the call's parameters.
     Struct { strukt: Type },
+    /// `OwnedStruct<T>`: a UE struct property (`FVector`), read and written
+    /// as a copy. Only as a `#[uproperty]`.
+    OwnedStruct { strukt: Type },
+    /// `FName`. Only as a `#[uproperty]`.
+    Name,
+    /// `String`: an `FString`. Only as a `#[uproperty]`.
+    Str,
+    /// Any other type: a UE enum (`ECollisionChannel`, `UeEnum`).
+    Enum { ty: Type },
+}
+
+impl PropKind {
+    /// Kinds only a `#[uproperty]` takes, not a `#[ufunction]` parameter.
+    pub fn property_only(&self) -> bool {
+        matches!(
+            self,
+            PropKind::OwnedStruct { .. } | PropKind::Name | PropKind::Str | PropKind::SoftObject { .. }
+        )
+    }
 }
 
 impl PropTypeInfo {
@@ -42,14 +64,18 @@ impl PropTypeInfo {
     pub fn extra_fields(&self) -> Option<TokenStream> {
         match &self.kind {
             PropKind::Scalar { .. } => None,
-            PropKind::Object { class } => Some(quote! {
+            PropKind::Object { class } | PropKind::SoftObject { class } => Some(quote! {
                 class_handle: <#class as ::rusteal_runtime::runtime::UeClass>::static_class(),
             }),
             PropKind::Class { meta_class } => Some(quote! {
                 meta_class_handle: <#meta_class as ::rusteal_runtime::runtime::UeClass>::static_class(),
             }),
-            PropKind::Struct { strukt } => Some(quote! {
+            PropKind::Struct { strukt } | PropKind::OwnedStruct { strukt } => Some(quote! {
                 struct_handle: <#strukt as ::rusteal_runtime::runtime::UeStruct>::static_struct(),
+            }),
+            PropKind::Name | PropKind::Str => None,
+            PropKind::Enum { ty } => Some(quote! {
+                enum_handle: <#ty as ::rusteal_runtime::runtime::UeEnum>::static_enum(),
             }),
             PropKind::Array { element } => {
                 let inner_type = &element.prop_type_expr;
@@ -101,6 +127,14 @@ pub fn map_type(ty: &Type) -> Option<PropTypeInfo> {
                 kind: PropKind::Class { meta_class },
             });
         }
+        "SoftObjectRef" => {
+            let class = single_type_arg(seg)?;
+            return Some(PropTypeInfo {
+                prop_type_expr: quote! { ::rusteal_runtime::ffi::RustealReifyPropType::SoftObject },
+                rust_type: quote! { #ty },
+                kind: PropKind::SoftObject { class },
+            });
+        }
         "UStructRef" => {
             let strukt = single_type_arg(seg)?;
             return Some(PropTypeInfo {
@@ -109,10 +143,35 @@ pub fn map_type(ty: &Type) -> Option<PropTypeInfo> {
                 kind: PropKind::Struct { strukt },
             });
         }
+        "OwnedStruct" => {
+            let strukt = single_type_arg(seg)?;
+            return Some(PropTypeInfo {
+                prop_type_expr: quote! { ::rusteal_runtime::ffi::RustealReifyPropType::Struct },
+                rust_type: quote! { #ty },
+                kind: PropKind::OwnedStruct { strukt },
+            });
+        }
+        "FName" if seg.arguments.is_none() => {
+            return Some(PropTypeInfo {
+                prop_type_expr: quote! { ::rusteal_runtime::ffi::RustealReifyPropType::Name },
+                rust_type: quote! { #ty },
+                kind: PropKind::Name,
+            });
+        }
+        "String" if seg.arguments.is_none() => {
+            return Some(PropTypeInfo {
+                prop_type_expr: quote! { ::rusteal_runtime::ffi::RustealReifyPropType::String },
+                rust_type: quote! { #ty },
+                kind: PropKind::Str,
+            });
+        }
         "UeArray" => {
             let element = map_type(&single_type_arg(seg)?)?;
-            if matches!(element.kind, PropKind::Array { .. } | PropKind::Struct { .. }) {
-                return None; // no arrays of arrays; struct elements are not supported
+            if !matches!(
+                element.kind,
+                PropKind::Scalar { .. } | PropKind::Object { .. } | PropKind::Class { .. } | PropKind::Name
+            ) {
+                return None; // arrays of scalars, objects, classes and names only
             }
             return Some(PropTypeInfo {
                 prop_type_expr: quote! { ::rusteal_runtime::ffi::RustealReifyPropType::Array },
@@ -144,9 +203,34 @@ pub fn map_type(ty: &Type) -> Option<PropTypeInfo> {
         "u8" => scalar("UInt8", quote! { u8 }, "get_u8", "set_u8", quote! { 0u8 }),
         "f32" => scalar("Float", quote! { f32 }, "get_f32", "set_f32", quote! { 0.0f32 }),
         "f64" => scalar("Double", quote! { f64 }, "get_f64", "set_f64", quote! { 0.0f64 }),
+        // A wrapper missing its type argument is no type at all.
+        "UObjectRef" | "SubclassOf" | "SoftObjectRef" | "UStructRef" | "OwnedStruct" | "UeArray" => {
+            return None;
+        }
+        // Any other plain name is a UE enum: `T: UeEnum` is checked where it
+        // is used, so another type fails to compile there.
+        name if seg.arguments.is_none()
+            && name.chars().next().is_some_and(|c| c.is_ascii_uppercase()) =>
+        {
+            PropTypeInfo {
+                prop_type_expr: quote! { ::rusteal_runtime::ffi::RustealReifyPropType::Enum },
+                rust_type: quote! { #ty },
+                kind: PropKind::Enum { ty: ty.clone() },
+            }
+        }
         _ => return None,
     };
     Some(info)
+}
+
+/// The UE name of a property or parameter: PascalCase, except that a `b_`
+/// prefix is UE's bool `b` (`b_enabled` is `bEnabled`), the way the
+/// generated bindings name UE's bools the other way round.
+pub fn to_ue_name(s: &str) -> String {
+    match s.strip_prefix("b_") {
+        Some(rest) if !rest.is_empty() => format!("b{}", to_pascal_case(rest)),
+        _ => to_pascal_case(s),
+    }
 }
 
 /// Convert snake_case field name to PascalCase UE property name.
@@ -188,8 +272,13 @@ mod tests {
             PropKind::Scalar { .. } => "scalar",
             PropKind::Object { .. } => "object",
             PropKind::Class { .. } => "class",
+            PropKind::SoftObject { .. } => "soft object",
             PropKind::Array { .. } => "array",
             PropKind::Struct { .. } => "struct",
+            PropKind::OwnedStruct { .. } => "owned struct",
+            PropKind::Name => "name",
+            PropKind::Str => "string",
+            PropKind::Enum { .. } => "enum",
         })
     }
 
@@ -199,20 +288,40 @@ mod tests {
         assert_eq!(kind(parse_quote!(UObjectRef<InputAction>)), Some("object"));
         assert_eq!(kind(parse_quote!(rusteal_runtime::runtime::UObjectRef<InputAction>)), Some("object"));
         assert_eq!(kind(parse_quote!(SubclassOf<Pawn>)), Some("class"));
+        assert_eq!(kind(parse_quote!(SoftObjectRef<StaticMesh>)), Some("soft object"));
         assert_eq!(kind(parse_quote!(UeArray<UObjectRef<InputMappingContext>>)), Some("array"));
         assert_eq!(kind(parse_quote!(UeArray<SubclassOf<Actor>>)), Some("array"));
         assert_eq!(kind(parse_quote!(UeArray<f32>)), Some("array"));
+        assert_eq!(kind(parse_quote!(UeArray<FName>)), Some("array"));
         assert_eq!(kind(parse_quote!(UStructRef<FInputActionValue>)), Some("struct"));
+        assert_eq!(kind(parse_quote!(OwnedStruct<FVector>)), Some("owned struct"));
+        assert_eq!(kind(parse_quote!(FName)), Some("name"));
+        assert_eq!(kind(parse_quote!(String)), Some("string"));
+        assert_eq!(kind(parse_quote!(ECollisionChannel)), Some("enum"));
+        assert_eq!(kind(parse_quote!(bindings::engine::ECollisionChannel)), Some("enum"));
     }
 
     #[test]
     fn rejects_unsupported_types() {
-        assert_eq!(kind(parse_quote!(String)), None);
         assert_eq!(kind(parse_quote!(UObjectRef)), None);
+        assert_eq!(kind(parse_quote!(OwnedStruct)), None);
+        assert_eq!(kind(parse_quote!(SoftObjectRef)), None);
+        assert_eq!(kind(parse_quote!(UeArray<SoftObjectRef<StaticMesh>>)), None);
+        assert_eq!(kind(parse_quote!(usize)), None);
         assert_eq!(kind(parse_quote!(UeArray<UeArray<f32>>)), None);
         assert_eq!(kind(parse_quote!(UeArray<String>)), None);
+        assert_eq!(kind(parse_quote!(UeArray<OwnedStruct<FVector>>)), None);
         assert_eq!(kind(parse_quote!(UeArray<UStructRef<FVector>>)), None);
         assert_eq!(kind(parse_quote!(Vec<UObjectRef<InputAction>>)), None);
+    }
+
+    #[test]
+    fn ue_names() {
+        assert_eq!(to_ue_name("move_action"), "MoveAction");
+        assert_eq!(to_ue_name("b_enabled"), "bEnabled");
+        assert_eq!(to_ue_name("b_force_touch_controls"), "bForceTouchControls");
+        assert_eq!(to_ue_name("b"), "B");
+        assert_eq!(to_ue_name("bounce"), "Bounce");
     }
 
     #[test]

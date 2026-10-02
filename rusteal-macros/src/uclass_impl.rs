@@ -20,13 +20,27 @@ struct ParamInfo {
     rust_ty: Type,
 }
 
+/// What a `#[ufunction]` is to UE.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum FnKind {
+    /// `BlueprintCallable` (the default): Rust code Blueprints can call.
+    Callable,
+    /// `BlueprintPure`: callable, without execution pins.
+    Pure,
+    /// `Override`: Rust code for an engine event (`ReceiveBeginPlay`).
+    Override,
+    /// `BlueprintImplementableEvent`: an event a Blueprint child implements
+    /// and Rust calls; the method's body is left empty and becomes the call.
+    ImplementableEvent,
+}
+
 struct UFunctionInfo {
     method_ident: Ident,
     ue_name: String,
     params: Vec<ParamInfo>,
     return_type: Option<ParamInfo>,
     is_mut: bool,
-    is_override: bool,
+    kind: FnKind,
 }
 
 // ---------------------------------------------------------------------------
@@ -81,9 +95,15 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
         }
     }
 
-    // Strip #[ufunction] and #[class_defaults] attrs from the emitted impl block
+    // Strip #[ufunction] and #[class_defaults] attrs from the emitted impl
+    // block; an implementable event's empty body becomes the call into UE.
     for item in &mut clean_impl.items {
         if let ImplItem::Fn(method) = item {
+            if let Some(uf) = ufunctions.iter().find(|uf| uf.method_ident == method.sig.ident)
+                && uf.kind == FnKind::ImplementableEvent
+            {
+                method.block = implementable_event_body(uf);
+            }
             method
                 .attrs
                 .retain(|a| !a.path().is_ident("ufunction") && !a.path().is_ident("class_defaults"));
@@ -104,14 +124,24 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
         let ue_name_len = ue_name.len() as u32;
         let method_ident = &uf.method_ident;
 
-        let flags_expr = if uf.is_override {
-            quote! {
+        let flags_expr = match uf.kind {
+            FnKind::Override => quote! {
                 ::rusteal_runtime::ffi::FUNC_NATIVE | ::rusteal_runtime::ffi::FUNC_BLUEPRINT_EVENT | ::rusteal_runtime::ffi::FUNC_PUBLIC
-            }
-        } else {
-            quote! {
+            },
+            FnKind::Callable => quote! {
                 ::rusteal_runtime::ffi::FUNC_NATIVE | ::rusteal_runtime::ffi::FUNC_BLUEPRINT_CALLABLE | ::rusteal_runtime::ffi::FUNC_PUBLIC
-            }
+            },
+            FnKind::Pure => quote! {
+                ::rusteal_runtime::ffi::FUNC_NATIVE | ::rusteal_runtime::ffi::FUNC_BLUEPRINT_CALLABLE
+                    | ::rusteal_runtime::ffi::FUNC_BLUEPRINT_PURE | ::rusteal_runtime::ffi::FUNC_PUBLIC
+            },
+            // No native code: a script event, as UHT makes a
+            // BlueprintImplementableEvent; the Blueprint child's graph is
+            // its body.
+            FnKind::ImplementableEvent => quote! {
+                ::rusteal_runtime::ffi::FUNC_EVENT | ::rusteal_runtime::ffi::FUNC_BLUEPRINT_EVENT
+                    | ::rusteal_runtime::ffi::FUNC_BLUEPRINT_CALLABLE | ::rusteal_runtime::ffi::FUNC_PUBLIC
+            },
         };
 
         // Total number of offsets to cache (params + optional return)
@@ -159,7 +189,15 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
                     params, offsets[#idx] as usize,
                 )
             };
+            let is_out_ref = matches!(
+                rust_ty,
+                Type::Path(tp) if tp.path.segments.last().is_some_and(|seg| seg.ident == "OutRef")
+            );
             let read = match prop_type::map_type(rust_ty).map(|info| info.kind) {
+                // A scalar out parameter, written in place.
+                _ if is_out_ref => quote! {
+                    ::rusteal_runtime::runtime::out_ref_from_param(params, offsets[#idx] as usize)
+                },
                 // A typed reference to the struct inside the params buffer.
                 Some(prop_type::PropKind::Struct { .. }) => quote! {
                     ::rusteal_runtime::runtime::struct_ref_from_param(params, offsets[#idx] as usize)
@@ -241,9 +279,23 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
         // Register callback and add function + params
         let func_var = format_ident!("__func_{}", method_ident);
 
+        if uf.kind == FnKind::ImplementableEvent {
+            register_stmts.push(quote! {
+                let #func_var = unsafe {
+                    ::rusteal_runtime::runtime::ffi_dispatch::reify_add_function(
+                        cls,
+                        [#(#ue_name_bytes),*].as_ptr(),
+                        #ue_name_len,
+                        0u64,
+                        #flags_expr,
+                    )
+                };
+            });
+        } else {
         register_stmts.push(quote! {
             let __callback_id = {
                 let callback_id = ::rusteal_runtime::runtime::reify_registry::register_function(
+                    #struct_name::__RUSTEAL_TYPE_ID,
                     move |obj: ::rusteal_runtime::ffi::UObjectHandle, rust_data: *mut u8, params: ::rusteal_runtime::runtime::ffi_dispatch::NativePtr| {
                         static OFFSETS: std::sync::OnceLock<[u32; #total_offsets]> = std::sync::OnceLock::new();
                         let offsets = OFFSETS.get_or_init(|| unsafe {
@@ -276,10 +328,13 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
             };
         });
 
+        }
+
         // Add function params — skip for Override (C++ copies from parent function)
-        if !uf.is_override {
+        if uf.kind != FnKind::Override {
             for param in &uf.params {
-                let info = prop_type::map_type(&param.rust_ty).unwrap();
+                let reg_ty = event_struct_param(&param.rust_ty).unwrap_or_else(|| param.rust_ty.clone());
+                let info = prop_type::map_type(&reg_ty).unwrap();
                 let param_ue_name = &param.ue_name;
                 let param_ue_bytes = param_ue_name.as_bytes();
                 let param_ue_len = param_ue_name.len() as u32;
@@ -351,7 +406,10 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
                         if cdo.is_null() {
                             return;
                         }
-                        let rust_data = ::rusteal_runtime::runtime::reify_registry::get_instance_data(cdo);
+                        let rust_data = ::rusteal_runtime::runtime::reify_registry::get_instance_data(
+                            cdo,
+                            #struct_name::__RUSTEAL_TYPE_ID,
+                        );
                         #[allow(unused_mut)]
                         let mut __this = #struct_name {
                             __obj: cdo,
@@ -376,6 +434,7 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
 
         ::rusteal_runtime::__inventory::submit! {
             ::rusteal_runtime::runtime::reify_registry::ClassFunctionRegistration {
+                type_id: #struct_name::__RUSTEAL_TYPE_ID,
                 register_functions: #register_fns_name,
                 class_defaults: #class_defaults_entry,
             }
@@ -388,16 +447,55 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
 // ---------------------------------------------------------------------------
 
 fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
-    let specifiers = if let Some(attr) = method.attrs.iter().find(|a| a.path().is_ident("ufunction")) {
-        parse_ufunction_specifiers(attr)?
-    } else {
-        Vec::new()
+    let (specifiers, explicit_name) =
+        if let Some(attr) = method.attrs.iter().find(|a| a.path().is_ident("ufunction")) {
+            parse_ufunction_specifiers(attr)?
+        } else {
+            (Vec::new(), None)
+        };
+    let has = |name: &str| specifiers.iter().any(|s| s == name);
+    let kind = match (
+        has("Override"),
+        has("BlueprintPure"),
+        has("BlueprintImplementableEvent"),
+    ) {
+        (false, false, false) => FnKind::Callable,
+        (true, false, false) => FnKind::Override,
+        (false, true, false) => FnKind::Pure,
+        (false, false, true) => FnKind::ImplementableEvent,
+        _ => {
+            return Err(syn::Error::new_spanned(
+                &method.sig,
+                "a #[ufunction] is one of Override, BlueprintPure and BlueprintImplementableEvent",
+            ));
+        }
     };
-    let is_override = specifiers.iter().any(|s| s == "Override");
+    let is_override = kind == FnKind::Override;
+    let check_event_type = |ty: &Type| -> syn::Result<()> {
+        if kind == FnKind::ImplementableEvent
+            && matches!(prop_type::map_type(ty).map(|i| i.kind), Some(prop_type::PropKind::Struct { .. }))
+        {
+            return Err(syn::Error::new_spanned(
+                ty,
+                "a BlueprintImplementableEvent takes scalars, objects, classes and structs \
+                 (&OwnedStruct<T>), and returns scalars, objects and classes",
+            ));
+        }
+        Ok(())
+    };
+    if kind == FnKind::ImplementableEvent && !method.block.stmts.is_empty() {
+        return Err(syn::Error::new_spanned(
+            &method.block,
+            "a BlueprintImplementableEvent has an empty body: its Blueprint child implements it, \
+             and calling the method calls that",
+        ));
+    }
 
     let method_ident = method.sig.ident.clone();
-    // `fn r#move` is `Move`, as the template names its handler.
-    let ue_name = prop_type::to_pascal_case(&method_ident.unraw().to_string());
+    // `fn r#move` is `Move`, as the template names its handler; `name = "..."`
+    // gives a name no Rust identifier maps to (`K2_OnMovementModeChanged`).
+    let ue_name = explicit_name
+        .unwrap_or_else(|| prop_type::to_pascal_case(&method_ident.unraw().to_string()));
 
     // Check for self receiver and its mutability. syn 3 splits `&mut self`
     // (ReceiverKind::Reference) from `mut self` (Receiver::mutability).
@@ -425,14 +523,25 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
                 // Override functions get their param types from the parent UFunction
                 // (C++ copies them), so any Copy+repr(C) type is valid.
                 // Non-override functions must use types known to reify_add_function_param.
-                if !is_override && !supported_param(&ty) {
+                let event_struct = kind == FnKind::ImplementableEvent && event_struct_param(&ty).is_some();
+                if !is_override && !event_struct && !supported_param(&ty) {
                     return Err(syn::Error::new_spanned(
                         &ty,
                         "unsupported ufunction parameter type: supported are bool/i32/i64/u8/f32/f64, \
                          UObjectRef<T>, SubclassOf<T> and UStructRef<T>",
                     ));
                 }
-                let ue_name = prop_type::to_pascal_case(&name.unraw().to_string());
+                check_event_type(&ty)?;
+                if is_override
+                    && prop_type::map_type(&ty).is_some_and(|info| info.kind.property_only())
+                {
+                    return Err(syn::Error::new_spanned(
+                        &ty,
+                        "an Override takes a struct as UStructRef<T>, and a scalar out \
+                         parameter as OutRef<T>",
+                    ));
+                }
+                let ue_name = prop_type::to_ue_name(&name.unraw().to_string());
                 params.push(ParamInfo { rust_name: name, ue_name, rust_ty: ty });
             }
         }
@@ -449,6 +558,7 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
                     return Err(syn::Error::new_spanned(ty, "tuple return types not supported"));
                 }
             } else {
+                check_event_type(ty)?;
                 if !is_override && !supported_return(ty) {
                     return Err(syn::Error::new_spanned(
                         ty,
@@ -471,20 +581,26 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
         params,
         return_type,
         is_mut,
-        is_override,
+        kind,
     })
 }
 
 /// Parameters: scalars, objects, classes and structs (by reference into the
 /// call's parameters). Arrays are not supported.
 fn supported_param(ty: &Type) -> bool {
-    prop_type::map_type(ty).is_some_and(|info| !matches!(info.kind, prop_type::PropKind::Array { .. }))
+    prop_type::map_type(ty).is_some_and(|info| {
+        !matches!(info.kind, prop_type::PropKind::Array { .. } | prop_type::PropKind::Enum { .. })
+            && !info.kind.property_only()
+    })
 }
 
 /// Returns: scalars, objects and classes. A struct cannot be returned by reference.
 fn supported_return(ty: &Type) -> bool {
     prop_type::map_type(ty).is_some_and(|info| {
-        !matches!(info.kind, prop_type::PropKind::Array { .. } | prop_type::PropKind::Struct { .. })
+        !matches!(
+            info.kind,
+            prop_type::PropKind::Array { .. } | prop_type::PropKind::Struct { .. } | prop_type::PropKind::Enum { .. }
+        ) && !info.kind.property_only()
     })
 }
 
@@ -501,18 +617,106 @@ fn extra_expr(info: &prop_type::PropTypeInfo) -> TokenStream {
     }
 }
 
-fn parse_ufunction_specifiers(attr: &syn::Attribute) -> syn::Result<Vec<String>> {
+/// `OwnedStruct<T>` for a `&OwnedStruct<T>` parameter: how an implementable
+/// event takes a struct (copied into the call).
+fn event_struct_param(ty: &Type) -> Option<Type> {
+    let Type::Reference(reference) = ty else {
+        return None;
+    };
+    let inner = (*reference.elem).clone();
+    matches!(prop_type::map_type(&inner).map(|i| i.kind), Some(prop_type::PropKind::OwnedStruct { .. }))
+        .then_some(inner)
+}
+
+/// The bare specifiers of `#[ufunction(...)]` and its `name = "..."`, if any.
+fn parse_ufunction_specifiers(attr: &syn::Attribute) -> syn::Result<(Vec<String>, Option<String>)> {
     let mut specifiers = Vec::new();
-    if let Ok(nested) = attr.parse_args_with(
-        Punctuated::<Meta, Token![,]>::parse_terminated,
-    ) {
-        for meta in &nested {
-            if let Meta::Path(p) = meta
-                && let Some(ident) = p.get_ident()
-            {
-                specifiers.push(ident.to_string());
+    let mut name = None;
+    if let Meta::Path(_) = attr.meta {
+        return Ok((specifiers, name));
+    }
+    let nested = attr.parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated)?;
+    for meta in &nested {
+        match meta {
+            Meta::Path(p) => {
+                if let Some(ident) = p.get_ident() {
+                    specifiers.push(ident.to_string());
+                }
             }
+            Meta::NameValue(nv) if nv.path.is_ident("name") => match &nv.value {
+                syn::Expr::Lit(syn::ExprLit { lit: syn::Lit::Str(s), .. }) => name = Some(s.value()),
+                other => {
+                    return Err(syn::Error::new_spanned(other, "`name` is a string: name = \"K2_Foo\""));
+                }
+            },
+            other => return Err(syn::Error::new_spanned(other, "unknown #[ufunction] argument")),
         }
     }
-    Ok(specifiers)
+    Ok((specifiers, name))
+}
+
+/// The body of a BlueprintImplementableEvent method: call the event by name
+/// on the object, which runs its Blueprint child's graph (nothing when the
+/// child does not implement it). A failed call is logged; a return value is
+/// then zero.
+fn implementable_event_body(uf: &UFunctionInfo) -> syn::Block {
+    let ue_name = &uf.ue_name;
+    let sets: Vec<TokenStream> = uf
+        .params
+        .iter()
+        .map(|p| {
+            let rust_name = &p.rust_name;
+            let param = &p.ue_name;
+            if event_struct_param(&p.rust_ty).is_some() {
+                return quote! { call.set_struct(#param, #rust_name)?; };
+            }
+            let value = match prop_type::map_type(&p.rust_ty).map(|info| info.kind) {
+                Some(prop_type::PropKind::Object { .. }) => quote! { #rust_name.raw() },
+                Some(prop_type::PropKind::Class { .. }) => {
+                    quote! { ::rusteal_runtime::ffi::UObjectHandle(#rust_name.raw().0) }
+                }
+                _ => quote! { #rust_name },
+            };
+            quote! { call.set(#param, #value)?; }
+        })
+        .collect();
+    let (ret_ty, read, fallback) = match &uf.return_type {
+        None => (quote! { () }, quote! { let _ = result; Ok(()) }, quote! { () }),
+        Some(ret) => {
+            let ty = &ret.rust_ty;
+            match prop_type::map_type(ty).map(|info| info.kind) {
+                Some(prop_type::PropKind::Object { .. }) => (
+                    quote! { #ty },
+                    quote! {
+                        let h = result.get::<::rusteal_runtime::ffi::UObjectHandle>("ReturnValue")?;
+                        Ok(unsafe { <#ty>::from_raw(h) })
+                    },
+                    quote! { unsafe { <#ty>::from_raw(::rusteal_runtime::ffi::UObjectHandle::null()) } },
+                ),
+                _ => (
+                    quote! { #ty },
+                    quote! { result.get::<#ty>("ReturnValue") },
+                    quote! { <#ty as ::core::default::Default>::default() },
+                ),
+            }
+        }
+    };
+    syn::parse_quote! {{
+        let __call = || -> ::rusteal_runtime::runtime::RustealResult<#ret_ty> {
+            let mut call = ::rusteal_runtime::runtime::DynamicCall::new(&self.as_ref(), #ue_name)?;
+            #(#sets)*
+            let result = call.call()?;
+            #read
+        };
+        match __call() {
+            Ok(value) => value,
+            Err(e) => {
+                ::rusteal_runtime::runtime::ulog!(
+                    ::rusteal_runtime::runtime::LOG_WARNING,
+                    "[Rusteal] {} failed: {}", #ue_name, e
+                );
+                #fallback
+            }
+        }
+    }}
 }

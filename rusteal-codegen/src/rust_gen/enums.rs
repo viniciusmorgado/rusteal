@@ -42,9 +42,7 @@ pub fn generate_enum(e: &EnumInfo) -> String {
              #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]\n\
              pub struct {name}(pub {repr});\n"
         ));
-        out.push_str(&format!(
-            "\nimpl rusteal_core::UeEnum for {name} {{\n    type Repr = {repr};\n}}\n"
-        ));
+        out.push_str(&ue_enum_impl(name, repr, "self.0 as i64", "Some(Self(value as {repr}))"));
         generate_newtype_container_element(&mut out, name, repr);
         return out;
     }
@@ -116,14 +114,37 @@ pub fn generate_enum(e: &EnumInfo) -> String {
     out.push_str("        }\n    }\n}\n");
 
     // UeEnum impl
-    out.push_str(&format!(
-        "\nimpl rusteal_core::UeEnum for {name} {{\n    type Repr = {repr};\n}}\n"
-    ));
+    out.push_str(&ue_enum_impl(name, repr, "self as {repr} as i64", "Self::from_value(value as {repr})"));
 
     // ContainerElement impl — allows this enum to be used as TArray/TMap/TSet element
     generate_enum_container_element(&mut out, name, repr);
 
     out
+}
+
+/// `impl UeEnum`: the repr, the UEnum by name and the i64 conversions (the
+/// expressions may name `{repr}`).
+fn ue_enum_impl(name: &str, repr: &str, to_i64: &str, from_i64: &str) -> String {
+    let to_i64 = to_i64.replace("{repr}", repr);
+    let from_i64 = from_i64.replace("{repr}", repr);
+    let name_len = name.len();
+    format!(
+        "\nimpl rusteal_core::UeEnum for {name} {{\n\
+         \x20   type Repr = {repr};\n\n\
+         \x20   fn static_enum() -> rusteal_core::UClassHandle {{\n\
+         \x20       static CACHE: std::sync::OnceLock<rusteal_core::UClassHandle> = std::sync::OnceLock::new();\n\
+         \x20       *CACHE.get_or_init(|| unsafe {{\n\
+         \x20           rusteal_core::ffi_dispatch::reflection_find_enum(b\"{name}\\0\".as_ptr(), {name_len})\n\
+         \x20       }})\n\
+         \x20   }}\n\n\
+         \x20   fn to_i64(self) -> i64 {{\n\
+         \x20       {to_i64}\n\
+         \x20   }}\n\n\
+         \x20   fn from_i64(value: i64) -> Option<Self> {{\n\
+         \x20       {from_i64}\n\
+         \x20   }}\n\
+         }}\n"
+    )
 }
 
 /// Map UE underlying type string to Rust repr type.

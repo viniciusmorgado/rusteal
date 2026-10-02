@@ -14,8 +14,8 @@ workaround, and then the C++ class, can go.
 **The port is closed.** It has no gameplay C++ left: the three C++ classes are
 gone and their Blueprint children (`BP_ThirdPersonCharacter`,
 `BP_ThirdPersonGameMode`, `BP_ThirdPersonPlayerController`) have Rust parents.
-It is what `rusteal new <Name> --template third-person` creates. Open, beyond
-this template's scope: TP-GAP-06 (touch controls).
+It is what `rusteal new <Name> --template third-person` creates, touch
+controls included (TP-GAP-06).
 
 ## How to read an entry
 
@@ -64,8 +64,8 @@ Three experiments on the reference port (Rusteal 0.3.0, UE 5.8.2), all reverted:
 | **Evidence** | `rusteal-macros/src/uclass.rs` (finalize: `reify_get_cdo`, `finalize_cdo_stmts`); `RustealReifyApiImpl.cpp` `GetCdoImpl`. The player controller is spawned by `SpawnPlayActor` before the world's `BeginPlay` (`Engine/Private/UnrealEngine.cpp` `LoadMap`, `GameInstance.cpp` PIE), so it can only be chosen by a default, not at runtime. |
 | **Depends on** | TP-GAP-07 for the `CharacterMovement` and capsule values. |
 | **Done when** | The Rust classes carry the template's defaults with no Blueprint child and no `BeginPlay` configuration. |
-| **Status** | fixed, not released |
-| **Last checked** | Rusteal 0.3.0, UE 5.8.2 |
+| **Status** | fixed in 0.4.0 |
+| **Last checked** | Rusteal 0.4.0, UE 5.8.2 |
 
 ### TP-GAP-02 — `#[component(attach)]` to inherited components and sockets
 
@@ -77,8 +77,8 @@ Three experiments on the reference port (Rusteal 0.3.0, UE 5.8.2), all reverted:
 | **Evidence** | `URustealReifiedClass.cpp` (`RustealClassConstructor`, `ResyncOwnedComponents`); the Blueprint editor's tree reads the default object's `GetComponents()` (`FBlueprintEditor::GetSubobjectEditorObjectContext`, `USubobjectDataSubsystem::GatherSubobjectData`); in the port, the boom attached to `CollisionCylinder` and the camera to `CameraBoom` at `SpringEndpoint`. |
 | **Depends on** | — |
 | **Done when** | Boom and camera are attached at construction, visible in the Blueprint child's component tree. |
-| **Status** | fixed, not released |
-| **Last checked** | Rusteal 0.3.0, UE 5.8.2 |
+| **Status** | fixed in 0.4.0 |
+| **Last checked** | Rusteal 0.4.0, UE 5.8.2 |
 
 ### TP-GAP-03 — `#[uproperty]` of object, class and array types
 
@@ -90,8 +90,8 @@ Three experiments on the reference port (Rusteal 0.3.0, UE 5.8.2), all reverted:
 | **Evidence** | `rusteal-codegen/tests/manual_compiles.rs` (`uproperty_types_compile`); in the port, the four properties on the class and, in a temporary run, a `SubclassOf` and arrays of classes, objects and floats written and read back from Rust. |
 | **Depends on** | — |
 | **Done when** | The input actions, mapping contexts and widget class are assigned in the Blueprint children, as in the template. |
-| **Status** | fixed, not released |
-| **Last checked** | Rusteal 0.3.0, UE 5.8.2 |
+| **Status** | fixed in 0.4.0 |
+| **Last checked** | Rusteal 0.4.0, UE 5.8.2 |
 
 ### TP-GAP-04 — Blueprint child of a Rust class
 
@@ -103,8 +103,8 @@ Three experiments on the reference port (Rusteal 0.3.0, UE 5.8.2), all reverted:
 | **Evidence** | A headless editor (`-nullrhi -unattended`, no `-game`) loading `BP_RustCharacter` listed the class default object without `CameraBoom`/`FollowCamera` before the change and with them, correctly archetyped, after it. `AddDefaultSubobjectImpl` (`RustealReifyApiImpl.cpp`) and `RustealClassConstructor` (`URustealReifiedClass.cpp`). |
 | **Depends on** | — |
 | **Done when** | A Blueprint child of a Rust class keeps its Rust components across editor sessions. |
-| **Status** | fixed, not released |
-| **Last checked** | Rusteal 0.3.0, UE 5.8.2 |
+| **Status** | fixed in 0.4.0 |
+| **Last checked** | Rusteal 0.4.0, UE 5.8.2 |
 
 ### TP-GAP-05 — Enhanced Input
 
@@ -116,21 +116,21 @@ Three experiments on the reference port (Rusteal 0.3.0, UE 5.8.2), all reverted:
 | **Evidence** | `EnhancedInputComponent.h` (`BindActionValue` is not a `UFUNCTION`); `Pawn.cpp` (`DispatchRestart`); `rusteal-codegen/tests/manual_compiles.rs` (`enhanced_input_bindings`, `uclass_types_compile`); in the port, input injected with `InjectInputForAction` reached the Rust `Look` and `Move` handlers. |
 | **Depends on** | TP-GAP-03 (the actions and contexts are asset references), TP-GAP-08 for handlers that take an `FInputActionValue`. |
 | **Done when** | The character reacts to the template's `IA_*` actions through its `IMC_*` contexts, and the polling is gone. |
-| **Status** | fixed, not released |
-| **Last checked** | Rusteal 0.3.0, UE 5.8.2 |
+| **Status** | fixed in 0.4.0 |
+| **Last checked** | Rusteal 0.4.0, UE 5.8.2 |
 
 ### TP-GAP-06 — Touch interface check
 
 | | |
 |---|---|
 | **Template** | `ShouldUseTouchControls()` is `SVirtualJoystick::ShouldDisplayTouchInterface() \|\| bForceTouchControls` (`MyProjectPlayerController.cpp:66`). |
-| **Today** | blocked (mobile only). |
-| **Rusteal needs** | `plugin`: expose the Slate check, which has no reflection. |
-| **Evidence** | `SVirtualJoystick` is a Slate widget class, not a `UObject`. |
+| **Today** | The port's `should_use_touch_controls()` is `should_display_touch_interface() \|\| force_touch_controls`, and `ReceiveBeginPlay` spawns `MobileControlsWidgetClass` with `create_widget_of_class` and adds it to the player screen, as the C++ `BeginPlay` does. `BP_ThirdPersonPlayerController` sets the class to `UI_TouchSimple`, and `BP_ThirdPersonCharacter` implements `BPI_TouchInterface`, through which the widget calls `DoMove`, `DoLook`, `DoJumpStart` and `DoJumpEnd`. |
+| **Rusteal needs** | `plugin`: expose the Slate check, which has no reflection. Done: the input table's `should_display_touch_interface`, `rusteal_core::input::should_display_touch_interface()`; the generated bindings add `create_widget_of_class` (a `SubclassOf<T>` version of `create_widget`) and `#[uproperty]` takes no specifiers, for the C++ `UPROPERTY()` that holds the widget. |
+| **Evidence** | `SVirtualJoystick` is a Slate widget class, not a `UObject`. `RustealInputApiImpl.cpp`, `rusteal-codegen/manual/widget_ext.rs`. |
 | **Depends on** | TP-GAP-03 (the widget class property). |
 | **Done when** | The Rust player controller spawns the touch controls where the C++ one would. |
-| **Status** | open, lowest priority |
-| **Last checked** | Rusteal 0.3.0, UE 5.8.2 |
+| **Status** | fixed, not released |
+| **Last checked** | Rusteal 0.4.0, UE 5.8.2 |
 
 ### TP-GAP-07 — Private components of `ACharacter`
 
@@ -142,8 +142,8 @@ Three experiments on the reference port (Rusteal 0.3.0, UE 5.8.2), all reverted:
 | **Evidence** | The generated `Character` has `get_character_movement`, `get_mesh` and `get_capsule_component`, without setters; `rusteal-codegen/src/filter.rs` and `rust_gen/properties.rs` tests. |
 | **Depends on** | — |
 | **Done when** | The port reaches the three components through the generated accessors. |
-| **Status** | fixed, not released |
-| **Last checked** | Rusteal 0.3.0, UE 5.8.2 |
+| **Status** | fixed in 0.4.0 |
+| **Last checked** | Rusteal 0.4.0, UE 5.8.2 |
 
 ### TP-GAP-08 — `#[ufunction]` parameter and return types
 
@@ -155,8 +155,8 @@ Three experiments on the reference port (Rusteal 0.3.0, UE 5.8.2), all reverted:
 | **Evidence** | `rusteal-codegen/tests/manual_compiles.rs` (`uclass_types_compile`); the port's handlers. |
 | **Depends on** | — |
 | **Done when** | Input handlers can take the action value as the template's do. |
-| **Status** | fixed, not released |
-| **Last checked** | Rusteal 0.3.0, UE 5.8.2 |
+| **Status** | fixed in 0.4.0 |
+| **Last checked** | Rusteal 0.4.0, UE 5.8.2 |
 
 ### TP-GAP-09 — Disabled modules leave their bindings behind
 
@@ -168,8 +168,8 @@ Three experiments on the reference port (Rusteal 0.3.0, UE 5.8.2), all reverted:
 | **Evidence** | Enhanced Input toggled off and on in the port; `rusteal-codegen/tests/manual_compiles.rs` (`enhanced_input_bindings`). |
 | **Depends on** | — |
 | **Done when** | Toggling a module leaves `bindings/src/` matching `lib.rs`. |
-| **Status** | fixed, not released |
-| **Last checked** | Rusteal 0.3.0, UE 5.8.2 |
+| **Status** | fixed in 0.4.0 |
+| **Last checked** | Rusteal 0.4.0, UE 5.8.2 |
 
 ### TP-GAP-10 — Rust classes are listed under a `_BP` name
 
@@ -181,8 +181,8 @@ Three experiments on the reference port (Rusteal 0.3.0, UE 5.8.2), all reverted:
 | **Evidence** | `RustealReifyApiImpl.cpp`: the stub Blueprint is created as `ClassName + "_BP"`. |
 | **Depends on** | — |
 | **Done when** | The picker shows `RS_ThirdPersonCharacter` and `RS_ThirdPersonGameMode`; they are found by searching the class name (`ThirdPerson`), not `RS_`. |
-| **Status** | fixed, not released |
-| **Last checked** | Rusteal 0.3.0, UE 5.8.2 |
+| **Status** | fixed in 0.4.0 |
+| **Last checked** | Rusteal 0.4.0, UE 5.8.2 |
 
 ### TP-GAP-11 — Enum values UHT does not parse
 
@@ -194,8 +194,8 @@ Three experiments on the reference port (Rusteal 0.3.0, UE 5.8.2), all reverted:
 | **Evidence** | `UhtEnumParser.cs` ("-1 if not parsed"); `ue_plugin/RustealGenerator/Source/RustealExporter/RustealEnumValues.cs`. |
 | **Depends on** | — |
 | **Done when** | The enums the template uses have their engine values. |
-| **Status** | fixed, not released |
-| **Last checked** | Rusteal 0.3.0, UE 5.8.2 |
+| **Status** | fixed in 0.4.0 |
+| **Last checked** | Rusteal 0.4.0, UE 5.8.2 |
 
 ### TP-GAP-12 — Generated class references are typed as objects
 
@@ -207,8 +207,8 @@ Three experiments on the reference port (Rusteal 0.3.0, UE 5.8.2), all reverted:
 | **Evidence** | `rusteal-codegen/src/type_map.rs` (`ClassProperty`); `rusteal-codegen/tests/manual_compiles.rs` (`use_generated_classes`); a UE 5.8.2 project's bindings compile with 300 `SubclassOf` uses and no warning. |
 | **Depends on** | — |
 | **Done when** | Generated class references are `SubclassOf<T>` and the hand conversions are gone. |
-| **Status** | fixed, not released |
-| **Last checked** | Rusteal 0.3.0, UE 5.8.2 |
+| **Status** | fixed in 0.4.0 |
+| **Last checked** | Rusteal 0.4.0, UE 5.8.2 |
 
 ## Order
 

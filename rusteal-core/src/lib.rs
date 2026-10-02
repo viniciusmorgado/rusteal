@@ -28,13 +28,15 @@ pub mod weak_ptr;
 pub mod widget;
 pub mod input;
 pub mod world;
+pub mod soft_ref;
 
 // Re-export the primary public API surface.
 pub use api::{api, init_api};
 pub use error::{check_ffi, check_ffi_ctx, ffi_infallible, ffi_infallible_ctx, RustealError, RustealResult};
-pub use traits::{UeClass, UeStruct, UeEnum, UeHandle, ValidHandle, HasParent};
+pub use traits::{UeClass, UeStruct, UeEnum, UeHandle, ValidHandle, HasParent, Inherits};
 pub use object_ref::{Checked, ObjectPointer, UObjectRef};
 pub use subclass_of::SubclassOf;
+pub use soft_ref::SoftObjectRef;
 pub use struct_ref::UStructRef;
 pub use pinned::Pinned;
 pub use dynamic_call::{DynamicCall, DynamicCallResult};
@@ -45,7 +47,7 @@ pub use delegate_registry::DelegateBinding;
 
 // Phase 10 re-exports.
 pub use fname::FName;
-pub use struct_ref::struct_ref_from_param;
+pub use struct_ref::{OutRef, out_ref_from_param, struct_ref_from_param};
 pub use weak_ptr::TWeakObjectPtr;
 pub use ue_math::{
     Rotator, Transform, LinearColor, Color,

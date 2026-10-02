@@ -144,6 +144,312 @@
     },
     {
       "cpp_form": 2,
+      "cpp_name": "EWidgetPixelSnapping",
+      "name": "EWidgetPixelSnapping",
+      "package": "SlateCore",
+      "pairs": [
+        [
+          "Inherit",
+          0
+        ],
+        [
+          "Disabled",
+          1
+        ],
+        [
+          "SnapToPixel",
+          2
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 2,
+      "cpp_name": "EUINavigationRule",
+      "name": "EUINavigationRule",
+      "package": "SlateCore",
+      "pairs": [
+        [
+          "Escape",
+          0
+        ],
+        [
+          "Explicit",
+          1
+        ],
+        [
+          "Wrap",
+          2
+        ],
+        [
+          "Stop",
+          3
+        ],
+        [
+          "Custom",
+          4
+        ],
+        [
+          "CustomBoundary",
+          5
+        ],
+        [
+          "Invalid",
+          6
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 2,
+      "cpp_name": "EFlowDirectionPreference",
+      "name": "EFlowDirectionPreference",
+      "package": "SlateCore",
+      "pairs": [
+        [
+          "Inherit",
+          0
+        ],
+        [
+          "Culture",
+          1
+        ],
+        [
+          "LeftToRight",
+          2
+        ],
+        [
+          "RightToLeft",
+          3
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 2,
+      "cpp_name": "EWidgetClipping",
+      "name": "EWidgetClipping",
+      "package": "SlateCore",
+      "pairs": [
+        [
+          "Inherit",
+          0
+        ],
+        [
+          "ClipToBounds",
+          1
+        ],
+        [
+          "ClipToBoundsWithoutIntersecting",
+          2
+        ],
+        [
+          "ClipToBoundsAlways",
+          3
+        ],
+        [
+          "OnDemand",
+          4
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 2,
+      "cpp_name": "EUINavigation",
+      "name": "EUINavigation",
+      "package": "SlateCore",
+      "pairs": [
+        [
+          "Left",
+          0
+        ],
+        [
+          "Right",
+          1
+        ],
+        [
+          "Up",
+          2
+        ],
+        [
+          "Down",
+          3
+        ],
+        [
+          "Next",
+          4
+        ],
+        [
+          "Previous",
+          5
+        ],
+        [
+          "Num",
+          6
+        ],
+        [
+          "Invalid",
+          7
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 1,
+      "cpp_name": "EMouseCursor",
+      "name": "EMouseCursor",
+      "package": "CoreUObject",
+      "pairs": [
+        [
+          "None",
+          0
+        ],
+        [
+          "Default",
+          1
+        ],
+        [
+          "TextEditBeam",
+          2
+        ],
+        [
+          "ResizeLeftRight",
+          3
+        ],
+        [
+          "ResizeUpDown",
+          4
+        ],
+        [
+          "ResizeSouthEast",
+          5
+        ],
+        [
+          "ResizeSouthWest",
+          6
+        ],
+        [
+          "CardinalCross",
+          7
+        ],
+        [
+          "Crosshairs",
+          8
+        ],
+        [
+          "Hand",
+          9
+        ],
+        [
+          "GrabHand",
+          10
+        ],
+        [
+          "GrabHandClosed",
+          11
+        ],
+        [
+          "SlashedCircle",
+          12
+        ],
+        [
+          "EyeDropper",
+          13
+        ],
+        [
+          "Custom",
+          14
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 2,
+      "cpp_name": "EWidgetTickFrequency",
+      "name": "EWidgetTickFrequency",
+      "package": "UMG",
+      "pairs": [
+        [
+          "Never",
+          0
+        ],
+        [
+          "Auto",
+          1
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 2,
+      "cpp_name": "EWidgetAnimationEvent",
+      "name": "EWidgetAnimationEvent",
+      "package": "UMG",
+      "pairs": [
+        [
+          "Started",
+          0
+        ],
+        [
+          "Finished",
+          1
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 1,
+      "cpp_name": "EUMGSequencePlayMode",
+      "name": "EUMGSequencePlayMode",
+      "package": "UMG",
+      "pairs": [
+        [
+          "Forward",
+          0
+        ],
+        [
+          "Reverse",
+          1
+        ],
+        [
+          "PingPong",
+          2
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 2,
+      "cpp_name": "ESlateVisibility",
+      "name": "ESlateVisibility",
+      "package": "UMG",
+      "pairs": [
+        [
+          "Visible",
+          0
+        ],
+        [
+          "Collapsed",
+          1
+        ],
+        [
+          "Hidden",
+          2
+        ],
+        [
+          "HitTestInvisible",
+          3
+        ],
+        [
+          "SelfHitTestInvisible",
+          4
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 2,
       "cpp_name": "EAttachmentRule",
       "name": "EAttachmentRule",
       "package": "Engine",
@@ -1254,6 +1560,39 @@
     },
     {
       "cpp_form": 0,
+      "cpp_name": "EInputEvent",
+      "name": "EInputEvent",
+      "package": "Engine",
+      "pairs": [
+        [
+          "IE_Pressed",
+          0
+        ],
+        [
+          "IE_Released",
+          1
+        ],
+        [
+          "IE_Repeat",
+          2
+        ],
+        [
+          "IE_DoubleClick",
+          3
+        ],
+        [
+          "IE_Axis",
+          4
+        ],
+        [
+          "IE_MAX",
+          5
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 0,
       "cpp_name": "ETickingGroup",
       "name": "ETickingGroup",
       "package": "Engine",
@@ -1478,6 +1817,31 @@
     },
     {
       "cpp_form": 2,
+      "cpp_name": "EActorUpdateOverlapsMethod",
+      "name": "EActorUpdateOverlapsMethod",
+      "package": "Engine",
+      "pairs": [
+        [
+          "UseConfigDefault",
+          0
+        ],
+        [
+          "AlwaysUpdate",
+          1
+        ],
+        [
+          "OnlyUpdateMovable",
+          2
+        ],
+        [
+          "NeverUpdate",
+          3
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 2,
       "cpp_name": "EComponentCreationMethod",
       "name": "EComponentCreationMethod",
       "package": "Engine",
@@ -1535,70 +1899,39 @@
       "underlying_type": "uint8"
     },
     {
-      "cpp_form": 1,
-      "cpp_name": "EMouseCursor",
-      "name": "EMouseCursor",
-      "package": "CoreUObject",
+      "cpp_form": 2,
+      "cpp_name": "EMappingContextInputModeFilterOptions",
+      "name": "EMappingContextInputModeFilterOptions",
+      "package": "EnhancedInput",
       "pairs": [
         [
-          "None",
+          "UseProjectDefaultQuery",
           0
         ],
         [
-          "Default",
+          "UseCustomQuery",
           1
         ],
         [
-          "TextEditBeam",
+          "DoNotFilter",
           2
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 2,
+      "cpp_name": "EMappingContextRegistrationTrackingMode",
+      "name": "EMappingContextRegistrationTrackingMode",
+      "package": "EnhancedInput",
+      "pairs": [
+        [
+          "Untracked",
+          0
         ],
         [
-          "ResizeLeftRight",
-          3
-        ],
-        [
-          "ResizeUpDown",
-          4
-        ],
-        [
-          "ResizeSouthEast",
-          5
-        ],
-        [
-          "ResizeSouthWest",
-          6
-        ],
-        [
-          "CardinalCross",
-          7
-        ],
-        [
-          "Crosshairs",
-          8
-        ],
-        [
-          "Hand",
-          9
-        ],
-        [
-          "GrabHand",
-          10
-        ],
-        [
-          "GrabHandClosed",
-          11
-        ],
-        [
-          "SlashedCircle",
-          12
-        ],
-        [
-          "EyeDropper",
-          13
-        ],
-        [
-          "Custom",
-          14
+          "CountRegistrations",
+          1
         ]
       ],
       "underlying_type": "uint8"
@@ -1620,6 +1953,39 @@
         [
           "RebuildWithFlush",
           2
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 2,
+      "cpp_name": "ETriggerEvent",
+      "name": "ETriggerEvent",
+      "package": "EnhancedInput",
+      "pairs": [
+        [
+          "None",
+          0
+        ],
+        [
+          "Triggered",
+          1
+        ],
+        [
+          "Started",
+          2
+        ],
+        [
+          "Ongoing",
+          4
+        ],
+        [
+          "Canceled",
+          8
+        ],
+        [
+          "Completed",
+          16
         ]
       ],
       "underlying_type": "uint8"
@@ -1692,44 +2058,6 @@
     },
     {
       "cpp_form": 2,
-      "cpp_name": "EMappingContextInputModeFilterOptions",
-      "name": "EMappingContextInputModeFilterOptions",
-      "package": "EnhancedInput",
-      "pairs": [
-        [
-          "UseProjectDefaultQuery",
-          0
-        ],
-        [
-          "UseCustomQuery",
-          1
-        ],
-        [
-          "DoNotFilter",
-          2
-        ]
-      ],
-      "underlying_type": "uint8"
-    },
-    {
-      "cpp_form": 2,
-      "cpp_name": "EMappingContextRegistrationTrackingMode",
-      "name": "EMappingContextRegistrationTrackingMode",
-      "package": "EnhancedInput",
-      "pairs": [
-        [
-          "Untracked",
-          0
-        ],
-        [
-          "CountRegistrations",
-          1
-        ]
-      ],
-      "underlying_type": "uint8"
-    },
-    {
-      "cpp_form": 2,
       "cpp_name": "EInputActionValueType",
       "name": "EInputActionValueType",
       "package": "EnhancedInput",
@@ -1755,6 +2083,27 @@
     },
     {
       "cpp_form": 2,
+      "cpp_name": "EPlayerMappableKeySettingBehaviors",
+      "name": "EPlayerMappableKeySettingBehaviors",
+      "package": "EnhancedInput",
+      "pairs": [
+        [
+          "InheritSettingsFromAction",
+          0
+        ],
+        [
+          "OverrideSettings",
+          1
+        ],
+        [
+          "IgnoreSettings",
+          2
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 2,
       "cpp_name": "EInputActionAccumulationBehavior",
       "name": "EInputActionAccumulationBehavior",
       "package": "EnhancedInput",
@@ -1766,39 +2115,6 @@
         [
           "Cumulative",
           1
-        ]
-      ],
-      "underlying_type": "uint8"
-    },
-    {
-      "cpp_form": 2,
-      "cpp_name": "ETriggerEvent",
-      "name": "ETriggerEvent",
-      "package": "EnhancedInput",
-      "pairs": [
-        [
-          "None",
-          0
-        ],
-        [
-          "Triggered",
-          1
-        ],
-        [
-          "Started",
-          2
-        ],
-        [
-          "Ongoing",
-          4
-        ],
-        [
-          "Canceled",
-          8
-        ],
-        [
-          "Completed",
-          16
         ]
       ],
       "underlying_type": "uint8"

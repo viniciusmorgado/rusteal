@@ -1,0 +1,37 @@
+# `rusteal new <Name> --template first-person --variant shooter`: UE's First
+# Person template and its Shooter variant, their gameplay classes in Rust.
+description = "Shooter: an arena shooter with weapon pickups, projectiles, team scores and StateTree NPCs that sense, snipe and shoot."
+
+# The engine template the project starts from, copied with the engine's own
+# recipe (its Config/TemplateDefs.ini), as the editor's New Project dialog does.
+engine_template = "TP_FirstPerson"
+
+# Paths of the engine template to leave out, relative to it; %TEMPLATENAME%
+# stands for its name, and a folder leaves out everything under it. The C++
+# gameplay classes are replaced by the Rust crate, their Blueprint children by
+# this variant's (same names, Rust parents; the weapons, projectiles, pickups
+# and their data table, the NPC's StateTrees and EnvQuery, the animation
+# Blueprints, the UI and the level's actors too, which name Rust classes), and
+# the other variant is left to its own `--variant`.
+exclude = [
+    "Source/%TEMPLATENAME%/%TEMPLATENAME%CameraManager.cpp",
+    "Source/%TEMPLATENAME%/%TEMPLATENAME%CameraManager.h",
+    "Source/%TEMPLATENAME%/%TEMPLATENAME%Character.cpp",
+    "Source/%TEMPLATENAME%/%TEMPLATENAME%Character.h",
+    "Source/%TEMPLATENAME%/%TEMPLATENAME%GameMode.cpp",
+    "Source/%TEMPLATENAME%/%TEMPLATENAME%GameMode.h",
+    "Source/%TEMPLATENAME%/%TEMPLATENAME%PlayerController.cpp",
+    "Source/%TEMPLATENAME%/%TEMPLATENAME%PlayerController.h",
+    "Source/%TEMPLATENAME%/Variant_Horror",
+    "Source/%TEMPLATENAME%/Variant_Shooter",
+    "Content/FirstPerson/Blueprints",
+    "Content/Variant_Horror",
+    "Content/__ExternalActors__/Variant_Horror",
+    "Content/__ExternalObjects__/Variant_Horror",
+]
+
+# The level the project opens and plays.
+default_map = "/Game/Variant_Shooter/Lvl_Shooter"
+
+# Printed when the project is ready (Tera, same context as the files).
+next_step = "open {{ project }}.uproject and press Play: WASD / left stick move, mouse / right stick look, Space / A jump, left click / RT shoot, Left Shift / Y switch weapons"

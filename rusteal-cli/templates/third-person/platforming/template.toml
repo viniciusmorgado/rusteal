@@ -1,0 +1,39 @@
+# `rusteal new <Name> --template third-person --variant platforming`: UE's
+# Third Person template and its Platforming variant, their gameplay classes in
+# Rust.
+description = "Platforming: double jump, wall jump, coyote time, dash, local multiplayer."
+
+# The engine template the project starts from, copied with the engine's own
+# recipe (its Config/TemplateDefs.ini), as the editor's New Project dialog does.
+engine_template = "TP_ThirdPerson"
+
+# Paths of the engine template to leave out, relative to it; %TEMPLATENAME%
+# stands for its name, and a folder leaves out everything under it. The C++
+# gameplay classes are replaced by the Rust crate, their Blueprint children by
+# this variant's (same names, Rust parents; the Platforming animation
+# Blueprint and dash montage too, which name Rust classes), and the other
+# variants are left to their own `--variant`s.
+exclude = [
+    "Source/%TEMPLATENAME%/%TEMPLATENAME%Character.cpp",
+    "Source/%TEMPLATENAME%/%TEMPLATENAME%Character.h",
+    "Source/%TEMPLATENAME%/%TEMPLATENAME%GameMode.cpp",
+    "Source/%TEMPLATENAME%/%TEMPLATENAME%GameMode.h",
+    "Source/%TEMPLATENAME%/%TEMPLATENAME%PlayerController.cpp",
+    "Source/%TEMPLATENAME%/%TEMPLATENAME%PlayerController.h",
+    "Source/%TEMPLATENAME%/Variant_Combat",
+    "Source/%TEMPLATENAME%/Variant_Platforming",
+    "Source/%TEMPLATENAME%/Variant_SideScrolling",
+    "Content/ThirdPerson/Blueprints",
+    "Content/Variant_Combat",
+    "Content/Variant_SideScrolling",
+    "Content/__ExternalActors__/Variant_Combat",
+    "Content/__ExternalActors__/Variant_SideScrolling",
+    "Content/__ExternalObjects__/Variant_Combat",
+    "Content/__ExternalObjects__/Variant_SideScrolling",
+]
+
+# The level the project opens and plays.
+default_map = "/Game/Variant_Platforming/Lvl_Platforming"
+
+# Printed when the project is ready (Tera, same context as the files).
+next_step = "open {{ project }}.uproject and press Play: WASD / left stick move, mouse / right stick look, Space / A jump (again in the air: double jump, against a wall: wall jump), Shift / B dash"

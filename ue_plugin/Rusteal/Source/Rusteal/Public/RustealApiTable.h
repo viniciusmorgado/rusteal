@@ -173,6 +173,16 @@ struct FRustealPropertyApi {
                                        RustealFPropertyHandle prop,
                                        uint32 index, const uint8 *in_buf,
                                        uint32 buf_size);
+
+  // Soft object reference (TSoftObjectPtr), as its path: get writes it as
+  // get_string writes a string, empty for none.
+  ERustealErrorCode (*get_soft_object_path)(RustealUObjectHandle obj,
+                                            RustealFPropertyHandle prop,
+                                            uint8 *buf, uint32 buf_len,
+                                            uint32 *out_len);
+  ERustealErrorCode (*set_soft_object_path)(RustealUObjectHandle obj,
+                                            RustealFPropertyHandle prop,
+                                            const uint8 *buf, uint32 len);
 };
 
 // ---------------------------------------------------------------------------
@@ -230,6 +240,10 @@ struct FRustealReflectionApi {
   // UScriptStruct's copy semantics (deep for strings, arrays and the like).
   ERustealErrorCode (*copy_struct)(RustealUStructHandle ustruct, uint8 *dest,
                                    const uint8 *src);
+
+  // Find a UEnum by name (ECollisionChannel); typed like a class handle, as
+  // FRustealReifyPropExtra::enum_handle.
+  RustealUClassHandle (*find_enum)(const uint8 *name, uint32 name_len);
 };
 
 // ---------------------------------------------------------------------------
@@ -342,6 +356,13 @@ struct FRustealDelegateApi {
   ERustealErrorCode (*read_param)(RustealFPropertyHandle prop, void *params_buf,
                                   uint32 offset, uint8 *out_buf,
                                   uint32 out_buf_size, uint32 *out_written);
+
+  // Bind target's UFunction named name to the delegate, as C++'s AddDynamic
+  // (AddUnique on a multicast delegate) or BindDynamic does.
+  ERustealErrorCode (*add_function)(RustealUObjectHandle obj,
+                                    RustealFPropertyHandle prop,
+                                    RustealUObjectHandle target,
+                                    const uint8 *name, uint32 name_len);
 };
 // ---------------------------------------------------------------------------
 // Reify API types
@@ -369,6 +390,8 @@ enum class ERustealReifyPropType : uint32 {
   // TArray of the type in FRustealReifyPropExtra::inner_prop_type, whose
   // class/struct/enum fields describe the element.
   Array = 18,
+  // TSoftObjectPtr of the class in FRustealReifyPropExtra::class_handle.
+  SoftObject = 19,
 };
 
 struct FRustealReifyPropExtra {
@@ -409,9 +432,11 @@ struct FRustealReifyApi {
 
   // attach_parent: a component the class declares, or an inherited one by its
   // property or subobject name (RootComponent, Mesh); attach_socket: the
-  // socket on it. Both empty for none.
+  // socket on it. Both empty for none. property: the property referencing the
+  // component, empty for the subobject's name.
   ERustealErrorCode (*add_default_subobject)(
       RustealUClassHandle cls, const uint8 *name, uint32 name_len,
+      const uint8 *property, uint32 property_len,
       RustealUClassHandle component_class, uint32 flags,
       const uint8 *attach_parent, uint32 attach_len, const uint8 *attach_socket,
       uint32 socket_len);
@@ -419,6 +444,20 @@ struct FRustealReifyApi {
   RustealUObjectHandle (*find_default_subobject)(RustealUObjectHandle owner,
                                                  const uint8 *name,
                                                  uint32 name_len);
+
+  // A property's metadata entry (Category, ClampMin); editor builds only.
+  ERustealErrorCode (*set_property_metadata)(RustealFPropertyHandle prop,
+                                             const uint8 *key, uint32 key_len,
+                                             const uint8 *value,
+                                             uint32 value_len);
+
+  // A struct in /Script/Rusteal (#[ustruct]), or the one a previous load
+  // created. add_property takes its handle as a class handle.
+  RustealUStructHandle (*create_struct)(const uint8 *name, uint32 name_len);
+
+  // Link a struct once its properties are added (the Rust structs its
+  // properties hold first).
+  ERustealErrorCode (*finalize_struct)(RustealUStructHandle strukt);
 };
 struct FRustealWidgetApi {
   // Create a UMG widget. owning_object should be a PlayerController, World, or
@@ -435,7 +474,7 @@ struct FRustealWidgetApi {
 };
 
 // ---------------------------------------------------------------------------
-// FRustealInputApi — Enhanced Input bindings
+// FRustealInputApi — Enhanced Input bindings and the touch interface check
 // ---------------------------------------------------------------------------
 
 struct FRustealInputApi {
@@ -447,6 +486,10 @@ struct FRustealInputApi {
                                    uint8 trigger_event,
                                    const uint8 *function_name,
                                    uint32 function_name_len);
+
+  // SVirtualJoystick::ShouldDisplayTouchInterface(): whether the platform
+  // shows touch controls (Slate, not in reflection).
+  bool (*should_display_touch_interface)();
 };
 
 struct FRustealWorldApi {
@@ -464,7 +507,8 @@ struct FRustealWorldApi {
                                       const uint8 *path_utf8, uint32 path_len);
   RustealUObjectHandle (*load_object)(RustealUClassHandle cls,
                                       const uint8 *path_utf8, uint32 path_len);
-  RustealUObjectHandle (*get_world)(RustealUObjectHandle actor);
+  // UObject::GetWorld(): null if the object is invalid or in no world.
+  RustealUObjectHandle (*get_world)(RustealUObjectHandle object);
 
   // Create a new UObject. outer can be null (falls back to transient package).
   RustealUObjectHandle (*new_object)(RustealUObjectHandle outer,
@@ -484,6 +528,16 @@ struct FRustealWorldApi {
   ERustealErrorCode (*finish_spawning)(RustealUObjectHandle actor,
                                        const uint8 *transform_buf,
                                        uint32 transform_size);
+
+  // UEngineTypes::ConvertToObjectType: the EObjectTypeQuery of an
+  // ECollisionChannel under the project's collision settings.
+  uint8 (*channel_to_object_type)(uint8 channel);
+
+  // The row RowName of the data table Table, a pointer into its memory: null
+  // when there is no such row or its rows are not RowStruct (or derived).
+  uint8 *(*find_data_table_row)(RustealUObjectHandle table,
+                                RustealFNameHandle row_name,
+                                RustealUStructHandle row_struct);
 };
 
 // ---------------------------------------------------------------------------

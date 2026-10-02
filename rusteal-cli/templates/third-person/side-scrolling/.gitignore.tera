@@ -1,0 +1,31 @@
+# Unreal Engine build output and caches
+Binaries/
+Build/
+DerivedDataCache/
+Intermediate/
+Saved/
+Plugins/*/Binaries/
+Plugins/*/Intermediate/
+Plugins/*/Source/*/obj/
+
+# Machine-specific engine path, written by `rusteal setup`
+*.ubtplugin.csproj.props
+
+# Rust build output
+Rust/target/
+
+# Generated project files
+*.sln
+*.suo
+*.opensdf
+*.sdf
+*.VC.db
+*.VC.opendb
+*.code-workspace
+*.xcodeproj
+*.xcworkspace
+Makefile
+CMakeLists.txt
+.vs/
+.vscode/
+.idea/

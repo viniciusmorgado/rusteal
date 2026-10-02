@@ -12,6 +12,22 @@ UClass *URustealReifiedClass::GetAuthoritativeClass() {
   return this;
 }
 
+void URustealReifiedClass::InitPropertiesFromCustomList(
+    uint8 *DataPtr, const uint8 *DefaultDataPtr) {
+  if (!bCustomPropertyListCurrent.load()) {
+    FScopeLock Lock(&CustomPropertyListLock);
+    if (!bCustomPropertyListCurrent.load()) {
+      UpdateCustomPropertyListForPostConstruction();
+      bCustomPropertyListCurrent.store(true);
+    }
+  }
+  Super::InitPropertiesFromCustomList(DataPtr, DefaultDataPtr);
+}
+
+void URustealReifiedClass::InvalidateCustomPropertyList() {
+  bCustomPropertyListCurrent.store(false);
+}
+
 // An inherited scene component of Obj by name: the component a property of
 // that name points to (RootComponent, Mesh), or a default subobject of that
 // name (CollisionCylinder).
@@ -28,16 +44,12 @@ static USceneComponent *FindInheritedComponent(UObject *Obj, FName Name) {
 
 void URustealReifiedClass::RustealClassConstructor(
     const FObjectInitializer &ObjectInitializer) {
-  // 1. Find the URustealReifiedClass in the hierarchy. The immediate class may
-  // be
-  //    a Blueprint child (e.g. SKEL_new_MacroTestActor_C), so walk up.
-  URustealReifiedClass *ReifiedClass = nullptr;
-  for (UClass *Cls = ObjectInitializer.GetClass(); Cls;
-       Cls = Cls->GetSuperClass()) {
-    ReifiedClass = Cast<URustealReifiedClass>(Cls);
-    if (ReifiedClass)
-      break;
-  }
+  // 1. Find the Rust classes in the hierarchy. The immediate class may be a
+  //    Blueprint child (e.g. SKEL_new_MacroTestActor_C), and a Rust class
+  //    may have Rust parents: each adds its components and its Rust data.
+  const TArray<URustealReifiedClass *> Chain =
+      ReifiedChain(ObjectInitializer.GetClass());
+  URustealReifiedClass *ReifiedClass = Chain.Num() > 0 ? Chain.Last() : nullptr;
   if (!ReifiedClass) {
     UE_LOG(
         LogRusteal, Error,
@@ -51,12 +63,12 @@ void URustealReifiedClass::RustealClassConstructor(
     NativeSuper->ClassConstructor(ObjectInitializer);
   }
 
-  // 3. Create default subobjects from Rust-registered definitions.
+  // 3. Create default subobjects from Rust-registered definitions, a Rust
+  //    parent's first.
   UObject *Obj = ObjectInitializer.GetObj();
-  if (ReifiedClass->ComponentDefs.Num() > 0) {
-    TMap<FName, USceneComponent *> CreatedComponents;
-
-    for (const FRustealComponentDef &Def : ReifiedClass->ComponentDefs) {
+  TMap<FName, USceneComponent *> CreatedComponents;
+  for (URustealReifiedClass *DefClass : Chain) {
+    for (const FRustealComponentDef &Def : DefClass->ComponentDefs) {
       UObject *Sub = ObjectInitializer.CreateDefaultSubobject(
           Obj, Def.SubobjectName, Def.ComponentClass, Def.ComponentClass,
           /*bIsRequired=*/true, Def.bIsTransient);
@@ -66,13 +78,14 @@ void URustealReifiedClass::RustealClassConstructor(
 
       // Point the component's property at it (see AddDefaultSubobjectImpl).
       if (FObjectProperty *CompProp =
-              FindFProperty<FObjectProperty>(ReifiedClass, Def.SubobjectName)) {
+              FindFProperty<FObjectProperty>(DefClass, Def.PropertyName)) {
         CompProp->SetObjectPropertyValue_InContainer(Obj, Sub);
       }
 
+      // Later components attach to it by its property name (the Rust field).
       USceneComponent *SceneComp = Cast<USceneComponent>(Sub);
       if (SceneComp) {
-        CreatedComponents.Add(Def.SubobjectName, SceneComp);
+        CreatedComponents.Add(Def.PropertyName, SceneComp);
       }
 
       if (Def.bIsRoot) {
@@ -90,20 +103,34 @@ void URustealReifiedClass::RustealClassConstructor(
         } else if (Obj->HasAnyFlags(RF_ClassDefaultObject)) {
           UE_LOG(LogRusteal, Warning,
                  TEXT("[Rusteal] %s: no component '%s' to attach '%s' to"),
-                 *ReifiedClass->GetName(), *Def.AttachParentName.ToString(),
+                 *DefClass->GetName(), *Def.AttachParentName.ToString(),
                  *Def.SubobjectName.ToString());
         }
       }
     }
   }
 
-  // 4. Notify Rust to construct its instance data.
+  // 4. Notify Rust to construct its instance data, one per Rust class.
   const FRustealRustCallbacks *Callbacks = GetRustealRustCallbacks();
   if (Callbacks && Callbacks->construct_rust_instance) {
     bool bIsCDO = Obj->HasAnyFlags(RF_ClassDefaultObject);
-    Callbacks->construct_rust_instance(RustealUObjectHandle{Obj},
-                                       ReifiedClass->RustTypeId, bIsCDO);
+    for (URustealReifiedClass *DataClass : Chain) {
+      Callbacks->construct_rust_instance(RustealUObjectHandle{Obj},
+                                         DataClass->RustTypeId, bIsCDO);
+    }
   }
+}
+
+TArray<URustealReifiedClass *>
+URustealReifiedClass::ReifiedChain(const UClass *Class) {
+  TArray<URustealReifiedClass *> Chain;
+  for (const UClass *Cls = Class; Cls; Cls = Cls->GetSuperClass()) {
+    if (const URustealReifiedClass *Reified =
+            Cast<URustealReifiedClass>(Cls)) {
+      Chain.Insert(const_cast<URustealReifiedClass *>(Reified), 0);
+    }
+  }
+  return Chain;
 }
 
 // ---------------------------------------------------------------------------

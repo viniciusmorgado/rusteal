@@ -22,7 +22,7 @@ use rusteal_codegen::config::find_project_root;
 use project_version::Scope;
 
 #[derive(Parser)]
-#[command(name = "rusteal", about = "Rusteal CLI — Rust for Unreal Engine")]
+#[command(name = "rusteal", version, about = "Rusteal CLI — Rust for Unreal Engine")]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -37,10 +37,14 @@ enum Commands {
         /// Where to create it (default: the current directory).
         #[arg(long, default_value = ".")]
         dir: PathBuf,
-        /// What the project starts as: `blank` (an actor in Rust) or
-        /// `third-person` (the Third Person template, in Rust).
+        /// What the project starts as: `blank` (an actor in Rust) or one of
+        /// the engine's game templates in Rust (`third-person`,
+        /// `first-person`, `top-down`); an unknown name lists them all.
         #[arg(long, default_value = "blank")]
         template: String,
+        /// The template's variant (default: `base`, the template itself).
+        #[arg(long)]
+        variant: Option<String>,
         /// Depend on a local Rusteal checkout instead of the published crates.
         #[arg(long)]
         runtime_path: Option<PathBuf>,
@@ -88,12 +92,13 @@ fn main() {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::New { name, dir, template, runtime_path, no_build } => {
+        Commands::New { name, dir, template, variant, runtime_path, no_build } => {
             let engine = global_config::engine_path();
             new_cmd::run_new(&new_cmd::NewOptions {
                 name: &name,
                 parent: &dir,
                 template: &template,
+                variant: variant.as_deref(),
                 engine: &engine,
                 runtime_path: runtime_path.as_deref(),
                 build: !no_build,
@@ -150,4 +155,21 @@ fn project_root(given: Option<&Path>) -> PathBuf {
         );
         std::process::exit(1);
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use clap::CommandFactory;
+
+    use super::Cli;
+
+    #[test]
+    fn cli_definition_is_valid() {
+        Cli::command().debug_assert();
+    }
+
+    #[test]
+    fn version_is_the_crate_version() {
+        assert_eq!(Cli::command().get_version(), Some(env!("CARGO_PKG_VERSION")));
+    }
 }

@@ -1,0 +1,14 @@
+// The game module UBT builds the project with. The gameplay is in Rust, in
+// Rust/; the engine template's C++ classes and their include paths are gone.
+
+using UnrealBuildTool;
+
+public class {{ project }} : ModuleRules
+{
+	public {{ project }}(ReadOnlyTargetRules Target) : base(Target)
+	{
+		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
+
+		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput" });
+	}
+}

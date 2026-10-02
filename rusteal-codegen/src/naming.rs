@@ -54,10 +54,12 @@ pub fn is_reserved(name: &str) -> bool {
 
 /// Escape Rust reserved words by prepending `r#`.
 pub fn escape_reserved(name: &str) -> String {
-    if is_reserved(name) {
-        format!("r#{name}")
-    } else {
-        name.to_string()
+    match name {
+        // Keywords a raw identifier cannot be: an underscore keeps them apart
+        // (`EBTFlowAbortMode::Self` is `Self_`).
+        "Self" | "self" | "super" | "crate" => format!("{name}_"),
+        _ if is_reserved(name) => format!("r#{name}"),
+        _ => name.to_string(),
     }
 }
 
@@ -118,6 +120,8 @@ mod tests {
 
     #[test]
     fn test_escape_reserved() {
+        assert_eq!(escape_reserved("Self"), "Self_");
+        assert_eq!(escape_reserved("crate"), "crate_");
         assert_eq!(escape_reserved("type"), "r#type");
         assert_eq!(escape_reserved("r#move"), "r#move"); // already escaped? no — "r#move" is not a keyword
         assert_eq!(escape_reserved("move"), "r#move");

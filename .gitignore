@@ -23,6 +23,8 @@ ue_plugin/Rusteal/Source/Rusteal/Generated/
 *.sln
 !/rusteal.sln
 
+# Local editor and tool settings (not committed)
+
 # IDE
 .vscode/
 .idea/

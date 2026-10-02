@@ -1,14 +1,15 @@
 // The files `rusteal setup` and `rusteal new` write into a project, embedded
 // at build time from `templates/`.
 //
-// `templates/<name>/` is what `rusteal new --template <name>` writes on top of
-// the engine template its `template.toml` names. Each one is complete on its
-// own: a new template starts as a copy of the closest one, changed, not as a
-// layer over it. A template mirrors the project's root: `*.tera` files are
-// rendered with Tera (the extension dropped) and everything else is copied as
-// is, and `{{ variable }}` works in folder and file names too
-// (`Rust/{{crate_name}}/src/lib.rs.tera`). Every template gets the same
-// context, so adding one is adding a directory.
+// `templates/<template>/<variant>/` is what `rusteal new --template <template>
+// --variant <variant>` writes on top of the engine template its
+// `template.toml` names; `base` is the variant without `--variant`. Each one
+// is complete on its own: a new template or variant starts as a copy of the
+// closest one, changed, not as a layer over it. A variant mirrors the
+// project's root: `*.tera` files are rendered with Tera (the extension
+// dropped) and everything else is copied as is, and `{{ variable }}` works in
+// folder and file names too (`Rust/{{crate_name}}/src/lib.rs.tera`). Every
+// variant gets the same context, so adding one is adding a directory.
 
 use std::path::Path;
 
@@ -16,14 +17,17 @@ use serde::Deserialize;
 
 include!(concat!(env!("OUT_DIR"), "/template_files.rs"));
 
-/// The template `rusteal setup` takes the starter `rusteal.toml` from.
-const SETUP_TEMPLATE: &str = "blank";
+/// The variant `rusteal new` uses without `--variant`; every template has it.
+pub const BASE_VARIANT: &str = "base";
 
-/// A template's `template.toml`.
+/// The template `rusteal setup` takes the starter `rusteal.toml` from.
+const SETUP_TEMPLATE: &str = "blank/base";
+
+/// A variant's `template.toml`.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Manifest {
-    /// One line for `rusteal new --help` and the list of templates.
+    /// One line for the list of templates.
     pub description: String,
     /// The engine template (`Templates/<name>`) the project starts from.
     pub engine_template: String,
@@ -32,8 +36,39 @@ pub struct Manifest {
     /// everything under it.
     #[serde(default)]
     pub exclude: Vec<String>,
+    /// The level the project opens and plays (`/Game/...`), when it is not
+    /// the engine template's own.
+    #[serde(default)]
+    pub default_map: Option<String>,
     /// Printed when the project is ready (Tera, with the files' context).
     pub next_step: String,
+}
+
+/// A template with its variants, `base` first.
+pub struct TemplateInfo {
+    pub name: &'static str,
+    pub variants: Vec<(&'static str, Manifest)>,
+}
+
+impl TemplateInfo {
+    /// The `base` variant's manifest.
+    pub fn base(&self) -> &Manifest {
+        &self.variants[0].1
+    }
+}
+
+/// The template and variant `rusteal new` was asked for.
+pub struct Selected {
+    pub template: &'static str,
+    pub variant: &'static str,
+    pub manifest: Manifest,
+}
+
+impl Selected {
+    /// The variant's directory under `templates/`.
+    pub fn dir(&self) -> String {
+        format!("{}/{}", self.template, self.variant)
+    }
 }
 
 /// An embedded file's contents, by its path under `templates/`.
@@ -58,29 +93,94 @@ pub fn render_rusteal_toml(context: &tera::Context) -> String {
     render(&format!("{SETUP_TEMPLATE}/rusteal.toml.tera"), context)
 }
 
-/// The templates `rusteal new` offers, with their manifests, by name.
-pub fn available() -> Vec<(&'static str, Manifest)> {
-    TEMPLATE_FILES
-        .iter()
-        .filter_map(|(path, _)| path.strip_suffix("/template.toml"))
-        .filter(|name| !name.contains('/'))
-        .map(|name| (name, manifest(name).expect("listed template has a manifest")))
+/// The templates `rusteal new` offers, by name, each with its variants.
+pub fn available() -> Vec<TemplateInfo> {
+    let mut templates: Vec<TemplateInfo> = Vec::new();
+    for (path, _) in TEMPLATE_FILES {
+        let Some(dir) = path.strip_suffix("/template.toml") else {
+            continue;
+        };
+        let Some((name, variant)) = dir.split_once('/') else {
+            continue;
+        };
+        if variant.contains('/') {
+            continue;
+        }
+        let manifest = manifest(dir).expect("listed variant has a manifest");
+        match templates.iter_mut().find(|t| t.name == name) {
+            Some(template) => template.variants.push((variant, manifest)),
+            None => templates.push(TemplateInfo { name, variants: vec![(variant, manifest)] }),
+        }
+    }
+    for template in &mut templates {
+        template
+            .variants
+            .sort_by_key(|(variant, _)| (*variant != BASE_VARIANT, *variant));
+        assert_eq!(
+            template.variants[0].0, BASE_VARIANT,
+            "template {} has no {BASE_VARIANT} variant",
+            template.name
+        );
+    }
+    templates
+}
+
+/// The template and variant named on the command line: names are matched
+/// ignoring case, `-` and `_` (`side-scrolling`, `SideScrolling`). No variant
+/// is `base`. The error lists what
+/// there is.
+pub fn select(template: &str, variant: Option<&str>) -> Result<Selected, String> {
+    let templates = available();
+    let wanted = normalize(template);
+    let Some(info) = templates.into_iter().find(|t| normalize(t.name) == wanted) else {
+        return Err(format!("there is no template '{template}'. The templates are:\n{}", listing()));
+    };
+    let wanted = normalize(variant.unwrap_or(BASE_VARIANT));
+    let name = info.name;
+    let Some((variant, manifest)) =
+        info.variants.into_iter().find(|(v, _)| normalize(v) == wanted)
+    else {
+        return Err(format!(
+            "the {name} template has no variant '{}'. The templates are:\n{}",
+            variant.unwrap_or(BASE_VARIANT),
+            listing()
+        ));
+    };
+    Ok(Selected { template: name, variant, manifest })
+}
+
+/// The templates and their variants, one line each, for error messages.
+pub fn listing() -> String {
+    let mut out = String::new();
+    for template in available() {
+        out.push_str(&format!("  {:<24} {}\n", template.name, template.base().description));
+        for (variant, manifest) in template.variants.iter().skip(1) {
+            out.push_str(&format!("    --variant {variant:<12} {}\n", manifest.description));
+        }
+    }
+    out
+}
+
+fn normalize(name: &str) -> String {
+    name.chars()
+        .filter(|c| *c != '-' && *c != '_')
+        .flat_map(char::to_lowercase)
         .collect()
 }
 
-/// The manifest of the template `name`, if there is one.
-pub fn manifest(name: &str) -> Option<Manifest> {
-    let path = format!("{name}/template.toml");
+/// The manifest of the variant in `dir` (`<template>/<variant>`), if there is one.
+fn manifest(dir: &str) -> Option<Manifest> {
+    let path = format!("{dir}/template.toml");
     let (_, contents) = TEMPLATE_FILES.iter().find(|(file, _)| *file == path)?;
     let text = std::str::from_utf8(contents)
         .unwrap_or_else(|e| panic!("{path} is not UTF-8: {e}"));
     Some(toml::from_str(text).unwrap_or_else(|e| panic!("{path}: {e}")))
 }
 
-/// Write the template's files into `root`, over what the engine template put
-/// there. Returns the number of files written.
-pub fn write_project_files(template: &str, root: &Path, context: &tera::Context) -> usize {
-    let prefix = format!("{template}/");
+/// Write the variant's files (`dir`, as [`Selected::dir`]) into `root`, over
+/// what the engine template put there. Returns the number of files written.
+pub fn write_project_files(dir: &str, root: &Path, context: &tera::Context) -> usize {
+    let prefix = format!("{dir}/");
     let mut written = 0;
     for (path, contents) in TEMPLATE_FILES {
         let Some(rel) = path.strip_prefix(&prefix) else {
@@ -132,9 +232,26 @@ mod tests {
 
     #[test]
     fn every_template_has_a_valid_manifest() {
-        let names: Vec<&str> = available().iter().map(|(name, _)| *name).collect();
-        assert_eq!(names, ["blank", "third-person"]);
-        assert!(names.contains(&SETUP_TEMPLATE));
+        let templates = available();
+        let names: Vec<&str> = templates.iter().map(|t| t.name).collect();
+        assert_eq!(names, ["blank", "first-person", "third-person", "top-down"]);
+        assert!(manifest(SETUP_TEMPLATE).is_some());
+    }
+
+    #[test]
+    fn selects_templates_and_variants_by_loose_names() {
+        let base = select("third-person", None).unwrap();
+        assert_eq!((base.template, base.variant), ("third-person", BASE_VARIANT));
+        assert_eq!(base.dir(), "third-person/base");
+        let same = select("ThirdPerson", Some("BASE")).unwrap();
+        assert_eq!((same.template, same.variant), ("third-person", BASE_VARIANT));
+        let loose = select("third_person", None).unwrap();
+        assert_eq!(loose.template, "third-person");
+
+        let unknown = select("nope", None).err().unwrap();
+        assert!(unknown.contains("blank"), "{unknown}");
+        let no_variant = select("blank", Some("nope")).err().unwrap();
+        assert!(no_variant.contains("no variant 'nope'"), "{no_variant}");
     }
 
     #[test]
@@ -147,7 +264,7 @@ mod tests {
         context.insert("version", "0.0.0");
         context.insert("glam_version", "0.0.0");
 
-        write_project_files("blank", &root, &context);
+        write_project_files("blank/base", &root, &context);
 
         for rel in [
             ".gitignore",

@@ -1,8 +1,9 @@
-// rusteal-macros: proc macros for #[uclass], #[ufunction], #[uproperty].
+// rusteal-macros: proc macros for #[uclass], #[ustruct], #[ufunction], #[uproperty].
 
 mod prop_type;
 mod uclass;
 mod uclass_impl;
+mod ustruct;
 
 /// Attribute macro for defining a Rust struct as a UE class.
 ///
@@ -51,6 +52,32 @@ pub fn uclass_impl(
     item: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
     match uclass_impl::expand_uclass_impl(attr.into(), item.into()) {
+        Ok(tokens) => tokens.into(),
+        Err(err) => err.to_compile_error().into(),
+    }
+}
+
+/// Attribute macro for defining a Rust struct as a UE struct: a data table's
+/// row, a property's value. Every field is a `#[uproperty]`; the struct's
+/// memory is UE's, read and written through the generated `<Name>Ext` trait
+/// on `UStructRef<Name>` and `OwnedStruct<Name>`.
+///
+/// # Example
+/// ```ignore
+/// #[ustruct]
+/// pub struct WeaponTableRow {
+///     #[uproperty(EditAnywhere)]
+///     static_mesh: SoftObjectRef<StaticMesh>,
+///     #[uproperty(EditAnywhere)]
+///     weapon_to_spawn: SubclassOf<ShooterWeapon>,
+/// }
+/// ```
+#[proc_macro_attribute]
+pub fn ustruct(
+    attr: proc_macro::TokenStream,
+    item: proc_macro::TokenStream,
+) -> proc_macro::TokenStream {
+    match ustruct::expand_ustruct(attr.into(), item.into()) {
         Ok(tokens) => tokens.into(),
         Err(err) => err.to_compile_error().into(),
     }

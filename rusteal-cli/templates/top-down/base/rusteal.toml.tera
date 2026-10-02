@@ -1,0 +1,111 @@
+# Rusteal project configuration. Versioned with the project.
+#
+# The layout is fixed by convention:
+#   Rust/                                       Cargo workspace (game crate + bindings)
+#   Rust/bindings/                              generated bindings crate (versioned)
+#   Plugins/Rusteal/Source/Rusteal/Generated/   generated C++ wrappers (versioned)
+#   Intermediate/Rusteal/uht/                   reflection JSON (build output)
+#
+# The engine location is per machine: `rusteal` asks for it once and keeps it
+# in its own configuration directory.
+
+[project]
+# The cdylib package in Rust/ deployed as the Rusteal library.
+crate = "{{ crate_name }}"
+
+[codegen]
+# UE modules to generate bindings for, by feature (see [codegen.modules]).
+# `engine` needs `input`, `slate` and `umg`: the runtime plugin links them.
+# `enhanced-input` is the engine's input system, used by every game template;
+# `ai` moves the character along the navigation mesh, and `niagara` spawns
+# the cursor effect.
+features = ["core", "engine", "input", "slate", "umg", "enhanced-input", "ai", "niagara"]
+
+[codegen.modules]
+# UE package = { module = "rust module", feature = "cargo feature" }, and the
+# engine plugin a package comes from when it is not the engine's own.
+CoreUObject = { module = "core_ue", feature = "core" }
+Engine = { module = "engine", feature = "engine" }
+PhysicsCore = { module = "physics_core", feature = "physics-core" }
+InputCore = { module = "input_core", feature = "input" }
+EnhancedInput = { module = "enhanced_input", feature = "enhanced-input" }
+SlateCore = { module = "slate_core", feature = "slate" }
+Slate = { module = "slate", feature = "slate" }
+UMG = { module = "umg", feature = "umg" }
+AIModule = { module = "ai", feature = "ai" }
+GameplayTasks = { module = "gameplay_tasks", feature = "ai" }
+NavigationSystem = { module = "navigation", feature = "ai" }
+StateTreeModule = { module = "state_tree", feature = "state-tree", plugin = "StateTree" }
+GameplayStateTreeModule = { module = "gameplay_state_tree", feature = "state-tree", plugin = "GameplayStateTree" }
+GameplayTags = { module = "gameplay_tags", feature = "gameplay-tags" }
+Niagara = { module = "niagara", feature = "niagara", plugin = "Niagara" }
+GameplayAbilities = { module = "gameplay_abilities", feature = "gameplay-abilities" }
+LevelSequence = { module = "level_sequence", feature = "level-sequence" }
+CinematicCamera = { module = "cinematic_camera", feature = "cinematic" }
+MovieScene = { module = "movie_scene", feature = "movie" }
+MovieSceneTracks = { module = "movie_scene_tracks", feature = "movie" }
+
+[codegen.blocklist]
+# Reflected types and functions the generated code cannot handle yet.
+classes = [
+    # Niagara's Sequencer section: its functions are not exported.
+    "MovieSceneNiagaraSystemSpawnSection",
+    "BlueprintTypeConversions",
+    "InstancedStaticMeshComponent",
+    "InstancedSkinnedMeshComponent",
+    "HierarchicalInstancedStaticMeshComponent",
+    "VisualLoggerKismetLibrary",
+    "PluginBlueprintLibrary",
+    "MeshVertexPainterKismetLibrary",
+    "FieldNotificationLibrary",
+    "WorldPartitionBlueprintLibrary",
+    "BlueprintMapLibrary",
+    "BlueprintSetLibrary",
+    "KismetArrayLibrary",
+    "MaterialExpressionDataDrivenShaderPlatformInfoSwitch",
+]
+structs = [
+    "ConstraintInstanceAccessor",
+]
+functions = [
+    # UFUNCTIONs the engine does not export (no *_API on the declaration): the
+    # generated wrapper compiles but does not link. Found with UE 5.8.2; keep sorted.
+    "AnimMontage.IsValidAdditiveSlot",
+    "GameplayStatics.BlueprintSuggestProjectileVelocity",
+    "KismetSystemLibrary.GetEnumTopLevelAssetPath",
+    "KismetSystemLibrary.GetStructTopLevelAssetPath",
+    "KismetSystemLibrary.RaiseScriptError",
+    "KismetSystemLibrary.StackTrace",
+    "ListView.SetReturnFocusToSelection",
+    "ListViewBase.CreateDragDropOperation",
+    "MaterialInstanceConstant.K2_GetScalarParameterValue",
+    "MaterialInstanceConstant.K2_GetTextureCollectionParameterValue",
+    "MaterialInstanceConstant.K2_GetTextureParameterValue",
+    "MaterialInstanceConstant.K2_GetVectorParameterValue",
+    "NiagaraScript.RaiseOnGPUCompilationComplete",
+    "ParticleSystem.ContainsEmitterType",
+    "PhysicsConstraintComponent.IsProjectionEnabled",
+    "PlanarReflection.OnInterpToggle",
+    "SceneCapture2D.OnInterpToggle",
+    "SoundConcurrency.SetMaxCount",
+    "SoundSubmix.SetDryVolumeModulation",
+    "SoundSubmix.SetOutputVolumeModulation",
+    "SoundSubmix.SetWetVolumeModulation",
+    "SplineComponent.PopulateFromLegacy",
+    "SpotLight.SetInnerConeAngle",
+    "SpotLight.SetOuterConeAngle",
+    "StateTreeNodeBlueprintBase.GetPropertyReference",
+    "Texture.Blueprint_GetBuiltTextureSize",
+    "Texture.Blueprint_GetMemorySize",
+    "Texture.Blueprint_GetTextureSourceDiskAndMemorySize",
+    "Texture.Blueprint_GetTextureSourceIdString",
+    "Texture.ComputeTextureSourceChannelMinMax",
+    "Texture2D.Blueprint_GetSizeX",
+    "Texture2D.Blueprint_GetSizeY",
+    "WidgetAnimation.UnbindAllFromAnimationFinished",
+    "WidgetAnimation.UnbindAllFromAnimationStarted",
+    "WidgetAnimationPlayCallbackProxy.CreatePlayAnimationProxyObject",
+    "WidgetAnimationPlayCallbackProxy.CreatePlayAnimationTimeRangeProxyObject",
+    "WidgetAnimationPlayCallbackProxy.NewPlayAnimationProxyObject",
+    "WidgetAnimationPlayCallbackProxy.NewPlayAnimationTimeRangeProxyObject",
+]
