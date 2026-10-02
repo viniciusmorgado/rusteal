@@ -349,6 +349,10 @@ child, as the engine's templates do. `EditAnywhere`, `EditDefaultsOnly`,
 `VisibleAnywhere`, `BlueprintReadWrite` and `BlueprintReadOnly` are UE's
 specifiers.
 
+A field with no attribute is Rust's alone, kept outside UE's object: its
+getter returns a copy (a clone), `set_` replaces it, and `<field>_mut()`
+changes it in place (a map, a vector).
+
 The UE name is the field's in PascalCase, with a `b_` prefix as UE's bool
 `b` (`b_force_touch_controls` is `bForceTouchControls`, as the bindings name
 UE's own); `name = "NPC"` gives another, and `category = "..."` the property's

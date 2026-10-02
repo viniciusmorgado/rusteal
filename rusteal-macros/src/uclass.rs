@@ -442,18 +442,25 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
     }
 
 
-    // Rust private field accessors
+    // Rust private field accessors: a copy (a clone), a setter, and the
+    // field itself to change in place (a map, a vector).
     for f in &rust_fields {
         let ident = &f.ident;
         let ty = &f.ty;
         let setter_ident = format_ident!("set_{}", ident);
+        let mut_ident = format_ident!("{}_mut", ident);
 
         accessor_methods.push(quote! {
+            #[allow(clippy::clone_on_copy)]
             pub fn #ident(&self) -> #ty {
-                unsafe { (*self.__rust_data).#ident }
+                unsafe { (*self.__rust_data).#ident.clone() }
             }
             pub fn #setter_ident(&mut self, val: #ty) {
                 unsafe { (*self.__rust_data).#ident = val; }
+            }
+            #[allow(dead_code)]
+            pub fn #mut_ident(&mut self) -> &mut #ty {
+                unsafe { &mut (*self.__rust_data).#ident }
             }
         });
     }

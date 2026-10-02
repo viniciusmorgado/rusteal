@@ -380,6 +380,8 @@ pub struct Probe {
     soft_action: SoftObjectRef<InputAction>,
     #[uproperty(EditAnywhere)]
     row: OwnedStruct<ProbeRow>,
+    // Rust's alone: not Copy.
+    visits: Vec<String>,
 }
 
 /// A data table row declared in Rust, holding a Rust class.
@@ -511,6 +513,8 @@ impl Probe {
         self.set_label("probe");
         self.set_trigger(ETriggerEvent::Completed);
         let _ = (self.trigger(), self.npc(), self.collision_check_box());
+        self.visits_mut().push("camera".into());
+        let _ = self.visits().len();
         true
     }
 }
