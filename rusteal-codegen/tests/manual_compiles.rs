@@ -403,6 +403,11 @@ impl Probe {
     fn count_targets(&self, max: i32) -> i32 {}
 }
 
+pub fn worlds(probe: UObjectRef<Probe>, class: SubclassOf<Pawn>) -> RustealResult<UObjectRef<Pawn>> {
+    let world = probe.get_world()?;
+    world.spawn_actor_of_class(class, &OwnedStruct::new())
+}
+
 pub fn upcasts(probe: UObjectRef<Probe>, pc: UObjectRef<PlayerController>) -> (UObjectRef<Actor>, UObjectRef<Pawn>) {
     let _controller: UObjectRef<Controller> = pc.upcast_to::<Controller>();
     let _actor_class: SubclassOf<Actor> = SubclassOf::<PlayerController>::base().upcast_to::<Actor>();

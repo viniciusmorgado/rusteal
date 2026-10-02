@@ -577,8 +577,9 @@ pub struct RustealWorldApi {
         path_len: u32,
     ) -> UObjectHandle,
 
-    /// Get the UWorld from an actor. Returns null handle if the actor is invalid.
-    pub get_world: unsafe extern "C" fn(actor: UObjectHandle) -> UObjectHandle,
+    /// The UWorld an object is in (`UObject::GetWorld()`). Returns null handle
+    /// if the object is invalid or in no world.
+    pub get_world: unsafe extern "C" fn(object: UObjectHandle) -> UObjectHandle,
 
     /// Create a new UObject. `outer` can be null (falls back to transient package).
     pub new_object: unsafe extern "C" fn(outer: UObjectHandle, class: UClassHandle) -> UObjectHandle,

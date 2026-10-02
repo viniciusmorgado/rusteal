@@ -468,7 +468,8 @@ struct FRustealWorldApi {
                                       const uint8 *path_utf8, uint32 path_len);
   RustealUObjectHandle (*load_object)(RustealUClassHandle cls,
                                       const uint8 *path_utf8, uint32 path_len);
-  RustealUObjectHandle (*get_world)(RustealUObjectHandle actor);
+  // UObject::GetWorld(): null if the object is invalid or in no world.
+  RustealUObjectHandle (*get_world)(RustealUObjectHandle object);
 
   // Create a new UObject. outer can be null (falls back to transient package).
   RustealUObjectHandle (*new_object)(RustealUObjectHandle outer,

@@ -115,9 +115,9 @@ pub fn finish_spawning_raw(
     })
 }
 
-/// Get the UWorld from an actor handle.
-pub fn get_world_raw(actor: UObjectHandle) -> RustealResult<UObjectHandle> {
-    let result = unsafe { ffi_dispatch::world_get_world(actor) };
+/// The UWorld an object is in (`UObject::GetWorld()`).
+pub fn get_world_raw(object: UObjectHandle) -> RustealResult<UObjectHandle> {
+    let result = unsafe { ffi_dispatch::world_get_world(object) };
     if result.is_null() {
         Err(RustealError::InvalidOperation("get_world returned null".into()))
     } else {

@@ -46,6 +46,19 @@ pub enum SpawnCollisionMethod {
     DontSpawnIfColliding = 4,
 }
 
+/// `UObject::GetWorld()` on any object reference: the world an actor, a
+/// component or a widget is in.
+pub trait ObjectWorldExt {
+    fn get_world(&self) -> RustealResult<UObjectRef<World>>;
+}
+
+impl<T: UeClass> ObjectWorldExt for UObjectRef<T> {
+    fn get_world(&self) -> RustealResult<UObjectRef<World>> {
+        let handle = rusteal_core::world::get_world_raw(self.checked()?.raw())?;
+        Ok(unsafe { UObjectRef::from_raw(handle) })
+    }
+}
+
 /// Extension trait for spawning and querying actors in a UWorld.
 pub trait WorldSpawnExt {
     fn spawn_actor<T: UeClass>(

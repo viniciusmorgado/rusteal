@@ -99,12 +99,13 @@ static RustealUObjectHandle LoadObjectImpl(RustealUClassHandle ClsHandle,
   return RustealUObjectHandle{Loaded};
 }
 
-static RustealUObjectHandle GetWorldImpl(RustealUObjectHandle ActorHandle) {
-  AActor *Actor = Cast<AActor>(static_cast<UObject *>(ActorHandle.ptr));
-  if (!Actor)
+static RustealUObjectHandle GetWorldImpl(RustealUObjectHandle ObjectHandle) {
+  // UObject::GetWorld(): an actor's, a component's, a widget's world; null
+  // for an object outside any world (a class default object).
+  UObject *Object = static_cast<UObject *>(ObjectHandle.ptr);
+  if (!IsValid(Object))
     return RustealUObjectHandle{nullptr};
-  UWorld *World = Actor->GetWorld();
-  return RustealUObjectHandle{World};
+  return RustealUObjectHandle{Object->GetWorld()};
 }
 
 static RustealUObjectHandle NewObjectImpl(RustealUObjectHandle OuterHandle,
