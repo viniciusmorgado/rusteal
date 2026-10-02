@@ -1,6 +1,7 @@
 // RustealInputApiImpl.cpp — FRustealInputApi implementation.
 // Binds Enhanced Input actions to UFUNCTIONs: UEnhancedInputComponent's
-// BindAction is a C++ template, not in reflection.
+// BindAction is a C++ template, not in reflection. Also answers whether the
+// platform shows touch controls, which only Slate's SVirtualJoystick knows.
 
 #include "EnhancedInputComponent.h"
 #include "GameFramework/Actor.h"
@@ -8,6 +9,7 @@
 #include "InputActionValue.h"
 #include "RustealApiTable.h"
 #include "RustealModule.h"
+#include "Widgets/Input/SVirtualJoystick.h"
 
 // ---------------------------------------------------------------------------
 // Implementations
@@ -130,10 +132,15 @@ static ERustealErrorCode BindActionImpl(RustealUObjectHandle ActorHandle,
   return ERustealErrorCode::Ok;
 }
 
+static bool ShouldDisplayTouchInterfaceImpl() {
+  return SVirtualJoystick::ShouldDisplayTouchInterface();
+}
+
 // ---------------------------------------------------------------------------
 // Static instance
 // ---------------------------------------------------------------------------
 
 FRustealInputApi GInputApi = {
     &BindActionImpl,
+    &ShouldDisplayTouchInterfaceImpl,
 };

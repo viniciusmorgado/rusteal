@@ -22,7 +22,7 @@ use rusteal_codegen::config::find_project_root;
 use project_version::Scope;
 
 #[derive(Parser)]
-#[command(name = "rusteal", about = "Rusteal CLI — Rust for Unreal Engine")]
+#[command(name = "rusteal", version, about = "Rusteal CLI — Rust for Unreal Engine")]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -150,4 +150,21 @@ fn project_root(given: Option<&Path>) -> PathBuf {
         );
         std::process::exit(1);
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use clap::CommandFactory;
+
+    use super::Cli;
+
+    #[test]
+    fn cli_definition_is_valid() {
+        Cli::command().debug_assert();
+    }
+
+    #[test]
+    fn version_is_the_crate_version() {
+        assert_eq!(Cli::command().get_version(), Some(env!("CARGO_PKG_VERSION")));
+    }
 }

@@ -1,4 +1,4 @@
-// Enhanced Input bindings (raw handle versions).
+// Enhanced Input bindings (raw handle versions) and the touch interface check.
 // The typed wrapper lives in the generated bindings' manual/input_ext.rs.
 
 use rusteal_ffi::UObjectHandle;
@@ -32,4 +32,12 @@ pub fn bind_action_raw(
         },
         function,
     )
+}
+
+/// Whether the platform shows touch controls: the C++
+/// `SVirtualJoystick::ShouldDisplayTouchInterface()`, true on mobile, with
+/// `bAlwaysShowTouchInterface` in the input settings, or when faked touch
+/// events (`Use Mouse for Touch`) are set to display them.
+pub fn should_display_touch_interface() -> bool {
+    unsafe { ffi_dispatch::input_should_display_touch_interface() }
 }

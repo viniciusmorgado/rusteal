@@ -512,10 +512,11 @@ pub struct RustealWidgetApi {
     ) -> UObjectHandle,
 }
 
-/// Enhanced Input bindings.
+/// Enhanced Input bindings and the touch interface check.
 ///
-/// `UEnhancedInputComponent::BindAction` is a C++ template, not in UE
-/// reflection, so the binding is exposed manually.
+/// `UEnhancedInputComponent::BindAction` is a C++ template and
+/// `SVirtualJoystick` a Slate widget, neither in UE reflection, so both are
+/// exposed manually.
 #[repr(C)]
 pub struct RustealInputApi {
     /// Bind `trigger_event` (an `ETriggerEvent` value) of `action` on `actor`'s
@@ -531,6 +532,11 @@ pub struct RustealInputApi {
         function_name: *const u8,
         function_name_len: u32,
     ) -> RustealErrorCode,
+
+    /// `SVirtualJoystick::ShouldDisplayTouchInterface()`: whether the platform
+    /// shows touch controls (virtual joysticks, `bAlwaysShowTouchInterface`,
+    /// or faked touch events where the platform displays them).
+    pub should_display_touch_interface: unsafe extern "C" fn() -> bool,
 }
 
 /// World-level queries (spawn, find actors, etc.).

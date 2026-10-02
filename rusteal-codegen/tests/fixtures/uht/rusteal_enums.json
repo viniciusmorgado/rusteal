@@ -144,6 +144,243 @@
     },
     {
       "cpp_form": 2,
+      "cpp_name": "EWidgetPixelSnapping",
+      "name": "EWidgetPixelSnapping",
+      "package": "SlateCore",
+      "pairs": [
+        [
+          "Inherit",
+          0
+        ],
+        [
+          "Disabled",
+          1
+        ],
+        [
+          "SnapToPixel",
+          2
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 2,
+      "cpp_name": "EUINavigationRule",
+      "name": "EUINavigationRule",
+      "package": "SlateCore",
+      "pairs": [
+        [
+          "Escape",
+          0
+        ],
+        [
+          "Explicit",
+          1
+        ],
+        [
+          "Wrap",
+          2
+        ],
+        [
+          "Stop",
+          3
+        ],
+        [
+          "Custom",
+          4
+        ],
+        [
+          "CustomBoundary",
+          5
+        ],
+        [
+          "Invalid",
+          6
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 2,
+      "cpp_name": "EWidgetClipping",
+      "name": "EWidgetClipping",
+      "package": "SlateCore",
+      "pairs": [
+        [
+          "Inherit",
+          0
+        ],
+        [
+          "ClipToBounds",
+          1
+        ],
+        [
+          "ClipToBoundsWithoutIntersecting",
+          2
+        ],
+        [
+          "ClipToBoundsAlways",
+          3
+        ],
+        [
+          "OnDemand",
+          4
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 2,
+      "cpp_name": "EFlowDirectionPreference",
+      "name": "EFlowDirectionPreference",
+      "package": "SlateCore",
+      "pairs": [
+        [
+          "Inherit",
+          0
+        ],
+        [
+          "Culture",
+          1
+        ],
+        [
+          "LeftToRight",
+          2
+        ],
+        [
+          "RightToLeft",
+          3
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 2,
+      "cpp_name": "EUINavigation",
+      "name": "EUINavigation",
+      "package": "SlateCore",
+      "pairs": [
+        [
+          "Left",
+          0
+        ],
+        [
+          "Right",
+          1
+        ],
+        [
+          "Up",
+          2
+        ],
+        [
+          "Down",
+          3
+        ],
+        [
+          "Next",
+          4
+        ],
+        [
+          "Previous",
+          5
+        ],
+        [
+          "Num",
+          6
+        ],
+        [
+          "Invalid",
+          7
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 1,
+      "cpp_name": "EUMGSequencePlayMode",
+      "name": "EUMGSequencePlayMode",
+      "package": "UMG",
+      "pairs": [
+        [
+          "Forward",
+          0
+        ],
+        [
+          "Reverse",
+          1
+        ],
+        [
+          "PingPong",
+          2
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 2,
+      "cpp_name": "EWidgetTickFrequency",
+      "name": "EWidgetTickFrequency",
+      "package": "UMG",
+      "pairs": [
+        [
+          "Never",
+          0
+        ],
+        [
+          "Auto",
+          1
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 2,
+      "cpp_name": "EWidgetAnimationEvent",
+      "name": "EWidgetAnimationEvent",
+      "package": "UMG",
+      "pairs": [
+        [
+          "Started",
+          0
+        ],
+        [
+          "Finished",
+          1
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 2,
+      "cpp_name": "ESlateVisibility",
+      "name": "ESlateVisibility",
+      "package": "UMG",
+      "pairs": [
+        [
+          "Visible",
+          0
+        ],
+        [
+          "Collapsed",
+          1
+        ],
+        [
+          "Hidden",
+          2
+        ],
+        [
+          "HitTestInvisible",
+          3
+        ],
+        [
+          "SelfHitTestInvisible",
+          4
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 2,
       "cpp_name": "EAttachmentRule",
       "name": "EAttachmentRule",
       "package": "Engine",
@@ -1605,6 +1842,77 @@
     },
     {
       "cpp_form": 2,
+      "cpp_name": "EMappingContextInputModeFilterOptions",
+      "name": "EMappingContextInputModeFilterOptions",
+      "package": "EnhancedInput",
+      "pairs": [
+        [
+          "UseProjectDefaultQuery",
+          0
+        ],
+        [
+          "UseCustomQuery",
+          1
+        ],
+        [
+          "DoNotFilter",
+          2
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 2,
+      "cpp_name": "EMappingContextRegistrationTrackingMode",
+      "name": "EMappingContextRegistrationTrackingMode",
+      "package": "EnhancedInput",
+      "pairs": [
+        [
+          "Untracked",
+          0
+        ],
+        [
+          "CountRegistrations",
+          1
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 2,
+      "cpp_name": "ETriggerEvent",
+      "name": "ETriggerEvent",
+      "package": "EnhancedInput",
+      "pairs": [
+        [
+          "None",
+          0
+        ],
+        [
+          "Triggered",
+          1
+        ],
+        [
+          "Started",
+          2
+        ],
+        [
+          "Ongoing",
+          4
+        ],
+        [
+          "Canceled",
+          8
+        ],
+        [
+          "Completed",
+          16
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 2,
       "cpp_name": "EInputMappingRebuildType",
       "name": "EInputMappingRebuildType",
       "package": "EnhancedInput",
@@ -1692,44 +2000,6 @@
     },
     {
       "cpp_form": 2,
-      "cpp_name": "EMappingContextInputModeFilterOptions",
-      "name": "EMappingContextInputModeFilterOptions",
-      "package": "EnhancedInput",
-      "pairs": [
-        [
-          "UseProjectDefaultQuery",
-          0
-        ],
-        [
-          "UseCustomQuery",
-          1
-        ],
-        [
-          "DoNotFilter",
-          2
-        ]
-      ],
-      "underlying_type": "uint8"
-    },
-    {
-      "cpp_form": 2,
-      "cpp_name": "EMappingContextRegistrationTrackingMode",
-      "name": "EMappingContextRegistrationTrackingMode",
-      "package": "EnhancedInput",
-      "pairs": [
-        [
-          "Untracked",
-          0
-        ],
-        [
-          "CountRegistrations",
-          1
-        ]
-      ],
-      "underlying_type": "uint8"
-    },
-    {
-      "cpp_form": 2,
       "cpp_name": "EInputActionValueType",
       "name": "EInputActionValueType",
       "package": "EnhancedInput",
@@ -1766,39 +2036,6 @@
         [
           "Cumulative",
           1
-        ]
-      ],
-      "underlying_type": "uint8"
-    },
-    {
-      "cpp_form": 2,
-      "cpp_name": "ETriggerEvent",
-      "name": "ETriggerEvent",
-      "package": "EnhancedInput",
-      "pairs": [
-        [
-          "None",
-          0
-        ],
-        [
-          "Triggered",
-          1
-        ],
-        [
-          "Started",
-          2
-        ],
-        [
-          "Ongoing",
-          4
-        ],
-        [
-          "Canceled",
-          8
-        ],
-        [
-          "Completed",
-          16
         ]
       ],
       "underlying_type": "uint8"

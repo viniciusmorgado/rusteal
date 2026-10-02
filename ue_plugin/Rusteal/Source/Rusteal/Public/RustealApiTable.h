@@ -435,7 +435,7 @@ struct FRustealWidgetApi {
 };
 
 // ---------------------------------------------------------------------------
-// FRustealInputApi — Enhanced Input bindings
+// FRustealInputApi — Enhanced Input bindings and the touch interface check
 // ---------------------------------------------------------------------------
 
 struct FRustealInputApi {
@@ -447,6 +447,10 @@ struct FRustealInputApi {
                                    uint8 trigger_event,
                                    const uint8 *function_name,
                                    uint32 function_name_len);
+
+  // SVirtualJoystick::ShouldDisplayTouchInterface(): whether the platform
+  // shows touch controls (Slate, not in reflection).
+  bool (*should_display_touch_interface)();
 };
 
 struct FRustealWorldApi {

@@ -1,6 +1,6 @@
 // Type-safe UMG widget helpers on top of rusteal_core::widget raw functions.
 
-use rusteal_core::{UObjectRef, UeClass, RustealResult};
+use rusteal_core::{RustealError, RustealResult, SubclassOf, UObjectRef, UeClass};
 
 /// Create a UMG widget of type `T` (must be a UUserWidget subclass).
 ///
@@ -11,6 +11,23 @@ pub fn create_widget<T: UeClass>(
     let owner_handle = owner.checked()?.raw();
     let class = T::static_class();
     let handle = rusteal_core::widget::create_widget_raw(owner_handle, class)?;
+    Ok(unsafe { UObjectRef::from_raw(handle) })
+}
+
+/// Create a UMG widget of `class`, a subclass of `T` held in a property such
+/// as a Blueprint's widget class: the C++ `CreateWidget<T>(Owner, Class)`.
+///
+/// `owner` should be a PlayerController, World, or GameInstance. Fails for a
+/// null class.
+pub fn create_widget_of_class<T: UeClass>(
+    owner: &UObjectRef<impl UeClass>,
+    class: SubclassOf<T>,
+) -> RustealResult<UObjectRef<T>> {
+    let owner_handle = owner.checked()?.raw();
+    if class.is_null() {
+        return Err(RustealError::NullArgument);
+    }
+    let handle = rusteal_core::widget::create_widget_raw(owner_handle, class.raw())?;
     Ok(unsafe { UObjectRef::from_raw(handle) })
 }
 

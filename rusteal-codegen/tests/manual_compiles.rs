@@ -56,6 +56,10 @@ const CLASSES: &[&str] = &[
     "BlueprintFunctionLibrary",
     "SubsystemBlueprintLibrary",
     "EnhancedInputLibrary",
+    // The touch controls the Third Person player controller spawns.
+    "Visual",
+    "Widget",
+    "UserWidget",
 ];
 
 /// Enums manual/ names that no class or struct above references.
@@ -296,7 +300,7 @@ fn regenerate_fixture() {
 
 /// A game class with one `#[uproperty]` of each supported kind, `#[ufunction]`s
 /// taking and returning each supported kind, and code using every accessor the
-/// macros generate and the Enhanced Input helpers.
+/// macros generate, the Enhanced Input helpers and the touch controls ones.
 const UCLASS_GAME: &str = r#"
 use bindings::engine::{Actor, Controller, Pawn, PawnExt, PlayerController, SceneComponent};
 use bindings::enhanced_input::{
@@ -304,6 +308,8 @@ use bindings::enhanced_input::{
     InputMappingContext,
 };
 use bindings::prelude::*;
+use bindings::umg::{UserWidget, UserWidgetExt};
+use rusteal_runtime::runtime::input::should_display_touch_interface;
 use rusteal_runtime::runtime::{OwnedStruct, RustealResult, SubclassOf, UObjectRef, UStructRef, UeArray};
 use rusteal_runtime::{uclass, uclass_impl};
 
@@ -327,6 +333,10 @@ pub struct Probe {
     classes: UeArray<SubclassOf<Actor>>,
     #[uproperty(EditAnywhere)]
     weights: UeArray<f32>,
+    #[uproperty(EditAnywhere)]
+    widget_class: SubclassOf<UserWidget>,
+    #[uproperty]
+    widget: UObjectRef<UserWidget>,
 }
 
 #[uclass_impl]
@@ -394,6 +404,17 @@ pub fn use_generated_classes(p: &Probe) -> RustealResult<()> {
     let pawn = p.as_ref().checked()?;
     let class: SubclassOf<Controller> = pawn.get_ai_controller_class();
     pawn.set_ai_controller_class(class);
+    Ok(())
+}
+
+/// The touch controls, as the Third Person template's player controller spawns them.
+pub fn spawn_touch_controls(p: &Probe, controller: UObjectRef<PlayerController>) -> RustealResult<()> {
+    if should_display_touch_interface() {
+        let widget = create_widget_of_class(&controller, p.widget_class())?;
+        widget.checked()?.add_to_player_screen(Some(0));
+        p.set_widget(widget);
+    }
+    let _: RustealResult<UObjectRef<UserWidget>> = create_widget(&controller);
     Ok(())
 }
 
