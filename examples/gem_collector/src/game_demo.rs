@@ -12,7 +12,7 @@ use rusteal_runtime::runtime::{
 use bindings::core_ue::Object;
 use bindings::engine::{
     ActorComponent, CameraActor, DefaultPawn, DirectionalLight, GameModeBase, GameplayStatics,
-    GameplayStaticsExt, HUD, HUDExt, SceneComponent, SkyLight, StaticMesh, StaticMeshActor,
+    HUD, HUDExt, SceneComponent, SkyLight, StaticMesh, StaticMeshActor,
     StaticMeshComponent, StaticMeshComponentExt,
 };
 use bindings::manual::world_ext;
@@ -82,7 +82,7 @@ impl GemCollectorGameMode {
         ulog!(LOG_DISPLAY, "[GemCollector] Spawned pawn at z=100");
 
         // Possess via PlayerController
-        let pc = <Checked<GameplayStatics> as GameplayStaticsExt>::get_player_controller(world_ctx, 0);
+        let pc = GameplayStatics::get_player_controller(world_ctx, 0);
         let pc_raw = pc.raw();
         let controller: UObjectRef<Actor> = unsafe { UObjectRef::from_raw(pc_raw) };
         // Use DynamicCall for Possess since we need Controller, not Actor
@@ -395,7 +395,7 @@ impl GemCollectorPawn {
 
         // Get our PlayerController and set view target
         let world_ctx: UObjectRef<Object> = unsafe { UObjectRef::from_raw(self.__obj) };
-        let pc = <Checked<GameplayStatics> as GameplayStaticsExt>::get_player_controller(world_ctx, 0);
+        let pc = GameplayStatics::get_player_controller(world_ctx, 0);
         let mut call = DynamicCall::new(&pc, "SetViewTargetWithBlend")?;
         call.set("NewViewTarget", cam_raw)?;
         call.set("BlendTime", 0.0f32)?;

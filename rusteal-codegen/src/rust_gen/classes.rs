@@ -160,12 +160,25 @@ pub fn generate_class(class: &ClassInfo, ctx: &CodegenContext) -> String {
     // Delegate accessor default impls (own only)
     delegates::generate_delegate_impls(&mut out, &own_delegate_infos);
 
-    // Function wrapper default impls
-    for entry in &class_funcs {
+    // Function wrapper default impls (instance functions; the static ones
+    // go in the inherent impl below)
+    let (static_funcs, instance_funcs): (Vec<&FuncEntry>, Vec<&FuncEntry>) =
+        class_funcs.iter().partition(|e| is_static_fn(e));
+    for entry in &instance_funcs {
         generate_function(&mut out, entry, &entry.class_name, ctx);
     }
 
     out.push_str("}\n\n");
+
+    // Static functions (function libraries, `UGameplayStatics::...`) are
+    // called on the class, as in C++: `GameplayStatics::get_player_controller(..)`.
+    if !static_funcs.is_empty() {
+        out.push_str(&format!("impl {name} {{\n"));
+        for entry in &static_funcs {
+            generate_function(&mut out, entry, &entry.class_name, ctx);
+        }
+        out.push_str("}\n\n");
+    }
 
     // Empty impls — Checked and Pinned both satisfy ValidHandle
     out.push_str(&format!(
@@ -176,6 +189,10 @@ pub fn generate_class(class: &ClassInfo, ctx: &CodegenContext) -> String {
     ));
 
     out
+}
+
+fn is_static_fn(entry: &FuncEntry) -> bool {
+    entry.func.is_static || (entry.func.func_flags & FUNC_STATIC != 0)
 }
 
 // ---------------------------------------------------------------------------
@@ -328,7 +345,7 @@ fn generate_scalar_function(out: &mut String, entry: &FuncEntry, class_name: &st
     let mut sig = String::new();
     if is_static {
         sig.push_str(&format!(
-            "    fn {rust_fn_name}("
+            "    pub fn {rust_fn_name}("
         ));
     } else {
         sig.push_str(&format!(
@@ -767,7 +784,7 @@ fn generate_container_function(out: &mut String, entry: &FuncEntry, class_name: 
     // === Emit Rust function signature ===
     let mut sig = String::new();
     if is_static {
-        sig.push_str(&format!("    fn {rust_fn_name}("));
+        sig.push_str(&format!("    pub fn {rust_fn_name}("));
     } else {
         sig.push_str(&format!("    fn {rust_fn_name}(&self, "));
     }

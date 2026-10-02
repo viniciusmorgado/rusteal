@@ -367,6 +367,10 @@ as a game mode's `DefaultPawnClass`) is a `SubclassOf<T>`, not an object:
 `SubclassOf::<MyPawn>::base().upcast()` passes a Rust class where a parent's is
 expected.
 
+Static functions, such as a function library's (`UGameplayStatics`,
+`UKismetSystemLibrary`), are called on the class, as in C++:
+`GameplayStatics::get_player_controller(world, 0)`.
+
 Private engine properties that Blueprint can read (`ACharacter`'s `Mesh`,
 `CharacterMovement` and `CapsuleComponent`) have getters, and no setters when
 they are read-only.
