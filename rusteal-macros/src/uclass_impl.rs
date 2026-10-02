@@ -332,7 +332,8 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
         // Add function params — skip for Override (C++ copies from parent function)
         if uf.kind != FnKind::Override {
             for param in &uf.params {
-                let info = prop_type::map_type(&param.rust_ty).unwrap();
+                let reg_ty = event_struct_param(&param.rust_ty).unwrap_or_else(|| param.rust_ty.clone());
+                let info = prop_type::map_type(&reg_ty).unwrap();
                 let param_ue_name = &param.ue_name;
                 let param_ue_bytes = param_ue_name.as_bytes();
                 let param_ue_len = param_ue_name.len() as u32;
@@ -471,7 +472,8 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
         {
             return Err(syn::Error::new_spanned(
                 ty,
-                "a BlueprintImplementableEvent takes and returns scalars, objects and classes",
+                "a BlueprintImplementableEvent takes scalars, objects, classes and structs \
+                 (&OwnedStruct<T>), and returns scalars, objects and classes",
             ));
         }
         Ok(())
@@ -516,7 +518,8 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
                 // Override functions get their param types from the parent UFunction
                 // (C++ copies them), so any Copy+repr(C) type is valid.
                 // Non-override functions must use types known to reify_add_function_param.
-                if !is_override && !supported_param(&ty) {
+                let event_struct = kind == FnKind::ImplementableEvent && event_struct_param(&ty).is_some();
+                if !is_override && !event_struct && !supported_param(&ty) {
                     return Err(syn::Error::new_spanned(
                         &ty,
                         "unsupported ufunction parameter type: supported are bool/i32/i64/u8/f32/f64, \
@@ -609,6 +612,17 @@ fn extra_expr(info: &prop_type::PropTypeInfo) -> TokenStream {
     }
 }
 
+/// `OwnedStruct<T>` for a `&OwnedStruct<T>` parameter: how an implementable
+/// event takes a struct (copied into the call).
+fn event_struct_param(ty: &Type) -> Option<Type> {
+    let Type::Reference(reference) = ty else {
+        return None;
+    };
+    let inner = (*reference.elem).clone();
+    matches!(prop_type::map_type(&inner).map(|i| i.kind), Some(prop_type::PropKind::OwnedStruct { .. }))
+        .then_some(inner)
+}
+
 /// The bare specifiers of `#[ufunction(...)]` and its `name = "..."`, if any.
 fn parse_ufunction_specifiers(attr: &syn::Attribute) -> syn::Result<(Vec<String>, Option<String>)> {
     let mut specifiers = Vec::new();
@@ -648,6 +662,9 @@ fn implementable_event_body(uf: &UFunctionInfo) -> syn::Block {
         .map(|p| {
             let rust_name = &p.rust_name;
             let param = &p.ue_name;
+            if event_struct_param(&p.rust_ty).is_some() {
+                return quote! { call.set_struct(#param, #rust_name)?; };
+            }
             let value = match prop_type::map_type(&p.rust_ty).map(|info| info.kind) {
                 Some(prop_type::PropKind::Object { .. }) => quote! { #rust_name.raw() },
                 Some(prop_type::PropKind::Class { .. }) => {

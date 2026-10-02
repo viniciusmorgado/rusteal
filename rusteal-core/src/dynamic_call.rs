@@ -61,6 +61,22 @@ impl DynamicCall {
         Ok(())
     }
 
+    /// Copy a struct into a parameter with the struct's own copy semantics.
+    pub fn set_struct<T: crate::traits::UeStruct>(
+        &mut self,
+        name: &str,
+        value: &crate::containers::OwnedStruct<T>,
+    ) -> RustealResult<()> {
+        let (_, offset) = self.find_param(name)?;
+        check_ffi(unsafe {
+            ffi_dispatch::reflection_copy_struct(
+                T::static_struct(),
+                self.params.add(offset as usize),
+                value.as_bytes().as_ptr(),
+            )
+        })
+    }
+
     /// Invoke the function via ProcessEvent. Consumes this builder and returns
     /// a `DynamicCallResult` for reading output/return values.
     pub fn call(mut self) -> RustealResult<DynamicCallResult> {

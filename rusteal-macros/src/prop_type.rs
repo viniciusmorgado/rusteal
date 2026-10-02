@@ -155,9 +155,9 @@ pub fn map_type(ty: &Type) -> Option<PropTypeInfo> {
             let element = map_type(&single_type_arg(seg)?)?;
             if !matches!(
                 element.kind,
-                PropKind::Scalar { .. } | PropKind::Object { .. } | PropKind::Class { .. }
+                PropKind::Scalar { .. } | PropKind::Object { .. } | PropKind::Class { .. } | PropKind::Name
             ) {
-                return None; // arrays of scalars, objects and classes only
+                return None; // arrays of scalars, objects, classes and names only
             }
             return Some(PropTypeInfo {
                 prop_type_expr: quote! { ::rusteal_runtime::ffi::RustealReifyPropType::Array },
@@ -274,6 +274,7 @@ mod tests {
         assert_eq!(kind(parse_quote!(UeArray<UObjectRef<InputMappingContext>>)), Some("array"));
         assert_eq!(kind(parse_quote!(UeArray<SubclassOf<Actor>>)), Some("array"));
         assert_eq!(kind(parse_quote!(UeArray<f32>)), Some("array"));
+        assert_eq!(kind(parse_quote!(UeArray<FName>)), Some("array"));
         assert_eq!(kind(parse_quote!(UStructRef<FInputActionValue>)), Some("struct"));
         assert_eq!(kind(parse_quote!(OwnedStruct<FVector>)), Some("owned struct"));
         assert_eq!(kind(parse_quote!(FName)), Some("name"));

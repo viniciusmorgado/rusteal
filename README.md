@@ -335,7 +335,7 @@ impl MyActor {
 
 A `#[uproperty]` is `bool`, `i32`, `i64`, `u8`, `f32`, `f64`, an object
 (`UObjectRef<T>`), a class (`SubclassOf<T>`, UE's `TSubclassOf<T>`), a
-`UeArray` of any of those, a struct (`OwnedStruct<FVector>`), an `FName`, a
+`UeArray` of any of those or of `FName`s, a struct (`OwnedStruct<FVector>`), an `FName`, a
 `String` (`FString`) or an engine enum (`ECollisionChannel`). Each gets a
 getter named after the field and a `set_` setter (`BlueprintReadOnly` is
 about Blueprints; the class's own code writes it, as C++ does); an array's
@@ -408,7 +408,8 @@ class. It is `BlueprintCallable` unless it says otherwise:
   event: `Landed` is `OnLanded`, `Tick` is `ReceiveTick`, `EndPlay` is
   `ReceiveEndPlay`, `OnPossess` is `ReceivePossess`;
 - `BlueprintImplementableEvent`: an event a Blueprint child implements; the
-  method's body is empty, and calling it runs the Blueprint's graph.
+  method's body is empty, and calling it runs the Blueprint's graph. It
+  takes structs as `&OwnedStruct<T>`.
 
 `name = "K2_OnMovementModeChanged"` gives the UE name when the method's name
 in PascalCase is not it.

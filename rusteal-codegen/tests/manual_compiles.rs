@@ -360,6 +360,8 @@ pub struct Probe {
     tag: FName,
     #[uproperty(EditAnywhere)]
     label: String,
+    #[uproperty(EditAnywhere)]
+    sections: UeArray<FName>,
     #[uproperty(EditAnywhere, default = ETriggerEvent::Started)]
     trigger: ETriggerEvent,
     #[uproperty(VisibleAnywhere, name = "NPC", category = "Context")]
@@ -409,6 +411,8 @@ impl Probe {
     #[ufunction(Override, name = "K2_OnBecomeViewTarget")]
     fn on_become_view_target(&mut self, pc: UObjectRef<PlayerController>) {
         self.set_trail(true);
+        self.on_damaged(1.0, &self.target());
+        let _ = self.sections().to_vec();
         let _ = self.pick_target(pc);
         self.set_b_can_dash(self.count_targets(2) > 0);
     }
@@ -421,6 +425,9 @@ impl Probe {
 
     #[ufunction(BlueprintImplementableEvent)]
     fn count_targets(&self, max: i32) -> i32 {}
+
+    #[ufunction(BlueprintImplementableEvent)]
+    fn on_damaged(&self, damage: f32, location: &OwnedStruct<FVector>) {}
 
     #[ufunction(Override, name = "BlueprintUpdateCamera")]
     fn update_camera(
