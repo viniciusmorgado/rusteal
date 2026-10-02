@@ -403,11 +403,14 @@ public static class RustealExport
             // Skip private/protected, unless Blueprint or a child class's
             // defaults can reach them: UHT allows BlueprintReadOnly/ReadWrite on a
             // private member only with AllowPrivateAccess (ACharacter's Mesh,
-            // CharacterMovement, CapsuleComponent), and an editable protected one
-            // (AController's bAttachToPawn) is what a Blueprint child sets in its
-            // defaults. Rust reaches them the same way, by reflection.
+            // CharacterMovement, CapsuleComponent), a Blueprint-assignable
+            // protected delegate (UEnvQueryInstanceBlueprintWrapper's
+            // OnQueryFinishedEvent) is bound from Blueprint graphs, and an
+            // editable protected one (AController's bAttachToPawn) is what a
+            // Blueprint child sets in its defaults. Rust reaches them the same
+            // way, by reflection.
             if (prop.PropertyFlags.HasAnyFlags(NoExportPropFlags)
-                && !prop.PropertyFlags.HasAnyFlags(EPropertyFlags.BlueprintVisible | EPropertyFlags.Edit))
+                && !prop.PropertyFlags.HasAnyFlags(EPropertyFlags.BlueprintVisible | EPropertyFlags.BlueprintAssignable | EPropertyFlags.Edit))
                 return false;
 
             // Skip deprecated

@@ -116,11 +116,13 @@ fn is_property_exportable(prop: &PropertyInfo, available: &HashSet<String>) -> b
         }
     }
 
-    // Skip private/protected, unless Blueprint can reach them (AllowPrivateAccess)
-    // or a child class's defaults can set them (AController's bAttachToPawn,
-    // editable): they are read through reflection, like any other property.
+    // Skip private/protected, unless Blueprint can reach them (AllowPrivateAccess,
+    // or a Blueprint-assignable delegate such as UEnvQueryInstanceBlueprintWrapper's
+    // OnQueryFinishedEvent) or a child class's defaults can set them
+    // (AController's bAttachToPawn, editable): they are read through
+    // reflection, like any other property.
     if prop.prop_flags & (CPF_NATIVE_ACCESS_PRIVATE | CPF_NATIVE_ACCESS_PROTECTED) != 0
-        && prop.prop_flags & (CPF_BLUEPRINT_VISIBLE | CPF_EDIT) == 0
+        && prop.prop_flags & (CPF_BLUEPRINT_VISIBLE | CPF_EDIT | CPF_BLUEPRINT_ASSIGNABLE) == 0
     {
         return false;
     }
@@ -416,6 +418,10 @@ mod tests {
         ));
         assert!(is_property_exportable(
             &object_prop("Editable", CPF_NATIVE_ACCESS_PROTECTED | CPF_EDIT),
+            &available
+        ));
+        assert!(is_property_exportable(
+            &object_prop("Assignable", CPF_NATIVE_ACCESS_PROTECTED | CPF_BLUEPRINT_ASSIGNABLE),
             &available
         ));
     }
