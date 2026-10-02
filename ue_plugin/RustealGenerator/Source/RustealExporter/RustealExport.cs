@@ -169,12 +169,23 @@ public static class RustealExport
                 ["cpp_name"] = classObj.SourceName,
                 ["package"] = package,
                 ["header"] = header.IncludeFilePath ?? header.ModuleRelativeFilePath ?? "",
+                ["header_public"] = IsPublicHeader(header),
                 ["class_flags"] = (long)unchecked((uint)classObj.ClassFlags),
                 ["super"] = superName,
                 ["interfaces"] = interfaces,
                 ["props"] = props,
                 ["funcs"] = funcs,
             });
+        }
+
+        /// <summary>
+        /// Whether another module can include the header: one in a Classes or
+        /// Public folder, not an Internal or Private one.
+        /// </summary>
+        private static bool IsPublicHeader(UhtHeaderFile header)
+        {
+            return header.HeaderFileType == UhtHeaderFileType.Classes
+                || header.HeaderFileType == UhtHeaderFileType.Public;
         }
 
         private static bool ShouldExportClass(UhtClass classObj)
@@ -237,6 +248,7 @@ public static class RustealExport
                 ["cpp_name"] = structObj.SourceName,
                 ["package"] = package,
                 ["header"] = structHeader,
+                ["header_public"] = IsPublicHeader(header),
                 ["struct_flags"] = (long)unchecked((uint)structObj.ScriptStructFlags),
                 ["super"] = superName,
                 ["has_static_struct"] = hasStaticStruct,

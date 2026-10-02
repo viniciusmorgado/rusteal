@@ -33,6 +33,10 @@ pub struct ClassInfo {
     pub cpp_name: String,
     pub package: String,
     pub header: String,
+    /// Whether the header is one another module can include (in a Classes
+    /// or Public folder): the C++ wrappers of the class's functions need it.
+    #[serde(default = "default_true")]
+    pub header_public: bool,
     #[serde(deserialize_with = "deser_flags_u32")]
     pub class_flags: u32,
     #[serde(rename = "super")]
@@ -58,6 +62,9 @@ pub struct StructInfo {
     /// whose real declaration lives elsewhere (e.g. `FVector` in Core).
     #[serde(default)]
     pub header: String,
+    /// Whether the header is one another module can include (see `ClassInfo`).
+    #[serde(default = "default_true")]
+    pub header_public: bool,
     #[serde(deserialize_with = "deser_flags_u32")]
     pub struct_flags: u32,
     #[serde(rename = "super")]
@@ -182,6 +189,10 @@ pub use rusteal_ue_flags::{
 // `(long)(int)flags`, so JSON values can be negative.  We read as i64
 // and truncate to u32 to recover the original bits.
 // ---------------------------------------------------------------------------
+
+fn default_true() -> bool {
+    true
+}
 
 fn deser_flags_u32<'de, D: Deserializer<'de>>(d: D) -> Result<u32, D::Error> {
     let v = i64::deserialize(d)?;
