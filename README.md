@@ -765,6 +765,10 @@ What Rusteal still lacks to write Unreal's Third Person template entirely in
 Rust, in the order the template needs it, is mapped in
 [`docs/third-person-gaps.md`](https://github.com/viniciusmorgado/rusteal/blob/main/docs/third-person-gaps.md).
 
+How the engine templates' variants were ported, where the Rust ports differ
+from the C++ and what they still work around is in
+[`docs/template-variants.md`](https://github.com/viniciusmorgado/rusteal/blob/main/docs/template-variants.md).
+
 What Unreal Engine 6 changes for Rusteal — Verse, Scene Graph, the end of
 Blueprints — and the open questions to check as Epic publishes details are in
 [`docs/ue6-radar.md`](https://github.com/viniciusmorgado/rusteal/blob/main/docs/ue6-radar.md).
