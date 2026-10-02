@@ -772,6 +772,46 @@
       "super": null
     },
     {
+      "cpp_name": "FVector_NetQuantize",
+      "has_static_struct": true,
+      "header": "Engine/NetSerialization.h",
+      "name": "Vector_NetQuantize",
+      "package": "Engine",
+      "props": [],
+      "struct_flags": 17,
+      "super": "Vector"
+    },
+    {
+      "cpp_name": "FVector_NetQuantize10",
+      "has_static_struct": true,
+      "header": "Engine/NetSerialization.h",
+      "name": "Vector_NetQuantize10",
+      "package": "Engine",
+      "props": [],
+      "struct_flags": 17,
+      "super": "Vector"
+    },
+    {
+      "cpp_name": "FVector_NetQuantize100",
+      "has_static_struct": true,
+      "header": "Engine/NetSerialization.h",
+      "name": "Vector_NetQuantize100",
+      "package": "Engine",
+      "props": [],
+      "struct_flags": 17,
+      "super": "Vector"
+    },
+    {
+      "cpp_name": "FVector_NetQuantizeNormal",
+      "has_static_struct": true,
+      "header": "Engine/NetSerialization.h",
+      "name": "Vector_NetQuantizeNormal",
+      "package": "Engine",
+      "props": [],
+      "struct_flags": 17,
+      "super": "Vector"
+    },
+    {
       "cpp_name": "FInputActionValue",
       "has_static_struct": true,
       "header": "InputActionValue.h",

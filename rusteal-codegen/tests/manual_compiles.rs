@@ -78,6 +78,11 @@ const STRUCTS: &[&str] = &[
     "Plane",
     "Box2D",
     "Key",
+    // The hit result's vectors (manual/net_quantize.rs).
+    "Vector_NetQuantize",
+    "Vector_NetQuantize10",
+    "Vector_NetQuantize100",
+    "Vector_NetQuantizeNormal",
     // Enhanced Input.
     "InputActionValue",
     "ModifyContextOptions",
