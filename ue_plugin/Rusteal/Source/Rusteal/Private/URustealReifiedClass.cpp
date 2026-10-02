@@ -12,6 +12,22 @@ UClass *URustealReifiedClass::GetAuthoritativeClass() {
   return this;
 }
 
+void URustealReifiedClass::InitPropertiesFromCustomList(
+    uint8 *DataPtr, const uint8 *DefaultDataPtr) {
+  if (!bCustomPropertyListCurrent.load()) {
+    FScopeLock Lock(&CustomPropertyListLock);
+    if (!bCustomPropertyListCurrent.load()) {
+      UpdateCustomPropertyListForPostConstruction();
+      bCustomPropertyListCurrent.store(true);
+    }
+  }
+  Super::InitPropertiesFromCustomList(DataPtr, DefaultDataPtr);
+}
+
+void URustealReifiedClass::InvalidateCustomPropertyList() {
+  bCustomPropertyListCurrent.store(false);
+}
+
 // An inherited scene component of Obj by name: the component a property of
 // that name points to (RootComponent, Mesh), or a default subobject of that
 // name (CollisionCylinder).

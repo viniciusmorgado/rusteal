@@ -571,6 +571,9 @@ static ERustealErrorCode FinalizeClassImpl(RustealUClassHandle Cls) {
     return ERustealErrorCode::NullArgument;
   }
 
+  // Rust writes the class defaults next.
+  Class->InvalidateCustomPropertyList();
+
   // Hot reload path: if already finalized (Bind/StaticLink done), skip.
   if (Class->HasAnyClassFlags(CLASS_Constructed)) {
     UE_LOG(LogRusteal, Display,
