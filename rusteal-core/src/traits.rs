@@ -38,6 +38,14 @@ pub trait HasParent: UeClass {
     type Parent: UeClass;
 }
 
+/// `Self` is `U` or one of its subclasses: a `UObjectRef<Self>` is a valid
+/// `UObjectRef<U>`, as a `Character*` is an `AActor*` in C++.
+///
+/// Codegen implements it for every class and each of its ancestors
+/// (`impl Inherits<Actor> for Character`); a Rust `#[uclass]` gets it for
+/// everything its parent inherits. See `UObjectRef::upcast_to`.
+pub trait Inherits<U: UeClass>: UeClass {}
+
 /// Trait for types that hold a UObject handle and can validate it.
 ///
 /// Both `UObjectRef<T>` and `Pinned<T>` implement this, enabling fallible

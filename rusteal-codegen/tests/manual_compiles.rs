@@ -403,6 +403,12 @@ impl Probe {
     fn count_targets(&self, max: i32) -> i32 {}
 }
 
+pub fn upcasts(probe: UObjectRef<Probe>, pc: UObjectRef<PlayerController>) -> (UObjectRef<Actor>, UObjectRef<Pawn>) {
+    let _controller: UObjectRef<Controller> = pc.upcast_to::<Controller>();
+    let _actor_class: SubclassOf<Actor> = SubclassOf::<PlayerController>::base().upcast_to::<Actor>();
+    (pc.upcast_to::<Actor>(), probe.upcast_to::<Pawn>())
+}
+
 #[uclass(parent = Actor)]
 pub struct Plain {}
 

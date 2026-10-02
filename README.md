@@ -287,6 +287,10 @@ let pinned: Pinned<Actor> = actor.pin()?;
 // Checked access — verifies the object is still alive before use.
 let checked = actor.checked()?;
 checked.k2_get_actor_location();
+
+// Upcast to any ancestor, checked at compile time (a Character is an Actor);
+// downcast with `cast::<T>()`, checked at runtime.
+let as_object: UObjectRef<Object> = actor.upcast_to::<Object>();
 ```
 
 ### Defining UE Classes

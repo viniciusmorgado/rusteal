@@ -78,6 +78,28 @@ pub fn generate_class(class: &ClassInfo, ctx: &CodegenContext) -> String {
         ));
     }
 
+    // Inherits: the class is itself and each of its ancestors, for
+    // `UObjectRef::upcast_to`.
+    let mut ancestor = Some(name.as_str());
+    while let Some(class_name) = ancestor {
+        let Some(ancestor_class) = ctx.classes.get(class_name) else {
+            break;
+        };
+        let ancestor_module = ctx
+            .package_to_module
+            .get(&ancestor_class.package)
+            .map(|s| s.as_str())
+            .unwrap_or("");
+        if ancestor_module != current_module
+            && let Some(feature) = ctx.feature_for_module(ancestor_module)
+        {
+            out.push_str(&format!("#[cfg(feature = \"{feature}\")]\n"));
+        }
+        out.push_str(&format!("impl rusteal_core::Inherits<{class_name}> for {name} {{}}\n"));
+        ancestor = ancestor_class.super_class.as_deref();
+    }
+    out.push('\n');
+
     // Collect own functions only (inherited methods are accessed via Deref chain)
     let mut seen_func_names: HashSet<String> = HashSet::new();
     let mut class_funcs: Vec<&FuncEntry> = Vec::new();

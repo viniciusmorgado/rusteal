@@ -32,7 +32,7 @@ pub mod world;
 // Re-export the primary public API surface.
 pub use api::{api, init_api};
 pub use error::{check_ffi, check_ffi_ctx, ffi_infallible, ffi_infallible_ctx, RustealError, RustealResult};
-pub use traits::{UeClass, UeStruct, UeEnum, UeHandle, ValidHandle, HasParent};
+pub use traits::{UeClass, UeStruct, UeEnum, UeHandle, ValidHandle, HasParent, Inherits};
 pub use object_ref::{Checked, ObjectPointer, UObjectRef};
 pub use subclass_of::SubclassOf;
 pub use struct_ref::UStructRef;

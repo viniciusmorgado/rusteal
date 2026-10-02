@@ -832,6 +832,15 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
         }
     };
 
+    // --- Inherits: the class is everything its parent is ---
+    let inherits_impl = quote! {
+        impl<U: ::rusteal_runtime::runtime::UeClass> ::rusteal_runtime::runtime::Inherits<U> for #struct_name
+        where
+            #parent_path: ::rusteal_runtime::runtime::Inherits<U>,
+        {
+        }
+    };
+
     // --- Deref to UObjectRef<Parent> for auto-deref to parent Ext trait methods ---
     let deref_impl = quote! {
         impl std::ops::Deref for #struct_name {
@@ -851,6 +860,7 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
         #static_handle
         #ue_class_impl
         #has_parent_impl
+        #inherits_impl
         #parent_check
         #deref_impl
         #accessors_impl
