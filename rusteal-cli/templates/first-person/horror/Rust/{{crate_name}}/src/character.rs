@@ -143,7 +143,7 @@ impl FirstPersonCharacter {
 
     /// Handles aim inputs from either controls or UI interfaces
     #[ufunction(BlueprintCallable)]
-    fn do_aim(&mut self, yaw: f32, pitch: f32) {
+    pub(crate) fn do_aim(&mut self, yaw: f32, pitch: f32) {
         let Ok(me) = self.as_ref().checked() else {
             return;
         };
@@ -156,7 +156,7 @@ impl FirstPersonCharacter {
 
     /// Handles move inputs from either controls or UI interfaces
     #[ufunction(BlueprintCallable)]
-    fn do_move(&mut self, right: f32, forward: f32) {
+    pub(crate) fn do_move(&mut self, right: f32, forward: f32) {
         let Ok(me) = self.as_ref().checked() else {
             return;
         };
@@ -169,7 +169,7 @@ impl FirstPersonCharacter {
 
     /// Handles jump start inputs from either controls or UI interfaces
     #[ufunction(BlueprintCallable)]
-    fn do_jump_start(&mut self) {
+    pub(crate) fn do_jump_start(&mut self) {
         // pass Jump to the character
         if let Ok(me) = self.as_ref().checked() {
             me.jump();
@@ -178,7 +178,7 @@ impl FirstPersonCharacter {
 
     /// Handles jump end inputs from either controls or UI interfaces
     #[ufunction(BlueprintCallable)]
-    fn do_jump_end(&mut self) {
+    pub(crate) fn do_jump_end(&mut self) {
         // pass StopJumping to the character
         if let Ok(me) = self.as_ref().checked() {
             me.stop_jumping();
