@@ -1,0 +1,34 @@
+# `rusteal new <Name> --template top-down --variant strategy`: UE's Top Down
+# template and its Strategy variant, their gameplay classes in Rust.
+description = "Strategy: select units with clicks, boxes and touches, and send them along the navigation mesh to interact with the units they reach."
+
+# The engine template the project starts from, copied with the engine's own
+# recipe (its Config/TemplateDefs.ini), as the editor's New Project dialog does.
+engine_template = "TP_TopDown"
+
+# Paths of the engine template to leave out, relative to it; %TEMPLATENAME%
+# stands for its name, and a folder leaves out everything under it. The C++
+# gameplay classes are replaced by the Rust crate, the base Blueprints and the
+# variant's Blueprint children by this variant's (Rust parents; the movement
+# EnvQueries, the UI and the level's actors too, which name Rust classes), and
+# the other variant is left to its own `--variant`.
+exclude = [
+    "Source/%TEMPLATENAME%/%TEMPLATENAME%Character.cpp",
+    "Source/%TEMPLATENAME%/%TEMPLATENAME%Character.h",
+    "Source/%TEMPLATENAME%/%TEMPLATENAME%GameMode.cpp",
+    "Source/%TEMPLATENAME%/%TEMPLATENAME%GameMode.h",
+    "Source/%TEMPLATENAME%/%TEMPLATENAME%PlayerController.cpp",
+    "Source/%TEMPLATENAME%/%TEMPLATENAME%PlayerController.h",
+    "Source/%TEMPLATENAME%/Variant_Strategy",
+    "Source/%TEMPLATENAME%/Variant_TwinStick",
+    "Content/TopDown/Blueprints",
+    "Content/Variant_TwinStick",
+    "Content/__ExternalActors__/Variant_TwinStick",
+    "Content/__ExternalObjects__/Variant_TwinStick",
+]
+
+# The level the project opens and plays.
+default_map = "/Game/Variant_Strategy/LVL_Strategy"
+
+# Printed when the project is ready (Tera, same context as the files).
+next_step = "open {{ project }}.uproject and press Play: left click / drag selects units (Shift adds, double click selects all), right click sends them, WASD / right drag pans, wheel / Q E zoom"
