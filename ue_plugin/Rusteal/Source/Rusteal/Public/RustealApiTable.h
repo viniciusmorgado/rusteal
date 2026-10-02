@@ -230,6 +230,10 @@ struct FRustealReflectionApi {
   // UScriptStruct's copy semantics (deep for strings, arrays and the like).
   ERustealErrorCode (*copy_struct)(RustealUStructHandle ustruct, uint8 *dest,
                                    const uint8 *src);
+
+  // Find a UEnum by name (ECollisionChannel); typed like a class handle, as
+  // FRustealReifyPropExtra::enum_handle.
+  RustealUClassHandle (*find_enum)(const uint8 *name, uint32 name_len);
 };
 
 // ---------------------------------------------------------------------------
@@ -409,9 +413,11 @@ struct FRustealReifyApi {
 
   // attach_parent: a component the class declares, or an inherited one by its
   // property or subobject name (RootComponent, Mesh); attach_socket: the
-  // socket on it. Both empty for none.
+  // socket on it. Both empty for none. property: the property referencing the
+  // component, empty for the subobject's name.
   ERustealErrorCode (*add_default_subobject)(
       RustealUClassHandle cls, const uint8 *name, uint32 name_len,
+      const uint8 *property, uint32 property_len,
       RustealUClassHandle component_class, uint32 flags,
       const uint8 *attach_parent, uint32 attach_len, const uint8 *attach_socket,
       uint32 socket_len);
@@ -419,6 +425,12 @@ struct FRustealReifyApi {
   RustealUObjectHandle (*find_default_subobject)(RustealUObjectHandle owner,
                                                  const uint8 *name,
                                                  uint32 name_len);
+
+  // A property's metadata entry (Category, ClampMin); editor builds only.
+  ERustealErrorCode (*set_property_metadata)(RustealFPropertyHandle prop,
+                                             const uint8 *key, uint32 key_len,
+                                             const uint8 *value,
+                                             uint32 value_len);
 };
 struct FRustealWidgetApi {
   // Create a UMG widget. owning_object should be a PlayerController, World, or

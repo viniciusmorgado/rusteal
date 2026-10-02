@@ -653,8 +653,9 @@ static RustealUObjectHandle GetCdoImpl(RustealUClassHandle Cls) {
 
 static ERustealErrorCode AddDefaultSubobjectImpl(
     RustealUClassHandle Cls, const uint8 *Name, uint32 NameLen,
-    RustealUClassHandle CompClass, uint32 Flags, const uint8 *AttachParent,
-    uint32 AttachLen, const uint8 *AttachSocket, uint32 SocketLen) {
+    const uint8 *Property, uint32 PropertyLen, RustealUClassHandle CompClass,
+    uint32 Flags, const uint8 *AttachParent, uint32 AttachLen,
+    const uint8 *AttachSocket, uint32 SocketLen) {
   URustealReifiedClass *RC =
       Cast<URustealReifiedClass>(static_cast<UClass *>(Cls.ptr));
   if (!RC)
@@ -684,14 +685,17 @@ static ERustealErrorCode AddDefaultSubobjectImpl(
          TEXT("[Rusteal] Registered default subobject '%s' (class: %s) on %s"),
          *Def.SubobjectName.ToString(), *CompUClass->GetName(), *RC->GetName());
 
-  // Reference the component from a property of the same name, as a C++
-  // `UPROPERTY(VisibleAnywhere) UFooComponent* Name` does. The editor saves,
+  // Reference the component from a property, as a C++
+  // `UPROPERTY(VisibleAnywhere) UFooComponent* Name` does: named as the
+  // subobject unless the class gives it its own name. The editor saves,
   // shows and reinstances a class's components through these references;
   // without one, a Blueprint child drops the component when the editor
   // regenerates it (TP-GAP-04).
-  if (!FindFProperty<FProperty>(RC, Def.SubobjectName)) {
+  Def.PropertyName = PropertyLen > 0 ? ReifyUtf8ToFName(Property, PropertyLen)
+                                     : Def.SubobjectName;
+  if (!FindFProperty<FProperty>(RC, Def.PropertyName)) {
     FObjectProperty *CompProp =
-        new FObjectProperty(FFieldVariant(RC), Def.SubobjectName);
+        new FObjectProperty(FFieldVariant(RC), Def.PropertyName);
     CompProp->PropertyClass = CompUClass;
     CompProp->PropertyFlags |= CPF_Edit | CPF_EditConst | CPF_BlueprintVisible |
                                CPF_BlueprintReadOnly | CPF_ExportObject |
@@ -718,6 +722,20 @@ static RustealUObjectHandle FindDefaultSubobjectImpl(RustealUObjectHandle Owner,
   FName SubName(ReifyUtf8ToFString(Name, NameLen));
   UObject *Sub = Obj->GetDefaultSubobjectByName(SubName);
   return RustealUObjectHandle{Sub};
+}
+
+static ERustealErrorCode
+SetPropertyMetadataImpl(RustealFPropertyHandle Prop, const uint8 *Key,
+                        uint32 KeyLen, const uint8 *Value, uint32 ValueLen) {
+  FProperty *Property = static_cast<FProperty *>(Prop.ptr);
+  if (!Property) {
+    return ERustealErrorCode::NullArgument;
+  }
+#if WITH_EDITORONLY_DATA
+  Property->SetMetaData(ReifyUtf8ToFName(Key, KeyLen),
+                        ReifyUtf8ToFString(Value, ValueLen));
+#endif
+  return ERustealErrorCode::Ok;
 }
 
 // ---------------------------------------------------------------------------
@@ -784,7 +802,9 @@ void RustealReifyForEachReifiedInstance(
 // ---------------------------------------------------------------------------
 
 FRustealReifyApi GReifyApi = {
-    &CreateClassImpl,         &AddPropertyImpl,          &AddFunctionImpl,
-    &AddFunctionParamImpl,    &FinalizeClassImpl,        &GetCdoImpl,
+    &CreateClassImpl,         &AddPropertyImpl,
+    &AddFunctionImpl,         &AddFunctionParamImpl,
+    &FinalizeClassImpl,       &GetCdoImpl,
     &AddDefaultSubobjectImpl, &FindDefaultSubobjectImpl,
+    &SetPropertyMetadataImpl,
 };

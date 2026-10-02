@@ -191,15 +191,35 @@ static ERustealErrorCode CopyStructImpl(RustealUStructHandle UStructHandle,
   return ERustealErrorCode::Ok;
 }
 
+static RustealUClassHandle FindEnumImpl(const uint8 *Name, uint32 NameLen) {
+  const FString EnumName = Utf8ToFString(Name, NameLen);
+  UEnum *Found =
+      FindFirstObject<UEnum>(*EnumName, EFindFirstObjectOptions::NativeFirst);
+  return RustealUClassHandle{Found};
+}
+
 // ---------------------------------------------------------------------------
 // Static instance
 // ---------------------------------------------------------------------------
 
 FRustealReflectionApi GReflectionApi = {
-    &FindClassImpl,           &FindPropertyImpl,     &GetStaticClassImpl,
-    &GetPropertySizeImpl,     &FindStructImpl,       &FindStructPropertyImpl,
-    &FindFunctionImpl,        &AllocParamsImpl,      &FreeParamsImpl,
-    &CallFunctionImpl,        &GetFunctionParamImpl, &GetPropertyOffsetImpl,
-    &FindFunctionByClassImpl, &GetElementSizeImpl,   &GetStructSizeImpl,
-    &InitializeStructImpl,    &DestroyStructImpl,    &CopyStructImpl,
+    &FindClassImpl,
+    &FindPropertyImpl,
+    &GetStaticClassImpl,
+    &GetPropertySizeImpl,
+    &FindStructImpl,
+    &FindStructPropertyImpl,
+    &FindFunctionImpl,
+    &AllocParamsImpl,
+    &FreeParamsImpl,
+    &CallFunctionImpl,
+    &GetFunctionParamImpl,
+    &GetPropertyOffsetImpl,
+    &FindFunctionByClassImpl,
+    &GetElementSizeImpl,
+    &GetStructSizeImpl,
+    &InitializeStructImpl,
+    &DestroyStructImpl,
+    &CopyStructImpl,
+    &FindEnumImpl,
 };

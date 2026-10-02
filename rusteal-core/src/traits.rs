@@ -21,9 +21,18 @@ pub trait UeStruct: 'static {
 }
 
 /// Implemented by codegen for every exported UEnum.
-pub trait UeEnum: 'static {
+pub trait UeEnum: Copy + 'static {
     /// The underlying integer representation (u8, i32, i64, etc.).
     type Repr: Copy;
+
+    /// The UEnum, typed like a class handle (an enum `#[uproperty]` needs it).
+    fn static_enum() -> UClassHandle;
+
+    /// The value as UE stores it in a property.
+    fn to_i64(self) -> i64;
+
+    /// The variant for a value UE stored; `None` for a value the enum lacks.
+    fn from_i64(value: i64) -> Option<Self>;
 }
 
 /// Declares the immediate UE parent class for codegen-exported classes.

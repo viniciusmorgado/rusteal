@@ -45,7 +45,7 @@ pub use delegate_registry::DelegateBinding;
 
 // Phase 10 re-exports.
 pub use fname::FName;
-pub use struct_ref::struct_ref_from_param;
+pub use struct_ref::{OutRef, out_ref_from_param, struct_ref_from_param};
 pub use weak_ptr::TWeakObjectPtr;
 pub use ue_math::{
     Rotator, Transform, LinearColor, Color,

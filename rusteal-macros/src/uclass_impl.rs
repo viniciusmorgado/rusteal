@@ -189,7 +189,15 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
                     params, offsets[#idx] as usize,
                 )
             };
+            let is_out_ref = matches!(
+                rust_ty,
+                Type::Path(tp) if tp.path.segments.last().is_some_and(|seg| seg.ident == "OutRef")
+            );
             let read = match prop_type::map_type(rust_ty).map(|info| info.kind) {
+                // A scalar out parameter, written in place.
+                _ if is_out_ref => quote! {
+                    ::rusteal_runtime::runtime::out_ref_from_param(params, offsets[#idx] as usize)
+                },
                 // A typed reference to the struct inside the params buffer.
                 Some(prop_type::PropKind::Struct { .. }) => quote! {
                     ::rusteal_runtime::runtime::struct_ref_from_param(params, offsets[#idx] as usize)
@@ -516,6 +524,15 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
                     ));
                 }
                 check_event_type(&ty)?;
+                if is_override
+                    && prop_type::map_type(&ty).is_some_and(|info| info.kind.property_only())
+                {
+                    return Err(syn::Error::new_spanned(
+                        &ty,
+                        "an Override takes a struct as UStructRef<T>, and a scalar out \
+                         parameter as OutRef<T>",
+                    ));
+                }
                 let ue_name = prop_type::to_ue_name(&name.unraw().to_string());
                 params.push(ParamInfo { rust_name: name, ue_name, rust_ty: ty });
             }
@@ -563,13 +580,19 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
 /// Parameters: scalars, objects, classes and structs (by reference into the
 /// call's parameters). Arrays are not supported.
 fn supported_param(ty: &Type) -> bool {
-    prop_type::map_type(ty).is_some_and(|info| !matches!(info.kind, prop_type::PropKind::Array { .. }))
+    prop_type::map_type(ty).is_some_and(|info| {
+        !matches!(info.kind, prop_type::PropKind::Array { .. } | prop_type::PropKind::Enum { .. })
+            && !info.kind.property_only()
+    })
 }
 
 /// Returns: scalars, objects and classes. A struct cannot be returned by reference.
 fn supported_return(ty: &Type) -> bool {
     prop_type::map_type(ty).is_some_and(|info| {
-        !matches!(info.kind, prop_type::PropKind::Array { .. } | prop_type::PropKind::Struct { .. })
+        !matches!(
+            info.kind,
+            prop_type::PropKind::Array { .. } | prop_type::PropKind::Struct { .. } | prop_type::PropKind::Enum { .. }
+        ) && !info.kind.property_only()
     })
 }
 

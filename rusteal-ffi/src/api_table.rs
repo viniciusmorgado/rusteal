@@ -266,6 +266,10 @@ pub struct RustealReflectionApi {
     /// Copy the struct at `src` over the initialized struct at `dest` with the
     /// UScriptStruct's copy semantics (deep for strings, arrays and the like).
     pub copy_struct: unsafe extern "C" fn(ustruct: UStructHandle, dest: *mut u8, src: *const u8) -> RustealErrorCode,
+
+    /// Find a UEnum by name (`ECollisionChannel`). The handle is the enum's
+    /// object, typed like a class handle as `RustealReifyPropExtra::enum_handle`.
+    pub find_enum: unsafe extern "C" fn(name: *const u8, name_len: u32) -> UClassHandle,
 }
 
 /// Phase 7: Container operations (TArray / TMap / TSet).
@@ -468,9 +472,13 @@ pub struct RustealReifyApi {
     /// one the class declares, or an inherited one by its property or
     /// subobject name (`RootComponent`, `Mesh`).
     /// `attach_socket`/`socket_len`: the socket on it (0-len = none).
+    /// `property`/`property_len`: the property that references the component
+    /// (0-len = the subobject's name), as C++'s `UPROPERTY() UBoxComponent*
+    /// CollisionCheckBox` for a subobject named "Collision Check Box".
     pub add_default_subobject: unsafe extern "C" fn(
         cls: UClassHandle,
         name: *const u8, name_len: u32,
+        property: *const u8, property_len: u32,
         component_class: UClassHandle,
         flags: u32,
         attach_parent: *const u8, attach_len: u32,
@@ -482,6 +490,14 @@ pub struct RustealReifyApi {
         owner: UObjectHandle,
         name: *const u8, name_len: u32,
     ) -> UObjectHandle,
+
+    /// Set a metadata entry of a property (`Category`, `ClampMin`): what the
+    /// editor shows and StateTree reads. Editor builds only; a no-op otherwise.
+    pub set_property_metadata: unsafe extern "C" fn(
+        prop: FPropertyHandle,
+        key: *const u8, key_len: u32,
+        value: *const u8, value_len: u32,
+    ) -> RustealErrorCode,
 }
 
 pub const RUSTEAL_COMP_ROOT: u32 = 1;

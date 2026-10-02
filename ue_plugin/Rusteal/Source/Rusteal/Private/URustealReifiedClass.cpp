@@ -66,13 +66,14 @@ void URustealReifiedClass::RustealClassConstructor(
 
       // Point the component's property at it (see AddDefaultSubobjectImpl).
       if (FObjectProperty *CompProp =
-              FindFProperty<FObjectProperty>(ReifiedClass, Def.SubobjectName)) {
+              FindFProperty<FObjectProperty>(ReifiedClass, Def.PropertyName)) {
         CompProp->SetObjectPropertyValue_InContainer(Obj, Sub);
       }
 
+      // Later components attach to it by its property name (the Rust field).
       USceneComponent *SceneComp = Cast<USceneComponent>(Sub);
       if (SceneComp) {
-        CreatedComponents.Add(Def.SubobjectName, SceneComp);
+        CreatedComponents.Add(Def.PropertyName, SceneComp);
       }
 
       if (Def.bIsRoot) {

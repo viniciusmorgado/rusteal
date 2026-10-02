@@ -79,6 +79,19 @@ struct UPropertyArgs {
     edit_defaults_only: bool,
     visible_anywhere: bool,
     default_expr: Option<Expr>,
+    /// The UE name when it is not the field's (`NPC` for `npc`).
+    name: Option<String>,
+    /// `Category` metadata: the Details section, and for a StateTree task's
+    /// property its role (`Context`, `Input`, `Output`, `Parameter`).
+    category: Option<String>,
+}
+
+/// A string literal attribute value.
+fn str_value(value: &Expr, what: &str) -> syn::Result<String> {
+    match value {
+        Expr::Lit(syn::ExprLit { lit: syn::Lit::Str(s), .. }) => Ok(s.value()),
+        other => Err(syn::Error::new_spanned(other, format!("{what} is a string literal"))),
+    }
 }
 
 fn parse_uproperty_args(attr: &syn::Attribute) -> syn::Result<UPropertyArgs> {
@@ -110,6 +123,12 @@ fn parse_uproperty_args(attr: &syn::Attribute) -> syn::Result<UPropertyArgs> {
                 if nv.path.is_ident("default") => {
                     args.default_expr = Some(nv.value.clone());
                 }
+            Meta::NameValue(nv) if nv.path.is_ident("name") => {
+                args.name = Some(str_value(&nv.value, "name")?);
+            }
+            Meta::NameValue(nv) if nv.path.is_ident("category") => {
+                args.category = Some(str_value(&nv.value, "category")?);
+            }
             _ => {}
         }
     }
@@ -125,6 +144,8 @@ struct ComponentArgs {
     is_root: bool,
     attach_to: Option<String>,
     socket: Option<String>,
+    /// The subobject's name when it is not the field's ("Collision Check Box").
+    name: Option<String>,
 }
 
 fn parse_component_args(attr: &syn::Attribute) -> syn::Result<ComponentArgs> {
@@ -132,6 +153,7 @@ fn parse_component_args(attr: &syn::Attribute) -> syn::Result<ComponentArgs> {
         is_root: false,
         attach_to: None,
         socket: None,
+        name: None,
     };
 
     // #[component] with no parens → defaults
@@ -177,6 +199,9 @@ fn parse_component_args(attr: &syn::Attribute) -> syn::Result<ComponentArgs> {
                         ));
                     }
                 }
+            Meta::NameValue(nv) if nv.path.is_ident("name") => {
+                args.name = Some(str_value(&nv.value, "name")?);
+            }
             _ => {}
         }
     }
@@ -199,6 +224,16 @@ struct UPropertyField {
     args: UPropertyArgs,
 }
 
+impl UPropertyField {
+    /// The property's UE name: given, or the field's (`b_foo` is `bFoo`).
+    fn ue_name(&self) -> String {
+        self.args
+            .name
+            .clone()
+            .unwrap_or_else(|| prop_type::to_ue_name(&self.ident.to_string()))
+    }
+}
+
 struct RustPrivateField {
     ident: Ident,
     ty: syn::Type,
@@ -210,6 +245,8 @@ struct ComponentField {
     is_root: bool,
     attach_to: Option<String>,
     socket: Option<String>,
+    /// The subobject's UE name (the field's, PascalCase, unless given).
+    subobject_name: String,
 }
 
 // ---------------------------------------------------------------------------
@@ -271,12 +308,16 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
                     ));
                 }
             };
+            let subobject_name = cargs
+                .name
+                .unwrap_or_else(|| prop_type::to_pascal_case(&field_ident.to_string()));
             components.push(ComponentField {
                 ident: field_ident,
                 component_type,
                 is_root: cargs.is_root,
                 attach_to: cargs.attach_to,
                 socket: cargs.socket,
+                subobject_name,
             });
         } else if let Some(attr) = uprop_attr {
             let pargs = parse_uproperty_args(attr)?;
@@ -285,20 +326,24 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
                 return Err(syn::Error::new_spanned(
                     &field_ty,
                     "unsupported uproperty type: supported are bool/i32/i64/u8/f32/f64, \
-                     UObjectRef<T>, SubclassOf<T> and UeArray of those",
+                     UObjectRef<T>, SubclassOf<T>, UeArray of those, OwnedStruct<T>, FName, \
+                     String and UE enums",
                 ));
             };
             if matches!(info.kind, prop_type::PropKind::Struct { .. }) {
                 return Err(syn::Error::new_spanned(
                     &field_ty,
-                    "UStructRef is only supported as a #[ufunction] parameter, not as a uproperty",
+                    "UStructRef is only supported as a #[ufunction] parameter; a struct \
+                     #[uproperty] is an OwnedStruct<T>",
                 ));
             }
-            if pargs.default_expr.is_some() && !matches!(info.kind, prop_type::PropKind::Scalar { .. }) {
+            if pargs.default_expr.is_some()
+                && !matches!(info.kind, prop_type::PropKind::Scalar { .. } | prop_type::PropKind::Enum { .. })
+            {
                 return Err(syn::Error::new_spanned(
                     &field_ty,
-                    "`default = ...` is only supported for bool/i32/i64/u8/f32/f64 properties; \
-                     object, class and array properties are set in a Blueprint child",
+                    "`default = ...` is only supported for bool/i32/i64/u8/f32/f64 and enum properties; \
+                     the others are set in #[class_defaults] or a Blueprint child",
                 ));
             }
             uprops.push(UPropertyField {
@@ -386,7 +431,7 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
     for prop in &uprops {
         let info = prop_type::map_type(&prop.ty).unwrap();
         let field_ident = &prop.ident;
-        let ue_name = prop_type::to_ue_name(&field_ident.to_string());
+        let ue_name = prop.ue_name();
         let ue_name_bytes = ue_name.as_bytes();
         let ue_name_len = ue_name.len() as u32;
         let rust_ty = &info.rust_type;
@@ -413,9 +458,9 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
                         unsafe { ::rusteal_runtime::runtime::ffi_dispatch::#getter_dispatch(self.__obj, prop, &mut val); }
                         val
                     },
-                    Some(quote! {
+                    Some((quote! { #rust_ty }, quote! {
                         unsafe { ::rusteal_runtime::runtime::ffi_dispatch::#setter_dispatch(self.__obj, prop, val); }
-                    }),
+                    })),
                 )
             }
             prop_type::PropKind::Object { .. } => (
@@ -425,9 +470,9 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
                     // The property only holds objects of its class.
                     unsafe { <#rust_ty>::from_raw(h) }
                 },
-                Some(quote! {
+                Some((quote! { #rust_ty }, quote! {
                     unsafe { ::rusteal_runtime::runtime::ffi_dispatch::property_set_object(self.__obj, prop, val.raw()); }
-                }),
+                })),
             ),
             prop_type::PropKind::Class { .. } => (
                 quote! {
@@ -436,18 +481,85 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
                     // The property only holds its meta class and subclasses.
                     unsafe { <#rust_ty>::from_raw(::rusteal_runtime::ffi::UClassHandle(h.0)) }
                 },
-                Some(quote! {
+                Some((quote! { #rust_ty }, quote! {
                     unsafe {
                         ::rusteal_runtime::runtime::ffi_dispatch::property_set_object(
                             self.__obj, prop, ::rusteal_runtime::ffi::UObjectHandle(val.raw().0),
                         );
                     }
-                }),
+                })),
             ),
             // A view of the array inside the object: it is read and changed in place.
             prop_type::PropKind::Array { .. } => (
                 quote! { <#rust_ty>::new(self.__obj, prop) },
                 None,
+            ),
+            // A copy of the struct; the setter copies one in.
+            prop_type::PropKind::OwnedStruct { .. } => (
+                quote! {
+                    let size = unsafe { ::rusteal_runtime::runtime::ffi_dispatch::reflection_get_property_size(prop) } as usize;
+                    let mut buf = vec![0u8; size];
+                    ::rusteal_runtime::runtime::ffi_infallible_ctx(unsafe {
+                        ::rusteal_runtime::runtime::ffi_dispatch::property_get_struct(self.__obj, prop, buf.as_mut_ptr(), size as u32)
+                    }, #ue_name);
+                    ::rusteal_runtime::runtime::OwnedStruct::from_bytes(buf)
+                },
+                Some((quote! { &#rust_ty }, quote! {
+                    let bytes = val.to_bytes();
+                    ::rusteal_runtime::runtime::ffi_infallible_ctx(unsafe {
+                        ::rusteal_runtime::runtime::ffi_dispatch::property_set_struct(self.__obj, prop, bytes.as_ptr(), bytes.len() as u32)
+                    }, #ue_name);
+                })),
+            ),
+            prop_type::PropKind::Name => (
+                quote! {
+                    let mut h = ::rusteal_runtime::runtime::FName::NONE.handle();
+                    unsafe { ::rusteal_runtime::runtime::ffi_dispatch::property_get_fname(self.__obj, prop, &mut h); }
+                    ::rusteal_runtime::runtime::FName(h)
+                },
+                Some((quote! { #rust_ty }, quote! {
+                    unsafe { ::rusteal_runtime::runtime::ffi_dispatch::property_set_fname(self.__obj, prop, val.handle()); }
+                })),
+            ),
+            prop_type::PropKind::Str => (
+                quote! {
+                    let mut len: u32 = 0;
+                    unsafe {
+                        ::rusteal_runtime::runtime::ffi_dispatch::property_get_string(
+                            self.__obj, prop, std::ptr::null_mut(), 0, &mut len,
+                        );
+                    }
+                    let mut buf = vec![0u8; len as usize];
+                    unsafe {
+                        ::rusteal_runtime::runtime::ffi_dispatch::property_get_string(
+                            self.__obj, prop, buf.as_mut_ptr(), len, &mut len,
+                        );
+                    }
+                    buf.truncate(len as usize);
+                    String::from_utf8(buf).unwrap_or_default()
+                },
+                Some((quote! { &str }, quote! {
+                    unsafe {
+                        ::rusteal_runtime::runtime::ffi_dispatch::property_set_string(
+                            self.__obj, prop, val.as_ptr(), val.len() as u32,
+                        );
+                    }
+                })),
+            ),
+            prop_type::PropKind::Enum { ty } => (
+                quote! {
+                    let mut raw: i64 = 0;
+                    unsafe { ::rusteal_runtime::runtime::ffi_dispatch::property_get_enum(self.__obj, prop, &mut raw); }
+                    <#ty as ::rusteal_runtime::runtime::UeEnum>::from_i64(raw)
+                        .unwrap_or_else(|| panic!("{} holds {}, not a {}", #ue_name, raw, stringify!(#ty)))
+                },
+                Some((quote! { #rust_ty }, quote! {
+                    unsafe {
+                        ::rusteal_runtime::runtime::ffi_dispatch::property_set_enum(
+                            self.__obj, prop, ::rusteal_runtime::runtime::UeEnum::to_i64(val),
+                        );
+                    }
+                })),
             ),
             prop_type::PropKind::Struct { .. } => unreachable!("rejected when the field was parsed"),
         };
@@ -462,12 +574,12 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
         });
 
         // Setter (only if not read-only)
-        if let Some(setter_body) = setter_body
+        if let Some((setter_ty, setter_body)) = setter_body
             && !prop.args.blueprint_read_only
         {
             let setter_ident = format_ident!("set_{}", field_ident);
             accessor_methods.push(quote! {
-                pub fn #setter_ident(&self, val: #rust_ty) {
+                pub fn #setter_ident(&self, val: #setter_ty) {
                     #find_prop
                     #setter_body
                 }
@@ -495,7 +607,7 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
     for comp in &components {
         let field_ident = &comp.ident;
         let comp_type = &comp.component_type;
-        let comp_name = prop_type::to_pascal_case(&field_ident.to_string());
+        let comp_name = &comp.subobject_name;
         let comp_name_bytes = comp_name.as_bytes();
         let comp_name_len = comp_name.len() as u32;
 
@@ -565,11 +677,10 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
 
     // Generate add_property calls
     let mut add_prop_stmts: Vec<TokenStream> = Vec::new();
-    let mut cdo_default_stmts: Vec<TokenStream> = Vec::new();
 
     for prop in &uprops {
         let info = prop_type::map_type(&prop.ty).unwrap();
-        let ue_name = prop_type::to_ue_name(&prop.ident.to_string());
+        let ue_name = prop.ue_name();
         let ue_name_bytes = ue_name.as_bytes();
         let ue_name_len = ue_name.len() as u32;
         let prop_type_expr = &info.prop_type_expr;
@@ -620,6 +731,25 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
             None => quote! { std::ptr::null() },
         };
 
+        // Metadata the editor (and StateTree) reads.
+        let meta_stmts: Vec<TokenStream> = prop
+            .args
+            .category
+            .iter()
+            .map(|category| {
+                let value_bytes = category.as_bytes();
+                let value_len = category.len() as u32;
+                quote! {
+                    unsafe {
+                        ::rusteal_runtime::runtime::ffi_dispatch::reify_set_property_metadata(
+                            #prop_var, b"Category".as_ptr(), 8u32,
+                            [#(#value_bytes),*].as_ptr(), #value_len,
+                        );
+                    }
+                }
+            })
+            .collect();
+
         add_prop_stmts.push(quote! {
             let #prop_var = unsafe {
                 ::rusteal_runtime::runtime::ffi_dispatch::reify_add_property(
@@ -631,28 +761,23 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
                     #extra_expr,
                 )
             };
+            if !#prop_var.is_null() {
+                #(#meta_stmts)*
+            }
         });
 
-        // CDO default (unused — defaults are set in finalize)
-        if let Some(ref default_expr) = prop.args.default_expr
-            && let prop_type::PropKind::Scalar { setter_fn, .. } = &info.kind
-        {
-            let setter_dispatch = format_ident!("property_{}", setter_fn);
-            cdo_default_stmts.push(quote! {
-                if !#prop_var.is_null() {
-                    unsafe { ::rusteal_runtime::runtime::ffi_dispatch::#setter_dispatch(cdo, #prop_var, #default_expr); }
-                }
-            });
-        }
     }
 
     // Generate add_default_subobject calls
     let mut add_comp_stmts: Vec<TokenStream> = Vec::new();
     for comp in &components {
         let comp_type = &comp.component_type;
-        let comp_name = prop_type::to_pascal_case(&comp.ident.to_string());
-        let comp_name_bytes = comp_name.as_bytes();
-        let comp_name_len = comp_name.len() as u32;
+        let comp_name_bytes = comp.subobject_name.as_bytes();
+        let comp_name_len = comp.subobject_name.len() as u32;
+        // The property referencing it is named after the field.
+        let property_name = prop_type::to_pascal_case(&comp.ident.to_string());
+        let property_bytes = property_name.as_bytes();
+        let property_len = property_name.len() as u32;
 
         let mut flags: u32 = 0;
         if comp.is_root {
@@ -680,6 +805,7 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
                     ::rusteal_runtime::runtime::ffi_dispatch::reify_add_default_subobject(
                         class,
                         [#(#comp_name_bytes),*].as_ptr(), #comp_name_len,
+                        [#(#property_bytes),*].as_ptr(), #property_len,
                         comp_class,
                         #flags,
                         #attach_ptr, #attach_len,
@@ -693,13 +819,22 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
     // Generate CDO default stmts for finalize (re-find properties by name)
     let mut finalize_cdo_stmts: Vec<TokenStream> = Vec::new();
     for prop in &uprops {
-        if let Some(ref default_expr) = prop.args.default_expr
-            && let prop_type::PropKind::Scalar { setter_fn, .. } = prop_type::map_type(&prop.ty).unwrap().kind
-        {
-            let ue_name = prop_type::to_ue_name(&prop.ident.to_string());
+        if let Some(ref default_expr) = prop.args.default_expr {
+            let set_default = match prop_type::map_type(&prop.ty).unwrap().kind {
+                prop_type::PropKind::Scalar { setter_fn, .. } => {
+                    let setter_dispatch = format_ident!("property_{}", setter_fn);
+                    quote! { ::rusteal_runtime::runtime::ffi_dispatch::#setter_dispatch(cdo, prop, #default_expr) }
+                }
+                prop_type::PropKind::Enum { .. } => quote! {
+                    ::rusteal_runtime::runtime::ffi_dispatch::property_set_enum(
+                        cdo, prop, ::rusteal_runtime::runtime::UeEnum::to_i64(#default_expr),
+                    )
+                },
+                _ => continue,
+            };
+            let ue_name = prop.ue_name();
             let ue_name_bytes = ue_name.as_bytes();
             let ue_name_len = ue_name.len() as u32;
-            let setter_dispatch = format_ident!("property_{}", setter_fn);
             finalize_cdo_stmts.push(quote! {
                 {
                     let prop = unsafe {
@@ -710,7 +845,7 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
                         )
                     };
                     if !prop.is_null() {
-                        unsafe { ::rusteal_runtime::runtime::ffi_dispatch::#setter_dispatch(cdo, prop, #default_expr); }
+                        unsafe { #set_default; }
                     }
                 }
             });

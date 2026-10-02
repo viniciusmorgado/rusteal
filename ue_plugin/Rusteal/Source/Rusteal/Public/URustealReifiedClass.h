@@ -5,6 +5,7 @@
 // Describes a default subobject to be created during class construction.
 struct FRustealComponentDef {
   FName SubobjectName;
+  FName PropertyName; // the property referencing it; often SubobjectName
   UClass *ComponentClass = nullptr;
   bool bIsRoot = false;
   bool bIsTransient = false;

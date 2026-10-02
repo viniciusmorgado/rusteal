@@ -315,7 +315,9 @@ use bindings::enhanced_input::{
 use bindings::prelude::*;
 use bindings::umg::{UserWidget, UserWidgetExt};
 use rusteal_runtime::runtime::input::should_display_touch_interface;
-use rusteal_runtime::runtime::{OwnedStruct, RustealResult, SubclassOf, UObjectRef, UStructRef, UeArray};
+use rusteal_runtime::runtime::{
+    FName, OutRef, OwnedStruct, RustealResult, SubclassOf, UObjectRef, UStructRef, UeArray,
+};
 use rusteal_runtime::{uclass, uclass_impl};
 
 #[uclass(parent = Pawn)]
@@ -346,6 +348,18 @@ pub struct Probe {
     b_can_dash: bool,
     #[uproperty(VisibleAnywhere)]
     seen: UObjectRef<InputAction>,
+    #[uproperty(EditAnywhere, category = "Platform")]
+    target: OwnedStruct<FVector>,
+    #[uproperty(EditAnywhere)]
+    tag: FName,
+    #[uproperty(EditAnywhere)]
+    label: String,
+    #[uproperty(EditAnywhere, default = ETriggerEvent::Started)]
+    trigger: ETriggerEvent,
+    #[uproperty(VisibleAnywhere, name = "NPC", category = "Context")]
+    npc: UObjectRef<Pawn>,
+    #[component(attach = "arm", name = "Collision Check Box")]
+    collision_check_box: SceneComponent,
 }
 
 #[uclass_impl]
@@ -401,6 +415,24 @@ impl Probe {
 
     #[ufunction(BlueprintImplementableEvent)]
     fn count_targets(&self, max: i32) -> i32 {}
+
+    #[ufunction(Override, name = "BlueprintUpdateCamera")]
+    fn update_camera(
+        &mut self,
+        _camera_target: UObjectRef<Actor>,
+        new_camera_location: UStructRef<FVector>,
+        _new_camera_rotation: UStructRef<FRotator>,
+        new_camera_fov: OutRef<f32>,
+    ) -> bool {
+        new_camera_location.set_x(self.target().as_ref().get_x());
+        new_camera_fov.set(new_camera_fov.get() + 1.0);
+        self.set_target(&OwnedStruct::new());
+        self.set_tag(FName::new(&self.label()));
+        self.set_label("probe");
+        self.set_trigger(ETriggerEvent::Completed);
+        let _ = (self.trigger(), self.npc(), self.collision_check_box());
+        true
+    }
 }
 
 pub fn worlds(probe: UObjectRef<Probe>, class: SubclassOf<Pawn>) -> RustealResult<UObjectRef<Pawn>> {

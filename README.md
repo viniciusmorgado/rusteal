@@ -333,12 +333,22 @@ impl MyActor {
 ```
 
 A `#[uproperty]` is `bool`, `i32`, `i64`, `u8`, `f32`, `f64`, an object
-(`UObjectRef<T>`), a class (`SubclassOf<T>`, UE's `TSubclassOf<T>`) or a
-`UeArray` of any of those. Each gets a getter named after the field and, unless
-it is `BlueprintReadOnly`, a `set_` setter; an array's getter returns a view of
-the array inside the object, changed in place. `default = ...` is for the
-scalar types; objects, classes and arrays are set in a Blueprint child, as the
-engine's templates do.
+(`UObjectRef<T>`), a class (`SubclassOf<T>`, UE's `TSubclassOf<T>`), a
+`UeArray` of any of those, a struct (`OwnedStruct<FVector>`), an `FName`, a
+`String` (`FString`) or an engine enum (`ECollisionChannel`). Each gets a
+getter named after the field and, unless it is `BlueprintReadOnly`, a `set_`
+setter; an array's getter returns a view of the array inside the object,
+changed in place, and a struct's a copy. `default = ...` is for the scalar
+types and enums; the others are set in `#[class_defaults]` or a Blueprint
+child, as the engine's templates do. `EditAnywhere`, `EditDefaultsOnly`,
+`VisibleAnywhere`, `BlueprintReadWrite` and `BlueprintReadOnly` are UE's
+specifiers.
+
+The UE name is the field's in PascalCase, with a `b_` prefix as UE's bool
+`b` (`b_force_touch_controls` is `bForceTouchControls`, as the bindings name
+UE's own); `name = "NPC"` gives another, and `category = "..."` the property's
+category. Matching the C++ names keeps the values a Blueprint saved when its
+parent moves from C++ to Rust.
 
 A `#[component]` is created with the object. `attach` names its parent: a
 component the class declares before it, or an inherited one by its field-style
@@ -350,6 +360,10 @@ camera_boom: SpringArmComponent,
 #[component(attach = "camera_boom", socket = "SpringEndpoint")]
 follow_camera: CameraComponent,
 ```
+
+A component's subobject is named after its field too, or as
+`#[component(name = "Collision Check Box")]` says: a Blueprint child's
+changes to an inherited component are kept by that name.
 
 What a C++ constructor sets on inherited properties goes in a
 `#[class_defaults]` method of the `#[uclass_impl]` block. It runs once, on the
@@ -383,7 +397,19 @@ they are read-only.
 A `#[ufunction]` takes the scalar types, objects (`UObjectRef<T>`), classes
 (`SubclassOf<T>`) and structs (`UStructRef<T>`, a reference into the call's
 parameters; `to_owned()` keeps a copy), and returns a scalar, an object or a
-class. An `Override` takes whatever the engine function it overrides takes.
+class. It is `BlueprintCallable` unless it says otherwise:
+
+- `BlueprintPure`: callable without execution pins;
+- `Override`: Rust code for an engine event of a parent class, taking what it
+  takes (an enum as its type or `u8`, an out struct as a `UStructRef` written
+  in place, a scalar out parameter as an `OutRef<T>`). A C++ virtual has its
+  event: `Landed` is `OnLanded`, `Tick` is `ReceiveTick`, `EndPlay` is
+  `ReceiveEndPlay`, `OnPossess` is `ReceivePossess`;
+- `BlueprintImplementableEvent`: an event a Blueprint child implements; the
+  method's body is empty, and calling it runs the Blueprint's graph.
+
+`name = "K2_OnMovementModeChanged"` gives the UE name when the method's name
+in PascalCase is not it.
 
 ### Input
 
