@@ -132,6 +132,7 @@ templates make it, and opens and plays the variant's level.
 | Template | Variant | What it is |
 |---|---|---|
 | `blank` (default) | | The engine's Blank template and a `HelloActor` in Rust. |
+| `first-person` | | The engine's First Person template: its character, camera manager, game mode and player controller in Rust, playable as it comes (keyboard, mouse, gamepad, touch). |
 | `third-person` | | The engine's Third Person template: its character, game mode and player controller in Rust, playable as it comes (keyboard, mouse, gamepad, touch). |
 | `third-person` | `combat` | Melee combat: combo and charged attacks, enemies run by a StateTree, spawners, checkpoints, damageable props. |
 | `third-person` | `platforming` | Double jump, wall jump, coyote time, a dash, local multiplayer and respawn. |
