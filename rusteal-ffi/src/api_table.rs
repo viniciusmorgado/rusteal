@@ -629,4 +629,9 @@ pub struct RustealWorldApi {
         transform_buf: *const u8,
         transform_size: u32,
     ) -> RustealErrorCode,
+
+    /// The object type (`EObjectTypeQuery`) a collision channel
+    /// (`ECollisionChannel`) is, as the project's collision settings map them:
+    /// `UEngineTypes::ConvertToObjectType`.
+    pub channel_to_object_type: unsafe extern "C" fn(channel: u8) -> u8,
 }

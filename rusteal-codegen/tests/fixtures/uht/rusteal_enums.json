@@ -297,6 +297,75 @@
     },
     {
       "cpp_form": 1,
+      "cpp_name": "EMouseCursor",
+      "name": "EMouseCursor",
+      "package": "CoreUObject",
+      "pairs": [
+        [
+          "None",
+          0
+        ],
+        [
+          "Default",
+          1
+        ],
+        [
+          "TextEditBeam",
+          2
+        ],
+        [
+          "ResizeLeftRight",
+          3
+        ],
+        [
+          "ResizeUpDown",
+          4
+        ],
+        [
+          "ResizeSouthEast",
+          5
+        ],
+        [
+          "ResizeSouthWest",
+          6
+        ],
+        [
+          "CardinalCross",
+          7
+        ],
+        [
+          "Crosshairs",
+          8
+        ],
+        [
+          "Hand",
+          9
+        ],
+        [
+          "GrabHand",
+          10
+        ],
+        [
+          "GrabHandClosed",
+          11
+        ],
+        [
+          "SlashedCircle",
+          12
+        ],
+        [
+          "EyeDropper",
+          13
+        ],
+        [
+          "Custom",
+          14
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 1,
       "cpp_name": "EUMGSequencePlayMode",
       "name": "EUMGSequencePlayMode",
       "package": "UMG",
@@ -1772,146 +1841,6 @@
       "underlying_type": "uint8"
     },
     {
-      "cpp_form": 1,
-      "cpp_name": "EMouseCursor",
-      "name": "EMouseCursor",
-      "package": "CoreUObject",
-      "pairs": [
-        [
-          "None",
-          0
-        ],
-        [
-          "Default",
-          1
-        ],
-        [
-          "TextEditBeam",
-          2
-        ],
-        [
-          "ResizeLeftRight",
-          3
-        ],
-        [
-          "ResizeUpDown",
-          4
-        ],
-        [
-          "ResizeSouthEast",
-          5
-        ],
-        [
-          "ResizeSouthWest",
-          6
-        ],
-        [
-          "CardinalCross",
-          7
-        ],
-        [
-          "Crosshairs",
-          8
-        ],
-        [
-          "Hand",
-          9
-        ],
-        [
-          "GrabHand",
-          10
-        ],
-        [
-          "GrabHandClosed",
-          11
-        ],
-        [
-          "SlashedCircle",
-          12
-        ],
-        [
-          "EyeDropper",
-          13
-        ],
-        [
-          "Custom",
-          14
-        ]
-      ],
-      "underlying_type": "uint8"
-    },
-    {
-      "cpp_form": 2,
-      "cpp_name": "EMappingContextInputModeFilterOptions",
-      "name": "EMappingContextInputModeFilterOptions",
-      "package": "EnhancedInput",
-      "pairs": [
-        [
-          "UseProjectDefaultQuery",
-          0
-        ],
-        [
-          "UseCustomQuery",
-          1
-        ],
-        [
-          "DoNotFilter",
-          2
-        ]
-      ],
-      "underlying_type": "uint8"
-    },
-    {
-      "cpp_form": 2,
-      "cpp_name": "EMappingContextRegistrationTrackingMode",
-      "name": "EMappingContextRegistrationTrackingMode",
-      "package": "EnhancedInput",
-      "pairs": [
-        [
-          "Untracked",
-          0
-        ],
-        [
-          "CountRegistrations",
-          1
-        ]
-      ],
-      "underlying_type": "uint8"
-    },
-    {
-      "cpp_form": 2,
-      "cpp_name": "ETriggerEvent",
-      "name": "ETriggerEvent",
-      "package": "EnhancedInput",
-      "pairs": [
-        [
-          "None",
-          0
-        ],
-        [
-          "Triggered",
-          1
-        ],
-        [
-          "Started",
-          2
-        ],
-        [
-          "Ongoing",
-          4
-        ],
-        [
-          "Canceled",
-          8
-        ],
-        [
-          "Completed",
-          16
-        ]
-      ],
-      "underlying_type": "uint8"
-    },
-    {
       "cpp_form": 2,
       "cpp_name": "EInputMappingRebuildType",
       "name": "EInputMappingRebuildType",
@@ -2036,6 +1965,77 @@
         [
           "Cumulative",
           1
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 2,
+      "cpp_name": "EMappingContextInputModeFilterOptions",
+      "name": "EMappingContextInputModeFilterOptions",
+      "package": "EnhancedInput",
+      "pairs": [
+        [
+          "UseProjectDefaultQuery",
+          0
+        ],
+        [
+          "UseCustomQuery",
+          1
+        ],
+        [
+          "DoNotFilter",
+          2
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 2,
+      "cpp_name": "EMappingContextRegistrationTrackingMode",
+      "name": "EMappingContextRegistrationTrackingMode",
+      "package": "EnhancedInput",
+      "pairs": [
+        [
+          "Untracked",
+          0
+        ],
+        [
+          "CountRegistrations",
+          1
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 2,
+      "cpp_name": "ETriggerEvent",
+      "name": "ETriggerEvent",
+      "package": "EnhancedInput",
+      "pairs": [
+        [
+          "None",
+          0
+        ],
+        [
+          "Triggered",
+          1
+        ],
+        [
+          "Started",
+          2
+        ],
+        [
+          "Ongoing",
+          4
+        ],
+        [
+          "Canceled",
+          8
+        ],
+        [
+          "Completed",
+          16
         ]
       ],
       "underlying_type": "uint8"

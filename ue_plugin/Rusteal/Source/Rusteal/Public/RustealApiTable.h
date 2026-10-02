@@ -508,6 +508,10 @@ struct FRustealWorldApi {
   ERustealErrorCode (*finish_spawning)(RustealUObjectHandle actor,
                                        const uint8 *transform_buf,
                                        uint32 transform_size);
+
+  // UEngineTypes::ConvertToObjectType: the EObjectTypeQuery of an
+  // ECollisionChannel under the project's collision settings.
+  uint8 (*channel_to_object_type)(uint8 channel);
 };
 
 // ---------------------------------------------------------------------------

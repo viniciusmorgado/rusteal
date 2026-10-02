@@ -1,5 +1,6 @@
 // RustealWorldApiImpl.cpp — FRustealWorldApi implementation.
 
+#include "Engine/EngineTypes.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/Actor.h"
@@ -176,13 +177,23 @@ static ERustealErrorCode FinishSpawningImpl(RustealUObjectHandle ActorHandle,
   return ERustealErrorCode::Ok;
 }
 
+static uint8 ChannelToObjectTypeImpl(uint8 Channel) {
+  return static_cast<uint8>(UEngineTypes::ConvertToObjectType(
+      static_cast<ECollisionChannel>(Channel)));
+}
+
 // ---------------------------------------------------------------------------
 // Static instance
 // ---------------------------------------------------------------------------
 
 FRustealWorldApi GWorldApi = {
-    &SpawnActorImpl,         &GetAllActorsOfClassImpl,
-    &FindObjectImpl,         &LoadObjectImpl,
-    &GetWorldImpl,           &NewObjectImpl,
-    &SpawnActorDeferredImpl, &FinishSpawningImpl,
+    &SpawnActorImpl,
+    &GetAllActorsOfClassImpl,
+    &FindObjectImpl,
+    &LoadObjectImpl,
+    &GetWorldImpl,
+    &NewObjectImpl,
+    &SpawnActorDeferredImpl,
+    &FinishSpawningImpl,
+    &ChannelToObjectTypeImpl,
 };

@@ -63,7 +63,13 @@ const CLASSES: &[&str] = &[
 ];
 
 /// Enums manual/ names that no class or struct above references.
-const ENUMS: &[&str] = &["ETriggerEvent", "EInputActionValueType"];
+const ENUMS: &[&str] = &[
+    "ETriggerEvent",
+    "EInputActionValueType",
+    // manual/collision.rs.
+    "ECollisionChannel",
+    "EObjectTypeQuery",
+];
 
 /// Structs manual/ extends.
 const STRUCTS: &[&str] = &[
