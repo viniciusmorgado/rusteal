@@ -653,8 +653,10 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
             if !is_a {
                 return Err(::rusteal_runtime::runtime::RustealError::InvalidCast);
             }
-            let rust_data = ::rusteal_runtime::runtime::reify_registry::get_instance_data(handle)
-                as *mut #rust_data_name;
+            let rust_data = ::rusteal_runtime::runtime::reify_registry::get_instance_data(
+                handle,
+                Self::__RUSTEAL_TYPE_ID,
+            ) as *mut #rust_data_name;
             if rust_data.is_null() {
                 return Err(::rusteal_runtime::runtime::RustealError::InvalidOperation("no rust data for reified cast".into()));
             }
@@ -664,6 +666,10 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
 
     let accessors_impl = quote! {
         impl #struct_name {
+            /// The Rust type ID the class's instance data is registered under.
+            #[doc(hidden)]
+            pub const __RUSTEAL_TYPE_ID: u64 = #type_id_value;
+
             #(#accessor_methods)*
         }
     };
@@ -858,8 +864,25 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
 
     let register_fn = quote! {
         #[doc(hidden)]
-        pub fn #register_fn_name() {
+        pub fn #register_fn_name(last_try: bool) -> bool {
             const TYPE_ID: u64 = #type_id_value;
+
+            // Find parent class; a Rust parent may not be created yet
+            let parent = unsafe {
+                ::rusteal_runtime::runtime::ffi_dispatch::reflection_find_class(
+                    [#(#parent_name_bytes),*].as_ptr(),
+                    #parent_name_len,
+                )
+            };
+            if parent.is_null() {
+                if !last_try {
+                    return false;
+                }
+                let msg = concat!("[Rusteal] ", stringify!(#struct_name), ": failed to find parent class '", #parent_name, "'");
+                let bytes = msg.as_bytes();
+                unsafe { ::rusteal_runtime::runtime::ffi_dispatch::logging_log(2, bytes.as_ptr(), bytes.len() as u32); }
+                return true;
+            }
 
             // Register Rust type info
             ::rusteal_runtime::runtime::reify_registry::register_type(
@@ -877,20 +900,6 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
                 },
             );
 
-            // Find parent class
-            let parent = unsafe {
-                ::rusteal_runtime::runtime::ffi_dispatch::reflection_find_class(
-                    [#(#parent_name_bytes),*].as_ptr(),
-                    #parent_name_len,
-                )
-            };
-            if parent.is_null() {
-                let msg = concat!("[Rusteal] ", stringify!(#struct_name), ": failed to find parent class '", #parent_name, "'");
-                let bytes = msg.as_bytes();
-                unsafe { ::rusteal_runtime::runtime::ffi_dispatch::logging_log(2, bytes.as_ptr(), bytes.len() as u32); }
-                return;
-            }
-
             // Create class
             let class = unsafe {
                 ::rusteal_runtime::runtime::ffi_dispatch::reify_create_class(
@@ -904,9 +913,10 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
                 let msg = concat!("[Rusteal] ", stringify!(#struct_name), ": create_class failed");
                 let bytes = msg.as_bytes();
                 unsafe { ::rusteal_runtime::runtime::ffi_dispatch::logging_log(2, bytes.as_ptr(), bytes.len() as u32); }
-                return;
+                return true;
             }
             #class_handle_name.set(class).ok();
+            true
         }
 
         #[doc(hidden)]
@@ -1016,6 +1026,7 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
 
         ::rusteal_runtime::__inventory::submit! {
             ::rusteal_runtime::runtime::reify_registry::ClassRegistration {
+                type_id: #type_id_value,
                 create: #register_fn_name,
                 register: #members_fn_name,
                 finalize: #finalize_fn_name,

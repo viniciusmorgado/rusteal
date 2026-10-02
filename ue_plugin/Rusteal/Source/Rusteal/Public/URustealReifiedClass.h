@@ -40,6 +40,10 @@ public:
   static void
   RustealClassConstructor(const FObjectInitializer &ObjectInitializer);
 
+  // The Rust classes among Class and its supers, the topmost first: a Rust
+  // class whose parent is a Rust class, or a Blueprint child of one.
+  static TArray<URustealReifiedClass *> ReifiedChain(const UClass *Class);
+
   // Override: UBlueprintGeneratedClass assumes ClassGeneratedBy points to a
   // UBlueprint asset.  Reified classes have no Blueprint, so return this
   // directly.

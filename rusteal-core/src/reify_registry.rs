@@ -4,7 +4,8 @@
 // Three registries:
 // 1. Type registry: maps type_id -> RustTypeInfo (constructor, destructor, name)
 // 2. Function registry: maps callback_id -> Rust function closure
-// 3. Instance data: maps UObject pointer -> allocated Rust data
+// 3. Instance data: maps UObject pointer -> the allocated Rust data of each
+//    Rust class it is (a Rust class whose parent is a Rust class has both)
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock, RwLock};
@@ -17,8 +18,12 @@ use crate::{lock_or_recover, read_or_recover, write_or_recover};
 
 /// Submitted by `#[uclass]` — holds register + finalize fn pointers.
 pub struct ClassRegistration {
-    /// Create the UClass (type info, parent, class handle).
-    pub create: fn(),
+    /// The class's Rust type ID.
+    pub type_id: u64,
+    /// Create the UClass (type info, parent, class handle). `false` while its
+    /// parent, a Rust class not created yet, is missing; on the last try the
+    /// missing parent is logged and it returns `true`.
+    pub create: fn(last_try: bool) -> bool,
     /// Add its properties and components, which may name other Rust classes
     /// (`SubclassOf<MyCharacter>`): every class exists by then.
     pub register: fn(),
@@ -29,6 +34,8 @@ inventory::collect!(ClassRegistration);
 /// Submitted by `#[uclass_impl]` — holds register_functions fn pointer, and the
 /// `#[class_defaults]` method's caller when the block has one.
 pub struct ClassFunctionRegistration {
+    /// The Rust type ID of the class the block implements.
+    pub type_id: u64,
     pub register_functions: fn(),
     pub class_defaults: Option<fn()>,
 }
@@ -56,15 +63,35 @@ impl ClassDefaultsOutcome for crate::error::RustealResult<()> {
     }
 }
 
-/// Four-phase iteration: register all → register all functions → finalize all
-/// → class defaults, which run on class default objects that now exist.
+/// Registration in phases, parents before children: create every class →
+/// add every class's properties and components → register every function →
+/// finalize each class and write its class defaults. A Rust class whose parent
+/// is a Rust class is created after it and finalized after the parent's class
+/// defaults, so its class default object starts from them.
 pub fn register_all_from_inventory() {
-    let mut class_count = 0u32;
-    for reg in inventory::iter::<ClassRegistration> {
-        (reg.create)();
-        class_count += 1;
+    let mut pending: Vec<&ClassRegistration> = inventory::iter::<ClassRegistration>.into_iter().collect();
+    let class_count = pending.len() as u32;
+    let mut ordered: Vec<&ClassRegistration> = Vec::with_capacity(pending.len());
+    loop {
+        let before = pending.len();
+        pending.retain(|reg| {
+            if (reg.create)(false) {
+                ordered.push(reg);
+                false
+            } else {
+                true
+            }
+        });
+        if pending.is_empty() || pending.len() == before {
+            break;
+        }
     }
-    for reg in inventory::iter::<ClassRegistration> {
+    // Parents never created: log them.
+    for reg in pending {
+        (reg.create)(true);
+    }
+
+    for reg in &ordered {
         (reg.register)();
     }
     let mut func_reg_count = 0u32;
@@ -72,12 +99,14 @@ pub fn register_all_from_inventory() {
         (freg.register_functions)();
         func_reg_count += 1;
     }
-    for reg in inventory::iter::<ClassRegistration> {
+    for reg in &ordered {
         (reg.finalize)();
-    }
-    for freg in inventory::iter::<ClassFunctionRegistration> {
-        if let Some(class_defaults) = freg.class_defaults {
-            class_defaults();
+        for freg in inventory::iter::<ClassFunctionRegistration> {
+            if freg.type_id == reg.type_id
+                && let Some(class_defaults) = freg.class_defaults
+            {
+                class_defaults();
+            }
         }
     }
 
@@ -115,13 +144,19 @@ use crate::ffi_dispatch::NativePtr;
 // `params` is an opaque FFI buffer pointer (`NativePtr` = `*mut u8`).
 type ReifyFunctionCallback = Arc<dyn Fn(UObjectHandle, *mut u8, NativePtr) + Send + Sync>;
 
+/// A registered function and the Rust type whose data it is called with.
+struct FunctionEntry {
+    callback: ReifyFunctionCallback,
+    type_id: u64,
+}
+
 // ---------------------------------------------------------------------------
 // Statics
 // ---------------------------------------------------------------------------
 
 static TYPE_REGISTRY: OnceLock<Mutex<HashMap<u64, RustTypeInfo>>> = OnceLock::new();
-static FUNC_REGISTRY: OnceLock<RwLock<Vec<ReifyFunctionCallback>>> = OnceLock::new();
-static INSTANCE_DATA: OnceLock<RwLock<HashMap<u64, InstanceEntry>>> = OnceLock::new();
+static FUNC_REGISTRY: OnceLock<RwLock<Vec<FunctionEntry>>> = OnceLock::new();
+static INSTANCE_DATA: OnceLock<RwLock<HashMap<u64, Vec<InstanceEntry>>>> = OnceLock::new();
 
 struct InstanceEntry {
     data: *mut u8,
@@ -136,11 +171,11 @@ fn type_registry() -> &'static Mutex<HashMap<u64, RustTypeInfo>> {
     TYPE_REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-fn func_registry() -> &'static RwLock<Vec<ReifyFunctionCallback>> {
+fn func_registry() -> &'static RwLock<Vec<FunctionEntry>> {
     FUNC_REGISTRY.get_or_init(|| RwLock::new(Vec::new()))
 }
 
-fn instance_data() -> &'static RwLock<HashMap<u64, InstanceEntry>> {
+fn instance_data() -> &'static RwLock<HashMap<u64, Vec<InstanceEntry>>> {
     INSTANCE_DATA.get_or_init(|| RwLock::new(HashMap::new()))
 }
 
@@ -158,14 +193,15 @@ pub fn register_type(type_id: u64, info: RustTypeInfo) {
 // Function registry
 // ---------------------------------------------------------------------------
 
-/// Register a Rust function callback and return its unique callback ID.
-pub fn register_function<F>(f: F) -> u64
+/// Register a Rust function callback of the Rust type `type_id`, which it is
+/// called with the data of, and return its unique callback ID.
+pub fn register_function<F>(type_id: u64, f: F) -> u64
 where
     F: Fn(UObjectHandle, *mut u8, NativePtr) + Send + Sync + 'static,
 {
     let mut vec = write_or_recover(func_registry());
     let id = vec.len() as u64;
-    vec.push(Arc::new(f));
+    vec.push(FunctionEntry { callback: Arc::new(f), type_id });
     id
 }
 
@@ -173,8 +209,9 @@ where
 // Instance lifecycle
 // ---------------------------------------------------------------------------
 
-/// Construct a Rust instance for a newly created UObject.
-/// Called from the C++ class constructor via `construct_rust_instance` callback.
+/// Construct the Rust instance of the type `type_id` for a newly created
+/// UObject, once per Rust class the object is. Called from the C++ class
+/// constructor via `construct_rust_instance` callback.
 pub fn construct_instance(obj: UObjectHandle, type_id: u64) {
     let types = lock_or_recover(type_registry());
     let Some(info) = types.get(&type_id) else {
@@ -192,46 +229,58 @@ pub fn construct_instance(obj: UObjectHandle, type_id: u64) {
     drop(types); // Release lock before acquiring instance_data lock
 
     let key = obj.to_addr();
-    write_or_recover(instance_data())
-        .insert(key, InstanceEntry { data, type_id });
-}
-
-/// Drop and remove the Rust instance for a destroyed UObject.
-/// Called from the C++ delete listener via `drop_rust_instance` callback.
-pub fn drop_instance(obj: UObjectHandle, _type_id: u64) {
-    let key = obj.to_addr();
-    let entry = write_or_recover(instance_data()).remove(&key);
-
-    if let Some(entry) = entry {
-        let types = lock_or_recover(type_registry());
-        if let Some(info) = types.get(&entry.type_id) {
-            unsafe {
-                (info.drop_fn)(entry.data);
+    let old = {
+        let mut map = write_or_recover(instance_data());
+        let entries = map.entry(key).or_default();
+        match entries.iter_mut().find(|e| e.type_id == type_id) {
+            Some(entry) => Some(std::mem::replace(&mut entry.data, data)),
+            None => {
+                entries.push(InstanceEntry { data, type_id });
+                None
             }
         }
+    };
+    // A new object at the address of one whose deletion went unnoticed.
+    if let Some(old) = old {
+        drop_data(type_id, old);
+    }
+}
+
+fn drop_data(type_id: u64, data: *mut u8) {
+    let types = lock_or_recover(type_registry());
+    if let Some(info) = types.get(&type_id) {
+        unsafe {
+            (info.drop_fn)(data);
+        }
+    }
+}
+
+/// Drop and remove the Rust instances of a destroyed UObject, every Rust
+/// class's it is. Called from the C++ delete listener via
+/// `drop_rust_instance` callback.
+pub fn drop_instance(obj: UObjectHandle, _type_id: u64) {
+    let key = obj.to_addr();
+    let entries = write_or_recover(instance_data()).remove(&key);
+    for entry in entries.into_iter().flatten() {
+        drop_data(entry.type_id, entry.data);
     }
 }
 
 /// Invoke a registered Rust function callback.
 /// Called from the C++ thunk via `invoke_rust_function` callback.
 pub fn invoke_function(callback_id: u64, obj: UObjectHandle, params: NativePtr) {
-    let key = obj.to_addr();
-
-    // Look up instance data for this object (read lock — non-exclusive).
-    let rust_data = read_or_recover(instance_data())
-        .get(&key)
-        .map(|e| e.data)
-        .unwrap_or(std::ptr::null_mut());
-
     // Clone the callback Arc out of the registry and release the read lock
     // BEFORE invoking the callback. This prevents deadlocks if the callback
     // makes FFI calls that re-enter Rust.
     let func = {
         let vec = read_or_recover(func_registry());
-        vec.get(callback_id as usize).cloned()
+        vec.get(callback_id as usize)
+            .map(|entry| (entry.callback.clone(), entry.type_id))
     };
 
-    if let Some(func) = func {
+    if let Some((func, type_id)) = func {
+        // The data of the Rust class the function belongs to.
+        let rust_data = get_instance_data(obj, type_id);
         func(obj, rust_data, params);
     } else if crate::api::is_api_initialized() {
         let vec_len = read_or_recover(func_registry()).len();
@@ -253,7 +302,7 @@ pub fn clear_all() {
     if let Some(instances) = INSTANCE_DATA.get() {
         let mut map = write_or_recover(instances);
         let types = lock_or_recover(type_registry());
-        for (_, entry) in map.drain() {
+        for entry in map.drain().flat_map(|(_, entries)| entries) {
             if let Some(info) = types.get(&entry.type_id) {
                 unsafe {
                     (info.drop_fn)(entry.data);
@@ -272,12 +321,13 @@ pub fn clear_all() {
     }
 }
 
-/// Get the Rust instance data pointer for a UObject.
+/// Get the Rust instance data pointer of the type `type_id` for a UObject.
 /// Returns null if no instance data is registered.
-pub fn get_instance_data(obj: UObjectHandle) -> *mut u8 {
+pub fn get_instance_data(obj: UObjectHandle, type_id: u64) -> *mut u8 {
     let key = obj.to_addr();
     read_or_recover(instance_data())
         .get(&key)
+        .and_then(|entries| entries.iter().find(|e| e.type_id == type_id))
         .map(|e| e.data)
         .unwrap_or(std::ptr::null_mut())
 }

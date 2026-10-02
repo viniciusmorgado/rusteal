@@ -384,6 +384,23 @@ fn class_defaults(&mut self) -> RustealResult<()> {
 }
 ```
 
+A Rust class's parent may be a Rust class, as a C++ class's may be a C++
+class: `#[uclass(parent = FirstPersonCharacter)]` makes a class with the
+parent's properties, components and functions, whose components may attach to
+the parent's by their field names (`attach = "first_person_camera_component"`)
+and whose class defaults start from the parent's. An event both override runs
+the child's code, which calls the parent's as C++ calls `Super::`:
+
+```rust
+#[ufunction(Override)]
+fn receive_begin_play(&mut self) {
+    if let Ok(mut parent) = FirstPersonCharacter::from_obj(self.as_ref()) {
+        parent.receive_begin_play(); // pub(crate) in the parent's impl
+    }
+    // ...
+}
+```
+
 In the generated bindings, an engine class reference (`TSubclassOf<T>`, such
 as a game mode's `DefaultPawnClass`) is a `SubclassOf<T>`, not an object:
 `get_default_pawn_class()` returns `SubclassOf<Pawn>`, and

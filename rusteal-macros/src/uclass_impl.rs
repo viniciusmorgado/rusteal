@@ -295,6 +295,7 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
         register_stmts.push(quote! {
             let __callback_id = {
                 let callback_id = ::rusteal_runtime::runtime::reify_registry::register_function(
+                    #struct_name::__RUSTEAL_TYPE_ID,
                     move |obj: ::rusteal_runtime::ffi::UObjectHandle, rust_data: *mut u8, params: ::rusteal_runtime::runtime::ffi_dispatch::NativePtr| {
                         static OFFSETS: std::sync::OnceLock<[u32; #total_offsets]> = std::sync::OnceLock::new();
                         let offsets = OFFSETS.get_or_init(|| unsafe {
@@ -405,7 +406,10 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
                         if cdo.is_null() {
                             return;
                         }
-                        let rust_data = ::rusteal_runtime::runtime::reify_registry::get_instance_data(cdo);
+                        let rust_data = ::rusteal_runtime::runtime::reify_registry::get_instance_data(
+                            cdo,
+                            #struct_name::__RUSTEAL_TYPE_ID,
+                        );
                         #[allow(unused_mut)]
                         let mut __this = #struct_name {
                             __obj: cdo,
@@ -430,6 +434,7 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
 
         ::rusteal_runtime::__inventory::submit! {
             ::rusteal_runtime::runtime::reify_registry::ClassFunctionRegistration {
+                type_id: #struct_name::__RUSTEAL_TYPE_ID,
                 register_functions: #register_fns_name,
                 class_defaults: #class_defaults_entry,
             }

@@ -444,8 +444,10 @@ static RustealUFunctionHandle AddFunctionImpl(RustealUClassHandle Cls,
   const FString FuncName = ReifyUtf8ToFString(Name, NameLen);
 
   // --- Hot reload path: if this function already exists, just update the
-  // callback ID ---
-  UFunction *ExistingFunc = Class->FindFunctionByName(FName(*FuncName));
+  // callback ID. The class's own only: a Rust parent's function of the same
+  // name is the one this overrides. ---
+  UFunction *ExistingFunc = Class->FindFunctionByName(
+      FName(*FuncName), EIncludeSuperFlag::ExcludeSuper);
   if (ExistingFunc) {
     if (URustealReifiedFunction *Reified =
             Cast<URustealReifiedFunction>(ExistingFunc)) {
@@ -759,13 +761,14 @@ class FRustealDeleteListener : public FUObjectArray::FUObjectDeleteListener {
 public:
   virtual void NotifyUObjectDeleted(const UObjectBase *Object,
                                     int32 Index) override {
-    // Only handle objects whose class is a reified class.
-    const UClass *ObjClass = Object->GetClass();
-    const URustealReifiedClass *ReifiedClass =
-        Cast<URustealReifiedClass>(ObjClass);
-    if (!ReifiedClass) {
+    // Only handle objects of a reified class or of a Blueprint child of one;
+    // Rust drops the data of every Rust class the object is.
+    const TArray<URustealReifiedClass *> Chain =
+        URustealReifiedClass::ReifiedChain(Object->GetClass());
+    if (Chain.Num() == 0) {
       return;
     }
+    const URustealReifiedClass *ReifiedClass = Chain.Last();
 
     const FRustealRustCallbacks *Callbacks = GetRustealRustCallbacks();
     if (Callbacks && Callbacks->drop_rust_instance) {
@@ -802,9 +805,8 @@ void RustealReifyForEachReifiedInstance(
     if (Obj->HasAnyFlags(RF_ClassDefaultObject)) {
       continue;
     }
-    URustealReifiedClass *ReifiedClass =
-        Cast<URustealReifiedClass>(Obj->GetClass());
-    if (ReifiedClass) {
+    for (URustealReifiedClass *ReifiedClass :
+         URustealReifiedClass::ReifiedChain(Obj->GetClass())) {
       Callback(Obj, ReifiedClass);
     }
   }
