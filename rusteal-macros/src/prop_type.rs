@@ -149,6 +149,16 @@ pub fn map_type(ty: &Type) -> Option<PropTypeInfo> {
     Some(info)
 }
 
+/// The UE name of a property or parameter: PascalCase, except that a `b_`
+/// prefix is UE's bool `b` (`b_enabled` is `bEnabled`), the way the
+/// generated bindings name UE's bools the other way round.
+pub fn to_ue_name(s: &str) -> String {
+    match s.strip_prefix("b_") {
+        Some(rest) if !rest.is_empty() => format!("b{}", to_pascal_case(rest)),
+        _ => to_pascal_case(s),
+    }
+}
+
 /// Convert snake_case field name to PascalCase UE property name.
 pub fn to_pascal_case(s: &str) -> String {
     s.split('_')
@@ -213,6 +223,15 @@ mod tests {
         assert_eq!(kind(parse_quote!(UeArray<String>)), None);
         assert_eq!(kind(parse_quote!(UeArray<UStructRef<FVector>>)), None);
         assert_eq!(kind(parse_quote!(Vec<UObjectRef<InputAction>>)), None);
+    }
+
+    #[test]
+    fn ue_names() {
+        assert_eq!(to_ue_name("move_action"), "MoveAction");
+        assert_eq!(to_ue_name("b_enabled"), "bEnabled");
+        assert_eq!(to_ue_name("b_force_touch_controls"), "bForceTouchControls");
+        assert_eq!(to_ue_name("b"), "B");
+        assert_eq!(to_ue_name("bounce"), "Bounce");
     }
 
     #[test]

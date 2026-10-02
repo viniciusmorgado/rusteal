@@ -76,6 +76,8 @@ struct UPropertyArgs {
     blueprint_read_write: bool,
     blueprint_read_only: bool,
     edit_anywhere: bool,
+    edit_defaults_only: bool,
+    visible_anywhere: bool,
     default_expr: Option<Expr>,
 }
 
@@ -98,6 +100,10 @@ fn parse_uproperty_args(attr: &syn::Attribute) -> syn::Result<UPropertyArgs> {
                     args.blueprint_read_only = true;
                 } else if p.is_ident("EditAnywhere") {
                     args.edit_anywhere = true;
+                } else if p.is_ident("EditDefaultsOnly") {
+                    args.edit_defaults_only = true;
+                } else if p.is_ident("VisibleAnywhere") {
+                    args.visible_anywhere = true;
                 }
             }
             Meta::NameValue(nv)
@@ -380,7 +386,7 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
     for prop in &uprops {
         let info = prop_type::map_type(&prop.ty).unwrap();
         let field_ident = &prop.ident;
-        let ue_name = prop_type::to_pascal_case(&field_ident.to_string());
+        let ue_name = prop_type::to_ue_name(&field_ident.to_string());
         let ue_name_bytes = ue_name.as_bytes();
         let ue_name_len = ue_name.len() as u32;
         let rust_ty = &info.rust_type;
@@ -563,7 +569,7 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
 
     for prop in &uprops {
         let info = prop_type::map_type(&prop.ty).unwrap();
-        let ue_name = prop_type::to_pascal_case(&prop.ident.to_string());
+        let ue_name = prop_type::to_ue_name(&prop.ident.to_string());
         let ue_name_bytes = ue_name.as_bytes();
         let ue_name_len = ue_name.len() as u32;
         let prop_type_expr = &info.prop_type_expr;
@@ -585,6 +591,17 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
         }
         if prop.args.edit_anywhere || prop.args.blueprint_read_write {
             flag_parts.push(quote! { ::rusteal_runtime::ffi::CPF_EDIT });
+        }
+        // EditDefaultsOnly: editable on the class defaults (a Blueprint
+        // child), not on instances in a level.
+        if prop.args.edit_defaults_only {
+            flag_parts.push(quote! { ::rusteal_runtime::ffi::CPF_EDIT });
+            flag_parts.push(quote! { ::rusteal_runtime::ffi::CPF_DISABLE_EDIT_ON_INSTANCE });
+        }
+        // VisibleAnywhere: shown in Details, never edited there.
+        if prop.args.visible_anywhere {
+            flag_parts.push(quote! { ::rusteal_runtime::ffi::CPF_EDIT });
+            flag_parts.push(quote! { ::rusteal_runtime::ffi::CPF_EDIT_CONST });
         }
         if flag_parts.is_empty() {
             flag_parts.push(quote! { 0u64 });
@@ -679,7 +696,7 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
         if let Some(ref default_expr) = prop.args.default_expr
             && let prop_type::PropKind::Scalar { setter_fn, .. } = prop_type::map_type(&prop.ty).unwrap().kind
         {
-            let ue_name = prop_type::to_pascal_case(&prop.ident.to_string());
+            let ue_name = prop_type::to_ue_name(&prop.ident.to_string());
             let ue_name_bytes = ue_name.as_bytes();
             let ue_name_len = ue_name.len() as u32;
             let setter_dispatch = format_ident!("property_{}", setter_fn);

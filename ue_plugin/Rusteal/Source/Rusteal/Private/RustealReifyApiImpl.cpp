@@ -457,11 +457,19 @@ static RustealUFunctionHandle AddFunctionImpl(RustealUClassHandle Cls,
   URustealReifiedFunction *NewFunc = NewObject<URustealReifiedFunction>(
       Class, FName(*FuncName), RF_Public | RF_MarkAsNative);
 
-  NewFunc->CallbackId = CallbackId;
-  NewFunc->FunctionFlags = static_cast<EFunctionFlags>(FuncFlags) | FUNC_Native;
+  // Without FUNC_Native it is a BlueprintImplementableEvent declared in
+  // Rust: no Rust code behind it, a Blueprint child's graph is its body (an
+  // empty script until one overrides it), and Rust calls it by name.
+  const bool bScriptEvent =
+      !(static_cast<EFunctionFlags>(FuncFlags) & FUNC_Native);
 
-  // Set the native function pointer to the thunk.
-  NewFunc->SetNativeFunc(&URustealReifiedFunction::execCallRustFunction);
+  NewFunc->CallbackId = CallbackId;
+  NewFunc->FunctionFlags = static_cast<EFunctionFlags>(FuncFlags);
+  if (!bScriptEvent) {
+    NewFunc->FunctionFlags |= FUNC_Native;
+    // Set the native function pointer to the thunk.
+    NewFunc->SetNativeFunc(&URustealReifiedFunction::execCallRustFunction);
+  }
 
   // Link into the class's Children list so TFieldIterator<UFunction> can
   // discover it (used by Blueprint action menu, StaticLink, etc.).
@@ -471,7 +479,8 @@ static RustealUFunctionHandle AddFunctionImpl(RustealUClassHandle Cls,
   // For Override functions (BlueprintEvent), copy parameter definitions from
   // the parent class's function. This way the macro doesn't need to know how
   // to register struct/complex parameter types — they're inherited from UHT.
-  if (static_cast<EFunctionFlags>(FuncFlags) & FUNC_BlueprintEvent) {
+  if (!bScriptEvent &&
+      (static_cast<EFunctionFlags>(FuncFlags) & FUNC_BlueprintEvent)) {
     UFunction *ParentFunc =
         Class->GetSuperClass()
             ? Class->GetSuperClass()->FindFunctionByName(NewFunc->GetFName())
@@ -486,8 +495,10 @@ static RustealUFunctionHandle AddFunctionImpl(RustealUClassHandle Cls,
   }
 
   // Register the native function name for the VM.
-  Class->AddNativeFunction(*FuncName,
-                           &URustealReifiedFunction::execCallRustFunction);
+  if (!bScriptEvent) {
+    Class->AddNativeFunction(*FuncName,
+                             &URustealReifiedFunction::execCallRustFunction);
+  }
   Class->AddFunctionToFunctionMap(NewFunc, NewFunc->GetFName());
 
   return RustealUFunctionHandle{NewFunc};

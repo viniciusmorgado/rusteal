@@ -337,6 +337,10 @@ pub struct Probe {
     widget_class: SubclassOf<UserWidget>,
     #[uproperty]
     widget: UObjectRef<UserWidget>,
+    #[uproperty(EditDefaultsOnly, default = true)]
+    b_can_dash: bool,
+    #[uproperty(VisibleAnywhere)]
+    seen: UObjectRef<InputAction>,
 }
 
 #[uclass_impl]
@@ -371,6 +375,27 @@ impl Probe {
     fn pick_class(&mut self, index: i32) -> SubclassOf<Actor> {
         self.classes().get(index as usize).unwrap_or_default()
     }
+
+    #[ufunction(BlueprintPure)]
+    fn can_dash(&self) -> bool {
+        self.b_can_dash()
+    }
+
+    #[ufunction(Override, name = "K2_OnBecomeViewTarget")]
+    fn on_become_view_target(&mut self, pc: UObjectRef<PlayerController>) {
+        self.set_trail(true);
+        let _ = self.pick_target(pc);
+        self.set_b_can_dash(self.count_targets(2) > 0);
+    }
+
+    #[ufunction(BlueprintImplementableEvent)]
+    fn set_trail(&self, b_enabled: bool) {}
+
+    #[ufunction(BlueprintImplementableEvent)]
+    fn pick_target(&self, pc: UObjectRef<PlayerController>) -> UObjectRef<Actor> {}
+
+    #[ufunction(BlueprintImplementableEvent)]
+    fn count_targets(&self, max: i32) -> i32 {}
 }
 
 #[uclass(parent = Actor)]
