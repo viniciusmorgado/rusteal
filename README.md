@@ -336,9 +336,10 @@ A `#[uproperty]` is `bool`, `i32`, `i64`, `u8`, `f32`, `f64`, an object
 (`UObjectRef<T>`), a class (`SubclassOf<T>`, UE's `TSubclassOf<T>`), a
 `UeArray` of any of those, a struct (`OwnedStruct<FVector>`), an `FName`, a
 `String` (`FString`) or an engine enum (`ECollisionChannel`). Each gets a
-getter named after the field and, unless it is `BlueprintReadOnly`, a `set_`
-setter; an array's getter returns a view of the array inside the object,
-changed in place, and a struct's a copy. `default = ...` is for the scalar
+getter named after the field and a `set_` setter (`BlueprintReadOnly` is
+about Blueprints; the class's own code writes it, as C++ does); an array's
+getter returns a view of the array inside the object, changed in place, and
+a struct's a copy. `default = ...` is for the scalar
 types and enums; the others are set in `#[class_defaults]` or a Blueprint
 child, as the engine's templates do. `EditAnywhere`, `EditDefaultsOnly`,
 `VisibleAnywhere`, `BlueprintReadWrite` and `BlueprintReadOnly` are UE's

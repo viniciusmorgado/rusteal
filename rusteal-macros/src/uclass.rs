@@ -574,10 +574,9 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
             }
         });
 
-        // Setter (only if not read-only)
-        if let Some((setter_ty, setter_body)) = setter_body
-            && !prop.args.blueprint_read_only
-        {
+        // Setter: the class's own code writes even what Blueprint only reads,
+        // as C++ does
+        if let Some((setter_ty, setter_body)) = setter_body {
             let setter_ident = format_ident!("set_{}", field_ident);
             accessor_methods.push(quote! {
                 pub fn #setter_ident(&self, val: #setter_ty) {
