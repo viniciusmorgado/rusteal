@@ -339,6 +339,21 @@ pub fn generate_delegate_structs(
             "impl {struct_name} {{\n"
         ));
 
+        // Bind a UFunction by name, as C++'s AddDynamic / BindDynamic.
+        let ufunction_method = if is_multicast { "add_ufunction" } else { "bind_ufunction" };
+        out.push_str(&format!(
+            "    /// Bind `target`'s UFunction named `function` (a `#[ufunction]` of a Rust\n\
+             \x20   /// class, say), as C++'s `{}` does{}.\n\
+             \x20   pub fn {ufunction_method}(&self, target: &rusteal_core::UObjectRef<impl rusteal_core::UeClass>, function: &str) -> rusteal_core::RustealResult<()> {{\n\
+             \x20       let target = target.checked()?.raw();\n\
+             \x20       rusteal_core::check_ffi(unsafe {{\n\
+             \x20           rusteal_core::ffi_dispatch::delegate_add_function(self.owner, self.prop, target, function.as_ptr(), function.len() as u32)\n\
+             \x20       }})\n\
+             \x20   }}\n\n",
+            if is_multicast { "AddDynamic" } else { "BindDynamic" },
+            if is_multicast { ": once, however many times it is called" } else { "" },
+        ));
+
         // Generate the bind/add method
         out.push_str(&format!(
             "    pub fn {method_name}(&self, mut callback: impl FnMut({callback_sig}) + Send + 'static) -> rusteal_core::RustealResult<rusteal_core::DelegateBinding> {{\n"

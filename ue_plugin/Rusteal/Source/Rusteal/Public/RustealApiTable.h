@@ -346,6 +346,13 @@ struct FRustealDelegateApi {
   ERustealErrorCode (*read_param)(RustealFPropertyHandle prop, void *params_buf,
                                   uint32 offset, uint8 *out_buf,
                                   uint32 out_buf_size, uint32 *out_written);
+
+  // Bind target's UFunction named name to the delegate, as C++'s AddDynamic
+  // (AddUnique on a multicast delegate) or BindDynamic does.
+  ERustealErrorCode (*add_function)(RustealUObjectHandle obj,
+                                    RustealFPropertyHandle prop,
+                                    RustealUObjectHandle target,
+                                    const uint8 *name, uint32 name_len);
 };
 // ---------------------------------------------------------------------------
 // Reify API types

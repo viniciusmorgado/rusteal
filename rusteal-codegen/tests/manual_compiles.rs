@@ -307,7 +307,7 @@ fn regenerate_fixture() {
 /// taking and returning each supported kind, and code using every accessor the
 /// macros generate, the Enhanced Input helpers and the touch controls ones.
 const UCLASS_GAME: &str = r#"
-use bindings::engine::{Actor, Controller, Pawn, PawnExt, PlayerController, SceneComponent};
+use bindings::engine::{Actor, ActorExt, Controller, Pawn, PawnExt, PlayerController, SceneComponent};
 use bindings::enhanced_input::{
     ETriggerEvent, EnhancedInputLocalPlayerSubsystemExt, FInputActionValue, InputAction,
     InputMappingContext,
@@ -436,6 +436,8 @@ impl Probe {
 }
 
 pub fn worlds(probe: UObjectRef<Probe>, class: SubclassOf<Pawn>) -> RustealResult<UObjectRef<Pawn>> {
+    let actor = probe.upcast_to::<Actor>();
+    actor.checked()?.on_destroyed().add_ufunction(&probe, "PickClass")?;
     let world = probe.get_world()?;
     world.spawn_actor_of_class(class, &OwnedStruct::new())
 }

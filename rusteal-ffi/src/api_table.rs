@@ -424,6 +424,16 @@ pub struct RustealDelegateApi {
         out_buf_size: u32,
         out_written: *mut u32,
     ) -> RustealErrorCode,
+
+    /// Bind `target`'s UFunction named `name` to the delegate, as C++'s
+    /// `AddDynamic` (AddUnique on a multicast delegate) or `BindDynamic` does.
+    pub add_function: unsafe extern "C" fn(
+        obj: UObjectHandle,
+        prop: FPropertyHandle,
+        target: UObjectHandle,
+        name: *const u8,
+        name_len: u32,
+    ) -> RustealErrorCode,
 }
 
 /// Phase 9: Reify — runtime class creation, property/function registration.

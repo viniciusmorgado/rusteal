@@ -456,6 +456,21 @@ not in reflection), and `create_widget_of_class(&controller, class)` spawns a
 widget whose class a Blueprint child assigns, as `CreateWidget<T>(this, Class)`
 does.
 
+### Delegates
+
+An engine delegate (`OnActorBeginOverlap`, `OnDestroyed`, a component's
+`OnComponentBeginOverlap`) takes a Rust closure, or a `#[ufunction]` by name
+as C++'s `AddDynamic` does: once, however many times it is bound.
+
+```rust
+// A closure; dropping the binding unbinds it, detach() keeps it for as long
+// as the actor lives.
+actor.checked()?.on_destroyed().add(move |destroyed| { /* ... */ })?.detach();
+
+// A #[ufunction] of this class taking the delegate's parameters.
+me.checked()?.on_actor_begin_overlap().add_ufunction(&me, "BeginOverlap")?;
+```
+
 ### Dynamic Calls
 
 For Blueprint-defined functions or APIs not covered by generated bindings:
