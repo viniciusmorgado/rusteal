@@ -234,7 +234,7 @@ mod tests {
     fn every_template_has_a_valid_manifest() {
         let templates = available();
         let names: Vec<&str> = templates.iter().map(|t| t.name).collect();
-        assert_eq!(names, ["blank", "first-person", "third-person"]);
+        assert_eq!(names, ["blank", "first-person", "third-person", "top-down"]);
         assert!(manifest(SETUP_TEMPLATE).is_some());
     }
 

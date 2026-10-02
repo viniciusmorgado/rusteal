@@ -135,6 +135,7 @@ templates make it, and opens and plays the variant's level.
 | `first-person` | | The engine's First Person template: its character, camera manager, game mode and player controller in Rust, playable as it comes (keyboard, mouse, gamepad, touch). |
 | `first-person` | `horror` | A dark level explored with a flashlight and a sprint that runs on stamina, its meter on screen. |
 | `first-person` | `shooter` | An arena shooter: weapon pickups from a data table, projectiles and grenades, team scores, and NPCs run by a StateTree that sense, snipe and shoot. |
+| `top-down` | | The engine's Top Down template: its character, game mode and point and click player controller in Rust (the engine's Blueprint-only base Blueprints made their children), playable as it comes (mouse, touch). |
 | `third-person` | | The engine's Third Person template: its character, game mode and player controller in Rust, playable as it comes (keyboard, mouse, gamepad, touch). |
 | `third-person` | `combat` | Melee combat: combo and charged attacks, enemies run by a StateTree, spawners, checkpoints, damageable props. |
 | `third-person` | `platforming` | Double jump, wall jump, coyote time, a dash, local multiplayer and respawn. |

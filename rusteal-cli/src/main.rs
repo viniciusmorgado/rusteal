@@ -39,7 +39,7 @@ enum Commands {
         dir: PathBuf,
         /// What the project starts as: `blank` (an actor in Rust) or one of
         /// the engine's game templates in Rust (`third-person`,
-        /// `first-person`); an unknown name lists them all.
+        /// `first-person`, `top-down`); an unknown name lists them all.
         #[arg(long, default_value = "blank")]
         template: String,
         /// The template's variant (default: `base`, the template itself).
