@@ -643,7 +643,7 @@ What Unreal Engine 6 changes for Rusteal — Verse, Scene Graph, the end of
 Blueprints — and the open questions to check as Epic publishes details are in
 [`docs/ue6-radar.md`](https://github.com/viniciusmorgado/rusteal/blob/main/docs/ue6-radar.md).
 
-Commits are small — one per fix — and never mention AI authorship.
+Commits are small — one per fix.
 
 ### Releases and versions
 
