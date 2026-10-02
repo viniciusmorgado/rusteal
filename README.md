@@ -134,6 +134,7 @@ templates make it, and opens and plays the variant's level.
 | `blank` (default) | | The engine's Blank template and a `HelloActor` in Rust. |
 | `third-person` | | The engine's Third Person template: its character, game mode and player controller in Rust, playable as it comes (keyboard, mouse, gamepad, touch). |
 | `third-person` | `platforming` | Double jump, wall jump, coyote time, a dash, local multiplayer and respawn. |
+| `third-person` | `side-scrolling` | A side view platformer: soft platforms, jump pads, moving platforms, pickups with a counter and an NPC run by a StateTree. |
 
 <img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/templates/third-person.webp" alt="The third-person template in play" width="640">
 
