@@ -81,6 +81,11 @@ struct UPropertyArgs {
 
 fn parse_uproperty_args(attr: &syn::Attribute) -> syn::Result<UPropertyArgs> {
     let mut args = UPropertyArgs::default();
+    // #[uproperty] with no parens: a property only C++ and the GC see, as
+    // `UPROPERTY()` is.
+    if let Meta::Path(_) = attr.meta {
+        return Ok(args);
+    }
     let nested = attr.parse_args_with(
         Punctuated::<Meta, Token![,]>::parse_terminated,
     )?;

@@ -125,7 +125,7 @@ and their Blueprint children, with the same names, have Rust parents.
 | Template | What it is |
 |---|---|
 | `blank` (default) | The engine's Blank template and a `HelloActor` in Rust. |
-| `third-person` | The engine's Third Person template: its character, game mode and player controller in Rust, playable as it comes (keyboard, mouse, gamepad). The variants (Combat, Platforming, SideScrolling) and the touch controls are not ported. |
+| `third-person` | The engine's Third Person template: its character, game mode and player controller in Rust, playable as it comes (keyboard, mouse, gamepad, touch). The variants (Combat, Platforming, SideScrolling) are not ported. |
 
 <img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/templates/third-person.webp" alt="The third-person template in play" width="640">
 
@@ -146,7 +146,7 @@ layout `rusteal new` produces.
 A project is tied to one Rusteal version: `Rust/Cargo.toml` pins
 `rusteal-runtime`, `rusteal-core` and `rusteal-ffi` to it (`"=x.y.z"`), and the
 plugins in `Plugins/` carry it. Before doing anything, `build`, `generate` and
-`setup` check it against the CLI's own version:
+`setup` check it against the CLI's own version (`rusteal --version`):
 
 - the CLI is newer: `rusteal upgrade` moves the project to it — the pins, the
   plugins (`Plugins/Rusteal` and `Plugins/RustealGenerator` are replaced
@@ -406,6 +406,12 @@ impl MyCharacter {
 takes nothing or an `FInputActionValue`; engine functions work too (`"Jump"`).
 `enhanced_input_subsystem(controller)` is where a player controller adds its
 mapping contexts.
+
+Touch controls follow the same template: `runtime::input::should_display_touch_interface()`
+is the C++ `SVirtualJoystick::ShouldDisplayTouchInterface()` (a Slate check,
+not in reflection), and `create_widget_of_class(&controller, class)` spawns a
+widget whose class a Blueprint child assigns, as `CreateWidget<T>(this, Class)`
+does.
 
 ### Dynamic Calls
 
