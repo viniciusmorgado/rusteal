@@ -73,13 +73,13 @@ fn parse_uclass_args(attr: TokenStream) -> syn::Result<UClassArgs> {
 /// instances. Always initialize critical values in your `receive_begin_play` or
 /// init function instead of relying solely on CDO defaults.
 #[derive(Default)]
-struct UPropertyArgs {
+pub(crate) struct UPropertyArgs {
     blueprint_read_write: bool,
     blueprint_read_only: bool,
     edit_anywhere: bool,
     edit_defaults_only: bool,
     visible_anywhere: bool,
-    default_expr: Option<Expr>,
+    pub(crate) default_expr: Option<Expr>,
     /// The UE name when it is not the field's (`NPC` for `npc`).
     name: Option<String>,
     /// `Category` metadata: the Details section, and for a StateTree task's
@@ -95,7 +95,7 @@ fn str_value(value: &Expr, what: &str) -> syn::Result<String> {
     }
 }
 
-fn parse_uproperty_args(attr: &syn::Attribute) -> syn::Result<UPropertyArgs> {
+pub(crate) fn parse_uproperty_args(attr: &syn::Attribute) -> syn::Result<UPropertyArgs> {
     let mut args = UPropertyArgs::default();
     // #[uproperty] with no parens: a property only C++ and the GC see, as
     // `UPROPERTY()` is.
@@ -219,10 +219,10 @@ fn parse_component_args(attr: &syn::Attribute) -> syn::Result<ComponentArgs> {
 // Field classification
 // ---------------------------------------------------------------------------
 
-struct UPropertyField {
-    ident: Ident,
-    ty: syn::Type,
-    args: UPropertyArgs,
+pub(crate) struct UPropertyField {
+    pub ident: Ident,
+    pub ty: syn::Type,
+    pub args: UPropertyArgs,
 }
 
 impl UPropertyField {
@@ -327,8 +327,8 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
                 return Err(syn::Error::new_spanned(
                     &field_ty,
                     "unsupported uproperty type: supported are bool/i32/i64/u8/f32/f64, \
-                     UObjectRef<T>, SubclassOf<T>, UeArray of those, OwnedStruct<T>, FName, \
-                     String and UE enums",
+                     UObjectRef<T>, SubclassOf<T>, SoftObjectRef<T>, UeArray of those, \
+                     OwnedStruct<T>, FName, String and UE enums",
                 ));
             };
             if matches!(info.kind, prop_type::PropKind::Struct { .. }) {
@@ -429,164 +429,18 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
 
     // --- 5. Property getters/setters ---
     let mut accessor_methods: Vec<TokenStream> = Vec::new();
-
-    for prop in &uprops {
-        let info = prop_type::map_type(&prop.ty).unwrap();
-        let field_ident = &prop.ident;
-        let ue_name = prop.ue_name();
-        let ue_name_bytes = ue_name.as_bytes();
-        let ue_name_len = ue_name.len() as u32;
-        let rust_ty = &info.rust_type;
-
-        // The FProperty, looked up once per accessor.
-        let find_prop = quote! {
-            static PROP: std::sync::OnceLock<::rusteal_runtime::ffi::FPropertyHandle> = std::sync::OnceLock::new();
-            let prop = *PROP.get_or_init(|| unsafe {
-                ::rusteal_runtime::runtime::ffi_dispatch::reflection_find_property(
-                    <Self as ::rusteal_runtime::runtime::UeClass>::static_class(),
-                    [#(#ue_name_bytes),*].as_ptr(),
-                    #ue_name_len,
-                )
-            });
-        };
-
-        let (getter_body, setter_body) = match &info.kind {
-            prop_type::PropKind::Scalar { getter_fn, setter_fn, zero_expr } => {
-                let getter_dispatch = format_ident!("property_{}", getter_fn);
-                let setter_dispatch = format_ident!("property_{}", setter_fn);
-                (
-                    quote! {
-                        let mut val: #rust_ty = #zero_expr;
-                        unsafe { ::rusteal_runtime::runtime::ffi_dispatch::#getter_dispatch(self.__obj, prop, &mut val); }
-                        val
-                    },
-                    Some((quote! { #rust_ty }, quote! {
-                        unsafe { ::rusteal_runtime::runtime::ffi_dispatch::#setter_dispatch(self.__obj, prop, val); }
-                    })),
-                )
-            }
-            prop_type::PropKind::Object { .. } => (
-                quote! {
-                    let mut h = ::rusteal_runtime::ffi::UObjectHandle::null();
-                    unsafe { ::rusteal_runtime::runtime::ffi_dispatch::property_get_object(self.__obj, prop, &mut h); }
-                    // The property only holds objects of its class.
-                    unsafe { <#rust_ty>::from_raw(h) }
-                },
-                Some((quote! { #rust_ty }, quote! {
-                    unsafe { ::rusteal_runtime::runtime::ffi_dispatch::property_set_object(self.__obj, prop, val.raw()); }
-                })),
-            ),
-            prop_type::PropKind::Class { .. } => (
-                quote! {
-                    let mut h = ::rusteal_runtime::ffi::UObjectHandle::null();
-                    unsafe { ::rusteal_runtime::runtime::ffi_dispatch::property_get_object(self.__obj, prop, &mut h); }
-                    // The property only holds its meta class and subclasses.
-                    unsafe { <#rust_ty>::from_raw(::rusteal_runtime::ffi::UClassHandle(h.0)) }
-                },
-                Some((quote! { #rust_ty }, quote! {
-                    unsafe {
-                        ::rusteal_runtime::runtime::ffi_dispatch::property_set_object(
-                            self.__obj, prop, ::rusteal_runtime::ffi::UObjectHandle(val.raw().0),
-                        );
-                    }
-                })),
-            ),
-            // A view of the array inside the object: it is read and changed in place.
-            prop_type::PropKind::Array { .. } => (
-                quote! { <#rust_ty>::new(self.__obj, prop) },
-                None,
-            ),
-            // A copy of the struct; the setter copies one in.
-            prop_type::PropKind::OwnedStruct { .. } => (
-                quote! {
-                    let size = unsafe { ::rusteal_runtime::runtime::ffi_dispatch::reflection_get_property_size(prop) } as usize;
-                    let mut buf = vec![0u8; size];
-                    ::rusteal_runtime::runtime::ffi_infallible_ctx(unsafe {
-                        ::rusteal_runtime::runtime::ffi_dispatch::property_get_struct(self.__obj, prop, buf.as_mut_ptr(), size as u32)
-                    }, #ue_name);
-                    ::rusteal_runtime::runtime::OwnedStruct::from_bytes(buf)
-                },
-                Some((quote! { &#rust_ty }, quote! {
-                    let bytes = val.to_bytes();
-                    ::rusteal_runtime::runtime::ffi_infallible_ctx(unsafe {
-                        ::rusteal_runtime::runtime::ffi_dispatch::property_set_struct(self.__obj, prop, bytes.as_ptr(), bytes.len() as u32)
-                    }, #ue_name);
-                })),
-            ),
-            prop_type::PropKind::Name => (
-                quote! {
-                    let mut h = ::rusteal_runtime::runtime::FName::NONE.handle();
-                    unsafe { ::rusteal_runtime::runtime::ffi_dispatch::property_get_fname(self.__obj, prop, &mut h); }
-                    ::rusteal_runtime::runtime::FName(h)
-                },
-                Some((quote! { #rust_ty }, quote! {
-                    unsafe { ::rusteal_runtime::runtime::ffi_dispatch::property_set_fname(self.__obj, prop, val.handle()); }
-                })),
-            ),
-            prop_type::PropKind::Str => (
-                quote! {
-                    let mut len: u32 = 0;
-                    unsafe {
-                        ::rusteal_runtime::runtime::ffi_dispatch::property_get_string(
-                            self.__obj, prop, std::ptr::null_mut(), 0, &mut len,
-                        );
-                    }
-                    let mut buf = vec![0u8; len as usize];
-                    unsafe {
-                        ::rusteal_runtime::runtime::ffi_dispatch::property_get_string(
-                            self.__obj, prop, buf.as_mut_ptr(), len, &mut len,
-                        );
-                    }
-                    buf.truncate(len as usize);
-                    String::from_utf8(buf).unwrap_or_default()
-                },
-                Some((quote! { &str }, quote! {
-                    unsafe {
-                        ::rusteal_runtime::runtime::ffi_dispatch::property_set_string(
-                            self.__obj, prop, val.as_ptr(), val.len() as u32,
-                        );
-                    }
-                })),
-            ),
-            prop_type::PropKind::Enum { ty } => (
-                quote! {
-                    let mut raw: i64 = 0;
-                    unsafe { ::rusteal_runtime::runtime::ffi_dispatch::property_get_enum(self.__obj, prop, &mut raw); }
-                    <#ty as ::rusteal_runtime::runtime::UeEnum>::from_i64(raw)
-                        .unwrap_or_else(|| panic!("{} holds {}, not a {}", #ue_name, raw, stringify!(#ty)))
-                },
-                Some((quote! { #rust_ty }, quote! {
-                    unsafe {
-                        ::rusteal_runtime::runtime::ffi_dispatch::property_set_enum(
-                            self.__obj, prop, ::rusteal_runtime::runtime::UeEnum::to_i64(val),
-                        );
-                    }
-                })),
-            ),
-            prop_type::PropKind::Struct { .. } => unreachable!("rejected when the field was parsed"),
-        };
-
-        // Getter (always generated)
-        let getter_ident = format_ident!("{}", field_ident);
+    let container = quote! { self.__obj };
+    let owner = quote! { <Self as ::rusteal_runtime::runtime::UeClass>::static_class() };
+    for accessor in property_accessors(&uprops, &container, &format_ident!("reflection_find_property"), &owner) {
+        let signature = accessor.signature();
+        let body = &accessor.body;
         accessor_methods.push(quote! {
-            pub fn #getter_ident(&self) -> #rust_ty {
-                #find_prop
-                #getter_body
+            pub #signature {
+                #body
             }
         });
-
-        // Setter: the class's own code writes even what Blueprint only reads,
-        // as C++ does
-        if let Some((setter_ty, setter_body)) = setter_body {
-            let setter_ident = format_ident!("set_{}", field_ident);
-            accessor_methods.push(quote! {
-                pub fn #setter_ident(&self, val: #setter_ty) {
-                    #find_prop
-                    #setter_body
-                }
-            });
-        }
     }
+
 
     // Rust private field accessors
     for f in &rust_fields {
@@ -683,100 +537,7 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
     let struct_name_byte_len = struct_name_str.len() as u32;
 
     // Generate add_property calls
-    let mut add_prop_stmts: Vec<TokenStream> = Vec::new();
-
-    for prop in &uprops {
-        let info = prop_type::map_type(&prop.ty).unwrap();
-        let ue_name = prop.ue_name();
-        let ue_name_bytes = ue_name.as_bytes();
-        let ue_name_len = ue_name.len() as u32;
-        let prop_type_expr = &info.prop_type_expr;
-        let prop_var = format_ident!("_prop_{}", prop.ident);
-
-        // Compute flags:
-        //   BlueprintReadWrite → visible + editable in Details and Blueprint
-        //   BlueprintReadOnly  → visible in Blueprint (get only) + visible but greyed in Details
-        //   EditAnywhere       → editable in Details
-        let mut flag_parts = Vec::new();
-        if prop.args.blueprint_read_write || prop.args.blueprint_read_only {
-            flag_parts.push(quote! { ::rusteal_runtime::ffi::CPF_BLUEPRINT_VISIBLE });
-        }
-        if prop.args.blueprint_read_only {
-            flag_parts.push(quote! { ::rusteal_runtime::ffi::CPF_BLUEPRINT_READ_ONLY });
-            // Alone, also shown read-only in Details (VisibleAnywhere); with
-            // EditAnywhere or EditDefaultsOnly, editable there as they say.
-            if !prop.args.edit_anywhere && !prop.args.edit_defaults_only {
-                flag_parts.push(quote! { ::rusteal_runtime::ffi::CPF_EDIT });
-                flag_parts.push(quote! { ::rusteal_runtime::ffi::CPF_EDIT_CONST });
-            }
-        }
-        if prop.args.edit_anywhere || prop.args.blueprint_read_write {
-            flag_parts.push(quote! { ::rusteal_runtime::ffi::CPF_EDIT });
-        }
-        // EditDefaultsOnly: editable on the class defaults (a Blueprint
-        // child), not on instances in a level.
-        if prop.args.edit_defaults_only {
-            flag_parts.push(quote! { ::rusteal_runtime::ffi::CPF_EDIT });
-            flag_parts.push(quote! { ::rusteal_runtime::ffi::CPF_DISABLE_EDIT_ON_INSTANCE });
-        }
-        // VisibleAnywhere: shown in Details, never edited there.
-        if prop.args.visible_anywhere {
-            flag_parts.push(quote! { ::rusteal_runtime::ffi::CPF_EDIT });
-            flag_parts.push(quote! { ::rusteal_runtime::ffi::CPF_EDIT_CONST });
-        }
-        if flag_parts.is_empty() {
-            flag_parts.push(quote! { 0u64 });
-        }
-        let flags_expr = quote! { #(#flag_parts)|* };
-
-        // What the plugin needs beyond the type: the class of an object, the
-        // meta class of a class, the element of an array.
-        let extra_expr = match info.extra_fields() {
-            Some(fields) => quote! {
-                &::rusteal_runtime::ffi::RustealReifyPropExtra {
-                    #fields
-                    ..::core::default::Default::default()
-                }
-            },
-            None => quote! { std::ptr::null() },
-        };
-
-        // Metadata the editor (and StateTree) reads.
-        let meta_stmts: Vec<TokenStream> = prop
-            .args
-            .category
-            .iter()
-            .map(|category| {
-                let value_bytes = category.as_bytes();
-                let value_len = category.len() as u32;
-                quote! {
-                    unsafe {
-                        ::rusteal_runtime::runtime::ffi_dispatch::reify_set_property_metadata(
-                            #prop_var, b"Category".as_ptr(), 8u32,
-                            [#(#value_bytes),*].as_ptr(), #value_len,
-                        );
-                    }
-                }
-            })
-            .collect();
-
-        add_prop_stmts.push(quote! {
-            let #prop_var = unsafe {
-                ::rusteal_runtime::runtime::ffi_dispatch::reify_add_property(
-                    class,
-                    [#(#ue_name_bytes),*].as_ptr(),
-                    #ue_name_len,
-                    #prop_type_expr as u32,
-                    #flags_expr,
-                    #extra_expr,
-                )
-            };
-            if !#prop_var.is_null() {
-                #(#meta_stmts)*
-            }
-        });
-
-    }
+    let add_prop_stmts = add_property_statements(&uprops);
 
     // Generate add_default_subobject calls
     let mut add_comp_stmts: Vec<TokenStream> = Vec::new();
@@ -1056,4 +817,325 @@ pub(crate) fn to_snake_case(s: &str) -> String {
 
 pub(crate) fn to_screaming_snake(s: &str) -> String {
     to_snake_case(s).to_uppercase()
+}
+
+/// A property's getter or setter: an inherent method of a `#[uclass]`, a
+/// method of the `Ext` trait of a `#[ustruct]`.
+pub(crate) struct Accessor {
+    pub name: Ident,
+    /// `val: T` for a setter.
+    pub param: Option<TokenStream>,
+    pub ret: Option<TokenStream>,
+    pub body: TokenStream,
+}
+
+impl Accessor {
+    /// The method's signature: `fn name(&self, val: T) -> R`.
+    pub fn signature(&self) -> TokenStream {
+        let name = &self.name;
+        let param = self.param.iter();
+        let ret = self.ret.iter();
+        quote! { fn #name(&self #(, #param)*) #(-> #ret)* }
+    }
+}
+
+/// The getters and setters of `uprops`, properties of the memory `container`
+/// points to (a `UObjectHandle`): an object's, or a struct's. Each finds its
+/// property once with `find_fn` (a `ffi_dispatch` function) in `owner`, the
+/// class or struct handle.
+pub(crate) fn property_accessors(
+    uprops: &[UPropertyField],
+    container: &TokenStream,
+    find_fn: &Ident,
+    owner: &TokenStream,
+) -> Vec<Accessor> {
+    let mut accessors = Vec::new();
+    for prop in uprops {
+        let info = prop_type::map_type(&prop.ty).unwrap();
+        let field_ident = &prop.ident;
+        let ue_name = prop.ue_name();
+        let ue_name_bytes = ue_name.as_bytes();
+        let ue_name_len = ue_name.len() as u32;
+        let rust_ty = &info.rust_type;
+
+        // The FProperty, looked up once per accessor.
+        let find_prop = quote! {
+            static PROP: std::sync::OnceLock<::rusteal_runtime::ffi::FPropertyHandle> = std::sync::OnceLock::new();
+            let prop = *PROP.get_or_init(|| unsafe {
+                ::rusteal_runtime::runtime::ffi_dispatch::#find_fn(
+                    #owner,
+                    [#(#ue_name_bytes),*].as_ptr(),
+                    #ue_name_len,
+                )
+            });
+        };
+
+        let (getter_body, setter_body) = match &info.kind {
+            prop_type::PropKind::Scalar { getter_fn, setter_fn, zero_expr } => {
+                let getter_dispatch = format_ident!("property_{}", getter_fn);
+                let setter_dispatch = format_ident!("property_{}", setter_fn);
+                (
+                    quote! {
+                        let mut val: #rust_ty = #zero_expr;
+                        unsafe { ::rusteal_runtime::runtime::ffi_dispatch::#getter_dispatch(#container, prop, &mut val); }
+                        val
+                    },
+                    Some((quote! { #rust_ty }, quote! {
+                        unsafe { ::rusteal_runtime::runtime::ffi_dispatch::#setter_dispatch(#container, prop, val); }
+                    })),
+                )
+            }
+            prop_type::PropKind::Object { .. } => (
+                quote! {
+                    let mut h = ::rusteal_runtime::ffi::UObjectHandle::null();
+                    unsafe { ::rusteal_runtime::runtime::ffi_dispatch::property_get_object(#container, prop, &mut h); }
+                    // The property only holds objects of its class.
+                    unsafe { <#rust_ty>::from_raw(h) }
+                },
+                Some((quote! { #rust_ty }, quote! {
+                    unsafe { ::rusteal_runtime::runtime::ffi_dispatch::property_set_object(#container, prop, val.raw()); }
+                })),
+            ),
+            prop_type::PropKind::Class { .. } => (
+                quote! {
+                    let mut h = ::rusteal_runtime::ffi::UObjectHandle::null();
+                    unsafe { ::rusteal_runtime::runtime::ffi_dispatch::property_get_object(#container, prop, &mut h); }
+                    // The property only holds its meta class and subclasses.
+                    unsafe { <#rust_ty>::from_raw(::rusteal_runtime::ffi::UClassHandle(h.0)) }
+                },
+                Some((quote! { #rust_ty }, quote! {
+                    unsafe {
+                        ::rusteal_runtime::runtime::ffi_dispatch::property_set_object(
+                            #container, prop, ::rusteal_runtime::ffi::UObjectHandle(val.raw().0),
+                        );
+                    }
+                })),
+            ),
+            // A view of the array inside the object: it is read and changed in place.
+            prop_type::PropKind::Array { .. } => (
+                quote! { <#rust_ty>::new(#container, prop) },
+                None,
+            ),
+            // A copy of the struct; the setter copies one in.
+            prop_type::PropKind::OwnedStruct { .. } => (
+                quote! {
+                    let size = unsafe { ::rusteal_runtime::runtime::ffi_dispatch::reflection_get_property_size(prop) } as usize;
+                    let mut buf = vec![0u8; size];
+                    ::rusteal_runtime::runtime::ffi_infallible_ctx(unsafe {
+                        ::rusteal_runtime::runtime::ffi_dispatch::property_get_struct(#container, prop, buf.as_mut_ptr(), size as u32)
+                    }, #ue_name);
+                    ::rusteal_runtime::runtime::OwnedStruct::from_bytes(buf)
+                },
+                Some((quote! { &#rust_ty }, quote! {
+                    let bytes = val.to_bytes();
+                    ::rusteal_runtime::runtime::ffi_infallible_ctx(unsafe {
+                        ::rusteal_runtime::runtime::ffi_dispatch::property_set_struct(#container, prop, bytes.as_ptr(), bytes.len() as u32)
+                    }, #ue_name);
+                })),
+            ),
+            // The path; `load_synchronous` loads the object.
+            prop_type::PropKind::SoftObject { .. } => (
+                quote! {
+                    let mut len: u32 = 0;
+                    unsafe {
+                        ::rusteal_runtime::runtime::ffi_dispatch::property_get_soft_object_path(
+                            #container, prop, std::ptr::null_mut(), 0, &mut len,
+                        );
+                    }
+                    let mut buf = vec![0u8; len as usize];
+                    unsafe {
+                        ::rusteal_runtime::runtime::ffi_dispatch::property_get_soft_object_path(
+                            #container, prop, buf.as_mut_ptr(), len, &mut len,
+                        );
+                    }
+                    buf.truncate(len as usize);
+                    ::rusteal_runtime::runtime::SoftObjectRef::new(String::from_utf8(buf).unwrap_or_default())
+                },
+                Some((quote! { &#rust_ty }, quote! {
+                    let path = val.path();
+                    unsafe {
+                        ::rusteal_runtime::runtime::ffi_dispatch::property_set_soft_object_path(
+                            #container, prop, path.as_ptr(), path.len() as u32,
+                        );
+                    }
+                })),
+            ),
+            prop_type::PropKind::Name => (
+                quote! {
+                    let mut h = ::rusteal_runtime::runtime::FName::NONE.handle();
+                    unsafe { ::rusteal_runtime::runtime::ffi_dispatch::property_get_fname(#container, prop, &mut h); }
+                    ::rusteal_runtime::runtime::FName(h)
+                },
+                Some((quote! { #rust_ty }, quote! {
+                    unsafe { ::rusteal_runtime::runtime::ffi_dispatch::property_set_fname(#container, prop, val.handle()); }
+                })),
+            ),
+            prop_type::PropKind::Str => (
+                quote! {
+                    let mut len: u32 = 0;
+                    unsafe {
+                        ::rusteal_runtime::runtime::ffi_dispatch::property_get_string(
+                            #container, prop, std::ptr::null_mut(), 0, &mut len,
+                        );
+                    }
+                    let mut buf = vec![0u8; len as usize];
+                    unsafe {
+                        ::rusteal_runtime::runtime::ffi_dispatch::property_get_string(
+                            #container, prop, buf.as_mut_ptr(), len, &mut len,
+                        );
+                    }
+                    buf.truncate(len as usize);
+                    String::from_utf8(buf).unwrap_or_default()
+                },
+                Some((quote! { &str }, quote! {
+                    unsafe {
+                        ::rusteal_runtime::runtime::ffi_dispatch::property_set_string(
+                            #container, prop, val.as_ptr(), val.len() as u32,
+                        );
+                    }
+                })),
+            ),
+            prop_type::PropKind::Enum { ty } => (
+                quote! {
+                    let mut raw: i64 = 0;
+                    unsafe { ::rusteal_runtime::runtime::ffi_dispatch::property_get_enum(#container, prop, &mut raw); }
+                    <#ty as ::rusteal_runtime::runtime::UeEnum>::from_i64(raw)
+                        .unwrap_or_else(|| panic!("{} holds {}, not a {}", #ue_name, raw, stringify!(#ty)))
+                },
+                Some((quote! { #rust_ty }, quote! {
+                    unsafe {
+                        ::rusteal_runtime::runtime::ffi_dispatch::property_set_enum(
+                            #container, prop, ::rusteal_runtime::runtime::UeEnum::to_i64(val),
+                        );
+                    }
+                })),
+            ),
+            prop_type::PropKind::Struct { .. } => unreachable!("rejected when the field was parsed"),
+        };
+
+        // Getter (always generated)
+        accessors.push(Accessor {
+            name: format_ident!("{}", field_ident),
+            param: None,
+            ret: Some(quote! { #rust_ty }),
+            body: quote! {
+                #find_prop
+                #getter_body
+            },
+        });
+
+        // Setter: the class's own code writes even what Blueprint only reads,
+        // as C++ does
+        if let Some((setter_ty, setter_body)) = setter_body {
+            accessors.push(Accessor {
+                name: format_ident!("set_{}", field_ident),
+                param: Some(quote! { val: #setter_ty }),
+                ret: None,
+                body: quote! {
+                    #find_prop
+                    #setter_body
+                },
+            });
+        }
+    }
+    accessors
+}
+
+/// The statements adding `uprops` to the class or struct in the variable
+/// `class` (a `UClassHandle`, which a struct's handle is passed as).
+pub(crate) fn add_property_statements(uprops: &[UPropertyField]) -> Vec<TokenStream> {
+    let mut add_prop_stmts: Vec<TokenStream> = Vec::new();
+    for prop in uprops {
+        let info = prop_type::map_type(&prop.ty).unwrap();
+        let ue_name = prop.ue_name();
+        let ue_name_bytes = ue_name.as_bytes();
+        let ue_name_len = ue_name.len() as u32;
+        let prop_type_expr = &info.prop_type_expr;
+        let prop_var = format_ident!("_prop_{}", prop.ident);
+
+        // Compute flags:
+        //   BlueprintReadWrite → visible + editable in Details and Blueprint
+        //   BlueprintReadOnly  → visible in Blueprint (get only) + visible but greyed in Details
+        //   EditAnywhere       → editable in Details
+        let mut flag_parts = Vec::new();
+        if prop.args.blueprint_read_write || prop.args.blueprint_read_only {
+            flag_parts.push(quote! { ::rusteal_runtime::ffi::CPF_BLUEPRINT_VISIBLE });
+        }
+        if prop.args.blueprint_read_only {
+            flag_parts.push(quote! { ::rusteal_runtime::ffi::CPF_BLUEPRINT_READ_ONLY });
+            // Alone, also shown read-only in Details (VisibleAnywhere); with
+            // EditAnywhere or EditDefaultsOnly, editable there as they say.
+            if !prop.args.edit_anywhere && !prop.args.edit_defaults_only {
+                flag_parts.push(quote! { ::rusteal_runtime::ffi::CPF_EDIT });
+                flag_parts.push(quote! { ::rusteal_runtime::ffi::CPF_EDIT_CONST });
+            }
+        }
+        if prop.args.edit_anywhere || prop.args.blueprint_read_write {
+            flag_parts.push(quote! { ::rusteal_runtime::ffi::CPF_EDIT });
+        }
+        // EditDefaultsOnly: editable on the class defaults (a Blueprint
+        // child), not on instances in a level.
+        if prop.args.edit_defaults_only {
+            flag_parts.push(quote! { ::rusteal_runtime::ffi::CPF_EDIT });
+            flag_parts.push(quote! { ::rusteal_runtime::ffi::CPF_DISABLE_EDIT_ON_INSTANCE });
+        }
+        // VisibleAnywhere: shown in Details, never edited there.
+        if prop.args.visible_anywhere {
+            flag_parts.push(quote! { ::rusteal_runtime::ffi::CPF_EDIT });
+            flag_parts.push(quote! { ::rusteal_runtime::ffi::CPF_EDIT_CONST });
+        }
+        if flag_parts.is_empty() {
+            flag_parts.push(quote! { 0u64 });
+        }
+        let flags_expr = quote! { #(#flag_parts)|* };
+
+        // What the plugin needs beyond the type: the class of an object, the
+        // meta class of a class, the element of an array.
+        let extra_expr = match info.extra_fields() {
+            Some(fields) => quote! {
+                &::rusteal_runtime::ffi::RustealReifyPropExtra {
+                    #fields
+                    ..::core::default::Default::default()
+                }
+            },
+            None => quote! { std::ptr::null() },
+        };
+
+        // Metadata the editor (and StateTree) reads.
+        let meta_stmts: Vec<TokenStream> = prop
+            .args
+            .category
+            .iter()
+            .map(|category| {
+                let value_bytes = category.as_bytes();
+                let value_len = category.len() as u32;
+                quote! {
+                    unsafe {
+                        ::rusteal_runtime::runtime::ffi_dispatch::reify_set_property_metadata(
+                            #prop_var, b"Category".as_ptr(), 8u32,
+                            [#(#value_bytes),*].as_ptr(), #value_len,
+                        );
+                    }
+                }
+            })
+            .collect();
+
+        add_prop_stmts.push(quote! {
+            let #prop_var = unsafe {
+                ::rusteal_runtime::runtime::ffi_dispatch::reify_add_property(
+                    class,
+                    [#(#ue_name_bytes),*].as_ptr(),
+                    #ue_name_len,
+                    #prop_type_expr as u32,
+                    #flags_expr,
+                    #extra_expr,
+                )
+            };
+            if !#prop_var.is_null() {
+                #(#meta_stmts)*
+            }
+        });
+
+    }
+    add_prop_stmts
 }

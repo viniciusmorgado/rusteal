@@ -31,6 +31,18 @@ pub struct ClassRegistration {
 }
 inventory::collect!(ClassRegistration);
 
+/// Submitted by `#[ustruct]`.
+pub struct StructRegistration {
+    /// Create the UScriptStruct (its handle).
+    pub create: fn(),
+    /// Add its properties, which may name Rust classes and structs: every
+    /// class and struct exists by then.
+    pub register: fn(),
+    /// Link it, after the Rust structs it holds.
+    pub finalize: fn(),
+}
+inventory::collect!(StructRegistration);
+
 /// Submitted by `#[uclass_impl]` — holds register_functions fn pointer, and the
 /// `#[class_defaults]` method's caller when the block has one.
 pub struct ClassFunctionRegistration {
@@ -64,7 +76,8 @@ impl ClassDefaultsOutcome for crate::error::RustealResult<()> {
 }
 
 /// Registration in phases, parents before children: create every class →
-/// add every class's properties and components → register every function →
+/// create, fill and link every struct → add every class's properties and
+/// components → register every function →
 /// finalize each class and write its class defaults. A Rust class whose parent
 /// is a Rust class is created after it and finalized after the parent's class
 /// defaults, so its class default object starts from them.
@@ -89,6 +102,18 @@ pub fn register_all_from_inventory() {
     // Parents never created: log them.
     for reg in pending {
         (reg.create)(true);
+    }
+
+    // Structs, which classes' properties and functions may hold, and whose
+    // properties may name classes.
+    for sreg in inventory::iter::<StructRegistration> {
+        (sreg.create)();
+    }
+    for sreg in inventory::iter::<StructRegistration> {
+        (sreg.register)();
+    }
+    for sreg in inventory::iter::<StructRegistration> {
+        (sreg.finalize)();
     }
 
     for reg in &ordered {

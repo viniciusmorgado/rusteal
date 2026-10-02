@@ -434,6 +434,41 @@ class. It is `BlueprintCallable` unless it says otherwise:
 `name = "K2_OnMovementModeChanged"` gives the UE name when the method's name
 in PascalCase is not it.
 
+### Defining UE Structs
+
+A data table's rows, or a struct a class's properties hold, can be declared in
+Rust too, as UHT's `USTRUCT()`:
+
+```rust
+#[ustruct]
+pub struct WeaponTableRow {
+    /// Mesh to display on the pickup
+    #[uproperty(EditAnywhere)]
+    static_mesh: SoftObjectRef<StaticMesh>,
+
+    /// Weapon class to grant on pickup
+    #[uproperty(EditAnywhere)]
+    weapon_to_spawn: SubclassOf<ShooterWeapon>,
+}
+```
+
+Every field is a `#[uproperty]` of the kinds a class's are (no `default`: a
+struct starts zeroed), since the struct's memory is UE's: a data table's, an
+object property's, an `OwnedStruct`'s. The type itself is a marker, like the
+bindings' engine structs, and the fields are read and written through the
+generated `WeaponTableRowExt` trait on `UStructRef<WeaponTableRow>` and
+`OwnedStruct<WeaponTableRow>`. A data table's row is found as C++'s
+`FindRow<T>`, by the table and row name or by an `FDataTableRowHandle`:
+
+```rust
+let Some(row) = self.weapon_type().get_row::<WeaponTableRow>() else { return };
+let mesh = row.static_mesh().load_synchronous()?;
+self.set_weapon_class(row.weapon_to_spawn());
+```
+
+`SoftObjectRef<T>` is UE's `TSoftObjectPtr<T>`: an object by path, loaded on
+demand (`load_synchronous`), or `get` if it already is.
+
 ### Input
 
 With the `enhanced-input` feature (on in new projects), input works as in the

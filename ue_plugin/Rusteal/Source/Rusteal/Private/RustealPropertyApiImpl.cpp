@@ -201,6 +201,50 @@ static ERustealErrorCode SetStringImpl(RustealUObjectHandle Obj,
 }
 
 // ---------------------------------------------------------------------------
+// Soft object reference (TSoftObjectPtr), as its path
+// ---------------------------------------------------------------------------
+
+static ERustealErrorCode GetSoftObjectPathImpl(RustealUObjectHandle Obj,
+                                               RustealFPropertyHandle Prop,
+                                               uint8 *Buf, uint32 BufLen,
+                                               uint32 *OutLen) {
+  RUSTEAL_CHECK_VALID(Obj);
+  const FSoftObjectProperty *SoftProp =
+      CastField<FSoftObjectProperty>(static_cast<FProperty *>(Prop.ptr));
+  if (!SoftProp) {
+    return ERustealErrorCode::TypeMismatch;
+  }
+  const FString Value = SoftProp->GetPropertyValue_InContainer(Object)
+                            .ToSoftObjectPath()
+                            .ToString();
+
+  const FTCHARToUTF8 Utf8(*Value);
+  const uint32 Len = static_cast<uint32>(Utf8.Length());
+  if (OutLen) {
+    *OutLen = Len;
+  }
+  if (Buf && BufLen > 0) {
+    FMemory::Memcpy(Buf, Utf8.Get(), FMath::Min(Len, BufLen));
+  }
+  return ERustealErrorCode::Ok;
+}
+
+static ERustealErrorCode SetSoftObjectPathImpl(RustealUObjectHandle Obj,
+                                               RustealFPropertyHandle Prop,
+                                               const uint8 *InBuf, uint32 Len) {
+  RUSTEAL_CHECK_VALID(Obj);
+  FSoftObjectProperty *SoftProp =
+      CastField<FSoftObjectProperty>(static_cast<FProperty *>(Prop.ptr));
+  if (!SoftProp) {
+    return ERustealErrorCode::TypeMismatch;
+  }
+  const FString Path(Len, UTF8_TO_TCHAR(reinterpret_cast<const char *>(InBuf)));
+  SoftProp->SetPropertyValue_InContainer(
+      Object, FSoftObjectPtr(FSoftObjectPath(Path)));
+  return ERustealErrorCode::Ok;
+}
+
+// ---------------------------------------------------------------------------
 // FName (stored as opaque uint64)
 // ---------------------------------------------------------------------------
 
@@ -415,4 +459,7 @@ FRustealPropertyApi GPropertyApi = {
     // Indexed access (fixed arrays)
     &GetPropertyAtImpl,
     &SetPropertyAtImpl,
+    // Soft object reference
+    &GetSoftObjectPathImpl,
+    &SetSoftObjectPathImpl,
 };

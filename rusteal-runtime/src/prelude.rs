@@ -5,7 +5,7 @@
 
 // Core runtime types
 pub use rusteal_core::{
-    UObjectRef, SubclassOf, Pinned, RustealResult, RustealError, UeClass, UeStruct, UeEnum,
+    UObjectRef, SubclassOf, SoftObjectRef, Pinned, RustealResult, RustealError, UeClass, UeStruct, UeEnum,
     OwnedStruct, UStructRef, UeArray, UeMap, UeSet,
     DynamicCall, DynamicCallResult, DelegateBinding,
     FName, TWeakObjectPtr,
@@ -22,7 +22,7 @@ pub use rusteal_core::{
 pub use rusteal_core::{UObjectHandle, UClassHandle, FPropertyHandle, UStructHandle, FNameHandle};
 
 // Proc macros
-pub use rusteal_macros::{uclass, uclass_impl};
+pub use rusteal_macros::{uclass, uclass_impl, ustruct};
 
 // glam re-exports (common math types users will interact with)
 pub use glam::{DVec2, DVec3, DVec4, DQuat, DMat4, IVec2, IVec3};

@@ -29,6 +29,9 @@ pub enum PropKind {
     Object { class: Type },
     /// `SubclassOf<T>`: a class reference restricted to `T` and its subclasses.
     Class { meta_class: Type },
+    /// `SoftObjectRef<T>`: a `TSoftObjectPtr<T>`, an object by path. Only as
+    /// a `#[uproperty]`.
+    SoftObject { class: Type },
     /// `UeArray<E>`: a `TArray` of a scalar, object or class element.
     Array { element: Box<PropTypeInfo> },
     /// `UStructRef<T>`: a UE struct, by reference to its memory. Only as a
@@ -48,7 +51,10 @@ pub enum PropKind {
 impl PropKind {
     /// Kinds only a `#[uproperty]` takes, not a `#[ufunction]` parameter.
     pub fn property_only(&self) -> bool {
-        matches!(self, PropKind::OwnedStruct { .. } | PropKind::Name | PropKind::Str)
+        matches!(
+            self,
+            PropKind::OwnedStruct { .. } | PropKind::Name | PropKind::Str | PropKind::SoftObject { .. }
+        )
     }
 }
 
@@ -58,7 +64,7 @@ impl PropTypeInfo {
     pub fn extra_fields(&self) -> Option<TokenStream> {
         match &self.kind {
             PropKind::Scalar { .. } => None,
-            PropKind::Object { class } => Some(quote! {
+            PropKind::Object { class } | PropKind::SoftObject { class } => Some(quote! {
                 class_handle: <#class as ::rusteal_runtime::runtime::UeClass>::static_class(),
             }),
             PropKind::Class { meta_class } => Some(quote! {
@@ -119,6 +125,14 @@ pub fn map_type(ty: &Type) -> Option<PropTypeInfo> {
                 prop_type_expr: quote! { ::rusteal_runtime::ffi::RustealReifyPropType::Class },
                 rust_type: quote! { #ty },
                 kind: PropKind::Class { meta_class },
+            });
+        }
+        "SoftObjectRef" => {
+            let class = single_type_arg(seg)?;
+            return Some(PropTypeInfo {
+                prop_type_expr: quote! { ::rusteal_runtime::ffi::RustealReifyPropType::SoftObject },
+                rust_type: quote! { #ty },
+                kind: PropKind::SoftObject { class },
             });
         }
         "UStructRef" => {
@@ -190,7 +204,9 @@ pub fn map_type(ty: &Type) -> Option<PropTypeInfo> {
         "f32" => scalar("Float", quote! { f32 }, "get_f32", "set_f32", quote! { 0.0f32 }),
         "f64" => scalar("Double", quote! { f64 }, "get_f64", "set_f64", quote! { 0.0f64 }),
         // A wrapper missing its type argument is no type at all.
-        "UObjectRef" | "SubclassOf" | "UStructRef" | "OwnedStruct" | "UeArray" => return None,
+        "UObjectRef" | "SubclassOf" | "SoftObjectRef" | "UStructRef" | "OwnedStruct" | "UeArray" => {
+            return None;
+        }
         // Any other plain name is a UE enum: `T: UeEnum` is checked where it
         // is used, so another type fails to compile there.
         name if seg.arguments.is_none()
@@ -256,6 +272,7 @@ mod tests {
             PropKind::Scalar { .. } => "scalar",
             PropKind::Object { .. } => "object",
             PropKind::Class { .. } => "class",
+            PropKind::SoftObject { .. } => "soft object",
             PropKind::Array { .. } => "array",
             PropKind::Struct { .. } => "struct",
             PropKind::OwnedStruct { .. } => "owned struct",
@@ -271,6 +288,7 @@ mod tests {
         assert_eq!(kind(parse_quote!(UObjectRef<InputAction>)), Some("object"));
         assert_eq!(kind(parse_quote!(rusteal_runtime::runtime::UObjectRef<InputAction>)), Some("object"));
         assert_eq!(kind(parse_quote!(SubclassOf<Pawn>)), Some("class"));
+        assert_eq!(kind(parse_quote!(SoftObjectRef<StaticMesh>)), Some("soft object"));
         assert_eq!(kind(parse_quote!(UeArray<UObjectRef<InputMappingContext>>)), Some("array"));
         assert_eq!(kind(parse_quote!(UeArray<SubclassOf<Actor>>)), Some("array"));
         assert_eq!(kind(parse_quote!(UeArray<f32>)), Some("array"));
@@ -287,6 +305,8 @@ mod tests {
     fn rejects_unsupported_types() {
         assert_eq!(kind(parse_quote!(UObjectRef)), None);
         assert_eq!(kind(parse_quote!(OwnedStruct)), None);
+        assert_eq!(kind(parse_quote!(SoftObjectRef)), None);
+        assert_eq!(kind(parse_quote!(UeArray<SoftObjectRef<StaticMesh>>)), None);
         assert_eq!(kind(parse_quote!(usize)), None);
         assert_eq!(kind(parse_quote!(UeArray<UeArray<f32>>)), None);
         assert_eq!(kind(parse_quote!(UeArray<String>)), None);

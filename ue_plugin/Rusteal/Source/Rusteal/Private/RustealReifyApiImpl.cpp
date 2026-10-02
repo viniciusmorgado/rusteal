@@ -178,6 +178,16 @@ static FProperty *CreatePropertyByType(FFieldVariant Owner, FName PropName,
     Prop = ArrayProp;
     break;
   }
+  case ERustealReifyPropType::SoftObject: {
+    FSoftObjectProperty *SoftProp =
+        new FSoftObjectProperty(Owner, PropName, RF_Public);
+    SoftProp->PropertyClass =
+        (Extra && Extra->class_handle.ptr)
+            ? static_cast<UClass *>(Extra->class_handle.ptr)
+            : UObject::StaticClass();
+    Prop = SoftProp;
+    break;
+  }
   default:
     UE_LOG(LogRusteal, Error,
            TEXT("[Rusteal] CreatePropertyByType: unknown type %d"),
@@ -394,7 +404,8 @@ static RustealFPropertyHandle
 AddPropertyImpl(RustealUClassHandle Cls, const uint8 *Name, uint32 NameLen,
                 uint32 PropType, uint64 PropFlags,
                 const FRustealReifyPropExtra *Extra) {
-  UClass *Class = static_cast<UClass *>(Cls.ptr);
+  // A class, or a struct (create_struct), whose handle comes as a class's.
+  UStruct *Class = static_cast<UStruct *>(Cls.ptr);
   if (!Class) {
     return RustealFPropertyHandle{nullptr};
   }
@@ -404,7 +415,7 @@ AddPropertyImpl(RustealUClassHandle Cls, const uint8 *Name, uint32 NameLen,
   // --- Hot reload path: if a property with this name already exists, reuse it
   // ---
   for (FProperty *P = Class->PropertyLink; P; P = P->PropertyLinkNext) {
-    if (P->GetOwnerClass() == Class && P->GetFName() == PropName) {
+    if (P->GetOwnerStruct() == Class && P->GetFName() == PropName) {
       UE_LOG(LogRusteal, Display,
              TEXT("[Rusteal] Hot reload: reusing existing property %s::%s"),
              *Class->GetName(), *PropName.ToString());
@@ -813,6 +824,56 @@ void RustealReifyForEachReifiedInstance(
 }
 
 // ---------------------------------------------------------------------------
+// Structs declared in Rust (#[ustruct])
+// ---------------------------------------------------------------------------
+
+static RustealUStructHandle CreateStructImpl(const uint8 *Name,
+                                             uint32 NameLen) {
+  UPackage *RustealPackage = GetOrCreateRustealPackage();
+  const FName StructName = ReifyUtf8ToFName(Name, NameLen);
+
+  // Hot reload: the struct of the previous load, which its properties are
+  // added to again by name (AddPropertyImpl reuses them).
+  if (UScriptStruct *Existing =
+          FindObject<UScriptStruct>(RustealPackage, *StructName.ToString())) {
+    return RustealUStructHandle{Existing};
+  }
+
+  UScriptStruct *NewStruct = NewObject<UScriptStruct>(
+      RustealPackage, StructName, RF_Public | RF_Standalone);
+#if WITH_EDITORONLY_DATA
+  // A data table can take it as its row structure, a Blueprint as a variable.
+  NewStruct->SetMetaData(TEXT("BlueprintType"), TEXT("true"));
+#endif
+  return RustealUStructHandle{NewStruct};
+}
+
+static ERustealErrorCode FinalizeStructImpl(RustealUStructHandle Handle) {
+  UScriptStruct *Struct = static_cast<UScriptStruct *>(Handle.ptr);
+  if (!Struct) {
+    return ERustealErrorCode::NullArgument;
+  }
+  if (Struct->GetStructureSize() > 0) {
+    return ERustealErrorCode::Ok; // linked already (an outer struct's turn)
+  }
+  // A Rust struct this one holds is linked first: its size is part of this
+  // one's layout.
+  const UPackage *RustealPackage = GetOrCreateRustealPackage();
+  for (TFieldIterator<FStructProperty> It(Struct, EFieldIteratorFlags::ExcludeSuper);
+       It; ++It) {
+    if (It->Struct && It->Struct->GetOutermost() == RustealPackage) {
+      FinalizeStructImpl(RustealUStructHandle{It->Struct});
+    }
+  }
+  Struct->Bind();
+  Struct->StaticLink(true);
+  Struct->PrepareCppStructOps();
+  UE_LOG(LogRusteal, Display, TEXT("[Rusteal] Finalized struct: %s (size: %d)"),
+         *Struct->GetName(), Struct->GetStructureSize());
+  return ERustealErrorCode::Ok;
+}
+
+// ---------------------------------------------------------------------------
 // Export the API table
 // ---------------------------------------------------------------------------
 
@@ -821,5 +882,6 @@ FRustealReifyApi GReifyApi = {
     &AddFunctionImpl,         &AddFunctionParamImpl,
     &FinalizeClassImpl,       &GetCdoImpl,
     &AddDefaultSubobjectImpl, &FindDefaultSubobjectImpl,
-    &SetPropertyMetadataImpl,
+    &SetPropertyMetadataImpl, &CreateStructImpl,
+    &FinalizeStructImpl,
 };

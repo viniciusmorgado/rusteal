@@ -173,6 +173,16 @@ struct FRustealPropertyApi {
                                        RustealFPropertyHandle prop,
                                        uint32 index, const uint8 *in_buf,
                                        uint32 buf_size);
+
+  // Soft object reference (TSoftObjectPtr), as its path: get writes it as
+  // get_string writes a string, empty for none.
+  ERustealErrorCode (*get_soft_object_path)(RustealUObjectHandle obj,
+                                            RustealFPropertyHandle prop,
+                                            uint8 *buf, uint32 buf_len,
+                                            uint32 *out_len);
+  ERustealErrorCode (*set_soft_object_path)(RustealUObjectHandle obj,
+                                            RustealFPropertyHandle prop,
+                                            const uint8 *buf, uint32 len);
 };
 
 // ---------------------------------------------------------------------------
@@ -380,6 +390,8 @@ enum class ERustealReifyPropType : uint32 {
   // TArray of the type in FRustealReifyPropExtra::inner_prop_type, whose
   // class/struct/enum fields describe the element.
   Array = 18,
+  // TSoftObjectPtr of the class in FRustealReifyPropExtra::class_handle.
+  SoftObject = 19,
 };
 
 struct FRustealReifyPropExtra {
@@ -438,6 +450,14 @@ struct FRustealReifyApi {
                                              const uint8 *key, uint32 key_len,
                                              const uint8 *value,
                                              uint32 value_len);
+
+  // A struct in /Script/Rusteal (#[ustruct]), or the one a previous load
+  // created. add_property takes its handle as a class handle.
+  RustealUStructHandle (*create_struct)(const uint8 *name, uint32 name_len);
+
+  // Link a struct once its properties are added (the Rust structs its
+  // properties hold first).
+  ERustealErrorCode (*finalize_struct)(RustealUStructHandle strukt);
 };
 struct FRustealWidgetApi {
   // Create a UMG widget. owning_object should be a PlayerController, World, or
@@ -512,6 +532,12 @@ struct FRustealWorldApi {
   // UEngineTypes::ConvertToObjectType: the EObjectTypeQuery of an
   // ECollisionChannel under the project's collision settings.
   uint8 (*channel_to_object_type)(uint8 channel);
+
+  // The row RowName of the data table Table, a pointer into its memory: null
+  // when there is no such row or its rows are not RowStruct (or derived).
+  uint8 *(*find_data_table_row)(RustealUObjectHandle table,
+                                RustealFNameHandle row_name,
+                                RustealUStructHandle row_struct);
 };
 
 // ---------------------------------------------------------------------------

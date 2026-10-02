@@ -178,6 +178,13 @@ pub struct RustealPropertyApi {
         obj: UObjectHandle, prop: FPropertyHandle,
         index: u32, in_buf: *const u8, buf_size: u32,
     ) -> RustealErrorCode,
+
+    // -- Soft object reference (TSoftObjectPtr), as its path --
+    /// The path the property refers to (`FSoftObjectPath::ToString`, empty for
+    /// none), UTF-8, written as `get_string` writes a string.
+    pub get_soft_object_path: unsafe extern "C" fn(obj: UObjectHandle, prop: FPropertyHandle, buf: *mut u8, buf_len: u32, out_len: *mut u32) -> RustealErrorCode,
+    /// Make the property refer to a path (empty for none).
+    pub set_soft_object_path: unsafe extern "C" fn(obj: UObjectHandle, prop: FPropertyHandle, buf: *const u8, len: u32) -> RustealErrorCode,
 }
 
 // ---------------------------------------------------------------------------
@@ -508,6 +515,15 @@ pub struct RustealReifyApi {
         key: *const u8, key_len: u32,
         value: *const u8, value_len: u32,
     ) -> RustealErrorCode,
+
+    /// Create a struct in `/Script/Rusteal` (`#[ustruct]`), or find the one a
+    /// previous load created. Its properties are added with `add_property`,
+    /// which takes its handle as a class handle.
+    pub create_struct: unsafe extern "C" fn(name: *const u8, name_len: u32) -> UStructHandle,
+
+    /// Link a struct once its properties are added, after the Rust structs
+    /// its properties hold.
+    pub finalize_struct: unsafe extern "C" fn(strukt: UStructHandle) -> RustealErrorCode,
 }
 
 pub const RUSTEAL_COMP_ROOT: u32 = 1;
@@ -634,4 +650,9 @@ pub struct RustealWorldApi {
     /// (`ECollisionChannel`) is, as the project's collision settings map them:
     /// `UEngineTypes::ConvertToObjectType`.
     pub channel_to_object_type: unsafe extern "C" fn(channel: u8) -> u8,
+
+    /// The row `row_name` of the data table `table`: a pointer into the
+    /// table's memory, null when there is no such row or the table's rows are
+    /// not `row_struct`s (or a struct derived from it).
+    pub find_data_table_row: unsafe extern "C" fn(table: UObjectHandle, row_name: FNameHandle, row_struct: UStructHandle) -> *mut u8,
 }

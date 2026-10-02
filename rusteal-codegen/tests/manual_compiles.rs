@@ -60,6 +60,8 @@ const CLASSES: &[&str] = &[
     "Visual",
     "Widget",
     "UserWidget",
+    // manual/data_table.rs.
+    "DataTable",
 ];
 
 /// Enums manual/ names that no class or struct above references.
@@ -93,6 +95,8 @@ const STRUCTS: &[&str] = &[
     "InputActionValue",
     "ModifyContextOptions",
     "EnhancedActionKeyMapping",
+    // manual/data_table.rs.
+    "DataTableRowHandle",
 ];
 
 const RUSTEAL_TOML: &str = r#"[project]
@@ -313,7 +317,10 @@ fn regenerate_fixture() {
 /// taking and returning each supported kind, and code using every accessor the
 /// macros generate, the Enhanced Input helpers and the touch controls ones.
 const UCLASS_GAME: &str = r#"
-use bindings::engine::{Actor, ActorExt, Controller, Pawn, PawnExt, PlayerController, SceneComponent};
+use bindings::engine::{
+    Actor, ActorExt, Controller, DataTable, FDataTableRowHandle, Pawn, PawnExt, PlayerController,
+    SceneComponent,
+};
 use bindings::enhanced_input::{
     ETriggerEvent, EnhancedInputLocalPlayerSubsystemExt, FInputActionValue, InputAction,
     InputMappingContext,
@@ -322,9 +329,10 @@ use bindings::prelude::*;
 use bindings::umg::{UserWidget, UserWidgetExt};
 use rusteal_runtime::runtime::input::should_display_touch_interface;
 use rusteal_runtime::runtime::{
-    FName, OutRef, OwnedStruct, RustealResult, SubclassOf, UObjectRef, UStructRef, UeArray,
+    FName, OutRef, OwnedStruct, RustealResult, SoftObjectRef, SubclassOf, UObjectRef, UStructRef,
+    UeArray,
 };
-use rusteal_runtime::{uclass, uclass_impl};
+use rusteal_runtime::{uclass, uclass_impl, ustruct};
 
 #[uclass(parent = Pawn)]
 pub struct Probe {
@@ -368,6 +376,62 @@ pub struct Probe {
     npc: UObjectRef<Pawn>,
     #[component(attach = "arm", name = "Collision Check Box")]
     collision_check_box: SceneComponent,
+    #[uproperty(EditAnywhere)]
+    soft_action: SoftObjectRef<InputAction>,
+    #[uproperty(EditAnywhere)]
+    row: OwnedStruct<ProbeRow>,
+}
+
+/// A data table row declared in Rust, holding a Rust class.
+#[ustruct]
+pub struct ProbeRow {
+    /// Shown on the pickup
+    #[uproperty(EditAnywhere)]
+    action: SoftObjectRef<InputAction>,
+    #[uproperty(EditAnywhere)]
+    spawn: SubclassOf<Probe>,
+    #[uproperty(EditAnywhere)]
+    weight: f32,
+    #[uproperty(EditAnywhere)]
+    tag: FName,
+    #[uproperty(EditAnywhere)]
+    tags: UeArray<FName>,
+}
+
+/// A Rust class whose parent is a Rust class.
+#[uclass(parent = Probe)]
+pub struct ProbeChild {
+    #[component(attach = "arm")]
+    extra: SceneComponent,
+    #[uproperty(EditAnywhere, default = 3)]
+    lives: i32,
+}
+
+#[uclass_impl]
+impl ProbeChild {
+    #[ufunction(Override)]
+    fn receive_restarted(&mut self) {
+        if let Ok(mut parent) = Probe::from_obj(self.as_ref()) {
+            parent.receive_restarted();
+        }
+        let _ = (self.extra(), self.lives());
+    }
+}
+
+pub fn rows(table: UObjectRef<DataTable>, handle: UStructRef<FDataTableRowHandle>) -> RustealResult<()> {
+    if let Some(row) = find_data_table_row::<ProbeRow>(table, FName::new("Rifle")) {
+        let _: UObjectRef<InputAction> = row.action().load_synchronous()?;
+        let _: SubclassOf<Probe> = row.spawn();
+        row.set_weight(row.weight() + 1.0);
+        row.set_tag(FName::new("Rifle"));
+        let _ = row.tags().len();
+        row.set_action(&SoftObjectRef::null());
+    }
+    let _: Option<UStructRef<ProbeRow>> = handle.get_row();
+    let owned: OwnedStruct<ProbeRow> = OwnedStruct::new();
+    owned.set_weight(owned.weight());
+    let _ = owned.action().is_null();
+    Ok(())
 }
 
 #[uclass_impl]
@@ -381,8 +445,11 @@ impl Probe {
     }
 
     #[ufunction(Override)]
-    fn receive_restarted(&mut self) {
+    pub(crate) fn receive_restarted(&mut self) {
         let _ = self.bind_input();
+        let _ = self.soft_action().get();
+        self.set_soft_action(&SoftObjectRef::new("/Game/Input/IA_Jump.IA_Jump"));
+        self.set_row(&self.row());
     }
 
     #[ufunction(BlueprintCallable)]

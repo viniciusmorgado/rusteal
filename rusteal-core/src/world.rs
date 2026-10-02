@@ -1,7 +1,7 @@
 // World-level gameplay template function wrappers (raw handle versions).
 // Type-safe wrappers live in rusteal-bindings/src/manual/world_ext.rs.
 
-use rusteal_ffi::{UClassHandle, UObjectHandle};
+use rusteal_ffi::{FNameHandle, UClassHandle, UObjectHandle, UStructHandle};
 
 use crate::error::{check_ffi, RustealError, RustealResult};
 use crate::ffi_dispatch;
@@ -174,4 +174,16 @@ pub fn get_all_actors_of_class_raw(
         .collect();
 
     Ok(handles)
+}
+
+/// The row `row_name` of the data table `table` as a `row_struct`, a pointer
+/// into the table's memory: `None` when there is no such row or the table's
+/// rows are another struct.
+pub fn find_data_table_row_raw(
+    table: UObjectHandle,
+    row_name: FNameHandle,
+    row_struct: UStructHandle,
+) -> Option<*mut u8> {
+    let row = unsafe { ffi_dispatch::world_find_data_table_row(table, row_name, row_struct) };
+    (!row.is_null()).then_some(row)
 }

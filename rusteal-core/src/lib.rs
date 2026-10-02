@@ -28,6 +28,7 @@ pub mod weak_ptr;
 pub mod widget;
 pub mod input;
 pub mod world;
+pub mod soft_ref;
 
 // Re-export the primary public API surface.
 pub use api::{api, init_api};
@@ -35,6 +36,7 @@ pub use error::{check_ffi, check_ffi_ctx, ffi_infallible, ffi_infallible_ctx, Ru
 pub use traits::{UeClass, UeStruct, UeEnum, UeHandle, ValidHandle, HasParent, Inherits};
 pub use object_ref::{Checked, ObjectPointer, UObjectRef};
 pub use subclass_of::SubclassOf;
+pub use soft_ref::SoftObjectRef;
 pub use struct_ref::UStructRef;
 pub use pinned::Pinned;
 pub use dynamic_call::{DynamicCall, DynamicCallResult};

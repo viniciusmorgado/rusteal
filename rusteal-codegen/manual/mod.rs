@@ -35,6 +35,9 @@ pub mod net_quantize;
 #[cfg(feature = "engine")]
 pub mod collision;
 
+#[cfg(feature = "engine")]
+pub mod data_table;
+
 #[cfg(feature = "umg")]
 pub mod widget_ext;
 

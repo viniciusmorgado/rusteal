@@ -39,6 +39,7 @@ const ENTRIES: &[(&str, &str)] = &[
     ("engine", "crate::engine::{Actor, ActorExt, World, WorldExt}"),
     ("engine", "crate::manual::world_ext::{ObjectWorldExt, WorldSpawnExt, find_object, load_object}"),
     ("engine", "crate::manual::collision::object_type_query"),
+    ("engine", "crate::manual::data_table::{DataTableRowHandleRowExt, find_data_table_row}"),
     ("umg", "crate::manual::widget_ext::{create_widget, create_widget_of_class}"),
     ("input", "crate::input_core::FKey"),
     ("input", "crate::manual::fkey::FKeyExt"),

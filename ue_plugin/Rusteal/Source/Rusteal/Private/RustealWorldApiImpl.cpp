@@ -1,5 +1,6 @@
 // RustealWorldApiImpl.cpp — FRustealWorldApi implementation.
 
+#include "Engine/DataTable.h"
 #include "Engine/EngineTypes.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
@@ -182,6 +183,24 @@ static uint8 ChannelToObjectTypeImpl(uint8 Channel) {
       static_cast<ECollisionChannel>(Channel)));
 }
 
+static uint8 *FindDataTableRowImpl(RustealUObjectHandle TableHandle,
+                                   RustealFNameHandle RowName,
+                                   RustealUStructHandle RowStruct) {
+  const UDataTable *Table =
+      Cast<UDataTable>(static_cast<UObject *>(TableHandle.ptr));
+  const UScriptStruct *Expected =
+      static_cast<UScriptStruct *>(RowStruct.ptr);
+  if (!Table || !Expected || !Table->GetRowStruct() ||
+      !Table->GetRowStruct()->IsChildOf(Expected)) {
+    return nullptr;
+  }
+  // The handle packs the name's comparison index (low 32 bits) and number.
+  const FNameEntryId Index = FNameEntryId::FromUnstableInt(
+      static_cast<uint32>(RowName.value & 0xFFFFFFFF));
+  const FName Name(Index, Index, static_cast<int32>(RowName.value >> 32));
+  return Table->FindRowUnchecked(Name);
+}
+
 // ---------------------------------------------------------------------------
 // Static instance
 // ---------------------------------------------------------------------------
@@ -196,4 +215,5 @@ FRustealWorldApi GWorldApi = {
     &SpawnActorDeferredImpl,
     &FinishSpawningImpl,
     &ChannelToObjectTypeImpl,
+    &FindDataTableRowImpl,
 };
