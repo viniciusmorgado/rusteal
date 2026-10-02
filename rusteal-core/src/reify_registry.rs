@@ -17,6 +17,10 @@ use crate::{lock_or_recover, read_or_recover, write_or_recover};
 
 /// Submitted by `#[uclass]` — holds register + finalize fn pointers.
 pub struct ClassRegistration {
+    /// Create the UClass (type info, parent, class handle).
+    pub create: fn(),
+    /// Add its properties and components, which may name other Rust classes
+    /// (`SubclassOf<MyCharacter>`): every class exists by then.
     pub register: fn(),
     pub finalize: fn(),
 }
@@ -57,8 +61,11 @@ impl ClassDefaultsOutcome for crate::error::RustealResult<()> {
 pub fn register_all_from_inventory() {
     let mut class_count = 0u32;
     for reg in inventory::iter::<ClassRegistration> {
-        (reg.register)();
+        (reg.create)();
         class_count += 1;
+    }
+    for reg in inventory::iter::<ClassRegistration> {
+        (reg.register)();
     }
     let mut func_reg_count = 0u32;
     for freg in inventory::iter::<ClassFunctionRegistration> {

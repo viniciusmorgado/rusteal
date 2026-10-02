@@ -364,6 +364,7 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
     let rust_data_name = format_ident!("__{}RustData", struct_name);
     let class_handle_name = format_ident!("__RUSTEAL_CLASS_HANDLE_{}", to_screaming_snake(&struct_name_str));
     let register_fn_name = format_ident!("__rusteal_register_{}", to_snake_case(&struct_name_str));
+    let members_fn_name = format_ident!("__rusteal_members_{}", to_snake_case(&struct_name_str));
     let finalize_fn_name = format_ident!("__rusteal_finalize_{}", to_snake_case(&struct_name_str));
 
     let type_id_value = prop_type::fnv1a_hash(&struct_name_str);
@@ -906,6 +907,14 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
                 return;
             }
             #class_handle_name.set(class).ok();
+        }
+
+        #[doc(hidden)]
+        pub fn #members_fn_name() {
+            let class = match #class_handle_name.get() {
+                Some(&c) if !c.is_null() => c,
+                _ => return,
+            };
 
             // Add properties (finalize deferred to __rusteal_finalize)
             #(#add_prop_stmts)*
@@ -1007,7 +1016,8 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
 
         ::rusteal_runtime::__inventory::submit! {
             ::rusteal_runtime::runtime::reify_registry::ClassRegistration {
-                register: #register_fn_name,
+                create: #register_fn_name,
+                register: #members_fn_name,
                 finalize: #finalize_fn_name,
             }
         }
