@@ -143,28 +143,50 @@ templates make it, and opens and plays the variant's level.
 | `third-person` | `platforming` | Double jump, wall jump, coyote time, a dash, local multiplayer and respawn. |
 | `third-person` | `side-scrolling` | A side view platformer: soft platforms, jump pads, moving platforms, pickups with a counter and an NPC run by a StateTree. |
 
-<img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/templates/third-person.webp" alt="The third-person template in play" width="640">
-
-<table>
-  <tr>
-    <td><img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/templates/third-person-combat.webp" alt="The third-person-combat template in play" width="280"><br><code>third-person</code> <code>combat</code></td>
-    <td><img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/templates/third-person-platforming.webp" alt="The third-person-platforming template in play" width="280"><br><code>third-person</code> <code>platforming</code></td>
-    <td><img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/templates/third-person-side-scrolling.webp" alt="The third-person-side-scrolling template in play" width="280"><br><code>third-person</code> <code>side-scrolling</code></td>
-  </tr>
-  <tr>
-    <td><img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/templates/first-person.webp" alt="The first-person template in play" width="280"><br><code>first-person</code></td>
-    <td><img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/templates/first-person-horror.webp" alt="The first-person-horror template in play" width="280"><br><code>first-person</code> <code>horror</code></td>
-    <td><img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/templates/first-person-shooter.webp" alt="The first-person-shooter template in play" width="280"><br><code>first-person</code> <code>shooter</code></td>
-  </tr>
-  <tr>
-    <td><img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/templates/top-down.webp" alt="The top-down template in play" width="280"><br><code>top-down</code></td>
-    <td><img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/templates/top-down-twin-stick.webp" alt="The top-down-twin-stick template in play" width="280"><br><code>top-down</code> <code>twin-stick</code></td>
-    <td><img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/templates/top-down-strategy.webp" alt="The top-down-strategy template in play" width="280"><br><code>top-down</code> <code>strategy</code></td>
-  </tr>
-</table>
-
 Names are matched loosely (`side-scrolling`, `SideScrolling`), and `rusteal
 new` with an unknown template or variant lists them all.
+
+### Screenshots
+
+#### `first-person`
+
+<img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/templates/first-person.png" alt="The first-person template in play" width="800">
+
+#### `first-person` `horror`
+
+<img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/templates/first-person-horror.png" alt="The first-person template's horror variant in play" width="800">
+
+#### `first-person` `shooter`
+
+<img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/templates/first-person-shooter.png" alt="The first-person template's shooter variant in play" width="800">
+
+#### `top-down`
+
+<img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/templates/topdown.png" alt="The top-down template in play" width="800">
+
+#### `top-down` `strategy`
+
+<img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/templates/topdown-strategy.png" alt="The top-down template's strategy variant in play" width="800">
+
+#### `top-down` `twin-stick`
+
+<img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/templates/topdown-twinstick.png" alt="The top-down template's twin-stick variant in play" width="800">
+
+#### `third-person`
+
+<img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/templates/third-person.png" alt="The third-person template in play" width="800">
+
+#### `third-person` `combat`
+
+<img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/templates/third-person-combat.png" alt="The third-person template's combat variant in play" width="800">
+
+#### `third-person` `platforming`
+
+<img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/templates/third-person-platforming.png" alt="The third-person template's platforming variant in play" width="800">
+
+#### `third-person` `side-scrolling`
+
+<img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/templates/thid-person-sidescrolling.png" alt="The third-person template's side-scrolling variant in play" width="800">
 
 ### An existing project
 
@@ -772,7 +794,7 @@ closest existing one (a variant from its template's `base`) and is changed
 from there, never layered on top of it. Its Blueprints come from a project
 where they were made and played, saved with the engine version Rusteal
 targets. A variant with something to see has a screenshot in
-`assets/templates/`, shown in [Templates](#templates).
+`assets/templates/`, shown in [Screenshots](#screenshots).
 
 Engine APIs Rusteal uses that Unreal has deprecated are tracked in
 [`docs/ue-deprecations.md`](https://github.com/viniciusmorgado/rusteal/blob/main/docs/ue-deprecations.md): what, since which UE
