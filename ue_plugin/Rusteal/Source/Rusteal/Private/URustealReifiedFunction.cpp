@@ -79,9 +79,20 @@ DEFINE_FUNCTION(URustealReifiedFunction::execCallRustFunction) {
   const bool bFromProcessEvent = (Stack.Node == ReifiedFunc);
   uint8 *ParamsPtr = nullptr;
 
+  // Where each out parameter's value goes back to: the caller's variable. A
+  // frame's parameters are a copy (ProcessEvent copies the caller's into
+  // Locals), so an out value written to them alone would be lost.
+  TArray<TPair<FProperty *, uint8 *>, TInlineAllocator<4>> OutDestinations;
+
   if (bFromProcessEvent) {
     P_FINISH;
     ParamsPtr = Stack.Locals;
+    for (FOutParmRec *Out = Stack.OutParms; Out; Out = Out->NextOutParm) {
+      if (Out->Property &&
+          !Out->Property->HasAnyPropertyFlags(CPF_ReturnParm)) {
+        OutDestinations.Emplace(Out->Property, Out->PropAddr);
+      }
+    }
   } else {
     const int32 PropsSize = ReifiedFunc->PropertiesSize;
     if (PropsSize > 0) {
@@ -100,7 +111,14 @@ DEFINE_FUNCTION(URustealReifiedFunction::execCallRustFunction) {
         if (!Prop->HasAnyPropertyFlags(CPF_Parm))
           continue;
 
+        Stack.MostRecentPropertyAddress = nullptr;
         Stack.Step(Stack.Object, ParamsPtr + Prop->GetOffset_ForUFunction());
+        // An out parameter's argument is a variable: Step left its address.
+        if (Prop->HasAnyPropertyFlags(CPF_OutParm) &&
+            !Prop->HasAnyPropertyFlags(CPF_ConstParm) &&
+            Stack.MostRecentPropertyAddress) {
+          OutDestinations.Emplace(Prop, Stack.MostRecentPropertyAddress);
+        }
       }
     }
     P_FINISH;
@@ -114,6 +132,14 @@ DEFINE_FUNCTION(URustealReifiedFunction::execCallRustFunction) {
   if (Callbacks && Callbacks->invoke_rust_function) {
     Callbacks->invoke_rust_function(ReifiedFunc->CallbackId,
                                     RustealUObjectHandle{P_THIS}, ParamsPtr);
+  }
+
+  // Copy out parameters back to the caller.
+  for (const TPair<FProperty *, uint8 *> &Out : OutDestinations) {
+    uint8 *Value = ParamsPtr + Out.Key->GetOffset_ForUFunction();
+    if (Out.Value && Out.Value != Value) {
+      Out.Key->CopyCompleteValue(Out.Value, Value);
+    }
   }
 
   // Copy return value to RESULT_PARAM.
