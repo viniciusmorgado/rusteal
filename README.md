@@ -132,7 +132,7 @@ templates make it, and opens and plays the variant's level.
 | Template | Variant | What it is |
 |---|---|---|
 | `blank` (default) | | The engine's Blank template and a `HelloActor` in Rust. |
-| `third-person` (`tps`) | | The engine's Third Person template: its character, game mode and player controller in Rust, playable as it comes (keyboard, mouse, gamepad, touch). |
+| `third-person` | | The engine's Third Person template: its character, game mode and player controller in Rust, playable as it comes (keyboard, mouse, gamepad, touch). |
 
 <img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/templates/third-person.webp" alt="The third-person template in play" width="640">
 
@@ -623,8 +623,7 @@ variant directory mirrors the root of the project it creates:
   (`engine_template`), the paths of it to leave out (`exclude`: the C++
   gameplay the template replaces, the other variants), the level to open
   when it is not the engine template's own (`default_map`), a one-line
-  `description`, the `next_step` printed at the end and, in `base`, other
-  names for the template (`aliases`);
+  `description` and the `next_step` printed at the end;
 - every other file is written into the project over the engine template's:
   `*.tera` files are rendered with [Tera](https://keats.github.io/tera/) and
   lose the extension, the rest (Blueprints, meshes) is copied as is;

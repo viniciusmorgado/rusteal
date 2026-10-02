@@ -1,7 +1,6 @@
 # `rusteal new <Name> --template third-person`: UE's Third Person template with
 # its gameplay classes in Rust.
 description = "The Third Person template, its character, game mode and player controller in Rust."
-aliases = ["tps"]
 
 # The engine template the project starts from, copied with the engine's own
 # recipe (its Config/TemplateDefs.ini), as the editor's New Project dialog does.

@@ -29,9 +29,6 @@ const SETUP_TEMPLATE: &str = "blank/base";
 pub struct Manifest {
     /// One line for the list of templates.
     pub description: String,
-    /// Other names `--template` accepts for the template (`base` only).
-    #[serde(default)]
-    pub aliases: Vec<String>,
     /// The engine template (`Templates/<name>`) the project starts from.
     pub engine_template: String,
     /// Paths of the engine template to leave out, relative to it;
@@ -129,15 +126,13 @@ pub fn available() -> Vec<TemplateInfo> {
 }
 
 /// The template and variant named on the command line: names are matched
-/// ignoring case, `-` and `_` (`side-scrolling`, `SideScrolling`), and a
-/// template also by its aliases. No variant is `base`. The error lists what
+/// ignoring case, `-` and `_` (`side-scrolling`, `SideScrolling`). No variant
+/// is `base`. The error lists what
 /// there is.
 pub fn select(template: &str, variant: Option<&str>) -> Result<Selected, String> {
     let templates = available();
     let wanted = normalize(template);
-    let Some(info) = templates.into_iter().find(|t| {
-        normalize(t.name) == wanted || t.base().aliases.iter().any(|a| normalize(a) == wanted)
-    }) else {
+    let Some(info) = templates.into_iter().find(|t| normalize(t.name) == wanted) else {
         return Err(format!("there is no template '{template}'. The templates are:\n{}", listing()));
     };
     let wanted = normalize(variant.unwrap_or(BASE_VARIANT));
@@ -158,11 +153,7 @@ pub fn select(template: &str, variant: Option<&str>) -> Result<Selected, String>
 pub fn listing() -> String {
     let mut out = String::new();
     for template in available() {
-        let mut name = template.name.to_string();
-        if !template.base().aliases.is_empty() {
-            name = format!("{name} ({})", template.base().aliases.join(", "));
-        }
-        out.push_str(&format!("  {name:<24} {}\n", template.base().description));
+        out.push_str(&format!("  {:<24} {}\n", template.name, template.base().description));
         for (variant, manifest) in template.variants.iter().skip(1) {
             out.push_str(&format!("    --variant {variant:<12} {}\n", manifest.description));
         }
@@ -245,15 +236,6 @@ mod tests {
         let names: Vec<&str> = templates.iter().map(|t| t.name).collect();
         assert_eq!(names, ["blank", "third-person"]);
         assert!(manifest(SETUP_TEMPLATE).is_some());
-        for template in &templates {
-            for (variant, manifest) in template.variants.iter().skip(1) {
-                assert!(
-                    manifest.aliases.is_empty(),
-                    "{}/{variant}: only the base variant has aliases",
-                    template.name
-                );
-            }
-        }
     }
 
     #[test]
@@ -263,8 +245,8 @@ mod tests {
         assert_eq!(base.dir(), "third-person/base");
         let same = select("ThirdPerson", Some("BASE")).unwrap();
         assert_eq!((same.template, same.variant), ("third-person", BASE_VARIANT));
-        let alias = select("tps", None).unwrap();
-        assert_eq!(alias.template, "third-person");
+        let loose = select("third_person", None).unwrap();
+        assert_eq!(loose.template, "third-person");
 
         let unknown = select("nope", None).err().unwrap();
         assert!(unknown.contains("blank"), "{unknown}");
