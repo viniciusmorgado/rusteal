@@ -145,6 +145,24 @@ templates make it, and opens and plays the variant's level.
 
 <img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/templates/third-person.webp" alt="The third-person template in play" width="640">
 
+<table>
+  <tr>
+    <td><img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/templates/third-person-combat.webp" alt="The third-person-combat template in play" width="280"><br><code>third-person</code> <code>combat</code></td>
+    <td><img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/templates/third-person-platforming.webp" alt="The third-person-platforming template in play" width="280"><br><code>third-person</code> <code>platforming</code></td>
+    <td><img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/templates/third-person-side-scrolling.webp" alt="The third-person-side-scrolling template in play" width="280"><br><code>third-person</code> <code>side-scrolling</code></td>
+  </tr>
+  <tr>
+    <td><img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/templates/first-person.webp" alt="The first-person template in play" width="280"><br><code>first-person</code></td>
+    <td><img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/templates/first-person-horror.webp" alt="The first-person-horror template in play" width="280"><br><code>first-person</code> <code>horror</code></td>
+    <td><img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/templates/first-person-shooter.webp" alt="The first-person-shooter template in play" width="280"><br><code>first-person</code> <code>shooter</code></td>
+  </tr>
+  <tr>
+    <td><img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/templates/top-down.webp" alt="The top-down template in play" width="280"><br><code>top-down</code></td>
+    <td><img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/templates/top-down-twin-stick.webp" alt="The top-down-twin-stick template in play" width="280"><br><code>top-down</code> <code>twin-stick</code></td>
+    <td><img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/templates/top-down-strategy.webp" alt="The top-down-strategy template in play" width="280"><br><code>top-down</code> <code>strategy</code></td>
+  </tr>
+</table>
+
 Names are matched loosely (`side-scrolling`, `SideScrolling`), and `rusteal
 new` with an unknown template or variant lists them all.
 
