@@ -116,20 +116,28 @@ Rusteal itself — see [Working on Rusteal](#working-on-rusteal).
 
 ```bash
 rusteal new MyGame --template third-person
+rusteal new MyGame --template third-person --variant combat
 ```
 
 A template is one of the engine's C++ templates with its gameplay written in
 Rust: the C++ classes are gone, the Rust crate in `Rust/` takes their place,
 and their Blueprint children, with the same names, have Rust parents.
 
-| Template | What it is |
-|---|---|
-| `blank` (default) | The engine's Blank template and a `HelloActor` in Rust. |
-| `third-person` | The engine's Third Person template: its character, game mode and player controller in Rust, playable as it comes (keyboard, mouse, gamepad, touch). The variants (Combat, Platforming, SideScrolling) are not ported. |
+The engine's templates come with variants, genre starting points the C++
+version puts all in one project. Here each is its own project: `--variant`
+picks one, and without it the project is the template alone (`base`). A
+variant project is the template plus that variant, as the engine's Blueprint
+templates make it, and opens and plays the variant's level.
+
+| Template | Variant | What it is |
+|---|---|---|
+| `blank` (default) | | The engine's Blank template and a `HelloActor` in Rust. |
+| `third-person` (`tps`) | | The engine's Third Person template: its character, game mode and player controller in Rust, playable as it comes (keyboard, mouse, gamepad, touch). |
 
 <img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/templates/third-person.webp" alt="The third-person template in play" width="640">
 
-`rusteal new` with an unknown template lists the available ones.
+Names are matched loosely (`side-scrolling`, `SideScrolling`), and `rusteal
+new` with an unknown template or variant lists them all.
 
 ### An existing project
 
@@ -606,14 +614,17 @@ before publishing, which refreshes the snapshot the binary embeds.
 
 ### Adding a template
 
-A template is a directory under `rusteal-cli/templates/`, embedded in the
-binary when it is built; nothing else registers it. It mirrors the root of
-the project it creates:
+A template is a directory under `rusteal-cli/templates/`, one directory per
+variant inside it, `base` being the template without `--variant`; they are
+embedded in the binary when it is built, and nothing else registers them. A
+variant directory mirrors the root of the project it creates:
 
 - `template.toml` names the engine template the project starts from
   (`engine_template`), the paths of it to leave out (`exclude`: the C++
-  gameplay the template replaces), a one-line `description` and the
-  `next_step` printed at the end;
+  gameplay the template replaces, the other variants), the level to open
+  when it is not the engine template's own (`default_map`), a one-line
+  `description`, the `next_step` printed at the end and, in `base`, other
+  names for the template (`aliases`);
 - every other file is written into the project over the engine template's:
   `*.tera` files are rendered with [Tera](https://keats.github.io/tera/) and
   lose the extension, the rest (Blueprints, meshes) is copied as is;
@@ -623,11 +634,11 @@ the project it creates:
 The context is the same for every template: `project`, `crate_name`,
 `version`, `glam_version` and, with `--runtime-path`, `runtime_path`.
 
-Each template is complete on its own. A new one starts as a copy of the
-closest existing template (a third-person shooter from `third-person`) and is
-changed from there, never layered on top of it. Its Blueprints come from a
-project where they were made and played, saved with the engine version
-Rusteal targets. A template with something to see has a screenshot in
+Each variant is complete on its own. A new one starts as a copy of the
+closest existing one (a variant from its template's `base`) and is changed
+from there, never layered on top of it. Its Blueprints come from a project
+where they were made and played, saved with the engine version Rusteal
+targets. A variant with something to see has a screenshot in
 `assets/templates/`, shown in [Templates](#templates).
 
 Engine APIs Rusteal uses that Unreal has deprecated are tracked in

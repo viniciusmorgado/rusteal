@@ -37,10 +37,14 @@ enum Commands {
         /// Where to create it (default: the current directory).
         #[arg(long, default_value = ".")]
         dir: PathBuf,
-        /// What the project starts as: `blank` (an actor in Rust) or
-        /// `third-person` (the Third Person template, in Rust).
+        /// What the project starts as: `blank` (an actor in Rust) or one of
+        /// the engine's game templates in Rust (`third-person`); an unknown
+        /// name lists them all.
         #[arg(long, default_value = "blank")]
         template: String,
+        /// The template's variant (default: `base`, the template itself).
+        #[arg(long)]
+        variant: Option<String>,
         /// Depend on a local Rusteal checkout instead of the published crates.
         #[arg(long)]
         runtime_path: Option<PathBuf>,
@@ -88,12 +92,13 @@ fn main() {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::New { name, dir, template, runtime_path, no_build } => {
+        Commands::New { name, dir, template, variant, runtime_path, no_build } => {
             let engine = global_config::engine_path();
             new_cmd::run_new(&new_cmd::NewOptions {
                 name: &name,
                 parent: &dir,
                 template: &template,
+                variant: variant.as_deref(),
                 engine: &engine,
                 runtime_path: runtime_path.as_deref(),
                 build: !no_build,

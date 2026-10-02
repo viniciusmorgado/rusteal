@@ -1,7 +1,7 @@
 // `rusteal new`: a UE project with Rust inside, built and ready to open.
 //
 // The UE side comes from one of the engine's C++ templates, the one the
-// Rusteal template names (`templates/<name>/template.toml`). The editor's New
+// Rusteal template's variant names (`templates/<name>/<variant>/template.toml`). The editor's New
 // Project dialog is a recipe every engine template ships in its
 // `Config/TemplateDefs.ini` (copy, ignore, rename, replace, shared content);
 // this reproduces it, leaving out what the Rusteal template excludes (the C++
@@ -27,6 +27,8 @@ pub struct NewOptions<'a> {
     pub parent: &'a Path,
     /// The Rusteal template (`templates/<name>/`).
     pub template: &'a str,
+    /// Its variant (`templates/<name>/<variant>/`); `None` is `base`.
+    pub variant: Option<&'a str>,
     pub engine: &'a Path,
     /// A Rusteal checkout to depend on by path instead of the published crates.
     pub runtime_path: Option<&'a Path>,
@@ -35,34 +37,38 @@ pub struct NewOptions<'a> {
 
 pub fn run_new(opts: &NewOptions) {
     validate_name(opts.name);
-    let Some(manifest) = templates::manifest(opts.template) else {
-        eprintln!("Error: there is no template '{}'. The templates are:", opts.template);
-        for (name, manifest) in templates::available() {
-            eprintln!("  {name:<14} {}", manifest.description);
-        }
+    let selected = templates::select(opts.template, opts.variant).unwrap_or_else(|message| {
+        eprint!("Error: {message}");
         std::process::exit(1);
-    };
+    });
+    let manifest = &selected.manifest;
     let root = opts.parent.join(opts.name);
     if root.exists() {
         eprintln!("Error: {} already exists.", root.display());
         std::process::exit(1);
     }
 
+    let template_name = match selected.variant {
+        templates::BASE_VARIANT => selected.template.to_string(),
+        variant => format!("{} {variant}", selected.template),
+    };
     eprintln!(
-        "rusteal new: creating {} from the {} template ({})",
+        "rusteal new: creating {} from the {template_name} template ({})",
         root.display(),
-        opts.template,
         manifest.engine_template
     );
     let template = Template::load(opts.engine, &manifest.engine_template, &manifest.exclude);
     template.instantiate(opts.name, &root);
     write_uproject(&template, opts.name, opts.engine, &root);
     write_project_ini(&template, opts.name, &root);
+    if let Some(map) = &manifest.default_map {
+        set_default_map(&root, map);
+    }
 
     let crate_name = setup::default_crate_name(&root);
     let context = template_context(opts.name, &crate_name, opts.runtime_path);
-    let written = templates::write_project_files(opts.template, &root, &context);
-    eprintln!("rusteal new: {written} files from the {} template (crate {crate_name})", opts.template);
+    let written = templates::write_project_files(&selected.dir(), &root, &context);
+    eprintln!("rusteal new: {written} files from the {template_name} template (crate {crate_name})");
     write_bindings_placeholder(&root);
 
     eprintln!("rusteal new: installing the Rusteal plugins");
@@ -459,6 +465,52 @@ fn write_project_ini(template: &Template, project: &str, root: &Path) {
         .unwrap_or_else(|e| panic!("Failed to write {}: {e}", engine_ini.display()));
 }
 
+/// Make `map` (`/Game/Dir/Level`) the level the editor opens and the game
+/// starts in, as Project Settings > Maps & Modes does.
+fn set_default_map(root: &Path, map: &str) {
+    let level = map.rsplit('/').next().unwrap_or(map);
+    let value = format!("{map}.{level}");
+    let engine_ini = root.join("Config/DefaultEngine.ini");
+    let text = std::fs::read_to_string(&engine_ini)
+        .unwrap_or_else(|e| panic!("Failed to read {}: {e}", engine_ini.display()));
+    std::fs::write(&engine_ini, with_default_map(&text, &value))
+        .unwrap_or_else(|e| panic!("Failed to write {}: {e}", engine_ini.display()));
+}
+
+/// `ini` with `EditorStartupMap` and `GameDefaultMap` set to `value`, in the
+/// `GameMapsSettings` section (added if missing).
+fn with_default_map(ini: &str, value: &str) -> String {
+    const SECTION: &str = "[/Script/EngineSettings.GameMapsSettings]";
+    const KEYS: [&str; 2] = ["EditorStartupMap", "GameDefaultMap"];
+    let mut out: Vec<String> = Vec::new();
+    let mut in_section = false;
+    let mut found_section = false;
+    for line in ini.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') {
+            in_section = trimmed == SECTION;
+            if in_section {
+                found_section = true;
+                out.push(line.to_string());
+                out.extend(KEYS.iter().map(|key| format!("{key}={value}")));
+                continue;
+            }
+        }
+        if in_section && KEYS.iter().any(|key| trimmed.starts_with(&format!("{key}="))) {
+            continue;
+        }
+        out.push(line.to_string());
+    }
+    if !found_section {
+        out.push(String::new());
+        out.push(SECTION.to_string());
+        out.extend(KEYS.iter().map(|key| format!("{key}={value}")));
+    }
+    let mut text = out.join("\n");
+    text.push('\n');
+    text
+}
+
 /// A 32-hex-digit id like the editor's: unique enough for a project file.
 fn project_id(project: &str) -> String {
     let mut hasher = DefaultHasher::new();
@@ -521,4 +573,32 @@ fn write_bindings_placeholder(root: &Path) {
 fn write(path: &Path, contents: &str) {
     std::fs::write(path, contents)
         .unwrap_or_else(|e| panic!("Failed to write {}: {e}", path.display()));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_map_replaces_the_template_maps() {
+        let ini = "[/Script/EngineSettings.GameMapsSettings]\nEditorStartupMap=/Game/A/Lvl_A.Lvl_A\n\
+                   GameDefaultMap=/Game/A/Lvl_A.Lvl_A\nGlobalDefaultGameMode=/Game/A/BP_GM.BP_GM_C\n\n\
+                   [/Script/Engine.Engine]\nGameDefaultMap=untouched\n";
+        let out = with_default_map(ini, "/Game/B/Lvl_B.Lvl_B");
+        assert_eq!(
+            out,
+            "[/Script/EngineSettings.GameMapsSettings]\nEditorStartupMap=/Game/B/Lvl_B.Lvl_B\n\
+             GameDefaultMap=/Game/B/Lvl_B.Lvl_B\nGlobalDefaultGameMode=/Game/A/BP_GM.BP_GM_C\n\n\
+             [/Script/Engine.Engine]\nGameDefaultMap=untouched\n"
+        );
+    }
+
+    #[test]
+    fn default_map_adds_the_section_when_missing() {
+        let out = with_default_map("[Other]\nKey=1\n", "/Game/B/Lvl_B.Lvl_B");
+        assert!(out.ends_with(
+            "[/Script/EngineSettings.GameMapsSettings]\nEditorStartupMap=/Game/B/Lvl_B.Lvl_B\n\
+             GameDefaultMap=/Game/B/Lvl_B.Lvl_B\n"
+        ), "{out}");
+    }
 }
