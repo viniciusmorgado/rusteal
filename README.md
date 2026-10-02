@@ -186,7 +186,7 @@ new` with an unknown template or variant lists them all.
 
 #### `third-person` `side-scrolling`
 
-<img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/templates/thid-person-sidescrolling.png" alt="The third-person template's side-scrolling variant in play" width="800">
+<img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/templates/third-person-sidescrolling.png" alt="The third-person template's side-scrolling variant in play" width="800">
 
 ### An existing project
 
