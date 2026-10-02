@@ -15,8 +15,15 @@
 //   project's default game mode (Config/DefaultEngine.ini).
 //
 // WASD / left stick move, mouse / right stick look, Space / A jump; touch
-// controls on touch devices. The template's variants (Combat, Platforming,
-// SideScrolling) are their own projects: `rusteal new --variant`.
+// controls on touch devices.
+//
+// The Platforming variant (`platforming/`) adds, as the C++ template's
+// `Variant_Platforming`: `PlatformingCharacter` (press and hold jump, double
+// jump, wall jump, coyote time, dash), `PlatformingGameMode` (local
+// multiplayer, a PlayerStart per player), `PlatformingPlayerController`
+// (respawns the character) and the dash montage's `AnimNotifyEndDash`. Their
+// Blueprint children are in `Content/Variant_Platforming/`, and the project
+// opens `Lvl_Platforming`.
 //
 // Each glue file only talks to the engine; the logic that can be reasoned
 // about without one lives in `*/model.rs` and is unit-tested with
@@ -26,4 +33,5 @@ rusteal_runtime::entry!();
 
 mod character;
 mod game_mode;
+mod platforming;
 mod player_controller;
