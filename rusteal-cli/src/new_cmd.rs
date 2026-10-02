@@ -295,8 +295,7 @@ impl Template {
                 std::fs::write(&target, self.apply(&self.content_replacements, text, project))
                     .unwrap_or_else(|e| panic!("Failed to write {}: {e}", target.display()));
             } else {
-                std::fs::copy(&path, &target)
-                    .unwrap_or_else(|e| panic!("Failed to copy {}: {e}", path.display()));
+                copy_file(&path, &target);
             }
             copied += 1;
         }
@@ -368,11 +367,27 @@ fn copy_dir(from: &Path, to: &Path) -> usize {
         let target = to.join(path.strip_prefix(from).unwrap());
         std::fs::create_dir_all(target.parent().unwrap())
             .unwrap_or_else(|e| panic!("Failed to create {}: {e}", target.display()));
-        std::fs::copy(&path, &target)
-            .unwrap_or_else(|e| panic!("Failed to copy {}: {e}", path.display()));
+        copy_file(&path, &target);
         copied += 1;
     }
     copied
+}
+
+/// Copy a file of the engine's, which an installed engine keeps read-only,
+/// leaving the copy writable by its owner: the project's assets are the
+/// user's to change and save, and a Rusteal template writes over some.
+fn copy_file(from: &Path, to: &Path) {
+    std::fs::copy(from, to).unwrap_or_else(|e| panic!("Failed to copy {}: {e}", from.display()));
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut permissions = std::fs::metadata(to)
+            .unwrap_or_else(|e| panic!("Failed to read {}: {e}", to.display()))
+            .permissions();
+        permissions.set_mode(permissions.mode() | 0o200);
+        std::fs::set_permissions(to, permissions)
+            .unwrap_or_else(|e| panic!("Failed to make {} writable: {e}", to.display()));
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -578,6 +593,22 @@ fn write(path: &Path, contents: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn copies_are_writable() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("rusteal-copy-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let from = dir.join("engine.uasset");
+        std::fs::write(&from, b"asset").unwrap();
+        std::fs::set_permissions(&from, std::fs::Permissions::from_mode(0o444)).unwrap();
+        let to = dir.join("project.uasset");
+        copy_file(&from, &to);
+        assert_eq!(std::fs::metadata(&to).unwrap().permissions().mode() & 0o777, 0o644);
+        std::fs::set_permissions(&from, std::fs::Permissions::from_mode(0o644)).unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 
     #[test]
     fn default_map_replaces_the_template_maps() {
