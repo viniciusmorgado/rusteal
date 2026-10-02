@@ -1,0 +1,35 @@
+# `rusteal new <Name> --template first-person`: UE's First Person template with
+# its gameplay classes in Rust.
+description = "The First Person template, its character, camera manager, game mode and player controller in Rust."
+
+# The engine template the project starts from, copied with the engine's own
+# recipe (its Config/TemplateDefs.ini), as the editor's New Project dialog does.
+engine_template = "TP_FirstPerson"
+
+# Paths of the engine template to leave out, relative to it; %TEMPLATENAME%
+# stands for its name, and a folder leaves out everything under it. The C++
+# gameplay classes are replaced by the Rust crate, their Blueprint children by
+# this template's (same names, Rust parents), and the variants are left to
+# their own `--variant`s.
+exclude = [
+    "Source/%TEMPLATENAME%/%TEMPLATENAME%CameraManager.cpp",
+    "Source/%TEMPLATENAME%/%TEMPLATENAME%CameraManager.h",
+    "Source/%TEMPLATENAME%/%TEMPLATENAME%Character.cpp",
+    "Source/%TEMPLATENAME%/%TEMPLATENAME%Character.h",
+    "Source/%TEMPLATENAME%/%TEMPLATENAME%GameMode.cpp",
+    "Source/%TEMPLATENAME%/%TEMPLATENAME%GameMode.h",
+    "Source/%TEMPLATENAME%/%TEMPLATENAME%PlayerController.cpp",
+    "Source/%TEMPLATENAME%/%TEMPLATENAME%PlayerController.h",
+    "Source/%TEMPLATENAME%/Variant_Horror",
+    "Source/%TEMPLATENAME%/Variant_Shooter",
+    "Content/FirstPerson/Blueprints",
+    "Content/Variant_Horror",
+    "Content/Variant_Shooter",
+    "Content/__ExternalActors__/Variant_Horror",
+    "Content/__ExternalActors__/Variant_Shooter",
+    "Content/__ExternalObjects__/Variant_Horror",
+    "Content/__ExternalObjects__/Variant_Shooter",
+]
+
+# Printed when the project is ready (Tera, same context as the files).
+next_step = "open {{ project }}.uproject and press Play: WASD / left stick move, mouse / right stick look, Space / A jump"

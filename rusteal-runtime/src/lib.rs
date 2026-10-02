@@ -10,7 +10,7 @@
 pub use rusteal_ffi as ffi;
 pub use rusteal_core as runtime;
 pub use rusteal_ue_flags as ue_flags;
-pub use rusteal_macros::{uclass, uclass_impl};
+pub use rusteal_macros::{uclass, uclass_impl, ustruct};
 
 // For proc macro generated inventory::submit! invocations.
 #[doc(hidden)]

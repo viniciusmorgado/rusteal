@@ -1,0 +1,37 @@
+# `rusteal new <Name> --template third-person`: UE's Third Person template with
+# its gameplay classes in Rust.
+description = "The Third Person template, its character, game mode and player controller in Rust."
+
+# The engine template the project starts from, copied with the engine's own
+# recipe (its Config/TemplateDefs.ini), as the editor's New Project dialog does.
+engine_template = "TP_ThirdPerson"
+
+# Paths of the engine template to leave out, relative to it; %TEMPLATENAME%
+# stands for its name, and a folder leaves out everything under it. The C++
+# gameplay classes are replaced by the Rust crate, their Blueprint children by
+# this template's (same names, Rust parents), and the variants are left to
+# their own `--variant`s.
+exclude = [
+    "Source/%TEMPLATENAME%/%TEMPLATENAME%Character.cpp",
+    "Source/%TEMPLATENAME%/%TEMPLATENAME%Character.h",
+    "Source/%TEMPLATENAME%/%TEMPLATENAME%GameMode.cpp",
+    "Source/%TEMPLATENAME%/%TEMPLATENAME%GameMode.h",
+    "Source/%TEMPLATENAME%/%TEMPLATENAME%PlayerController.cpp",
+    "Source/%TEMPLATENAME%/%TEMPLATENAME%PlayerController.h",
+    "Source/%TEMPLATENAME%/Variant_Combat",
+    "Source/%TEMPLATENAME%/Variant_Platforming",
+    "Source/%TEMPLATENAME%/Variant_SideScrolling",
+    "Content/ThirdPerson/Blueprints",
+    "Content/Variant_Combat",
+    "Content/Variant_Platforming",
+    "Content/Variant_SideScrolling",
+    "Content/__ExternalActors__/Variant_Combat",
+    "Content/__ExternalActors__/Variant_Platforming",
+    "Content/__ExternalActors__/Variant_SideScrolling",
+    "Content/__ExternalObjects__/Variant_Combat",
+    "Content/__ExternalObjects__/Variant_Platforming",
+    "Content/__ExternalObjects__/Variant_SideScrolling",
+]
+
+# Printed when the project is ready (Tera, same context as the files).
+next_step = "open {{ project }}.uproject and press Play: WASD / left stick move, mouse / right stick look, Space / A jump"

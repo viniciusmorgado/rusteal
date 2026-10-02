@@ -1,5 +1,7 @@
 // RustealWorldApiImpl.cpp — FRustealWorldApi implementation.
 
+#include "Engine/DataTable.h"
+#include "Engine/EngineTypes.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/Actor.h"
@@ -99,12 +101,13 @@ static RustealUObjectHandle LoadObjectImpl(RustealUClassHandle ClsHandle,
   return RustealUObjectHandle{Loaded};
 }
 
-static RustealUObjectHandle GetWorldImpl(RustealUObjectHandle ActorHandle) {
-  AActor *Actor = Cast<AActor>(static_cast<UObject *>(ActorHandle.ptr));
-  if (!Actor)
+static RustealUObjectHandle GetWorldImpl(RustealUObjectHandle ObjectHandle) {
+  // UObject::GetWorld(): an actor's, a component's, a widget's world; null
+  // for an object outside any world (a class default object).
+  UObject *Object = static_cast<UObject *>(ObjectHandle.ptr);
+  if (!IsValid(Object))
     return RustealUObjectHandle{nullptr};
-  UWorld *World = Actor->GetWorld();
-  return RustealUObjectHandle{World};
+  return RustealUObjectHandle{Object->GetWorld()};
 }
 
 static RustealUObjectHandle NewObjectImpl(RustealUObjectHandle OuterHandle,
@@ -175,13 +178,42 @@ static ERustealErrorCode FinishSpawningImpl(RustealUObjectHandle ActorHandle,
   return ERustealErrorCode::Ok;
 }
 
+static uint8 ChannelToObjectTypeImpl(uint8 Channel) {
+  return static_cast<uint8>(UEngineTypes::ConvertToObjectType(
+      static_cast<ECollisionChannel>(Channel)));
+}
+
+static uint8 *FindDataTableRowImpl(RustealUObjectHandle TableHandle,
+                                   RustealFNameHandle RowName,
+                                   RustealUStructHandle RowStruct) {
+  const UDataTable *Table =
+      Cast<UDataTable>(static_cast<UObject *>(TableHandle.ptr));
+  const UScriptStruct *Expected =
+      static_cast<UScriptStruct *>(RowStruct.ptr);
+  if (!Table || !Expected || !Table->GetRowStruct() ||
+      !Table->GetRowStruct()->IsChildOf(Expected)) {
+    return nullptr;
+  }
+  // The handle packs the name's comparison index (low 32 bits) and number.
+  const FNameEntryId Index = FNameEntryId::FromUnstableInt(
+      static_cast<uint32>(RowName.value & 0xFFFFFFFF));
+  const FName Name(Index, Index, static_cast<int32>(RowName.value >> 32));
+  return Table->FindRowUnchecked(Name);
+}
+
 // ---------------------------------------------------------------------------
 // Static instance
 // ---------------------------------------------------------------------------
 
 FRustealWorldApi GWorldApi = {
-    &SpawnActorImpl,         &GetAllActorsOfClassImpl,
-    &FindObjectImpl,         &LoadObjectImpl,
-    &GetWorldImpl,           &NewObjectImpl,
-    &SpawnActorDeferredImpl, &FinishSpawningImpl,
+    &SpawnActorImpl,
+    &GetAllActorsOfClassImpl,
+    &FindObjectImpl,
+    &LoadObjectImpl,
+    &GetWorldImpl,
+    &NewObjectImpl,
+    &SpawnActorDeferredImpl,
+    &FinishSpawningImpl,
+    &ChannelToObjectTypeImpl,
+    &FindDataTableRowImpl,
 };

@@ -1,6 +1,6 @@
 // Type-safe gameplay wrappers on top of rusteal_core::world raw functions.
 
-use rusteal_core::{OwnedStruct, UObjectRef, UeClass, RustealResult};
+use rusteal_core::{OwnedStruct, RustealError, RustealResult, SubclassOf, UObjectRef, UeClass};
 
 use crate::core_ue::FTransform;
 use crate::engine::{Actor, ActorExt, World};
@@ -46,6 +46,19 @@ pub enum SpawnCollisionMethod {
     DontSpawnIfColliding = 4,
 }
 
+/// `UObject::GetWorld()` on any object reference: the world an actor, a
+/// component or a widget is in.
+pub trait ObjectWorldExt {
+    fn get_world(&self) -> RustealResult<UObjectRef<World>>;
+}
+
+impl<T: UeClass> ObjectWorldExt for UObjectRef<T> {
+    fn get_world(&self) -> RustealResult<UObjectRef<World>> {
+        let handle = rusteal_core::world::get_world_raw(self.checked()?.raw())?;
+        Ok(unsafe { UObjectRef::from_raw(handle) })
+    }
+}
+
 /// Extension trait for spawning and querying actors in a UWorld.
 pub trait WorldSpawnExt {
     fn spawn_actor<T: UeClass>(
@@ -57,6 +70,14 @@ pub trait WorldSpawnExt {
         &self,
         transform: &OwnedStruct<FTransform>,
         owner: &UObjectRef<Actor>,
+    ) -> RustealResult<UObjectRef<T>>;
+
+    /// Spawn an actor of `class`, `T` or a subclass of it (a Blueprint child
+    /// a property names), as C++'s `SpawnActor<T>(Class, Transform)`.
+    fn spawn_actor_of_class<T: UeClass>(
+        &self,
+        class: SubclassOf<T>,
+        transform: &OwnedStruct<FTransform>,
     ) -> RustealResult<UObjectRef<T>>;
 
     fn spawn_actor_deferred<T: UeClass>(
@@ -112,6 +133,25 @@ impl WorldSpawnExt for UObjectRef<World> {
             class,
             &transform.to_bytes(),
             owner_handle,
+        )?;
+        warn_no_root_component(handle);
+        Ok(unsafe { UObjectRef::from_raw(handle) })
+    }
+
+    fn spawn_actor_of_class<T: UeClass>(
+        &self,
+        class: SubclassOf<T>,
+        transform: &OwnedStruct<FTransform>,
+    ) -> RustealResult<UObjectRef<T>> {
+        let world = self.checked()?.raw();
+        if class.is_null() {
+            return Err(RustealError::NullArgument);
+        }
+        let handle = rusteal_core::world::spawn_actor_raw(
+            world,
+            class.raw(),
+            &transform.to_bytes(),
+            rusteal_ffi::UObjectHandle::null(),
         )?;
         warn_no_root_component(handle);
         Ok(unsafe { UObjectRef::from_raw(handle) })

@@ -1,0 +1,33 @@
+# `rusteal new <Name> --template top-down`: UE's Top Down template with its
+# gameplay classes in Rust.
+description = "The Top Down template, its character, game mode and point and click player controller in Rust."
+
+# The engine template the project starts from, copied with the engine's own
+# recipe (its Config/TemplateDefs.ini), as the editor's New Project dialog does.
+engine_template = "TP_TopDown"
+
+# Paths of the engine template to leave out, relative to it; %TEMPLATENAME%
+# stands for its name, and a folder leaves out everything under it. The C++
+# gameplay classes are replaced by the Rust crate, the base Blueprints (which
+# the engine template makes Blueprint-only) by this template's, children of
+# the Rust classes, and the variants are left to their own `--variant`s.
+exclude = [
+    "Source/%TEMPLATENAME%/%TEMPLATENAME%Character.cpp",
+    "Source/%TEMPLATENAME%/%TEMPLATENAME%Character.h",
+    "Source/%TEMPLATENAME%/%TEMPLATENAME%GameMode.cpp",
+    "Source/%TEMPLATENAME%/%TEMPLATENAME%GameMode.h",
+    "Source/%TEMPLATENAME%/%TEMPLATENAME%PlayerController.cpp",
+    "Source/%TEMPLATENAME%/%TEMPLATENAME%PlayerController.h",
+    "Source/%TEMPLATENAME%/Variant_Strategy",
+    "Source/%TEMPLATENAME%/Variant_TwinStick",
+    "Content/TopDown/Blueprints",
+    "Content/Variant_Strategy",
+    "Content/Variant_TwinStick",
+    "Content/__ExternalActors__/Variant_Strategy",
+    "Content/__ExternalActors__/Variant_TwinStick",
+    "Content/__ExternalObjects__/Variant_Strategy",
+    "Content/__ExternalObjects__/Variant_TwinStick",
+]
+
+# Printed when the project is ready (Tera, same context as the files).
+next_step = "open {{ project }}.uproject and press Play: click (or hold) / tap where the character should go"

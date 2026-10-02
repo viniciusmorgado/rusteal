@@ -89,6 +89,18 @@ impl<T: HasParent> SubclassOf<T> {
     }
 }
 
+impl<T: UeClass> SubclassOf<T> {
+    /// The same class as a subclass of any ancestor of `T`, checked at
+    /// compile time (`SubclassOf::<PlayerStart>::base().upcast_to::<Actor>()`).
+    #[inline]
+    pub fn upcast_to<U: UeClass>(self) -> SubclassOf<U>
+    where
+        T: crate::traits::Inherits<U>,
+    {
+        unsafe { SubclassOf::from_raw(self.handle) }
+    }
+}
+
 impl<T: UeClass> ObjectPointer for SubclassOf<T> {
     #[inline]
     unsafe fn from_object_handle(handle: UObjectHandle) -> Self {

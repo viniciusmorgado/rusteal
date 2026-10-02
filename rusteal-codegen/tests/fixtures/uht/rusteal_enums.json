@@ -202,6 +202,31 @@
     },
     {
       "cpp_form": 2,
+      "cpp_name": "EFlowDirectionPreference",
+      "name": "EFlowDirectionPreference",
+      "package": "SlateCore",
+      "pairs": [
+        [
+          "Inherit",
+          0
+        ],
+        [
+          "Culture",
+          1
+        ],
+        [
+          "LeftToRight",
+          2
+        ],
+        [
+          "RightToLeft",
+          3
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 2,
       "cpp_name": "EWidgetClipping",
       "name": "EWidgetClipping",
       "package": "SlateCore",
@@ -225,31 +250,6 @@
         [
           "OnDemand",
           4
-        ]
-      ],
-      "underlying_type": "uint8"
-    },
-    {
-      "cpp_form": 2,
-      "cpp_name": "EFlowDirectionPreference",
-      "name": "EFlowDirectionPreference",
-      "package": "SlateCore",
-      "pairs": [
-        [
-          "Inherit",
-          0
-        ],
-        [
-          "Culture",
-          1
-        ],
-        [
-          "LeftToRight",
-          2
-        ],
-        [
-          "RightToLeft",
-          3
         ]
       ],
       "underlying_type": "uint8"
@@ -297,21 +297,69 @@
     },
     {
       "cpp_form": 1,
-      "cpp_name": "EUMGSequencePlayMode",
-      "name": "EUMGSequencePlayMode",
-      "package": "UMG",
+      "cpp_name": "EMouseCursor",
+      "name": "EMouseCursor",
+      "package": "CoreUObject",
       "pairs": [
         [
-          "Forward",
+          "None",
           0
         ],
         [
-          "Reverse",
+          "Default",
           1
         ],
         [
-          "PingPong",
+          "TextEditBeam",
           2
+        ],
+        [
+          "ResizeLeftRight",
+          3
+        ],
+        [
+          "ResizeUpDown",
+          4
+        ],
+        [
+          "ResizeSouthEast",
+          5
+        ],
+        [
+          "ResizeSouthWest",
+          6
+        ],
+        [
+          "CardinalCross",
+          7
+        ],
+        [
+          "Crosshairs",
+          8
+        ],
+        [
+          "Hand",
+          9
+        ],
+        [
+          "GrabHand",
+          10
+        ],
+        [
+          "GrabHandClosed",
+          11
+        ],
+        [
+          "SlashedCircle",
+          12
+        ],
+        [
+          "EyeDropper",
+          13
+        ],
+        [
+          "Custom",
+          14
         ]
       ],
       "underlying_type": "uint8"
@@ -346,6 +394,27 @@
         [
           "Finished",
           1
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 1,
+      "cpp_name": "EUMGSequencePlayMode",
+      "name": "EUMGSequencePlayMode",
+      "package": "UMG",
+      "pairs": [
+        [
+          "Forward",
+          0
+        ],
+        [
+          "Reverse",
+          1
+        ],
+        [
+          "PingPong",
+          2
         ]
       ],
       "underlying_type": "uint8"
@@ -1491,6 +1560,39 @@
     },
     {
       "cpp_form": 0,
+      "cpp_name": "EInputEvent",
+      "name": "EInputEvent",
+      "package": "Engine",
+      "pairs": [
+        [
+          "IE_Pressed",
+          0
+        ],
+        [
+          "IE_Released",
+          1
+        ],
+        [
+          "IE_Repeat",
+          2
+        ],
+        [
+          "IE_DoubleClick",
+          3
+        ],
+        [
+          "IE_Axis",
+          4
+        ],
+        [
+          "IE_MAX",
+          5
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 0,
       "cpp_name": "ETickingGroup",
       "name": "ETickingGroup",
       "package": "Engine",
@@ -1715,6 +1817,31 @@
     },
     {
       "cpp_form": 2,
+      "cpp_name": "EActorUpdateOverlapsMethod",
+      "name": "EActorUpdateOverlapsMethod",
+      "package": "Engine",
+      "pairs": [
+        [
+          "UseConfigDefault",
+          0
+        ],
+        [
+          "AlwaysUpdate",
+          1
+        ],
+        [
+          "OnlyUpdateMovable",
+          2
+        ],
+        [
+          "NeverUpdate",
+          3
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 2,
       "cpp_name": "EComponentCreationMethod",
       "name": "EComponentCreationMethod",
       "package": "Engine",
@@ -1772,75 +1899,6 @@
       "underlying_type": "uint8"
     },
     {
-      "cpp_form": 1,
-      "cpp_name": "EMouseCursor",
-      "name": "EMouseCursor",
-      "package": "CoreUObject",
-      "pairs": [
-        [
-          "None",
-          0
-        ],
-        [
-          "Default",
-          1
-        ],
-        [
-          "TextEditBeam",
-          2
-        ],
-        [
-          "ResizeLeftRight",
-          3
-        ],
-        [
-          "ResizeUpDown",
-          4
-        ],
-        [
-          "ResizeSouthEast",
-          5
-        ],
-        [
-          "ResizeSouthWest",
-          6
-        ],
-        [
-          "CardinalCross",
-          7
-        ],
-        [
-          "Crosshairs",
-          8
-        ],
-        [
-          "Hand",
-          9
-        ],
-        [
-          "GrabHand",
-          10
-        ],
-        [
-          "GrabHandClosed",
-          11
-        ],
-        [
-          "SlashedCircle",
-          12
-        ],
-        [
-          "EyeDropper",
-          13
-        ],
-        [
-          "Custom",
-          14
-        ]
-      ],
-      "underlying_type": "uint8"
-    },
-    {
       "cpp_form": 2,
       "cpp_name": "EMappingContextInputModeFilterOptions",
       "name": "EMappingContextInputModeFilterOptions",
@@ -1880,6 +1938,27 @@
     },
     {
       "cpp_form": 2,
+      "cpp_name": "EInputMappingRebuildType",
+      "name": "EInputMappingRebuildType",
+      "package": "EnhancedInput",
+      "pairs": [
+        [
+          "None",
+          0
+        ],
+        [
+          "Rebuild",
+          1
+        ],
+        [
+          "RebuildWithFlush",
+          2
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 2,
       "cpp_name": "ETriggerEvent",
       "name": "ETriggerEvent",
       "package": "EnhancedInput",
@@ -1907,27 +1986,6 @@
         [
           "Completed",
           16
-        ]
-      ],
-      "underlying_type": "uint8"
-    },
-    {
-      "cpp_form": 2,
-      "cpp_name": "EInputMappingRebuildType",
-      "name": "EInputMappingRebuildType",
-      "package": "EnhancedInput",
-      "pairs": [
-        [
-          "None",
-          0
-        ],
-        [
-          "Rebuild",
-          1
-        ],
-        [
-          "RebuildWithFlush",
-          2
         ]
       ],
       "underlying_type": "uint8"
@@ -2019,6 +2077,27 @@
         [
           "Axis3D",
           3
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 2,
+      "cpp_name": "EPlayerMappableKeySettingBehaviors",
+      "name": "EPlayerMappableKeySettingBehaviors",
+      "package": "EnhancedInput",
+      "pairs": [
+        [
+          "InheritSettingsFromAction",
+          0
+        ],
+        [
+          "OverrideSettings",
+          1
+        ],
+        [
+          "IgnoreSettings",
+          2
         ]
       ],
       "underlying_type": "uint8"

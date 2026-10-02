@@ -27,6 +27,8 @@ pub enum RustealReifyPropType {
     /// `TArray` of the type in `RustealReifyPropExtra::inner_prop_type`, whose
     /// class/struct/enum fields describe the element.
     Array = 18,
+    /// `TSoftObjectPtr` of the class in `RustealReifyPropExtra::class_handle`.
+    SoftObject = 19,
 }
 
 /// Extra metadata for Object/Class/Struct/Enum/Array properties.

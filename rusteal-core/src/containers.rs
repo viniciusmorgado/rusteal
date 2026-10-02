@@ -124,6 +124,22 @@ unsafe impl ContainerElement for rusteal_ffi::FNameHandle {
     }}
 }
 
+// FName: its handle
+unsafe impl ContainerElement for crate::fname::FName {
+    const BUF_SIZE: u32 = 8;
+    const RAW_COPYABLE: bool = true;
+
+    #[inline]
+    unsafe fn read_from_buf(buf: *const u8, written: u32) -> Self {
+        crate::fname::FName(unsafe { rusteal_ffi::FNameHandle::read_from_buf(buf, written) })
+    }
+
+    #[inline]
+    unsafe fn write_to_buf(&self, buf: *mut u8) -> u32 {
+        unsafe { self.0.write_to_buf(buf) }
+    }
+}
+
 // UObjectRef<T>: delegates to UObjectHandle (8-byte pointer)
 unsafe impl<T: UeClass> ContainerElement for UObjectRef<T> {
     const BUF_SIZE: u32 = std::mem::size_of::<UObjectHandle>() as u32;

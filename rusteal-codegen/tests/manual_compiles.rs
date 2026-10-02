@@ -60,10 +60,18 @@ const CLASSES: &[&str] = &[
     "Visual",
     "Widget",
     "UserWidget",
+    // manual/data_table.rs.
+    "DataTable",
 ];
 
 /// Enums manual/ names that no class or struct above references.
-const ENUMS: &[&str] = &["ETriggerEvent", "EInputActionValueType"];
+const ENUMS: &[&str] = &[
+    "ETriggerEvent",
+    "EInputActionValueType",
+    // manual/collision.rs.
+    "ECollisionChannel",
+    "EObjectTypeQuery",
+];
 
 /// Structs manual/ extends.
 const STRUCTS: &[&str] = &[
@@ -78,10 +86,17 @@ const STRUCTS: &[&str] = &[
     "Plane",
     "Box2D",
     "Key",
+    // The hit result's vectors (manual/net_quantize.rs).
+    "Vector_NetQuantize",
+    "Vector_NetQuantize10",
+    "Vector_NetQuantize100",
+    "Vector_NetQuantizeNormal",
     // Enhanced Input.
     "InputActionValue",
     "ModifyContextOptions",
     "EnhancedActionKeyMapping",
+    // manual/data_table.rs.
+    "DataTableRowHandle",
 ];
 
 const RUSTEAL_TOML: &str = r#"[project]
@@ -302,7 +317,10 @@ fn regenerate_fixture() {
 /// taking and returning each supported kind, and code using every accessor the
 /// macros generate, the Enhanced Input helpers and the touch controls ones.
 const UCLASS_GAME: &str = r#"
-use bindings::engine::{Actor, Controller, Pawn, PawnExt, PlayerController, SceneComponent};
+use bindings::engine::{
+    Actor, ActorExt, Controller, DataTable, FDataTableRowHandle, Pawn, PawnExt, PlayerController,
+    SceneComponent,
+};
 use bindings::enhanced_input::{
     ETriggerEvent, EnhancedInputLocalPlayerSubsystemExt, FInputActionValue, InputAction,
     InputMappingContext,
@@ -310,8 +328,11 @@ use bindings::enhanced_input::{
 use bindings::prelude::*;
 use bindings::umg::{UserWidget, UserWidgetExt};
 use rusteal_runtime::runtime::input::should_display_touch_interface;
-use rusteal_runtime::runtime::{OwnedStruct, RustealResult, SubclassOf, UObjectRef, UStructRef, UeArray};
-use rusteal_runtime::{uclass, uclass_impl};
+use rusteal_runtime::runtime::{
+    FName, OutRef, OwnedStruct, RustealResult, SoftObjectRef, SubclassOf, UObjectRef, UStructRef,
+    UeArray,
+};
+use rusteal_runtime::{uclass, uclass_impl, ustruct};
 
 #[uclass(parent = Pawn)]
 pub struct Probe {
@@ -337,6 +358,82 @@ pub struct Probe {
     widget_class: SubclassOf<UserWidget>,
     #[uproperty]
     widget: UObjectRef<UserWidget>,
+    #[uproperty(EditDefaultsOnly, default = true)]
+    b_can_dash: bool,
+    #[uproperty(VisibleAnywhere)]
+    seen: UObjectRef<InputAction>,
+    #[uproperty(EditAnywhere, category = "Platform")]
+    target: OwnedStruct<FVector>,
+    #[uproperty(EditAnywhere)]
+    tag: FName,
+    #[uproperty(EditAnywhere)]
+    label: String,
+    #[uproperty(EditAnywhere)]
+    sections: UeArray<FName>,
+    #[uproperty(EditAnywhere, default = ETriggerEvent::Started)]
+    trigger: ETriggerEvent,
+    #[uproperty(VisibleAnywhere, name = "NPC", category = "Context")]
+    npc: UObjectRef<Pawn>,
+    #[component(attach = "arm", name = "Collision Check Box")]
+    collision_check_box: SceneComponent,
+    #[uproperty(EditAnywhere)]
+    soft_action: SoftObjectRef<InputAction>,
+    #[uproperty(EditAnywhere)]
+    row: OwnedStruct<ProbeRow>,
+    // Rust's alone: not Copy.
+    visits: Vec<String>,
+}
+
+/// A data table row declared in Rust, holding a Rust class.
+#[ustruct]
+pub struct ProbeRow {
+    /// Shown on the pickup
+    #[uproperty(EditAnywhere)]
+    action: SoftObjectRef<InputAction>,
+    #[uproperty(EditAnywhere)]
+    spawn: SubclassOf<Probe>,
+    #[uproperty(EditAnywhere)]
+    weight: f32,
+    #[uproperty(EditAnywhere)]
+    tag: FName,
+    #[uproperty(EditAnywhere)]
+    tags: UeArray<FName>,
+}
+
+/// A Rust class whose parent is a Rust class.
+#[uclass(parent = Probe)]
+pub struct ProbeChild {
+    #[component(attach = "arm")]
+    extra: SceneComponent,
+    #[uproperty(EditAnywhere, default = 3)]
+    lives: i32,
+}
+
+#[uclass_impl]
+impl ProbeChild {
+    #[ufunction(Override)]
+    fn receive_restarted(&mut self) {
+        if let Ok(mut parent) = Probe::from_obj(self.as_ref()) {
+            parent.receive_restarted();
+        }
+        let _ = (self.extra(), self.lives());
+    }
+}
+
+pub fn rows(table: UObjectRef<DataTable>, handle: UStructRef<FDataTableRowHandle>) -> RustealResult<()> {
+    if let Some(row) = find_data_table_row::<ProbeRow>(table, FName::new("Rifle")) {
+        let _: UObjectRef<InputAction> = row.action().load_synchronous()?;
+        let _: SubclassOf<Probe> = row.spawn();
+        row.set_weight(row.weight() + 1.0);
+        row.set_tag(FName::new("Rifle"));
+        let _ = row.tags().len();
+        row.set_action(&SoftObjectRef::null());
+    }
+    let _: Option<UStructRef<ProbeRow>> = handle.get_row();
+    let owned: OwnedStruct<ProbeRow> = OwnedStruct::new();
+    owned.set_weight(owned.weight());
+    let _ = owned.action().is_null();
+    Ok(())
 }
 
 #[uclass_impl]
@@ -350,8 +447,11 @@ impl Probe {
     }
 
     #[ufunction(Override)]
-    fn receive_restarted(&mut self) {
+    pub(crate) fn receive_restarted(&mut self) {
         let _ = self.bind_input();
+        let _ = self.soft_action().get();
+        self.set_soft_action(&SoftObjectRef::new("/Game/Input/IA_Jump.IA_Jump"));
+        self.set_row(&self.row());
     }
 
     #[ufunction(BlueprintCallable)]
@@ -371,6 +471,65 @@ impl Probe {
     fn pick_class(&mut self, index: i32) -> SubclassOf<Actor> {
         self.classes().get(index as usize).unwrap_or_default()
     }
+
+    #[ufunction(BlueprintPure)]
+    fn can_dash(&self) -> bool {
+        self.b_can_dash()
+    }
+
+    #[ufunction(Override, name = "K2_OnBecomeViewTarget")]
+    fn on_become_view_target(&mut self, pc: UObjectRef<PlayerController>) {
+        self.set_trail(true);
+        self.on_damaged(1.0, &self.target());
+        let _ = self.sections().to_vec();
+        let _ = self.pick_target(pc);
+        self.set_b_can_dash(self.count_targets(2) > 0);
+    }
+
+    #[ufunction(BlueprintImplementableEvent)]
+    fn set_trail(&self, b_enabled: bool) {}
+
+    #[ufunction(BlueprintImplementableEvent)]
+    fn pick_target(&self, pc: UObjectRef<PlayerController>) -> UObjectRef<Actor> {}
+
+    #[ufunction(BlueprintImplementableEvent)]
+    fn count_targets(&self, max: i32) -> i32 {}
+
+    #[ufunction(BlueprintImplementableEvent)]
+    fn on_damaged(&self, damage: f32, location: &OwnedStruct<FVector>) {}
+
+    #[ufunction(Override, name = "BlueprintUpdateCamera")]
+    fn update_camera(
+        &mut self,
+        _camera_target: UObjectRef<Actor>,
+        new_camera_location: UStructRef<FVector>,
+        _new_camera_rotation: UStructRef<FRotator>,
+        new_camera_fov: OutRef<f32>,
+    ) -> bool {
+        new_camera_location.set_x(self.target().as_ref().get_x());
+        new_camera_fov.set(new_camera_fov.get() + 1.0);
+        self.set_target(&OwnedStruct::new());
+        self.set_tag(FName::new(&self.label()));
+        self.set_label("probe");
+        self.set_trigger(ETriggerEvent::Completed);
+        let _ = (self.trigger(), self.npc(), self.collision_check_box());
+        self.visits_mut().push("camera".into());
+        let _ = self.visits().len();
+        true
+    }
+}
+
+pub fn worlds(probe: UObjectRef<Probe>, class: SubclassOf<Pawn>) -> RustealResult<UObjectRef<Pawn>> {
+    let actor = probe.upcast_to::<Actor>();
+    actor.checked()?.on_destroyed().add_ufunction(&probe, "PickClass")?;
+    let world = probe.get_world()?;
+    world.spawn_actor_of_class(class, &OwnedStruct::new())
+}
+
+pub fn upcasts(probe: UObjectRef<Probe>, pc: UObjectRef<PlayerController>) -> (UObjectRef<Actor>, UObjectRef<Pawn>) {
+    let _controller: UObjectRef<Controller> = pc.upcast_to::<Controller>();
+    let _actor_class: SubclassOf<Actor> = SubclassOf::<PlayerController>::base().upcast_to::<Actor>();
+    (pc.upcast_to::<Actor>(), probe.upcast_to::<Pawn>())
 }
 
 #[uclass(parent = Actor)]

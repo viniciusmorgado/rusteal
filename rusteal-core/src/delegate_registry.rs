@@ -110,6 +110,12 @@ impl DelegateBinding {
     pub fn unbind(self) {
         // Drop will handle the cleanup.
     }
+
+    /// Keep the binding for as long as its owner lives, as C++'s `AddDynamic`
+    /// does: the delegate goes with the owner, and nothing unbinds it before.
+    pub fn detach(self) {
+        std::mem::forget(self);
+    }
 }
 
 impl Drop for DelegateBinding {

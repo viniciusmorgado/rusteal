@@ -1,13 +1,11 @@
 // Type-safe Enhanced Input binding on top of rusteal_core::input.
 
-use rusteal_core::{Checked, RustealResult, SubclassOf, UObjectRef, UStructRef, UeClass};
+use rusteal_core::{RustealResult, SubclassOf, UObjectRef, UStructRef, UeClass};
 
-use crate::engine::{
-    LocalPlayerSubsystem, PlayerController, SubsystemBlueprintLibrary, SubsystemBlueprintLibraryExt,
-};
+use crate::engine::{LocalPlayerSubsystem, PlayerController, SubsystemBlueprintLibrary};
 use crate::enhanced_input::{
-    ETriggerEvent, EnhancedInputLibrary, EnhancedInputLibraryExt, EnhancedInputLocalPlayerSubsystem,
-    FInputActionValue, InputAction,
+    ETriggerEvent, EnhancedInputLibrary, EnhancedInputLocalPlayerSubsystem, FInputActionValue,
+    InputAction,
 };
 
 /// The value an input action handler receives, read as the C++ template
@@ -38,7 +36,7 @@ impl InputActionValueExt for UStructRef<FInputActionValue> {
 
     fn axis3d(&self) -> glam::DVec3 {
         let (x, y, z, _) =
-            <Checked<EnhancedInputLibrary> as EnhancedInputLibraryExt>::break_input_action_value(
+            EnhancedInputLibrary::break_input_action_value(
                 &self.to_owned(),
             );
         glam::DVec3::new(x, y, z)
@@ -77,7 +75,7 @@ pub fn enhanced_input_subsystem(
     controller.checked()?;
     let class: SubclassOf<LocalPlayerSubsystem> =
         SubclassOf::<EnhancedInputLocalPlayerSubsystem>::base().upcast();
-    <Checked<SubsystemBlueprintLibrary> as SubsystemBlueprintLibraryExt>::get_local_player_sub_system_from_player_controller(
+    SubsystemBlueprintLibrary::get_local_player_sub_system_from_player_controller(
         controller, class,
     )
     .cast::<EnhancedInputLocalPlayerSubsystem>()

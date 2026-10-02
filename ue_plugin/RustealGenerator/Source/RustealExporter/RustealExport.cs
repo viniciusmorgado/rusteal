@@ -34,7 +34,6 @@ public static class RustealExport
         EFunctionFlags.NetServer |
         EFunctionFlags.NetRequest |
         EFunctionFlags.NetResponse |
-        EFunctionFlags.Protected |
         EFunctionFlags.Private |
         EFunctionFlags.Delegate;
 
@@ -170,12 +169,23 @@ public static class RustealExport
                 ["cpp_name"] = classObj.SourceName,
                 ["package"] = package,
                 ["header"] = header.IncludeFilePath ?? header.ModuleRelativeFilePath ?? "",
+                ["header_public"] = IsPublicHeader(header),
                 ["class_flags"] = (long)unchecked((uint)classObj.ClassFlags),
                 ["super"] = superName,
                 ["interfaces"] = interfaces,
                 ["props"] = props,
                 ["funcs"] = funcs,
             });
+        }
+
+        /// <summary>
+        /// Whether another module can include the header: one in a Classes or
+        /// Public folder, not an Internal or Private one.
+        /// </summary>
+        private static bool IsPublicHeader(UhtHeaderFile header)
+        {
+            return header.HeaderFileType == UhtHeaderFileType.Classes
+                || header.HeaderFileType == UhtHeaderFileType.Public;
         }
 
         private static bool ShouldExportClass(UhtClass classObj)
@@ -238,6 +248,7 @@ public static class RustealExport
                 ["cpp_name"] = structObj.SourceName,
                 ["package"] = package,
                 ["header"] = structHeader,
+                ["header_public"] = IsPublicHeader(header),
                 ["struct_flags"] = (long)unchecked((uint)structObj.ScriptStructFlags),
                 ["super"] = superName,
                 ["has_static_struct"] = hasStaticStruct,
@@ -389,12 +400,17 @@ public static class RustealExport
 
         private static bool ShouldExportProperty(UhtProperty prop)
         {
-            // Skip private/protected, unless Blueprint can reach them: UHT allows
-            // BlueprintReadOnly/ReadWrite on a private member only with
-            // AllowPrivateAccess (ACharacter's Mesh, CharacterMovement,
-            // CapsuleComponent), and Rust reaches them the same way, by reflection.
+            // Skip private/protected, unless Blueprint or a child class's
+            // defaults can reach them: UHT allows BlueprintReadOnly/ReadWrite on a
+            // private member only with AllowPrivateAccess (ACharacter's Mesh,
+            // CharacterMovement, CapsuleComponent), a Blueprint-assignable
+            // protected delegate (UEnvQueryInstanceBlueprintWrapper's
+            // OnQueryFinishedEvent) is bound from Blueprint graphs, and an
+            // editable protected one (AController's bAttachToPawn) is what a
+            // Blueprint child sets in its defaults. Rust reaches them the same
+            // way, by reflection.
             if (prop.PropertyFlags.HasAnyFlags(NoExportPropFlags)
-                && !prop.PropertyFlags.HasAnyFlags(EPropertyFlags.BlueprintVisible))
+                && !prop.PropertyFlags.HasAnyFlags(EPropertyFlags.BlueprintVisible | EPropertyFlags.BlueprintAssignable | EPropertyFlags.Edit))
                 return false;
 
             // Skip deprecated
@@ -574,6 +590,12 @@ public static class RustealExport
 
             // Skip functions with excluded flags
             if (func.FunctionFlags.HasAnyFlags(NoExportFuncFlags))
+                return false;
+
+            // A protected function only when a Blueprint child can call it
+            // (UStateTreeTaskBlueprintBase::FinishTask), as a Rust child then can.
+            if (func.FunctionFlags.HasAnyFlags(EFunctionFlags.Protected)
+                && !func.FunctionFlags.HasAnyFlags(EFunctionFlags.BlueprintCallable))
                 return false;
 
             // Skip editor-only functions

@@ -71,3 +71,43 @@ impl<T: UeStruct> std::fmt::Debug for UStructRef<T> {
         f.debug_struct("UStructRef").field("ptr", &self.ptr).finish()
     }
 }
+
+/// A scalar out parameter of an engine event a `#[ufunction(Override)]`
+/// implements (`float& NewCameraFOV`): `set` writes the value the engine reads
+/// back once the call returns. Struct out parameters are `UStructRef`s, written
+/// through their setters the same way.
+pub struct OutRef<T: Copy> {
+    ptr: *mut T,
+}
+
+impl<T: Copy> OutRef<T> {
+    /// The value the caller passed in.
+    #[inline]
+    pub fn get(&self) -> T {
+        unsafe { self.ptr.read_unaligned() }
+    }
+
+    /// The value the caller gets back.
+    #[inline]
+    pub fn set(&self, value: T) {
+        unsafe { self.ptr.write_unaligned(value) }
+    }
+}
+
+/// Create an `OutRef<T>` from a native parameter buffer pointer + byte offset.
+///
+/// Used by `#[uclass_impl]` for Override out parameters.
+///
+/// # Safety
+///
+/// As [`struct_ref_from_param`]: `offset` is a `T` inside the live buffer `ptr`.
+#[inline(always)]
+pub unsafe fn out_ref_from_param<T: Copy>(ptr: *mut u8, offset: usize) -> OutRef<T> {
+    OutRef { ptr: unsafe { ptr.add(offset) } as *mut T }
+}
+
+impl<T: Copy> std::fmt::Debug for OutRef<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OutRef").field("ptr", &self.ptr).finish()
+    }
+}

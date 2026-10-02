@@ -29,6 +29,15 @@ pub mod fkey;
 #[cfg(feature = "engine")]
 pub mod world_ext;
 
+#[cfg(feature = "engine")]
+pub mod net_quantize;
+
+#[cfg(feature = "engine")]
+pub mod collision;
+
+#[cfg(feature = "engine")]
+pub mod data_table;
+
 #[cfg(feature = "umg")]
 pub mod widget_ext;
 

@@ -21,9 +21,18 @@ pub trait UeStruct: 'static {
 }
 
 /// Implemented by codegen for every exported UEnum.
-pub trait UeEnum: 'static {
+pub trait UeEnum: Copy + 'static {
     /// The underlying integer representation (u8, i32, i64, etc.).
     type Repr: Copy;
+
+    /// The UEnum, typed like a class handle (an enum `#[uproperty]` needs it).
+    fn static_enum() -> UClassHandle;
+
+    /// The value as UE stores it in a property.
+    fn to_i64(self) -> i64;
+
+    /// The variant for a value UE stored; `None` for a value the enum lacks.
+    fn from_i64(value: i64) -> Option<Self>;
 }
 
 /// Declares the immediate UE parent class for codegen-exported classes.
@@ -37,6 +46,14 @@ pub trait UeEnum: 'static {
 pub trait HasParent: UeClass {
     type Parent: UeClass;
 }
+
+/// `Self` is `U` or one of its subclasses: a `UObjectRef<Self>` is a valid
+/// `UObjectRef<U>`, as a `Character*` is an `AActor*` in C++.
+///
+/// Codegen implements it for every class and each of its ancestors
+/// (`impl Inherits<Actor> for Character`); a Rust `#[uclass]` gets it for
+/// everything its parent inherits. See `UObjectRef::upcast_to`.
+pub trait Inherits<U: UeClass>: UeClass {}
 
 /// Trait for types that hold a UObject handle and can validate it.
 ///

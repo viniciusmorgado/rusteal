@@ -69,8 +69,8 @@ fn main() {
 }
 
 /// Embed `templates/` as `TEMPLATE_FILES: &[(&str, &[u8])]`, every file by its
-/// path under `templates/`: `common/` goes into every project, `<name>/` is the
-/// template `rusteal new --template <name>` adds on top (see src/templates.rs).
+/// path under `templates/`: `<name>/<variant>/` is what `rusteal new
+/// --template <name> --variant <variant>` adds on top (see src/templates.rs).
 fn embed_templates(manifest_dir: &Path, out_dir: &Path) {
     let templates_dir = manifest_dir.join("templates");
     println!("cargo:rerun-if-changed={}", templates_dir.display());

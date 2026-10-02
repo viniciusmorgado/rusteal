@@ -178,6 +178,13 @@ pub struct RustealPropertyApi {
         obj: UObjectHandle, prop: FPropertyHandle,
         index: u32, in_buf: *const u8, buf_size: u32,
     ) -> RustealErrorCode,
+
+    // -- Soft object reference (TSoftObjectPtr), as its path --
+    /// The path the property refers to (`FSoftObjectPath::ToString`, empty for
+    /// none), UTF-8, written as `get_string` writes a string.
+    pub get_soft_object_path: unsafe extern "C" fn(obj: UObjectHandle, prop: FPropertyHandle, buf: *mut u8, buf_len: u32, out_len: *mut u32) -> RustealErrorCode,
+    /// Make the property refer to a path (empty for none).
+    pub set_soft_object_path: unsafe extern "C" fn(obj: UObjectHandle, prop: FPropertyHandle, buf: *const u8, len: u32) -> RustealErrorCode,
 }
 
 // ---------------------------------------------------------------------------
@@ -266,6 +273,10 @@ pub struct RustealReflectionApi {
     /// Copy the struct at `src` over the initialized struct at `dest` with the
     /// UScriptStruct's copy semantics (deep for strings, arrays and the like).
     pub copy_struct: unsafe extern "C" fn(ustruct: UStructHandle, dest: *mut u8, src: *const u8) -> RustealErrorCode,
+
+    /// Find a UEnum by name (`ECollisionChannel`). The handle is the enum's
+    /// object, typed like a class handle as `RustealReifyPropExtra::enum_handle`.
+    pub find_enum: unsafe extern "C" fn(name: *const u8, name_len: u32) -> UClassHandle,
 }
 
 /// Phase 7: Container operations (TArray / TMap / TSet).
@@ -420,6 +431,16 @@ pub struct RustealDelegateApi {
         out_buf_size: u32,
         out_written: *mut u32,
     ) -> RustealErrorCode,
+
+    /// Bind `target`'s UFunction named `name` to the delegate, as C++'s
+    /// `AddDynamic` (AddUnique on a multicast delegate) or `BindDynamic` does.
+    pub add_function: unsafe extern "C" fn(
+        obj: UObjectHandle,
+        prop: FPropertyHandle,
+        target: UObjectHandle,
+        name: *const u8,
+        name_len: u32,
+    ) -> RustealErrorCode,
 }
 
 /// Phase 9: Reify — runtime class creation, property/function registration.
@@ -468,9 +489,13 @@ pub struct RustealReifyApi {
     /// one the class declares, or an inherited one by its property or
     /// subobject name (`RootComponent`, `Mesh`).
     /// `attach_socket`/`socket_len`: the socket on it (0-len = none).
+    /// `property`/`property_len`: the property that references the component
+    /// (0-len = the subobject's name), as C++'s `UPROPERTY() UBoxComponent*
+    /// CollisionCheckBox` for a subobject named "Collision Check Box".
     pub add_default_subobject: unsafe extern "C" fn(
         cls: UClassHandle,
         name: *const u8, name_len: u32,
+        property: *const u8, property_len: u32,
         component_class: UClassHandle,
         flags: u32,
         attach_parent: *const u8, attach_len: u32,
@@ -482,6 +507,23 @@ pub struct RustealReifyApi {
         owner: UObjectHandle,
         name: *const u8, name_len: u32,
     ) -> UObjectHandle,
+
+    /// Set a metadata entry of a property (`Category`, `ClampMin`): what the
+    /// editor shows and StateTree reads. Editor builds only; a no-op otherwise.
+    pub set_property_metadata: unsafe extern "C" fn(
+        prop: FPropertyHandle,
+        key: *const u8, key_len: u32,
+        value: *const u8, value_len: u32,
+    ) -> RustealErrorCode,
+
+    /// Create a struct in `/Script/Rusteal` (`#[ustruct]`), or find the one a
+    /// previous load created. Its properties are added with `add_property`,
+    /// which takes its handle as a class handle.
+    pub create_struct: unsafe extern "C" fn(name: *const u8, name_len: u32) -> UStructHandle,
+
+    /// Link a struct once its properties are added, after the Rust structs
+    /// its properties hold.
+    pub finalize_struct: unsafe extern "C" fn(strukt: UStructHandle) -> RustealErrorCode,
 }
 
 pub const RUSTEAL_COMP_ROOT: u32 = 1;
@@ -577,8 +619,9 @@ pub struct RustealWorldApi {
         path_len: u32,
     ) -> UObjectHandle,
 
-    /// Get the UWorld from an actor. Returns null handle if the actor is invalid.
-    pub get_world: unsafe extern "C" fn(actor: UObjectHandle) -> UObjectHandle,
+    /// The UWorld an object is in (`UObject::GetWorld()`). Returns null handle
+    /// if the object is invalid or in no world.
+    pub get_world: unsafe extern "C" fn(object: UObjectHandle) -> UObjectHandle,
 
     /// Create a new UObject. `outer` can be null (falls back to transient package).
     pub new_object: unsafe extern "C" fn(outer: UObjectHandle, class: UClassHandle) -> UObjectHandle,
@@ -602,4 +645,14 @@ pub struct RustealWorldApi {
         transform_buf: *const u8,
         transform_size: u32,
     ) -> RustealErrorCode,
+
+    /// The object type (`EObjectTypeQuery`) a collision channel
+    /// (`ECollisionChannel`) is, as the project's collision settings map them:
+    /// `UEngineTypes::ConvertToObjectType`.
+    pub channel_to_object_type: unsafe extern "C" fn(channel: u8) -> u8,
+
+    /// The row `row_name` of the data table `table`: a pointer into the
+    /// table's memory, null when there is no such row or the table's rows are
+    /// not `row_struct`s (or a struct derived from it).
+    pub find_data_table_row: unsafe extern "C" fn(table: UObjectHandle, row_name: FNameHandle, row_struct: UStructHandle) -> *mut u8,
 }

@@ -151,6 +151,12 @@ static RustealUFunctionHandle FindFunctionByClassImpl(RustealUClassHandle Cls,
     return RustealUFunctionHandle{nullptr};
   const FName FuncName = Utf8ToFName(Name, NameLen);
   UFunction *Func = Class->FindFunctionByName(FuncName);
+  // A delegate declared outside the class (DECLARE_DYNAMIC_MULTICAST_DELEGATE
+  // at file scope, FActorPerceptionUpdatedDelegate) has its signature in the
+  // class's package, not in the class.
+  if (!Func) {
+    Func = FindObject<UFunction>(Class->GetOutermost(), *FuncName.ToString());
+  }
   return RustealUFunctionHandle{Func};
 }
 
@@ -191,15 +197,35 @@ static ERustealErrorCode CopyStructImpl(RustealUStructHandle UStructHandle,
   return ERustealErrorCode::Ok;
 }
 
+static RustealUClassHandle FindEnumImpl(const uint8 *Name, uint32 NameLen) {
+  const FString EnumName = Utf8ToFString(Name, NameLen);
+  UEnum *Found =
+      FindFirstObject<UEnum>(*EnumName, EFindFirstObjectOptions::NativeFirst);
+  return RustealUClassHandle{Found};
+}
+
 // ---------------------------------------------------------------------------
 // Static instance
 // ---------------------------------------------------------------------------
 
 FRustealReflectionApi GReflectionApi = {
-    &FindClassImpl,           &FindPropertyImpl,     &GetStaticClassImpl,
-    &GetPropertySizeImpl,     &FindStructImpl,       &FindStructPropertyImpl,
-    &FindFunctionImpl,        &AllocParamsImpl,      &FreeParamsImpl,
-    &CallFunctionImpl,        &GetFunctionParamImpl, &GetPropertyOffsetImpl,
-    &FindFunctionByClassImpl, &GetElementSizeImpl,   &GetStructSizeImpl,
-    &InitializeStructImpl,    &DestroyStructImpl,    &CopyStructImpl,
+    &FindClassImpl,
+    &FindPropertyImpl,
+    &GetStaticClassImpl,
+    &GetPropertySizeImpl,
+    &FindStructImpl,
+    &FindStructPropertyImpl,
+    &FindFunctionImpl,
+    &AllocParamsImpl,
+    &FreeParamsImpl,
+    &CallFunctionImpl,
+    &GetFunctionParamImpl,
+    &GetPropertyOffsetImpl,
+    &FindFunctionByClassImpl,
+    &GetElementSizeImpl,
+    &GetStructSizeImpl,
+    &InitializeStructImpl,
+    &DestroyStructImpl,
+    &CopyStructImpl,
+    &FindEnumImpl,
 };

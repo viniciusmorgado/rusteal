@@ -44,6 +44,21 @@ pub fn apply_filters(ctx: &mut CodegenContext, blocklist: &Blocklist) {
         )
         .collect();
 
+    // The types whose header no other module can include (an Internal or
+    // Private one): a function of theirs, or one taking them, has no C++
+    // wrapper the plugin can compile. Their properties are read through
+    // reflection, which needs no header.
+    let unreachable_headers: HashSet<String> = ctx
+        .module_classes
+        .values()
+        .flat_map(|classes| classes.iter().filter(|c| !c.header_public).map(|c| c.name.clone()))
+        .chain(
+            ctx.module_structs
+                .values()
+                .flat_map(|structs| structs.iter().filter(|s| !s.header_public).map(|s| s.name.clone())),
+        )
+        .collect();
+
     for classes in ctx.module_classes.values_mut() {
         // Remove blocked classes entirely
         classes.retain(|c| !blocked_classes.contains(c.name.as_str()));
@@ -55,9 +70,35 @@ pub fn apply_filters(ctx: &mut CodegenContext, blocklist: &Blocklist) {
                 .retain(|p| is_property_exportable(p, &available_types));
 
             // Filter functions
+            if !class.header_public {
+                class.funcs.clear();
+            }
+            class.funcs.retain(|f| !references_any(f, &unreachable_headers));
             filter_functions(&class.name, &mut class.funcs, &available_types, &blocked_structs, &blocked_functions);
         }
     }
+}
+
+/// Whether a function's parameters name any of `types`, directly or as a
+/// container's element, key or value.
+fn references_any(func: &FunctionInfo, types: &HashSet<String>) -> bool {
+    let names = |p: &PropertyInfo| {
+        [p.class_name.clone(), p.meta_class_name.clone(), p.struct_name.clone()]
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>()
+    };
+    func.params.iter().any(|param| {
+        let direct = [param.class_name.as_ref(), param.meta_class_name.as_ref(), param.struct_name.as_ref()];
+        let inner = [
+            param.inner_prop.as_deref(),
+            param.key_prop.as_deref(),
+            param.value_prop.as_deref(),
+            param.element_prop.as_deref(),
+        ];
+        direct.into_iter().flatten().any(|name| types.contains(name))
+            || inner.into_iter().flatten().flat_map(names).any(|name| types.contains(&name))
+    })
 }
 
 /// Check if a property is exportable (supported type, not private/protected, single array dim).
@@ -75,10 +116,13 @@ fn is_property_exportable(prop: &PropertyInfo, available: &HashSet<String>) -> b
         }
     }
 
-    // Skip private/protected, unless Blueprint can reach them (AllowPrivateAccess):
-    // they are read through reflection, like any other property.
+    // Skip private/protected, unless Blueprint can reach them (AllowPrivateAccess,
+    // or a Blueprint-assignable delegate such as UEnvQueryInstanceBlueprintWrapper's
+    // OnQueryFinishedEvent) or a child class's defaults can set them
+    // (AController's bAttachToPawn, editable): they are read through
+    // reflection, like any other property.
     if prop.prop_flags & (CPF_NATIVE_ACCESS_PRIVATE | CPF_NATIVE_ACCESS_PROTECTED) != 0
-        && prop.prop_flags & CPF_BLUEPRINT_VISIBLE == 0
+        && prop.prop_flags & (CPF_BLUEPRINT_VISIBLE | CPF_EDIT | CPF_BLUEPRINT_ASSIGNABLE) == 0
     {
         return false;
     }
@@ -372,5 +416,55 @@ mod tests {
             &object_prop("Guarded", CPF_NATIVE_ACCESS_PROTECTED | CPF_BLUEPRINT_VISIBLE),
             &available
         ));
+        assert!(is_property_exportable(
+            &object_prop("Editable", CPF_NATIVE_ACCESS_PROTECTED | CPF_EDIT),
+            &available
+        ));
+        assert!(is_property_exportable(
+            &object_prop("Assignable", CPF_NATIVE_ACCESS_PROTECTED | CPF_BLUEPRINT_ASSIGNABLE),
+            &available
+        ));
+    }
+
+    fn function(params: serde_json::Value) -> FunctionInfo {
+        serde_json::from_value(serde_json::json!({
+            "name": "Probe",
+            "func_flags": FUNC_NATIVE,
+            "params": params,
+        }))
+        .unwrap()
+    }
+
+    fn param(fields: serde_json::Value) -> serde_json::Value {
+        let mut param = serde_json::json!({
+            "name": "P", "type": "ObjectProperty", "prop_flags": 0,
+            "enum_name": null, "enum_cpp_name": null, "enum_cpp_form": null,
+            "enum_underlying_type": null, "class_name": null, "meta_class_name": null,
+            "struct_name": null, "interface_name": null, "func_info": null,
+            "inner_prop": null, "key_prop": null, "value_prop": null,
+            "element_prop": null, "default": null,
+        });
+        for (key, value) in fields.as_object().unwrap() {
+            param[key] = value.clone();
+        }
+        param
+    }
+
+    #[test]
+    fn functions_naming_unreachable_headers_drop_out() {
+        let internal: HashSet<String> = ["NiagaraDataInterfaceArrayMesh".to_string()].into();
+        let takes = |fields| function(serde_json::json!([param(fields)]));
+
+        assert!(references_any(&takes(serde_json::json!({"class_name": "NiagaraDataInterfaceArrayMesh"})), &internal));
+        assert!(references_any(
+            &takes(serde_json::json!({
+                "type": "ArrayProperty",
+                "inner_prop": {"name": "P", "type": "ObjectProperty", "prop_flags": 0,
+                               "class_name": "NiagaraDataInterfaceArrayMesh"},
+            })),
+            &internal
+        ));
+        assert!(!references_any(&takes(serde_json::json!({"class_name": "NiagaraComponent"})), &internal));
+        assert!(!references_any(&function(serde_json::json!([])), &internal));
     }
 }

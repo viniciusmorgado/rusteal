@@ -270,8 +270,60 @@ RustealDelegateApi_ReadParam(RustealFPropertyHandle PropHandle, void *ParamsBuf,
 // Global API struct
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// add_function — bind a UFunction of an object by name, as C++'s AddDynamic
+// ---------------------------------------------------------------------------
+
+static ERustealErrorCode RustealDelegateApi_AddFunction(
+    RustealUObjectHandle ObjHandle, RustealFPropertyHandle PropHandle,
+    RustealUObjectHandle TargetHandle, const uint8 *Name, uint32 NameLen) {
+  RUSTEAL_CHECK_ARGS(ObjHandle, PropHandle);
+
+  UObject *Target = static_cast<UObject *>(TargetHandle.ptr);
+  if (!IsValid(Target)) {
+    return ERustealErrorCode::ObjectDestroyed;
+  }
+  const FUTF8ToTCHAR NameChars(reinterpret_cast<const ANSICHAR *>(Name),
+                               NameLen);
+  const FName FunctionName(NameChars.Length(), NameChars.Get());
+  UFunction *Function = Target->FindFunction(FunctionName);
+  if (!Function) {
+    return ERustealErrorCode::FunctionNotFound;
+  }
+
+  FScriptDelegate ScriptDelegate;
+  ScriptDelegate.BindUFunction(Target, FunctionName);
+
+  // A struct parameter is `const FHitResult&` in the signature and a struct
+  // in a Rust function: the same layout in the call's parameters.
+  const uint64 IgnoredFlags =
+      UFunction::GetDefaultIgnoredSignatureCompatibilityFlags() | CPF_OutParm |
+      CPF_ReferenceParm;
+
+  if (FMulticastDelegateProperty *MultiProp =
+          CastField<FMulticastDelegateProperty>(RawProp)) {
+    if (!Function->IsSignatureCompatibleWith(MultiProp->SignatureFunction,
+                                             IgnoredFlags)) {
+      return ERustealErrorCode::TypeMismatch;
+    }
+    // AddUnique: binding the same function twice binds it once.
+    MultiProp->AddDelegate(MoveTemp(ScriptDelegate), Object);
+    return ERustealErrorCode::Ok;
+  }
+  if (FDelegateProperty *DelegateProp = CastField<FDelegateProperty>(RawProp)) {
+    if (!Function->IsSignatureCompatibleWith(DelegateProp->SignatureFunction,
+                                             IgnoredFlags)) {
+      return ERustealErrorCode::TypeMismatch;
+    }
+    *DelegateProp->GetPropertyValuePtr_InContainer(Object) = ScriptDelegate;
+    return ERustealErrorCode::Ok;
+  }
+  return ERustealErrorCode::TypeMismatch;
+}
+
 FRustealDelegateApi GDelegateApi = {
     &RustealDelegateApi_BindDelegate,       &RustealDelegateApi_UnbindDelegate,
     &RustealDelegateApi_AddMulticast,       &RustealDelegateApi_RemoveMulticast,
     &RustealDelegateApi_BroadcastMulticast, &RustealDelegateApi_ReadParam,
+    &RustealDelegateApi_AddFunction,
 };

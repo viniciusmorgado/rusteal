@@ -108,8 +108,10 @@ pub fn run_generate(project_root: &Path) {
     eprintln!("rusteal-codegen: generating C++ code...");
     cpp_gen::generate(&ctx, &cpp_out);
 
-    // Generate module_deps.txt for Rusteal.Build.cs
+    // Generate module_deps.txt for Rusteal.Build.cs, and list the plugins
+    // those modules come from in Rusteal.uplugin
     generate_module_deps(codegen, &cpp_out);
+    update_plugin_dependencies(codegen, &layout.plugin_descriptor());
 
     // Post-generate verification
     eprintln!("rusteal-codegen: verifying output...");
@@ -142,6 +144,51 @@ fn generate_module_deps(config: &crate::config::CodegenConfig, cpp_out: &Path) {
         .unwrap_or_else(|e| panic!("Failed to write {}: {e}", path.display()));
 
     eprintln!("  module_deps.txt: {:?}", ue_modules.iter().collect::<Vec<_>>());
+}
+
+/// Add the engine plugins of the enabled modules (`plugin = "StateTree"` in
+/// `[codegen.modules]`) to the Rusteal plugin's descriptor: UBT wants a plugin
+/// to list the plugins whose modules it links. Plugins already listed stay.
+fn update_plugin_dependencies(config: &crate::config::CodegenConfig, descriptor: &Path) {
+    let Ok(text) = std::fs::read_to_string(descriptor) else {
+        return; // no installed plugin (a codegen test): nothing to update
+    };
+    let mut json: serde_json::Value = serde_json::from_str(&text)
+        .unwrap_or_else(|e| panic!("Failed to parse {}: {e}", descriptor.display()));
+    let enabled: std::collections::HashSet<&str> =
+        config.features.iter().map(|s| s.as_str()).collect();
+    let mut wanted: Vec<&str> = config
+        .modules
+        .values()
+        .filter(|m| enabled.contains(m.feature.as_str()))
+        .filter_map(|m| m.plugin.as_deref())
+        .collect();
+    wanted.sort();
+    wanted.dedup();
+
+    let plugins = json
+        .as_object_mut()
+        .expect("Rusteal.uplugin is a JSON object")
+        .entry("Plugins")
+        .or_insert_with(|| serde_json::Value::Array(Vec::new()))
+        .as_array_mut()
+        .expect("Rusteal.uplugin's Plugins is an array");
+    let mut added = Vec::new();
+    for name in wanted {
+        if plugins.iter().any(|p| p["Name"] == name) {
+            continue;
+        }
+        plugins.push(serde_json::json!({ "Name": name, "Enabled": true }));
+        added.push(name);
+    }
+    if added.is_empty() {
+        return;
+    }
+    let mut out = serde_json::to_string_pretty(&json).expect("serializable descriptor");
+    out.push('\n');
+    std::fs::write(descriptor, out)
+        .unwrap_or_else(|e| panic!("Failed to write {}: {e}", descriptor.display()));
+    eprintln!("  Rusteal.uplugin: now depends on {added:?}");
 }
 
 /// Verify codegen output integrity.
@@ -266,4 +313,47 @@ fn build_func_table(ctx: &mut context::CodegenContext) {
     }
 
     ctx.func_table = entries;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn plugin_dependencies_follow_enabled_modules() {
+        let config: crate::config::CodegenConfig = toml::from_str(
+            r#"
+            features = ["engine", "state-tree"]
+            [modules]
+            Engine = { module = "engine", feature = "engine" }
+            StateTreeModule = { module = "state_tree", feature = "state-tree", plugin = "StateTree" }
+            GameplayStateTreeModule = { module = "gameplay_state_tree", feature = "state-tree", plugin = "GameplayStateTree" }
+            Niagara = { module = "niagara", feature = "niagara", plugin = "Niagara" }
+            "#,
+        )
+        .unwrap();
+        let dir = std::env::temp_dir().join(format!("rusteal-uplugin-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let descriptor = dir.join("Rusteal.uplugin");
+        std::fs::write(
+            &descriptor,
+            r#"{ "VersionName": "0.0.0", "Plugins": [ { "Name": "EnhancedInput", "Enabled": true } ] }"#,
+        )
+        .unwrap();
+
+        update_plugin_dependencies(&config, &descriptor);
+        update_plugin_dependencies(&config, &descriptor);
+
+        let json: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&descriptor).unwrap()).unwrap();
+        let names: Vec<&str> = json["Plugins"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|p| p["Name"].as_str().unwrap())
+            .collect();
+        assert_eq!(names, ["EnhancedInput", "GameplayStateTree", "StateTree"]);
+        assert_eq!(json["VersionName"], "0.0.0");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 }
