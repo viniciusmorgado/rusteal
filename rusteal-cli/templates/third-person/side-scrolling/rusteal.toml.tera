@@ -37,7 +37,7 @@ NavigationSystem = { module = "navigation", feature = "ai" }
 StateTreeModule = { module = "state_tree", feature = "state-tree", plugin = "StateTree" }
 GameplayStateTreeModule = { module = "gameplay_state_tree", feature = "state-tree", plugin = "GameplayStateTree" }
 GameplayTags = { module = "gameplay_tags", feature = "gameplay-tags" }
-Niagara = { module = "niagara", feature = "niagara" }
+Niagara = { module = "niagara", feature = "niagara", plugin = "Niagara" }
 GameplayAbilities = { module = "gameplay_abilities", feature = "gameplay-abilities" }
 LevelSequence = { module = "level_sequence", feature = "level-sequence" }
 CinematicCamera = { module = "cinematic_camera", feature = "cinematic" }
@@ -47,6 +47,8 @@ MovieSceneTracks = { module = "movie_scene_tracks", feature = "movie" }
 [codegen.blocklist]
 # Reflected types and functions the generated code cannot handle yet.
 classes = [
+    # Niagara's Sequencer section: its functions are not exported.
+    "MovieSceneNiagaraSystemSpawnSection",
     "BlueprintTypeConversions",
     "InstancedStaticMeshComponent",
     "InstancedSkinnedMeshComponent",
@@ -79,6 +81,7 @@ functions = [
     "MaterialInstanceConstant.K2_GetTextureCollectionParameterValue",
     "MaterialInstanceConstant.K2_GetTextureParameterValue",
     "MaterialInstanceConstant.K2_GetVectorParameterValue",
+    "NiagaraScript.RaiseOnGPUCompilationComplete",
     "ParticleSystem.ContainsEmitterType",
     "PhysicsConstraintComponent.IsProjectionEnabled",
     "PlanarReflection.OnInterpToggle",

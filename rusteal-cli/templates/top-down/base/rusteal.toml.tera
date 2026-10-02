@@ -17,8 +17,9 @@ crate = "{{ crate_name }}"
 # UE modules to generate bindings for, by feature (see [codegen.modules]).
 # `engine` needs `input`, `slate` and `umg`: the runtime plugin links them.
 # `enhanced-input` is the engine's input system, used by every game template;
-# `ai` and `state-tree` run the enemies.
-features = ["core", "engine", "input", "slate", "umg", "enhanced-input", "ai", "state-tree"]
+# `ai` moves the character along the navigation mesh, and `niagara` spawns
+# the cursor effect.
+features = ["core", "engine", "input", "slate", "umg", "enhanced-input", "ai", "niagara"]
 
 [codegen.modules]
 # UE package = { module = "rust module", feature = "cargo feature" }, and the
