@@ -3,6 +3,7 @@
 
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
+use syn::ext::IdentExt;
 use syn::{parse2, Expr, Fields, Ident, ItemStruct, Meta, Token};
 use syn::punctuated::Punctuated;
 
@@ -230,7 +231,7 @@ impl UPropertyField {
         self.args
             .name
             .clone()
-            .unwrap_or_else(|| prop_type::to_ue_name(&self.ident.to_string()))
+            .unwrap_or_else(|| prop_type::to_ue_name(&self.ident.unraw().to_string()))
     }
 }
 
@@ -310,7 +311,7 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
             };
             let subobject_name = cargs
                 .name
-                .unwrap_or_else(|| prop_type::to_pascal_case(&field_ident.to_string()));
+                .unwrap_or_else(|| prop_type::to_pascal_case(&field_ident.unraw().to_string()));
             components.push(ComponentField {
                 ident: field_ident,
                 component_type,
@@ -696,9 +697,12 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
         }
         if prop.args.blueprint_read_only {
             flag_parts.push(quote! { ::rusteal_runtime::ffi::CPF_BLUEPRINT_READ_ONLY });
-            // VisibleAnywhere: show in Details as read-only
-            flag_parts.push(quote! { ::rusteal_runtime::ffi::CPF_EDIT });
-            flag_parts.push(quote! { ::rusteal_runtime::ffi::CPF_EDIT_CONST });
+            // Alone, also shown read-only in Details (VisibleAnywhere); with
+            // EditAnywhere or EditDefaultsOnly, editable there as they say.
+            if !prop.args.edit_anywhere && !prop.args.edit_defaults_only {
+                flag_parts.push(quote! { ::rusteal_runtime::ffi::CPF_EDIT });
+                flag_parts.push(quote! { ::rusteal_runtime::ffi::CPF_EDIT_CONST });
+            }
         }
         if prop.args.edit_anywhere || prop.args.blueprint_read_write {
             flag_parts.push(quote! { ::rusteal_runtime::ffi::CPF_EDIT });
@@ -775,7 +779,7 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
         let comp_name_bytes = comp.subobject_name.as_bytes();
         let comp_name_len = comp.subobject_name.len() as u32;
         // The property referencing it is named after the field.
-        let property_name = prop_type::to_pascal_case(&comp.ident.to_string());
+        let property_name = prop_type::to_pascal_case(&comp.ident.unraw().to_string());
         let property_bytes = property_name.as_bytes();
         let property_len = property_name.len() as u32;
 

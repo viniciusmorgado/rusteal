@@ -20,7 +20,8 @@ crate = "{{ crate_name }}"
 features = ["core", "engine", "input", "slate", "umg", "enhanced-input"]
 
 [codegen.modules]
-# UE package = { module = "rust module", feature = "cargo feature" }
+# UE package = { module = "rust module", feature = "cargo feature" }, and the
+# engine plugin a package comes from when it is not the engine's own.
 CoreUObject = { module = "core_ue", feature = "core" }
 Engine = { module = "engine", feature = "engine" }
 PhysicsCore = { module = "physics_core", feature = "physics-core" }
@@ -29,6 +30,12 @@ EnhancedInput = { module = "enhanced_input", feature = "enhanced-input" }
 SlateCore = { module = "slate_core", feature = "slate" }
 Slate = { module = "slate", feature = "slate" }
 UMG = { module = "umg", feature = "umg" }
+AIModule = { module = "ai", feature = "ai" }
+GameplayTasks = { module = "gameplay_tasks", feature = "ai" }
+NavigationSystem = { module = "navigation", feature = "ai" }
+StateTreeModule = { module = "state_tree", feature = "state-tree", plugin = "StateTree" }
+GameplayStateTreeModule = { module = "gameplay_state_tree", feature = "state-tree", plugin = "GameplayStateTree" }
+GameplayTags = { module = "gameplay_tags", feature = "gameplay-tags" }
 Niagara = { module = "niagara", feature = "niagara" }
 GameplayAbilities = { module = "gameplay_abilities", feature = "gameplay-abilities" }
 LevelSequence = { module = "level_sequence", feature = "level-sequence" }
@@ -76,9 +83,13 @@ functions = [
     "PlanarReflection.OnInterpToggle",
     "SceneCapture2D.OnInterpToggle",
     "SoundConcurrency.SetMaxCount",
+    "SoundSubmix.SetDryVolumeModulation",
+    "SoundSubmix.SetOutputVolumeModulation",
+    "SoundSubmix.SetWetVolumeModulation",
     "SplineComponent.PopulateFromLegacy",
     "SpotLight.SetInnerConeAngle",
     "SpotLight.SetOuterConeAngle",
+    "StateTreeNodeBlueprintBase.GetPropertyReference",
     "Texture.Blueprint_GetBuiltTextureSize",
     "Texture.Blueprint_GetMemorySize",
     "Texture.Blueprint_GetTextureSourceDiskAndMemorySize",

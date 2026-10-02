@@ -294,9 +294,16 @@ static ERustealErrorCode RustealDelegateApi_AddFunction(
   FScriptDelegate ScriptDelegate;
   ScriptDelegate.BindUFunction(Target, FunctionName);
 
+  // A struct parameter is `const FHitResult&` in the signature and a struct
+  // in a Rust function: the same layout in the call's parameters.
+  const uint64 IgnoredFlags =
+      UFunction::GetDefaultIgnoredSignatureCompatibilityFlags() | CPF_OutParm |
+      CPF_ReferenceParm;
+
   if (FMulticastDelegateProperty *MultiProp =
           CastField<FMulticastDelegateProperty>(RawProp)) {
-    if (!Function->IsSignatureCompatibleWith(MultiProp->SignatureFunction)) {
+    if (!Function->IsSignatureCompatibleWith(MultiProp->SignatureFunction,
+                                             IgnoredFlags)) {
       return ERustealErrorCode::TypeMismatch;
     }
     // AddUnique: binding the same function twice binds it once.
@@ -304,7 +311,8 @@ static ERustealErrorCode RustealDelegateApi_AddFunction(
     return ERustealErrorCode::Ok;
   }
   if (FDelegateProperty *DelegateProp = CastField<FDelegateProperty>(RawProp)) {
-    if (!Function->IsSignatureCompatibleWith(DelegateProp->SignatureFunction)) {
+    if (!Function->IsSignatureCompatibleWith(DelegateProp->SignatureFunction,
+                                             IgnoredFlags)) {
       return ERustealErrorCode::TypeMismatch;
     }
     *DelegateProp->GetPropertyValuePtr_InContainer(Object) = ScriptDelegate;
