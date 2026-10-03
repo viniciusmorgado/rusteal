@@ -72,7 +72,7 @@ impl PluginConfig {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct CodegenConfig {
     pub features: Vec<String>,
     pub modules: HashMap<String, ModuleMapping>,
@@ -80,7 +80,7 @@ pub struct CodegenConfig {
     pub blocklist: Blocklist,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct ModuleMapping {
     pub module: String,
     pub feature: String,
@@ -90,7 +90,7 @@ pub struct ModuleMapping {
     pub plugin: Option<String>,
 }
 
-#[derive(Deserialize, Default)]
+#[derive(Deserialize, Default, Clone)]
 pub struct Blocklist {
     #[serde(default)]
     pub classes: Vec<String>,
@@ -99,6 +99,39 @@ pub struct Blocklist {
     /// Function blocklist in "Class.Function" format.
     #[serde(default)]
     pub functions: Vec<String>,
+}
+
+/// Rusteal's own UE classes no library binds: they are the plugin's
+/// machinery, not parents for Rust classes.
+const RUSTEAL_INTERNAL_CLASSES: &[&str] =
+    &["RustealReifiedClass", "RustealReifiedFunction", "RustealDelegateProxy"];
+
+impl CodegenConfig {
+    /// The configuration a library of `kind` is generated with: the one in
+    /// `rusteal.toml` plus Rusteal's own modules, whose classes are parents
+    /// for Rust classes (subsystems), always bound — the editor one for
+    /// editor libraries only, as games do not have it.
+    pub fn for_library(&self, kind: LibraryKind) -> CodegenConfig {
+        let mut config = self.clone();
+        let core = config.features.first().cloned().unwrap_or_else(|| "core".to_string());
+        let mut add = |package: &str, module: &str| {
+            config.modules.entry(package.to_string()).or_insert_with(|| ModuleMapping {
+                module: module.to_string(),
+                feature: core.clone(),
+                plugin: None,
+            });
+        };
+        add("Rusteal", "rusteal");
+        if kind == LibraryKind::Editor {
+            add("RustealEditor", "rusteal_editor");
+        }
+        for class in RUSTEAL_INTERNAL_CLASSES {
+            if !config.blocklist.classes.iter().any(|c| c == class) {
+                config.blocklist.classes.push(class.to_string());
+            }
+        }
+        config
+    }
 }
 
 impl Blocklist {
@@ -301,4 +334,35 @@ pub fn find_project_root(start: &Path) -> Option<PathBuf> {
         .ancestors()
         .find(|dir| find_uproject(dir).is_some())
         .map(Path::to_path_buf)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn codegen() -> CodegenConfig {
+        toml::from_str(
+            r#"
+            features = ["core", "engine"]
+            [modules]
+            Engine = { module = "engine", feature = "engine" }
+            [blocklist]
+            classes = ["Foo"]
+            "#,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn libraries_bind_rusteal_modules() {
+        let runtime = codegen().for_library(LibraryKind::Runtime);
+        assert_eq!(runtime.modules["Rusteal"].module, "rusteal");
+        assert_eq!(runtime.modules["Rusteal"].feature, "core");
+        assert!(!runtime.modules.contains_key("RustealEditor"));
+        assert!(runtime.blocklist.classes.iter().any(|c| c == "RustealDelegateProxy"));
+        assert!(runtime.blocklist.classes.iter().any(|c| c == "Foo"));
+
+        let editor = codegen().for_library(LibraryKind::Editor);
+        assert_eq!(editor.modules["RustealEditor"].module, "rusteal_editor");
+    }
 }

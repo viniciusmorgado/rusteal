@@ -56,6 +56,7 @@ pub fn run_generate_plugin(project_root: &Path, plugin: &PluginLayout) {
 /// Generate one library's bindings crate and C++ wrappers from the
 /// reflection JSON in `uht_input`.
 pub fn generate_library(uht_input: &Path, codegen: &CodegenConfig, output: &LibraryOutput) {
+    let codegen = &codegen.for_library(output.kind);
     let classes_path = uht_input.join("rusteal_classes.json");
     let structs_path = uht_input.join("rusteal_structs.json");
     let enums_path = uht_input.join("rusteal_enums.json");
