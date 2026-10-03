@@ -833,12 +833,10 @@ void RustealReifyUnregisterDeleteListener() {
 
 void RustealReifyForEachReifiedInstance(
     TFunctionRef<void(UObject *, URustealReifiedClass *)> Callback) {
+  // Class default objects included: they have Rust data too, which a
+  // #[class_defaults] method and get_default() use.
   for (FThreadSafeObjectIterator It; It; ++It) {
     UObject *Obj = static_cast<UObject *>(*It);
-    // Skip CDOs — they don't have meaningful Rust instance data.
-    if (Obj->HasAnyFlags(RF_ClassDefaultObject)) {
-      continue;
-    }
     for (URustealReifiedClass *ReifiedClass :
          URustealReifiedClass::ReifiedChain(Obj->GetClass())) {
       Callback(Obj, ReifiedClass);
@@ -1010,6 +1008,30 @@ static ERustealErrorCode AddInterfaceImpl(RustealUClassHandle Cls,
 // Export the API table
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Config classes (project settings)
+// ---------------------------------------------------------------------------
+
+// A class created at runtime has no ClassConfigName, which is why
+// CreateClassImpl leaves the parent's config flags out: they come back here,
+// with the ini files Rust names. Called once the class defaults are written,
+// so the ini values override them.
+static ERustealErrorCode SetClassConfigImpl(RustealUClassHandle Cls,
+                                            const uint8 *Name,
+                                            uint32 NameLen) {
+  URustealReifiedClass *Class =
+      Cast<URustealReifiedClass>(static_cast<UClass *>(Cls.ptr));
+  if (!Class || !Name || NameLen == 0) {
+    return ERustealErrorCode::NullArgument;
+  }
+  Class->ClassConfigName = ReifyUtf8ToFName(Name, NameLen);
+  Class->ClassFlags |= CLASS_Config | CLASS_DefaultConfig;
+  if (UObject *CDO = Class->GetDefaultObject(false)) {
+    CDO->LoadConfig();
+  }
+  return ERustealErrorCode::Ok;
+}
+
 FRustealReifyApi GReifyApi = {
     &CreateClassImpl,         &AddPropertyImpl,
     &AddFunctionImpl,         &AddFunctionParamImpl,
@@ -1017,5 +1039,5 @@ FRustealReifyApi GReifyApi = {
     &AddDefaultSubobjectImpl, &FindDefaultSubobjectImpl,
     &SetPropertyMetadataImpl, &CreateStructImpl,
     &FinalizeStructImpl,      &AddDelegateImpl,
-    &AddInterfaceImpl,
+    &AddInterfaceImpl,        &SetClassConfigImpl,
 };

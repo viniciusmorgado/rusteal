@@ -25,6 +25,7 @@ extern FRustealReifyApi GReifyApi;
 extern FRustealWorldApi GWorldApi;
 extern FRustealWidgetApi GWidgetApi;
 extern FRustealInputApi GInputApi;
+extern FRustealConsoleApi GConsoleApi;
 
 // Reify helpers (defined in RustealReifyApiImpl.cpp)
 extern void RustealReifyRegisterDeleteListener();
@@ -35,6 +36,9 @@ extern void RustealReifyForEachReifiedInstance(
 // Blueprint children's component lists (defined in URustealReifiedClass.cpp)
 extern void RustealRegisterComponentListResync();
 extern void RustealUnregisterComponentListResync();
+
+// A library's console commands and variables (RustealConsoleApiImpl.cpp)
+extern void RustealConsoleForgetLibrary(FRustealLibrary *Library);
 
 // Pinned lifecycle helpers (defined in RustealLifecycleApiImpl.cpp)
 extern void RustealPinnedForgetLibrary(FRustealLibrary *Library);
@@ -109,6 +113,7 @@ static void FillApiTable() {
   GApiTable.world = &GWorldApi;
   GApiTable.widget = &GWidgetApi;
   GApiTable.input = &GInputApi;
+  GApiTable.console = &GConsoleApi;
   GApiTableFilled = true;
 }
 
@@ -195,12 +200,18 @@ static bool LoadLibraryFile(FRustealLibrary &Library, const FString &LoadPath) {
     return false;
   }
 
-  // Registration runs inside rusteal_init: what it creates is this library's.
+  // Registration runs inside rusteal_init: what it creates is this library's,
+  // and the class default objects it creates get their Rust data through the
+  // callbacks, taken first.
+  auto CallbacksFn = reinterpret_cast<FRustealCallbacksFn>(
+      FPlatformProcess::GetDllExport(Library.Handle, TEXT("rusteal_callbacks")));
+  Library.Callbacks = CallbacksFn ? CallbacksFn() : nullptr;
   const FRustealRustCallbacks *Callbacks = nullptr;
   {
     FRustealLibraryScope Scope(&Library);
     Callbacks = InitFn(&Library.Table);
   }
+  Library.Callbacks = nullptr;
   if (!Callbacks) {
     UE_LOG(LogRusteal, Error, TEXT("[Rusteal] %s: rusteal_init returned null"),
            *Library.Name.ToString());
@@ -260,6 +271,7 @@ static void UnloadLibrary(FRustealLibrary &Library) {
   }
   Library.Callbacks = nullptr;
   RustealPinnedForgetLibrary(&Library);
+  RustealConsoleForgetLibrary(&Library);
   FreeHandle(Library);
 
   if (!Library.LoadedPath.IsEmpty() &&

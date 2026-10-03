@@ -7,7 +7,7 @@
 pub use rusteal_core::{
     UObjectRef, SubclassOf, SoftObjectRef, Pinned, RustealResult, RustealError, UeClass, UeStruct, UeEnum,
     OwnedStruct, UStructRef, UeArray, UeMap, UeSet,
-    DynamicCall, DynamicCallResult, DelegateBinding,
+    DynamicCall, DynamicCallResult, DelegateBinding, ConsoleVariable,
     FName, TWeakObjectPtr,
     LOG_DISPLAY, LOG_WARNING, LOG_ERROR,
 };

@@ -20,3 +20,8 @@ const _: () = assert!(size_of::<RustealErrorCode>() == 4);
 const _: () = assert!(size_of::<RustealReifyPropExtra>() == 40);
 const _: () = assert!(offset_of!(RustealReifyPropExtra, enum_underlying) == 32);
 const _: () = assert!(offset_of!(RustealReifyPropExtra, inner_prop_type) == 36);
+
+// FRustealConsoleArgs (RustealContractTests.cpp).
+const _: () = assert!(size_of::<crate::api_table::RustealConsoleArgs>() == 24);
+const _: () = assert!(offset_of!(crate::api_table::RustealConsoleArgs, args_len) == 8);
+const _: () = assert!(offset_of!(crate::api_table::RustealConsoleArgs, world) == 16);

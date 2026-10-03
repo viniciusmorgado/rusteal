@@ -66,3 +66,14 @@ static_assert(offsetof(FRustealReifyPropExtra, enum_underlying) == 32,
               "FRustealReifyPropExtra::enum_underlying at offset 32");
 static_assert(offsetof(FRustealReifyPropExtra, inner_prop_type) == 36,
               "FRustealReifyPropExtra::inner_prop_type at offset 36");
+
+// ---------------------------------------------------------------------------
+// Console command arguments (rusteal-ffi/src/api_table.rs)
+// ---------------------------------------------------------------------------
+
+static_assert(sizeof(FRustealConsoleArgs) == 24,
+              "FRustealConsoleArgs must be 24 bytes");
+static_assert(offsetof(FRustealConsoleArgs, args_len) == 8,
+              "FRustealConsoleArgs::args_len at offset 8");
+static_assert(offsetof(FRustealConsoleArgs, world) == 16,
+              "FRustealConsoleArgs::world at offset 16");

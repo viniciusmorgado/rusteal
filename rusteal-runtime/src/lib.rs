@@ -116,6 +116,7 @@ pub unsafe fn init(api_table: *const ffi::RustealApiTable) -> *const ffi::Rustea
 
         log_greeting();
         register_all_classes();
+        run_load_hooks();
         &__CALLBACKS as *const ffi::RustealRustCallbacks
     }))
     .unwrap_or(std::ptr::null())
@@ -133,6 +134,35 @@ fn log_greeting() {
 /// Register all Rust-defined UE classes via inventory auto-registration.
 fn register_all_classes() {
     runtime::reify_registry::register_all_from_inventory();
+}
+
+/// A function the library runs every time it loads, hot reloads included,
+/// once its classes are registered. Submitted by [`on_load!`].
+#[doc(hidden)]
+pub struct LoadHook(pub fn());
+inventory::collect!(LoadHook);
+
+fn run_load_hooks() {
+    for hook in inventory::iter::<LoadHook> {
+        (hook.0)();
+    }
+}
+
+/// Run a function every time the library loads, hot reloads included, once
+/// its classes are registered: the place to register console commands and
+/// variables, which an unload removes.
+///
+/// ```ignore
+/// fn startup() {
+///     let _ = rusteal_runtime::runtime::console::register_command("my.hello", "Say hello", |_, _| {});
+/// }
+/// rusteal_runtime::on_load!(startup);
+/// ```
+#[macro_export]
+macro_rules! on_load {
+    ($function:path) => {
+        $crate::__inventory::submit! { $crate::LoadHook($function) }
+    };
 }
 
 /// Shut down the Rusteal runtime. Called by the `entry!()` generated `rusteal_shutdown`.
@@ -170,6 +200,14 @@ macro_rules! entry {
             #[unsafe(no_mangle)]
             pub extern "C" fn rusteal_version() -> u32 {
                 $crate::ffi::RUSTEAL_VERSION
+            }
+
+            /// The callback table, which the plugin takes before calling
+            /// `rusteal_init`: the class default objects the registration
+            /// creates get their Rust data through it.
+            #[unsafe(no_mangle)]
+            pub extern "C" fn rusteal_callbacks() -> *const $crate::ffi::RustealRustCallbacks {
+                &$crate::__CALLBACKS
             }
         }
     };

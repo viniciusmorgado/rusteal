@@ -42,6 +42,10 @@ struct UFunctionInfo {
     return_type: Option<ParamInfo>,
     is_mut: bool,
     kind: FnKind,
+    /// `Exec`: a console command on the classes the console reaches (the
+    /// player controller, its pawn, HUD and cheat manager, the game mode and
+    /// game instance), `UFUNCTION(Exec)` in C++.
+    exec: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -158,6 +162,12 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
                 ::rusteal_runtime::ffi::FUNC_EVENT | ::rusteal_runtime::ffi::FUNC_BLUEPRINT_EVENT
                     | ::rusteal_runtime::ffi::FUNC_BLUEPRINT_CALLABLE | ::rusteal_runtime::ffi::FUNC_PUBLIC
             },
+        };
+
+        let flags_expr = if uf.exec {
+            quote! { #flags_expr | ::rusteal_runtime::ffi::FUNC_EXEC }
+        } else {
+            flags_expr
         };
 
         // Total number of offsets to cache (params + optional return)
@@ -477,6 +487,18 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
             (Vec::new(), None)
         };
     let has = |name: &str| specifiers.iter().any(|s| s == name);
+    const KNOWN: &[&str] =
+        &["BlueprintCallable", "BlueprintPure", "Override", "BlueprintImplementableEvent", "Exec"];
+    if let Some(unknown) = specifiers.iter().find(|s| !KNOWN.contains(&s.as_str())) {
+        return Err(syn::Error::new_spanned(
+            &method.sig,
+            format!(
+                "unknown #[ufunction] argument `{unknown}`: expected BlueprintCallable, \
+                 BlueprintPure, Override, BlueprintImplementableEvent, Exec or name = \"...\""
+            ),
+        ));
+    }
+    let exec = has("Exec");
     let kind = match (
         has("Override"),
         has("BlueprintPure"),
@@ -605,6 +627,7 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
         return_type,
         is_mut,
         kind,
+        exec,
     })
 }
 
