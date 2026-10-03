@@ -20,6 +20,8 @@ Rusteal lets you write Unreal Engine games and plugins in Rust: gameplay, reusab
 
 ---
 
+## Why use Rusteal
+
 <img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/mascot.png" alt="The Rusteal mascot" width="280" align="right">
 
 **Use every core.** Plain Rust data runs in parallel with `rayon` or threads of
