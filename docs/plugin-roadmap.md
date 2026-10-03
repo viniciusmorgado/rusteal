@@ -8,8 +8,9 @@ The plugin features Rusteal covers were picked as the ones plugins use most:
 a plugin's own Rust library next to the game's, runtime and editor plugins,
 subsystems, project settings, console commands and variables, work off the game
 thread, editor menus, asset validation, editor scripting (assets, actors,
-undo) and data assets. Everything below is less used, or needs work outside
-UObject reflection, which is what Rusteal is built on.
+undo), data assets, and packaging plugins and the games that use them.
+Everything below is less used, or needs work outside UObject reflection,
+which is what Rusteal is built on.
 
 Each entry says what is missing, what it takes, and what to do meanwhile.
 
@@ -48,8 +49,16 @@ Each entry says what is missing, what it takes, and what to do meanwhile.
 | **Typed calls into another library's Rust classes** | A game's Rust code calling a plugin's Rust class with its Rust type: the class lives in another library, whose data a Rust crate cannot share across the library boundary. Needs generated bindings for Rust classes, from their reflection. | `DynamicCall` by name, or interfaces (`implements = [...]`) the plugin's classes implement. |
 | **Rust classes whose parent is another library's Rust class** | Same reason: the parent's Rust type is not visible to the child's crate. | A Blueprint child of the plugin's class. |
 | **A plugin library built against another Rusteal version** | A library must match the Rusteal plugin's version exactly, as the game's does. Tolerating minor versions needs a stable API table layout. | Rebuild the plugin with the project's Rusteal version. |
+| **Precompiled plugin packages** | `rusteal plugin package` copies the plugin with its sources, so the project that takes it compiles its C++ module. The engine's `BuildPlugin` (binaries for every configuration, no sources needed) builds the plugin in a project of its own, where the Rusteal plugin it depends on is missing. Needs Rusteal installed in the engine, or a host project of Rusteal's. | `rusteal plugin package`, built by the project that takes it. |
+| **A plugin package for several platforms at once** | The Rust library is built for the platform the command runs on; Cargo cross-compilation to the engine's other platforms is not set up. | Package the plugin on each platform and merge the `Binaries/<Platform>/` directories. |
 | **Fab and engine-wide installs** | A plugin's library is found from the plugin's directory, so a plugin in `Engine/Plugins/Marketplace` should load; not tested. Fab also wants builds for every platform and engine version it lists. | Distribute the plugin as a project plugin. |
 | **macOS** | The whole of Rusteal is untested there. | — |
+
+## Scripting
+
+| Feature | What it takes | Meanwhile |
+|---|---|---|
+| **Python names for Rust properties** | Editor Python does not generate wrapper types for Blueprint-generated classes, which Rust classes are to the engine, so `get_editor_property` takes the UE name (`"MaxStack"`), not the snake case it takes for C++ classes (`"max_stack"`). | The UE name. Functions are reached by `call_method("UEName", (args,))`. |
 
 ## Runtime
 
