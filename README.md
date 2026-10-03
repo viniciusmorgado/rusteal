@@ -632,6 +632,34 @@ actor.checked()?.on_destroyed().add(move |destroyed| { /* ... */ })?.detach();
 me.checked()?.on_actor_begin_overlap().add_ufunction(&me, "BeginOverlap")?;
 ```
 
+A Rust class declares its own multicast delegate with `#[udelegate]` in its
+`#[uclass_impl]` block: C++'s `DECLARE_DYNAMIC_MULTICAST_DELEGATE` and a
+`BlueprintAssignable` property, so Blueprints (a UMG widget showing the
+health, say) bind it like any engine delegate. The method's body stays empty;
+calling it broadcasts. Next to it come `<name>_add(closure)` and
+`<name>_add_ufunction(target, "Function")` for Rust listeners.
+
+```rust
+#[uclass_impl]
+impl PlayerCharacter {
+    /// Broadcast when health or armor change.
+    #[udelegate]
+    pub fn on_health_changed(&self, health: f32, armor: f32) {}
+
+    fn take_hit(&mut self, damage: f32) {
+        // ...
+        self.on_health_changed(self.health(), self.armor()); // broadcast
+    }
+}
+
+// elsewhere
+character.on_health_changed_add(|health, armor| { /* ... */ })?.detach();
+```
+
+Its parameters are the scalar types, objects, classes and structs (as
+`&OwnedStruct<T>`; a closure receives an `OwnedStruct<T>`). `#[udelegate(name =
+"...")]` gives the UE name when the method's PascalCase is not it.
+
 ### Dynamic Calls
 
 For Blueprint-defined functions or APIs not covered by generated bindings:

@@ -56,8 +56,9 @@ left.
 
 ## Where the Rust ports differ
 
-- **Delegates a gameplay class declares.** A Rust class declares no
-  delegates, so the class calls its one listener instead of broadcasting: the
+- **Delegates a gameplay class declares.** When the ports were written a Rust
+  class could declare no delegates (`#[udelegate]` came later), so the class
+  calls its one listener instead of broadcasting: the
   Horror character calls the UI that registered itself
   (`set_sprint_listener`), and the Shooter AI controller calls the StateTree
   task that registered itself (`set_perception_listener`). A delegate nothing
@@ -66,10 +67,11 @@ left.
   path following component's `OnRequestFinished`, a C++ delegate; the Rust
   unit listens to its AI controller's `ReceiveMoveCompleted`, which the
   controller broadcasts for the same requests.
-- **The input action instance.** A Rust input handler receives the action's
-  value, not its `FInputActionInstance`. The Strategy player controller's
-  touch hold reads how long the finger has been down from the instance; the
-  Rust controller times the hold from the action's `Started` event.
+- **The input action instance.** When the Strategy port was written a Rust
+  input handler received only the action's value (handlers may now take the
+  elapsed and triggered seconds too). The Strategy player controller's touch
+  hold reads how long the finger has been down; the Rust controller times the
+  hold from the action's `Started` event.
 - **C++ quirks are kept.** The Strategy unit's constructor calls
   `SetFixedBrakingDistance(200.0f)` and then `SetFixedBrakingDistance(true)`,
   which sets the distance to 1; the Rust unit sets 1.
@@ -78,8 +80,8 @@ left.
 
 | Gap | Rusteal needs | Workaround today |
 |---|---|---|
-| Delegates declared in Rust | `macros` and `plugin`: a `#[udelegate]` that adds a multicast delegate property to a Rust class, broadcast from Rust and bindable from Blueprint. | The class keeps its listener and calls it. |
-| The input action instance in handlers | `plugin`: pass the elapsed and triggered times to handlers that take them, as the engine's dynamic binding signature does. | Time the action from its `Started` event. |
+| Delegates declared in Rust | Fixed: `#[udelegate]` declares a multicast delegate on a Rust class, broadcast from Rust and bindable from Blueprint and Rust. | The ports still call their listener directly, as written before it existed. |
+| The input action instance in handlers | Fixed: handlers may take the elapsed and triggered seconds and the action, as the engine's dynamic binding signature does. | The Strategy port still times the hold from `Started`. |
 | C++ delegates of engine components | `codegen` or `manual`: hand-written bindings for delegates outside reflection (`UPathFollowingComponent::OnRequestFinished`). | A reflected delegate raised for the same thing. |
 
 ## Engine issues seen in the variants
