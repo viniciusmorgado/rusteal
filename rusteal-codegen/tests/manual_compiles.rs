@@ -380,6 +380,8 @@ pub struct Probe {
     soft_action: SoftObjectRef<InputAction>,
     #[uproperty(EditAnywhere)]
     row: OwnedStruct<ProbeRow>,
+    #[uproperty(SaveGame, default = 3)]
+    best_lap: i32,
     // Rust's alone: not Copy.
     visits: Vec<String>,
 }

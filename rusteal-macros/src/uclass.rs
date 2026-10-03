@@ -79,6 +79,9 @@ pub(crate) struct UPropertyArgs {
     edit_anywhere: bool,
     edit_defaults_only: bool,
     visible_anywhere: bool,
+    /// `SaveGame`: written by `SaveGameToSlot`, which only serializes
+    /// properties carrying the flag.
+    save_game: bool,
     pub(crate) default_expr: Option<Expr>,
     /// The UE name when it is not the field's (`NPC` for `npc`).
     name: Option<String>,
@@ -118,6 +121,15 @@ pub(crate) fn parse_uproperty_args(attr: &syn::Attribute) -> syn::Result<UProper
                     args.edit_defaults_only = true;
                 } else if p.is_ident("VisibleAnywhere") {
                     args.visible_anywhere = true;
+                } else if p.is_ident("SaveGame") {
+                    args.save_game = true;
+                } else {
+                    return Err(syn::Error::new_spanned(
+                        p,
+                        "unknown #[uproperty] argument: expected BlueprintReadWrite, \
+                         BlueprintReadOnly, EditAnywhere, EditDefaultsOnly, VisibleAnywhere, \
+                         SaveGame, default = ..., name = \"...\" or category = \"...\"",
+                    ));
                 }
             }
             Meta::NameValue(nv)
@@ -130,7 +142,9 @@ pub(crate) fn parse_uproperty_args(attr: &syn::Attribute) -> syn::Result<UProper
             Meta::NameValue(nv) if nv.path.is_ident("category") => {
                 args.category = Some(str_value(&nv.value, "category")?);
             }
-            _ => {}
+            other => {
+                return Err(syn::Error::new_spanned(other, "unknown #[uproperty] argument"));
+            }
         }
     }
     Ok(args)
@@ -1091,6 +1105,9 @@ pub(crate) fn add_property_statements(uprops: &[UPropertyField]) -> Vec<TokenStr
             flag_parts.push(quote! { ::rusteal_runtime::ffi::CPF_EDIT });
             flag_parts.push(quote! { ::rusteal_runtime::ffi::CPF_EDIT_CONST });
         }
+        if prop.args.save_game {
+            flag_parts.push(quote! { ::rusteal_runtime::ffi::CPF_SAVE_GAME });
+        }
         if flag_parts.is_empty() {
             flag_parts.push(quote! { 0u64 });
         }
@@ -1145,4 +1162,39 @@ pub(crate) fn add_property_statements(uprops: &[UPropertyField]) -> Vec<TokenStr
 
     }
     add_prop_stmts
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use syn::parse_quote;
+
+    #[test]
+    fn save_game_is_a_uproperty_argument() {
+        let attr: syn::Attribute = parse_quote!(#[uproperty(EditAnywhere, SaveGame)]);
+        let args = parse_uproperty_args(&attr).unwrap();
+        assert!(args.save_game && args.edit_anywhere);
+    }
+
+    #[test]
+    fn save_game_sets_the_property_flag() {
+        let field = |attr: syn::Attribute| UPropertyField {
+            ident: parse_quote!(best_time),
+            ty: parse_quote!(f32),
+            args: parse_uproperty_args(&attr).unwrap(),
+        };
+        let flagged = add_property_statements(&[field(parse_quote!(#[uproperty(SaveGame)]))]);
+        assert!(flagged[0].to_string().contains("CPF_SAVE_GAME"));
+        let plain = add_property_statements(&[field(parse_quote!(#[uproperty(EditAnywhere)]))]);
+        assert!(!plain[0].to_string().contains("CPF_SAVE_GAME"));
+    }
+
+    #[test]
+    fn unknown_uproperty_arguments_are_errors() {
+        let attr: syn::Attribute = parse_quote!(#[uproperty(EditAnywhere, Replicated)]);
+        let err = parse_uproperty_args(&attr).err().unwrap();
+        assert!(err.to_string().contains("unknown #[uproperty] argument"));
+        let attr: syn::Attribute = parse_quote!(#[uproperty(meta = "x")]);
+        assert!(parse_uproperty_args(&attr).is_err());
+    }
 }
