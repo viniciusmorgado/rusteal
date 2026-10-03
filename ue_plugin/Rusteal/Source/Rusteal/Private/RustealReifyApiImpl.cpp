@@ -3,6 +3,8 @@
 
 #include "Engine/Blueprint.h"
 #include "GameFramework/Actor.h"
+#include "Engine/Engine.h"
+#include "Misc/CoreDelegates.h"
 #include "RustealApiTable.h"
 #include "RustealModule.h"
 #include "UObject/UObjectArray.h"
@@ -918,6 +920,71 @@ static RustealUFunctionHandle AddDelegateImpl(RustealUClassHandle Cls,
   return RustealUFunctionHandle{Signature};
 }
 
+// Interfaces Rust classes implement, by class path. Rust classes are created
+// while the Rusteal module starts, before game modules and assets load, so
+// the interfaces are resolved once the engine is initialized (at once after
+// that, as on a hot reload).
+static TArray<TPair<TWeakObjectPtr<UClass>, FString>> GPendingInterfaces;
+static bool GInterfacesResolvable = false;
+
+static void ResolveInterface(UClass *Class, const FString &Path) {
+  UClass *Interface = LoadClass<UInterface>(nullptr, *Path);
+  if (!Interface || !Interface->HasAnyClassFlags(CLASS_Interface)) {
+    UE_LOG(LogRusteal, Error,
+           TEXT("[Rusteal] %s implements %s: no interface at that path"),
+           *Class->GetName(), *Path);
+    return;
+  }
+#if WITH_METADATA
+  if (Interface->HasMetaData(TEXT("CannotImplementInterfaceInBlueprint"))) {
+    UE_LOG(LogRusteal, Error,
+           TEXT("[Rusteal] %s implements %s: a C++-only interface (its "
+                "functions are not Blueprint events), which only C++ can "
+                "implement"),
+           *Class->GetName(), *Path);
+    return;
+  }
+#endif
+  if (Class->ImplementsInterface(Interface)) {
+    return;
+  }
+  // As a Blueprint implements one: no C++ vtable (offset 0), its functions
+  // are found by name and called through ProcessEvent.
+  Class->Interfaces.Add(FImplementedInterface(Interface, 0, true));
+  UE_LOG(LogRusteal, Display, TEXT("[Rusteal] %s implements %s"),
+         *Class->GetName(), *Interface->GetPathName());
+}
+
+static void ResolvePendingInterfaces() {
+  GInterfacesResolvable = true;
+  for (const TPair<TWeakObjectPtr<UClass>, FString> &Pending :
+       GPendingInterfaces) {
+    if (UClass *Class = Pending.Key.Get()) {
+      ResolveInterface(Class, Pending.Value);
+    }
+  }
+  GPendingInterfaces.Empty();
+}
+
+static ERustealErrorCode AddInterfaceImpl(RustealUClassHandle Cls,
+                                          const uint8 *Path, uint32 PathLen) {
+  UClass *Class = static_cast<UClass *>(Cls.ptr);
+  if (!Class || !Path) {
+    return ERustealErrorCode::NullArgument;
+  }
+  const FString InterfacePath = ReifyUtf8ToFString(Path, PathLen);
+  if (GInterfacesResolvable || (GEngine && GEngine->IsInitialized())) {
+    GInterfacesResolvable = true;
+    ResolveInterface(Class, InterfacePath);
+    return ERustealErrorCode::Ok;
+  }
+  if (GPendingInterfaces.IsEmpty()) {
+    FCoreDelegates::OnPostEngineInit.AddStatic(&ResolvePendingInterfaces);
+  }
+  GPendingInterfaces.Emplace(Class, InterfacePath);
+  return ERustealErrorCode::Ok;
+}
+
 // ---------------------------------------------------------------------------
 // Export the API table
 // ---------------------------------------------------------------------------
@@ -929,4 +996,5 @@ FRustealReifyApi GReifyApi = {
     &AddDefaultSubobjectImpl, &FindDefaultSubobjectImpl,
     &SetPropertyMetadataImpl, &CreateStructImpl,
     &FinalizeStructImpl,      &AddDelegateImpl,
+    &AddInterfaceImpl,
 };

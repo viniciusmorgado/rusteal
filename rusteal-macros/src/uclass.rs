@@ -17,6 +17,9 @@ use crate::prop_type;
 struct UClassArgs {
     parent_path: syn::Path,  // Full Rust path for compile-time type checking
     parent_name: String,     // Last segment string for runtime find_class
+    /// UE interfaces the class implements, by class path
+    /// (`/Script/Module.Interface`, `/Game/Path/BPI_Foo.BPI_Foo_C`).
+    implements: Vec<String>,
 }
 
 fn parse_uclass_args(attr: TokenStream) -> syn::Result<UClassArgs> {
@@ -32,7 +35,31 @@ fn parse_uclass_args(attr: TokenStream) -> syn::Result<UClassArgs> {
             });
 
     let mut parent_path: Option<syn::Path> = None;
+    let mut implements = Vec::new();
     for meta in &metas {
+        if let Meta::NameValue(nv) = meta
+            && nv.path.is_ident("implements")
+        {
+            let paths = match &nv.value {
+                Expr::Array(array) => array.elems.iter().collect::<Vec<_>>(),
+                other => vec![other],
+            };
+            for path in paths {
+                match path {
+                    Expr::Lit(syn::ExprLit { lit: syn::Lit::Str(s), .. }) if s.value().starts_with('/') => {
+                        implements.push(s.value());
+                    }
+                    other => {
+                        return Err(syn::Error::new_spanned(
+                            other,
+                            "`implements` lists UE interface class paths: \
+                             implements = [\"/Script/Module.Interface\", \"/Game/Path/BPI_Foo.BPI_Foo_C\"]",
+                        ));
+                    }
+                }
+            }
+            continue;
+        }
         if let Meta::NameValue(nv) = meta
             && nv.path.is_ident("parent")
         {
@@ -63,7 +90,7 @@ fn parse_uclass_args(attr: TokenStream) -> syn::Result<UClassArgs> {
         .last()
         .map(|s| s.ident.to_string())
         .unwrap_or_default();
-    Ok(UClassArgs { parent_path, parent_name })
+    Ok(UClassArgs { parent_path, parent_name, implements })
 }
 
 /// Specifiers parsed from #[uproperty(...)].
@@ -559,6 +586,23 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
 
     // Generate add_property calls
     let add_prop_stmts = add_property_statements(&uprops);
+    let add_interface_stmts: Vec<TokenStream> = args
+        .implements
+        .iter()
+        .map(|path| {
+            let bytes = path.as_bytes();
+            let len = path.len() as u32;
+            quote! {
+                unsafe {
+                    ::rusteal_runtime::runtime::ffi_dispatch::reify_add_interface(
+                        class,
+                        [#(#bytes),*].as_ptr(),
+                        #len,
+                    );
+                }
+            }
+        })
+        .collect();
 
     // Generate add_default_subobject calls
     let mut add_comp_stmts: Vec<TokenStream> = Vec::new();
@@ -710,6 +754,9 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
 
             // Add properties (finalize deferred to __rusteal_finalize)
             #(#add_prop_stmts)*
+
+            // Interfaces, which the engine adds once they can be loaded
+            #(#add_interface_stmts)*
 
             // Register default subobjects
             #(#add_comp_stmts)*
@@ -1168,6 +1215,16 @@ pub(crate) fn add_property_statements(uprops: &[UPropertyField]) -> Vec<TokenStr
 mod tests {
     use super::*;
     use syn::parse_quote;
+
+    #[test]
+    fn implements_takes_interface_paths() {
+        let args = parse_uclass_args(quote::quote!(parent = Actor, implements = ["/Script/Game.Usable", "/Game/BPI_X.BPI_X_C"])).unwrap();
+        assert_eq!(args.implements, ["/Script/Game.Usable", "/Game/BPI_X.BPI_X_C"]);
+        let one = parse_uclass_args(quote::quote!(parent = Actor, implements = "/Script/Game.Usable")).unwrap();
+        assert_eq!(one.implements, ["/Script/Game.Usable"]);
+        assert!(parse_uclass_args(quote::quote!(parent = Actor, implements = [Usable])).is_err());
+        assert!(parse_uclass_args(quote::quote!(parent = Actor, implements = ["Usable"])).is_err());
+    }
 
     #[test]
     fn save_game_is_a_uproperty_argument() {

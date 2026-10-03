@@ -539,6 +539,16 @@ pub struct RustealReifyApi {
         name: *const u8, name_len: u32,
         prop_flags: u64,
     ) -> UFunctionHandle,
+
+    /// Make a Rust class implement the UE interface at class path `path`
+    /// (`/Script/Module.Interface`, a Blueprint Interface's
+    /// `/Game/Path/BPI_Foo.BPI_Foo_C`). Interfaces are loaded once the engine
+    /// is initialized, so the class implements it from then on; functions
+    /// named as the interface's, with the same parameters, implement it.
+    pub add_interface: unsafe extern "C" fn(
+        cls: UClassHandle,
+        path: *const u8, path_len: u32,
+    ) -> RustealErrorCode,
 }
 
 pub const RUSTEAL_COMP_ROOT: u32 = 1;

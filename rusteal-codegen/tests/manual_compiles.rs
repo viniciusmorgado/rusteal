@@ -334,7 +334,7 @@ use rusteal_runtime::runtime::{
 };
 use rusteal_runtime::{uclass, uclass_impl, ustruct};
 
-#[uclass(parent = Pawn)]
+#[uclass(parent = Pawn, implements = ["/Script/Engine.ActorSoundParameterInterface"])]
 pub struct Probe {
     #[component(attach = "root_component")]
     arm: SceneComponent,

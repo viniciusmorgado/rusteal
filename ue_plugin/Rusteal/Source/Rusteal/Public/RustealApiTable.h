@@ -470,6 +470,12 @@ struct FRustealReifyApi {
   RustealUFunctionHandle (*add_delegate)(RustealUClassHandle cls,
                                          const uint8 *name, uint32 name_len,
                                          uint64 prop_flags);
+
+  // Make a Rust class implement the UE interface at class path `path`
+  // (/Script/Module.Interface, a Blueprint Interface's
+  // /Game/Path/BPI_Foo.BPI_Foo_C), loaded once the engine is initialized.
+  ERustealErrorCode (*add_interface)(RustealUClassHandle cls,
+                                     const uint8 *path, uint32 path_len);
 };
 struct FRustealWidgetApi {
   // Create a UMG widget. owning_object should be a PlayerController, World, or
