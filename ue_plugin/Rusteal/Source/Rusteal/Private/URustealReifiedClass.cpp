@@ -146,6 +146,7 @@ URustealReifiedClass::ReifiedChain(const UClass *Class) {
 // list, so the components were missing there. Instances are not affected:
 // AActor::PostInitProperties rebuilds the list. Rebuild it on the default
 // object once it is final.
+#if WITH_EDITOR
 static void ResyncOwnedComponents(UObject *Object) {
   AActor *Defaults = Cast<AActor>(Object);
   if (!Defaults || !Defaults->HasAnyFlags(RF_ClassDefaultObject)) {
@@ -166,7 +167,12 @@ static void ResyncOwnedComponents(UObject *Object) {
 static FDelegateHandle GPostCDOCompiledHandle;
 static FDelegateHandle GAssetLoadedHandle;
 
+#endif // WITH_EDITOR
+
+// Editor only: a packaged game loads no Blueprint and compiles no default
+// object.
 void RustealRegisterComponentListResync() {
+#if WITH_EDITOR
   GPostCDOCompiledHandle =
       FCoreUObjectDelegates::OnObjectPostCDOCompiled.AddLambda(
           [](UObject *Defaults, const FObjectPostCDOCompiledContext &) {
@@ -181,9 +187,12 @@ void RustealRegisterComponentListResync() {
           }
         }
       });
+#endif
 }
 
 void RustealUnregisterComponentListResync() {
+#if WITH_EDITOR
   FCoreUObjectDelegates::OnObjectPostCDOCompiled.Remove(GPostCDOCompiledHandle);
   FCoreUObjectDelegates::OnAssetLoaded.Remove(GAssetLoadedHandle);
+#endif
 }

@@ -5,6 +5,7 @@
 #include "GameFramework/Actor.h"
 #include "Engine/Engine.h"
 #include "Misc/CoreDelegates.h"
+#include "Serialization/AsyncLoadingEvents.h"
 #include "RustealApiTable.h"
 #include "RustealLibrary.h"
 #include "RustealModule.h"
@@ -366,11 +367,13 @@ static RustealUClassHandle CreateClassImpl(const uint8 *Name, uint32 NameLen,
       (ParentClass->ClassFlags & CLASS_Inherit & ~ConfigRelatedFlags) |
       CLASS_CompiledFromBlueprint;
 
+#if WITH_EDITORONLY_DATA
   // Create a stub UBlueprint so that FBlueprintActionDatabase registers
   // our functions.  Without this, the action database sees our class as a
   // UBlueprintGeneratedClass with null ClassGeneratedBy and skips it.
   // The editor's class picker lists the class under this stub's name, so it
   // is RS_<Class>: recognisable as Rust, never mistaken for a BP_ asset.
+  // A packaged game has neither, as cooked Blueprint classes do not.
   UBlueprint *StubBP =
       NewObject<UBlueprint>(RustealPackage, FName(*(TEXT("RS_") + ClassName)),
                             RF_Public | RF_Standalone);
@@ -382,7 +385,6 @@ static RustealUClassHandle CreateClassImpl(const uint8 *Name, uint32 NameLen,
   StubBP->AddToRoot();
   NewClass->ClassGeneratedBy = StubBP;
 
-#if WITH_EDITORONLY_DATA
   // Mark as "cooked" so GetGeneratedClassesHierarchy skips the
   // BS_Error check (our stub UBlueprint is always up-to-date).
   NewClass->bCooked = true;
@@ -612,6 +614,15 @@ static ERustealErrorCode FinalizeClassImpl(RustealUClassHandle Cls) {
   // Build the GC reference token stream so the garbage collector can
   // properly trace UObject* references within instances of this class.
   Class->AssembleReferenceTokenStream(true);
+
+  // Register it as compiled-in classes are: a packaged game's loader resolves
+  // a cooked asset's import of a /Script class (a data asset of this class)
+  // from these, the class default object included, which UClass registers
+  // itself.
+  NotifyRegistrationEvent(Class->GetOutermost()->GetFName(), Class->GetFName(),
+                          ENotifyRegistrationType::NRT_Class,
+                          ENotifyRegistrationPhase::NRP_Finished, nullptr, false,
+                          Class);
 
   // Force CDO creation and run BPGC post-load initialization
   // (builds CustomPropertyListForPostConstruction, etc.).
@@ -872,6 +883,11 @@ static ERustealErrorCode FinalizeStructImpl(RustealUStructHandle Handle) {
   Struct->Bind();
   Struct->StaticLink(true);
   Struct->PrepareCppStructOps();
+  // As for classes: cooked assets import it by its /Script path.
+  NotifyRegistrationEvent(Struct->GetOutermost()->GetFName(), Struct->GetFName(),
+                          ENotifyRegistrationType::NRT_Struct,
+                          ENotifyRegistrationPhase::NRP_Finished, nullptr, false,
+                          Struct);
   UE_LOG(LogRusteal, Display, TEXT("[Rusteal] Finalized struct: %s (size: %d)"),
          *Struct->GetName(), Struct->GetStructureSize());
   return ERustealErrorCode::Ok;
