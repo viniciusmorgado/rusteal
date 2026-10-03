@@ -7,8 +7,9 @@ use crate::context::CodegenContext;
 use crate::schema::*;
 use crate::type_map;
 
-/// Apply all filters to the context's module_classes in place.
-pub fn apply_filters(ctx: &mut CodegenContext, blocklist: &Blocklist) {
+/// Apply all filters to the context's module_classes in place. `editor`: the
+/// library runs in the editor only, so it may call editor-only functions.
+pub fn apply_filters(ctx: &mut CodegenContext, blocklist: &Blocklist, editor: bool) {
     // Build lookup sets from config blocklist
     let blocked_classes: HashSet<&str> = blocklist.classes.iter().map(|s| s.as_str()).collect();
     let blocked_structs: HashSet<&str> = blocklist.structs.iter().map(|s| s.as_str()).collect();
@@ -74,7 +75,14 @@ pub fn apply_filters(ctx: &mut CodegenContext, blocklist: &Blocklist) {
                 class.funcs.clear();
             }
             class.funcs.retain(|f| !references_any(f, &unreachable_headers));
-            filter_functions(&class.name, &mut class.funcs, &available_types, &blocked_structs, &blocked_functions);
+            filter_functions(
+                &class.name,
+                &mut class.funcs,
+                &available_types,
+                &blocked_structs,
+                &blocked_functions,
+                editor,
+            );
         }
     }
 }
@@ -285,13 +293,15 @@ fn is_inner_type_exportable(inner: &PropertyInfo, available: &HashSet<String>) -
     true
 }
 
-/// Filter functions on a class: FUNC_Native gate, K2_ dedup, param type check, overload rename.
+/// Filter functions on a class: editor-only gate, FUNC_Native gate, K2_ dedup, param type
+/// check, overload rename.
 fn filter_functions(
     class_name: &str,
     funcs: &mut Vec<FunctionInfo>,
     available: &HashSet<String>,
     blocked_structs: &HashSet<&str>,
     blocked_functions: &[(String, String)],
+    editor: bool,
 ) {
     // Step 1: Collect all function names for K2_ dedup
     let all_names: HashSet<String> = funcs.iter().map(|f| f.name.clone()).collect();
@@ -300,6 +310,11 @@ fn filter_functions(
     funcs.retain(|f| {
         // Function-level blocklist (unlinked symbols)
         if blocked_functions.iter().any(|(c, func)| c == class_name && func == &f.name) {
+            return false;
+        }
+
+        // Editor-only functions (WITH_EDITOR) do not exist in a game.
+        if f.func_flags & FUNC_EDITOR_ONLY != 0 && !editor {
             return false;
         }
 
