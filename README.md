@@ -24,16 +24,15 @@ Rusteal lets you write Unreal Engine games and plugins in Rust: gameplay, reusab
 
 <img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/mascot.png" alt="The Rusteal mascot" width="280" align="right">
 
-**Use every core.** Plain Rust data runs in parallel with `rayon` or threads of
-your own. Unreal's objects stay on the game thread, so a frame takes what it
-needs from the engine, does the heavy work off it and hands the result back
-(`task::spawn`). Each call into the engine crosses the FFI boundary, so a few
-large calls beat many small ones.
+**Use every core.** The gameplay that weighs on a frame (AI for hundreds of
+agents, simulations, pathfinding, procedural generation) spreads across every
+core with `rayon` or threads of your own, and the compiler guarantees the
+threads never race. The results reach Unreal's objects back on the game
+thread, through `task::spawn`.
 
-**Iterate in seconds.** Your code is a library of its own: Cargo rebuilds your
-crate alone, without the Unreal Build Tool, and `Rusteal.Reload` swaps it into
-the running editor. Changing a class's properties or functions still needs a
-restart.
+**Iterate in seconds.** Your gameplay is a library of its own: Cargo rebuilds
+your crate alone, without the Unreal Build Tool, and `Rusteal.Reload` swaps
+the new code into the running editor.
 
 **Test without the engine.** Combat rules, inventories, economies and AI
 written as plain Rust run under `cargo test`, with property tests and
@@ -48,11 +47,15 @@ numbers give the same simulation on every machine, the base of rollback and
 lockstep netcode. The same rules crate can run in a dedicated Rust server, a
 balancing tool or the web, with Unreal as the presentation.
 
-**Bring the Rust ecosystem, and its ergonomics.** crates.io is one line away:
-`serde` for saves and configs, `rapier` for deterministic physics, `ggrs` for
-rollback, `wasmtime` or `rhai` for sandboxed mods, `ort` for local inference.
-You keep Cargo, rust-analyzer, errors as `Result`s, and macros (`#[uclass]`,
-`#[ufunction]`) that read like the C++ they replace.
+**Bring the Rust ecosystem.** crates.io is one line away: `serde` for saves
+and configs, `rapier` for deterministic physics, `ggrs` for rollback,
+`wasmtime` or `rhai` for sandboxed mods, `ort` for local inference.
+
+**Write Rust, not C++ in disguise.** A class is a struct, a property a field,
+a function a method, each marked with an attribute (`#[uclass]`,
+`#[uproperty]`, `#[ufunction]`); errors are `Result`s, and Cargo,
+rust-analyzer and clippy work as on any Rust project. Unreal's concepts make
+it easy to pick up, and the code stays idiomatic Rust.
 
 <br clear="right">
 
