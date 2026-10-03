@@ -244,6 +244,10 @@ struct FRustealReflectionApi {
   // Find a UEnum by name (ECollisionChannel); typed like a class handle, as
   // FRustealReifyPropExtra::enum_handle.
   RustealUClassHandle (*find_enum)(const uint8 *name, uint32 name_len);
+
+  // The signature function of a delegate property (unicast or multicast);
+  // null for any other property.
+  RustealUFunctionHandle (*get_delegate_signature)(RustealFPropertyHandle prop);
 };
 
 // ---------------------------------------------------------------------------
@@ -458,6 +462,14 @@ struct FRustealReifyApi {
   // Link a struct once its properties are added (the Rust structs its
   // properties hold first).
   ERustealErrorCode (*finalize_struct)(RustealUStructHandle strukt);
+
+  // Add a multicast delegate property to a Rust class (a #[udelegate]),
+  // BlueprintAssignable and BlueprintCallable plus prop_flags, and return its
+  // signature function, whose parameters add_function_param adds. On a
+  // reload, the existing property's signature.
+  RustealUFunctionHandle (*add_delegate)(RustealUClassHandle cls,
+                                         const uint8 *name, uint32 name_len,
+                                         uint64 prop_flags);
 };
 struct FRustealWidgetApi {
   // Create a UMG widget. owning_object should be a PlayerController, World, or

@@ -9,6 +9,7 @@ use syn::punctuated::Punctuated;
 
 use crate::prop_type;
 use crate::uclass::{to_snake_case, to_screaming_snake};
+use crate::udelegate;
 
 // ---------------------------------------------------------------------------
 // Parsed ufunction info
@@ -65,6 +66,7 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
     // Classify methods: collect #[ufunction] info and the #[class_defaults]
     // method, strip attrs
     let mut ufunctions: Vec<UFunctionInfo> = Vec::new();
+    let mut delegates: Vec<udelegate::DelegateInfo> = Vec::new();
     let mut class_defaults: Option<&ImplItemFn> = None;
     let mut clean_impl = input.clone();
 
@@ -73,6 +75,15 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
             let has_ufunction = method.attrs.iter().any(|a| a.path().is_ident("ufunction"));
             if has_ufunction {
                 ufunctions.push(parse_ufunction(method)?);
+            }
+            if udelegate::is_udelegate(method) {
+                if has_ufunction {
+                    return Err(syn::Error::new_spanned(
+                        &method.sig,
+                        "a method is a #[ufunction] or a #[udelegate], not both",
+                    ));
+                }
+                delegates.push(udelegate::parse_udelegate(method)?);
             }
             if method.attrs.iter().any(|a| a.path().is_ident("class_defaults")) {
                 if class_defaults.is_some() {
@@ -104,9 +115,14 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
             {
                 method.block = implementable_event_body(uf);
             }
-            method
-                .attrs
-                .retain(|a| !a.path().is_ident("ufunction") && !a.path().is_ident("class_defaults"));
+            if let Some(d) = delegates.iter().find(|d| d.method_ident == method.sig.ident) {
+                method.block = udelegate::broadcast_body(&struct_name, d);
+            }
+            method.attrs.retain(|a| {
+                !a.path().is_ident("ufunction")
+                    && !a.path().is_ident("class_defaults")
+                    && !a.path().is_ident("udelegate")
+            });
         }
     }
 
@@ -377,6 +393,12 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
         }
     }
 
+    for d in &delegates {
+        register_stmts.push(udelegate::register_stmts(d));
+    }
+    let delegate_methods: Vec<TokenStream> =
+        delegates.iter().map(|d| udelegate::binding_methods(&struct_name, d)).collect();
+
     let register_functions_fn = quote! {
         #[doc(hidden)]
         pub fn #register_fns_name() {
@@ -429,6 +451,7 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
 
     Ok(quote! {
         #clean_impl
+        #(#delegate_methods)*
         #register_functions_fn
         #class_defaults_fn
 
@@ -605,7 +628,7 @@ fn supported_return(ty: &Type) -> bool {
 }
 
 /// The `RustealReifyPropExtra` argument for a parameter of this type.
-fn extra_expr(info: &prop_type::PropTypeInfo) -> TokenStream {
+pub(crate) fn extra_expr(info: &prop_type::PropTypeInfo) -> TokenStream {
     match info.extra_fields() {
         Some(fields) => quote! {
             &::rusteal_runtime::ffi::RustealReifyPropExtra {

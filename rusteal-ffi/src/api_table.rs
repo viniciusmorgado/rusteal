@@ -277,6 +277,10 @@ pub struct RustealReflectionApi {
     /// Find a UEnum by name (`ECollisionChannel`). The handle is the enum's
     /// object, typed like a class handle as `RustealReifyPropExtra::enum_handle`.
     pub find_enum: unsafe extern "C" fn(name: *const u8, name_len: u32) -> UClassHandle,
+
+    /// The signature function of a delegate property (unicast or multicast),
+    /// whose parameters are the delegate's; null for any other property.
+    pub get_delegate_signature: unsafe extern "C" fn(prop: FPropertyHandle) -> UFunctionHandle,
 }
 
 /// Phase 7: Container operations (TArray / TMap / TSet).
@@ -524,6 +528,17 @@ pub struct RustealReifyApi {
     /// Link a struct once its properties are added, after the Rust structs
     /// its properties hold.
     pub finalize_struct: unsafe extern "C" fn(strukt: UStructHandle) -> RustealErrorCode,
+
+    /// Add a multicast delegate property named `name` to a Rust class (a
+    /// `#[udelegate]`), with `prop_flags` on top of `BlueprintAssignable` and
+    /// `BlueprintCallable`, and return its signature function, whose
+    /// parameters `add_function_param` adds. On a reload, the existing
+    /// property's signature.
+    pub add_delegate: unsafe extern "C" fn(
+        cls: UClassHandle,
+        name: *const u8, name_len: u32,
+        prop_flags: u64,
+    ) -> UFunctionHandle,
 }
 
 pub const RUSTEAL_COMP_ROOT: u32 = 1;

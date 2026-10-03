@@ -24,6 +24,8 @@ pub struct DynamicCall {
     obj: UObjectHandle,
     func: UFunctionHandle,
     params: NativePtr,
+    /// The delegate property a broadcast fires; null for a function call.
+    delegate: FPropertyHandle,
 }
 
 impl DynamicCall {
@@ -41,6 +43,7 @@ impl DynamicCall {
             obj: h,
             func,
             params,
+            delegate: FPropertyHandle::null(),
         })
     }
 
@@ -50,6 +53,21 @@ impl DynamicCall {
     /// `T` must match the actual UE property type at the named parameter.
     /// Using the wrong type leads to undefined behavior at runtime. This is
     /// inherently less safe than the codegen direct-call path.
+    /// Parameters for broadcasting the multicast delegate `delegate` (a
+    /// delegate property) on `obj`: set them, then [`DynamicCall::broadcast`].
+    pub fn for_delegate(obj: &UObjectRef<impl UeClass>, delegate: FPropertyHandle) -> RustealResult<Self> {
+        let h = obj.checked()?.raw();
+        if delegate.is_null() {
+            return Err(RustealError::PropertyNotFound("delegate".to_string()));
+        }
+        let func = unsafe { ffi_dispatch::reflection_get_delegate_signature(delegate) };
+        if func.is_null() {
+            return Err(RustealError::TypeMismatch);
+        }
+        let params = unsafe { ffi_dispatch::reflection_alloc_params(func) };
+        Ok(DynamicCall { obj: h, func, params, delegate })
+    }
+
     pub fn set<T: Copy>(&mut self, name: &str, value: T) -> RustealResult<()> {
         let (prop, offset) = self.find_param(name)?;
         let _ = prop; // used only for lookup
@@ -79,6 +97,15 @@ impl DynamicCall {
 
     /// Invoke the function via ProcessEvent. Consumes this builder and returns
     /// a `DynamicCallResult` for reading output/return values.
+    /// Fire every function bound to the delegate this call was made
+    /// [`for`](DynamicCall::for_delegate), as C++'s `Broadcast` does.
+    pub fn broadcast(self) -> RustealResult<()> {
+        if self.delegate.is_null() {
+            return Err(RustealError::InvalidOperation("not a delegate call".into()));
+        }
+        check_ffi(unsafe { ffi_dispatch::delegate_broadcast_multicast(self.obj, self.delegate, self.params) })
+    }
+
     pub fn call(mut self) -> RustealResult<DynamicCallResult> {
         let code =
             unsafe { ffi_dispatch::reflection_call_function(self.obj, self.func, self.params) };

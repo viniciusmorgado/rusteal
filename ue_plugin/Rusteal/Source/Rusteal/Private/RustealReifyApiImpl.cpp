@@ -873,6 +873,51 @@ static ERustealErrorCode FinalizeStructImpl(RustealUStructHandle Handle) {
   return ERustealErrorCode::Ok;
 }
 
+// A multicast delegate a Rust class declares (#[udelegate]): its signature
+// function, named as UHT names one (<Name>__DelegateSignature) and holding the
+// parameters, and the property holding the delegate, which Blueprints bind
+// (BlueprintAssignable) and call (BlueprintCallable).
+static RustealUFunctionHandle AddDelegateImpl(RustealUClassHandle Cls,
+                                              const uint8 *Name,
+                                              uint32 NameLen,
+                                              uint64 PropFlags) {
+  UClass *Class = static_cast<UClass *>(Cls.ptr);
+  if (!Class) {
+    return RustealUFunctionHandle{nullptr};
+  }
+  const FName PropName = ReifyUtf8ToFName(Name, NameLen);
+
+  // Hot reload: the class keeps its property and signature.
+  for (TFieldIterator<FMulticastDelegateProperty> It(
+           Class, EFieldIteratorFlags::ExcludeSuper);
+       It; ++It) {
+    if (It->GetFName() == PropName) {
+      return RustealUFunctionHandle{It->SignatureFunction};
+    }
+  }
+
+  const FName SignatureName(
+      *FString::Printf(TEXT("%s__DelegateSignature"), *PropName.ToString()));
+  URustealReifiedFunction *Signature =
+      NewObject<URustealReifiedFunction>(Class, SignatureName, RF_Public);
+  Signature->FunctionFlags =
+      FUNC_Public | FUNC_Delegate | FUNC_MulticastDelegate;
+  Signature->CallbackId = 0;
+  // In the class's children, so the class links it with its functions.
+  Signature->Next = Class->Children;
+  Class->Children = Signature;
+
+  FMulticastInlineDelegateProperty *Prop =
+      new FMulticastInlineDelegateProperty(FFieldVariant(Class), PropName,
+                                           RF_Public);
+  Prop->SignatureFunction = Signature;
+  Prop->PropertyFlags |= CPF_BlueprintAssignable | CPF_BlueprintCallable |
+                         static_cast<EPropertyFlags>(PropFlags);
+  Class->AddCppProperty(Prop);
+
+  return RustealUFunctionHandle{Signature};
+}
+
 // ---------------------------------------------------------------------------
 // Export the API table
 // ---------------------------------------------------------------------------
@@ -883,5 +928,5 @@ FRustealReifyApi GReifyApi = {
     &FinalizeClassImpl,       &GetCdoImpl,
     &AddDefaultSubobjectImpl, &FindDefaultSubobjectImpl,
     &SetPropertyMetadataImpl, &CreateStructImpl,
-    &FinalizeStructImpl,
+    &FinalizeStructImpl,      &AddDelegateImpl,
 };
