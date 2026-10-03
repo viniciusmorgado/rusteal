@@ -37,7 +37,7 @@ pub fn generate(ctx: &CodegenContext, out_dir: &Path) {
         .expect("Failed to write RustealFuncIds.h");
 
     // Generate RustealFillFuncTable.cpp
-    let fill_code = fill_table::generate_fill_table(&ctx.func_table, &by_class);
+    let fill_code = fill_table::generate_fill_table(&ctx.cpp_prefix, &ctx.func_table, &by_class);
     std::fs::write(out_dir.join("RustealFillFuncTable.cpp"), fill_code)
         .expect("Failed to write RustealFillFuncTable.cpp");
 }

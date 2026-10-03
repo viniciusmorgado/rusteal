@@ -37,6 +37,9 @@ pub struct CodegenContext {
     /// Module name → set of other modules whose types it references.
     /// Drives feature dependency emission in the generated `rusteal-bindings/Cargo.toml`.
     pub module_deps: BTreeMap<String, std::collections::BTreeSet<String>>,
+    /// Prefix of the generated C++ symbols: empty for the game's library,
+    /// `<Plugin>_` for a plugin's, so libraries never clash in one binary.
+    pub cpp_prefix: String,
 }
 
 /// An entry in the global function table.
@@ -161,6 +164,7 @@ impl CodegenContext {
             module_enums,
             func_table: Vec::new(),
             module_deps: BTreeMap::new(),
+            cpp_prefix: String::new(),
         };
         ctx.module_deps = ctx.compute_module_deps();
         ctx
