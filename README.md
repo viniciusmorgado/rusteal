@@ -51,11 +51,10 @@ balancing tool or the web, with Unreal as the presentation.
 and configs, `rapier` for deterministic physics, `ggrs` for rollback,
 `wasmtime` or `rhai` for sandboxed mods, `ort` for local inference.
 
-**Write Rust, not C++ in disguise.** A class is a struct, a property a field,
-a function a method, each marked with an attribute (`#[uclass]`,
-`#[uproperty]`, `#[ufunction]`); errors are `Result`s, and Cargo,
-rust-analyzer and clippy work as on any Rust project. Unreal's concepts make
-it easy to pick up, and the code stays idiomatic Rust.
+**Feel at home on both sides.** `#[uclass]`, `#[uproperty]` and
+`#[ufunction]` speak Unreal's language, so anyone who knows the engine knows
+where things go. Everything around them is Rust: structs and traits, `Result`
+for errors, pattern matching, Cargo, rust-analyzer and clippy.
 
 <br clear="right">
 
