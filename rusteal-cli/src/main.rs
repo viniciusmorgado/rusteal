@@ -1,5 +1,5 @@
-// rusteal: CLI entry point (new, plugin, setup, build, generate, upgrade,
-// sync-plugin).
+// rusteal: CLI entry point (new, plugin, setup, build, generate, package,
+// upgrade, sync-plugin).
 //
 // Commands act on a Rusteal project: the directory holding the .uproject and
 // `rusteal.toml`. It is given as an argument or found by walking up from the
@@ -8,6 +8,7 @@
 mod build_cmd;
 mod global_config;
 mod new_cmd;
+mod package_cmd;
 mod plugin_cmd;
 mod project_version;
 mod setup;
@@ -90,6 +91,18 @@ enum Commands {
         /// Project directory (default: found from the current directory).
         project: Option<PathBuf>,
     },
+    /// Build every library with the release profile, then cook and package
+    /// the game for this platform (UAT BuildCookRun).
+    Package {
+        /// Project directory (default: found from the current directory).
+        project: Option<PathBuf>,
+        /// Where the packaged game goes (default: <project>/Packaged).
+        #[arg(long)]
+        output: Option<PathBuf>,
+        /// Package the Shipping configuration (default: Development).
+        #[arg(long)]
+        shipping: bool,
+    },
     /// Move a project to this CLI's Rusteal version: the pins in Rust/Cargo.toml,
     /// the plugins (Plugins/Rusteal and Plugins/RustealGenerator are replaced
     /// wholesale) and a full build.
@@ -117,6 +130,18 @@ enum PluginCommands {
         /// Create the plugin without running the build pipeline.
         #[arg(long)]
         no_build: bool,
+    },
+    /// Build a Rusteal plugin's library with the release profile and copy
+    /// the plugin, without build output, ready for another project.
+    Package {
+        /// The plugin's name.
+        name: String,
+        /// The project (default: found from the current directory).
+        #[arg(long)]
+        project: Option<PathBuf>,
+        /// Where the plugin goes (default: <project>/Packaged/Plugins).
+        #[arg(long)]
+        output: Option<PathBuf>,
     },
 }
 
@@ -147,6 +172,21 @@ fn main() {
                 engine: &engine,
                 build: !no_build,
             });
+        }
+        Commands::Plugin { command: PluginCommands::Package { name, project, output } } => {
+            let root = project_root(project.as_deref());
+            check_version(&root, Scope::PinsAndPlugins);
+            let engine = global_config::engine_path();
+            let output = output.unwrap_or_else(|| root.join("Packaged/Plugins"));
+            package_cmd::run_plugin_package(&root, &engine, &name, &output);
+        }
+        Commands::Package { project, output, shipping } => {
+            let root = project_root(project.as_deref());
+            check_version(&root, Scope::PinsAndPlugins);
+            let engine = global_config::engine_path();
+            let output = output.unwrap_or_else(|| root.join("Packaged"));
+            let configuration = if shipping { "Shipping" } else { "Development" };
+            package_cmd::run_package(&root, &engine, &output, configuration);
         }
         Commands::Setup { project } => {
             // A project that already has its Rust workspace keeps the version

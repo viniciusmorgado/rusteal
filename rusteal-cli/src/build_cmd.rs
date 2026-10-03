@@ -12,7 +12,7 @@ use rusteal_codegen::config::{
 
 /// Canonicalize a path, stripping the `\\?\` extended-length prefix that
 /// Windows adds. UBT's .NET XML parser chokes on that prefix.
-fn canonical_no_prefix(path: &Path) -> PathBuf {
+pub fn canonical_no_prefix(path: &Path) -> PathBuf {
     let abs = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
     #[cfg(windows)]
     {
@@ -134,11 +134,13 @@ pub fn run_build(
 /// What differs between the host platforms the pipeline runs on. Chosen at compile time from
 /// the platform `rusteal-cli` itself was built for, which is also the platform UE builds the
 /// editor for.
-struct HostPlatform {
+pub struct HostPlatform {
     /// UBT entry script, relative to the engine root.
     ubt_script: &'static str,
+    /// UAT entry script, relative to the engine root.
+    pub uat_script: &'static str,
     /// Platform name as UBT expects it (`Build.bat <Target> Win64 ...`).
-    ubt_platform: &'static str,
+    pub ubt_platform: &'static str,
     /// Prefix and extension of a shared library (`libx.so`, `x.dll`, `libx.dylib`).
     lib_prefix: &'static str,
     lib_extension: &'static str,
@@ -146,24 +148,27 @@ struct HostPlatform {
 
 impl HostPlatform {
     #[cfg(target_os = "windows")]
-    const CURRENT: HostPlatform = HostPlatform {
+    pub const CURRENT: HostPlatform = HostPlatform {
         ubt_script: "Engine/Build/BatchFiles/Build.bat",
+        uat_script: "Engine/Build/BatchFiles/RunUAT.bat",
         ubt_platform: "Win64",
         lib_prefix: "",
         lib_extension: "dll",
     };
 
     #[cfg(target_os = "linux")]
-    const CURRENT: HostPlatform = HostPlatform {
+    pub const CURRENT: HostPlatform = HostPlatform {
         ubt_script: "Engine/Build/BatchFiles/Linux/Build.sh",
+        uat_script: "Engine/Build/BatchFiles/RunUAT.sh",
         ubt_platform: "Linux",
         lib_prefix: "lib",
         lib_extension: "so",
     };
 
     #[cfg(target_os = "macos")]
-    const CURRENT: HostPlatform = HostPlatform {
+    pub const CURRENT: HostPlatform = HostPlatform {
         ubt_script: "Engine/Build/BatchFiles/Mac/Build.sh",
+        uat_script: "Engine/Build/BatchFiles/RunUAT.sh",
         ubt_platform: "Mac",
         lib_prefix: "lib",
         lib_extension: "dylib",
@@ -436,7 +441,7 @@ impl BuildContext {
 }
 
 /// Run an external command, printing it and exiting on failure.
-fn run_cmd(args: &[&str]) {
+pub fn run_cmd(args: &[&str]) {
     let display: String = args.to_vec().join(" ");
     let truncated = if display.len() > 200 {
         format!("{}...", &display[..197])

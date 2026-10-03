@@ -4,6 +4,7 @@ Build/
 DerivedDataCache/
 Intermediate/
 Saved/
+Packaged/
 Plugins/*/Binaries/
 Plugins/*/Intermediate/
 Plugins/*/Source/*/obj/
