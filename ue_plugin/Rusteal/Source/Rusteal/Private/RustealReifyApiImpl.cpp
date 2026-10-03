@@ -366,6 +366,9 @@ static RustealUClassHandle CreateClassImpl(const uint8 *Name, uint32 NameLen,
 
   // Set up class hierarchy.
   NewClass->SetSuperStruct(ParentClass);
+  // What instances must be created inside (a game instance subsystem's
+  // GameInstance), as the Blueprint compiler copies it.
+  NewClass->ClassWithin = ParentClass->ClassWithin;
   NewClass->ClassConstructor = &URustealReifiedClass::RustealClassConstructor;
 
   // Propagate inheritable flags from parent (CLASS_HasInstancedReference,
