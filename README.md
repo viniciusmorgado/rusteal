@@ -522,6 +522,37 @@ class. It is `BlueprintCallable` unless it says otherwise:
 `name = "K2_OnMovementModeChanged"` gives the UE name when the method's name
 in PascalCase is not it.
 
+A class implements UE interfaces by class path: a C++ interface
+(`/Script/Module.Interface`) or a Blueprint Interface asset
+(`/Game/Path/BPI_Foo.BPI_Foo_C`). Its functions are `#[ufunction]`s named as
+the interface's, taking the same parameters in the same order, and returning
+its return value; C++'s `IFoo::Execute_Bar(Object)`, a Blueprint's interface
+message and `DoesImplementInterface` reach them as they reach a Blueprint's.
+
+```rust
+#[uclass(parent = Actor, implements = ["/Game/Interaction/BPI_Usable.BPI_Usable_C"])]
+pub struct Door {
+    #[uproperty(EditAnywhere)]
+    locked: bool,
+}
+
+#[uclass_impl]
+impl Door {
+    /// BPI_Usable's Use(Instigator: Actor) -> bool
+    #[ufunction]
+    fn r#use(&mut self, instigator: UObjectRef<Actor>) -> bool {
+        !self.locked()
+    }
+}
+```
+
+Interfaces load once the engine is initialized (a game module's or an
+asset's cannot be loaded earlier), so the class implements them from then on.
+An interface whose functions are not Blueprint events (marked
+`CannotImplementInterfaceInBlueprint`) has only a C++ implementation and is
+refused, as Blueprints refuse it. Between Rust classes, a Rust trait is the
+lighter tool.
+
 ### Defining UE Structs
 
 A data table's rows, or a struct a class's properties hold, can be declared in
