@@ -303,17 +303,6 @@ static void CopyParamsFromParentFunction(UFunction *NewFunc,
 // API implementations
 // ---------------------------------------------------------------------------
 
-// Shared package pointer for all reified classes.
-static UPackage *GRustealReifyPackage = nullptr;
-
-static UPackage *GetOrCreateRustealPackage() {
-  if (!GRustealReifyPackage) {
-    GRustealReifyPackage = CreatePackage(TEXT("/Script/Rusteal"));
-    GRustealReifyPackage->SetPackageFlags(PKG_CompiledIn);
-  }
-  return GRustealReifyPackage;
-}
-
 static RustealUClassHandle CreateClassImpl(const uint8 *Name, uint32 NameLen,
                                            RustealUClassHandle Parent,
                                            uint64 RustTypeId) {
@@ -326,18 +315,12 @@ static RustealUClassHandle CreateClassImpl(const uint8 *Name, uint32 NameLen,
   const FString ClassName = ReifyUtf8ToFString(Name, NameLen);
 
   // --- Hot reload path: if a class with this name already exists, reuse it ---
-  UPackage *RustealPackage = GetOrCreateRustealPackage();
+  // The library's package: /Script/Rusteal for the game's classes,
+  // /Script/<Plugin> for a plugin's.
+  UPackage *RustealPackage = RustealCurrentPackage();
   URustealReifiedClass *Existing =
       FindObject<URustealReifiedClass>(RustealPackage, *ClassName);
   if (Existing) {
-    // Class names are one namespace for every library.
-    if (Existing->Library && Existing->Library != RustealCurrentLibrary()) {
-      UE_LOG(LogRusteal, Error,
-             TEXT("[Rusteal] CreateClass: %s is already a class of the %s "
-                  "library; class names must be unique across libraries"),
-             *ClassName, *Existing->Library->Name.ToString());
-      return RustealUClassHandle{nullptr};
-    }
     // Update the Rust type ID (may have changed if Rust struct layout changed).
     Existing->RustTypeId = RustTypeId;
     Existing->Library = RustealCurrentLibrary();
@@ -850,7 +833,7 @@ void RustealReifyForEachReifiedInstance(
 
 static RustealUStructHandle CreateStructImpl(const uint8 *Name,
                                              uint32 NameLen) {
-  UPackage *RustealPackage = GetOrCreateRustealPackage();
+  UPackage *RustealPackage = RustealCurrentPackage();
   const FName StructName = ReifyUtf8ToFName(Name, NameLen);
 
   // Hot reload: the struct of the previous load, which its properties are
@@ -878,11 +861,11 @@ static ERustealErrorCode FinalizeStructImpl(RustealUStructHandle Handle) {
     return ERustealErrorCode::Ok; // linked already (an outer struct's turn)
   }
   // A Rust struct this one holds is linked first: its size is part of this
-  // one's layout.
-  const UPackage *RustealPackage = GetOrCreateRustealPackage();
+  // one's layout. Engine structs are always linked; a Rust one not yet has
+  // no size.
   for (TFieldIterator<FStructProperty> It(Struct, EFieldIteratorFlags::ExcludeSuper);
        It; ++It) {
-    if (It->Struct && It->Struct->GetOutermost() == RustealPackage) {
+    if (It->Struct && It->Struct->GetStructureSize() == 0) {
       FinalizeStructImpl(RustealUStructHandle{It->Struct});
     }
   }

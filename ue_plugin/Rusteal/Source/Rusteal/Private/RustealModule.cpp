@@ -142,6 +142,19 @@ static bool TickLibraries(float DeltaSeconds) {
 
 FRustealLibrary *RustealCurrentLibrary() { return GCurrentLibrary; }
 
+UPackage *RustealCurrentPackage() {
+  const FString Path = GCurrentLibrary && !GCurrentLibrary->PackagePath.IsEmpty()
+                           ? GCurrentLibrary->PackagePath
+                           : FString(TEXT("/Script/Rusteal"));
+  UPackage *Package = FindPackage(nullptr, *Path);
+  if (!Package) {
+    Package = CreatePackage(*Path);
+    Package->SetPackageFlags(PKG_CompiledIn);
+    Package->AddToRoot();
+  }
+  return Package;
+}
+
 FRustealLibraryScope::FRustealLibraryScope(FRustealLibrary *Library)
     : Previous(GCurrentLibrary) {
   GCurrentLibrary = Library;
@@ -355,8 +368,9 @@ static void ReloadLibrary(FRustealLibrary &Library) {
          *Library.Name.ToString());
 }
 
-static bool RegisterLibrary(FName Name, const FString &LibraryPath,
-                            void *const *FuncTable, uint32 FuncCount) {
+static bool RegisterLibrary(FName Name, const FString &PackagePath,
+                            const FString &LibraryPath, void *const *FuncTable,
+                            uint32 FuncCount) {
   FRustealLibrary *Library = FindLibrary(Name);
   if (Library && Library->IsLoaded()) {
     UE_LOG(LogRusteal, Error, TEXT("[Rusteal] %s: a library of that name is "
@@ -369,6 +383,7 @@ static bool RegisterLibrary(FName Name, const FString &LibraryPath,
     Library->Name = Name;
   }
   Library->SourcePath = LibraryPath;
+  Library->PackagePath = PackagePath;
   Library->Table = GApiTable;
   Library->Table.func_table = reinterpret_cast<const void *const *>(FuncTable);
   Library->Table.func_count = FuncCount;
@@ -379,7 +394,8 @@ bool RustealRegisterLibrary(FName Name, const FString &LibraryPath,
                             void *const *FuncTable, uint32 FuncCount) {
   // A plugin's module may start before the Rusteal module.
   FModuleManager::Get().LoadModuleChecked<IModuleInterface>(TEXT("Rusteal"));
-  return RegisterLibrary(Name, LibraryPath, FuncTable, FuncCount);
+  return RegisterLibrary(Name, TEXT("/Script/") + Name.ToString(), LibraryPath,
+                         FuncTable, FuncCount);
 }
 
 bool RustealRegisterPluginLibrary(const FString &PluginName,
@@ -454,8 +470,8 @@ void FRustealModule::StartupModule() {
       FPaths::ProjectPluginsDir(), TEXT("Rusteal"), TEXT("Binaries"),
       FPlatformProcess::GetBinariesSubdirectory(),
       RustealLibraryFileName(TEXT("rusteal")));
-  RegisterLibrary(FName(FApp::GetProjectName()), GamePath,
-                  RustealGetFuncTable(), RustealGetFuncCount());
+  RegisterLibrary(FName(FApp::GetProjectName()), TEXT("/Script/Rusteal"),
+                  GamePath, RustealGetFuncTable(), RustealGetFuncCount());
 }
 
 void FRustealModule::ShutdownModule() {

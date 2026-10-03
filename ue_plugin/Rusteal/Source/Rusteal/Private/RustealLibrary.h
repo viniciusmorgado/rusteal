@@ -9,6 +9,11 @@
 struct FRustealLibrary {
   FName Name;
 
+  /** The package its classes and structs live in: /Script/Rusteal for the
+   * game's, the registering module's own (/Script/<Plugin>) for a plugin's,
+   * as a C++ module's classes live in its package. */
+  FString PackagePath;
+
   /** The deployed library; each (re)load uses a numbered copy of it. */
   FString SourcePath;
   FString LoadedPath;
@@ -29,6 +34,10 @@ struct FRustealLibrary {
  * drop, shutdown), so an API call that registers something (a class, a
  * delegate binding, a pinned object) belongs to this one. */
 FRustealLibrary *RustealCurrentLibrary();
+
+/** The package the current library's classes and structs go in (created on
+ * first use); /Script/Rusteal when no library is current. */
+UPackage *RustealCurrentPackage();
 
 /** Makes Library the current one for the scope. */
 struct FRustealLibraryScope {

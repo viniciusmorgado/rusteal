@@ -11,9 +11,10 @@
 // (`Rusteal.Reload [Name]`) and unloaded on its own.
 
 /** Load the Rust library at LibraryPath and initialize it under Name, with the
- * generated function table of the module that registers it. Returns false when
- * the library is missing or refused (another Rusteal version, a failed init);
- * the reason is in the Output Log. */
+ * generated function table of the module that registers it; its classes and
+ * structs go in the package /Script/<Name>, the module's own. Returns false
+ * when the library is missing or refused (another Rusteal version, a failed
+ * init); the reason is in the Output Log. */
 RUSTEAL_API bool RustealRegisterLibrary(FName Name, const FString &LibraryPath,
                                         void *const *FuncTable,
                                         uint32 FuncCount);

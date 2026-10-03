@@ -455,7 +455,7 @@ struct FRustealReifyApi {
                                              const uint8 *value,
                                              uint32 value_len);
 
-  // A struct in /Script/Rusteal (#[ustruct]), or the one a previous load
+  // A struct in the library's package (#[ustruct]), or the one a previous load
   // created. add_property takes its handle as a class handle.
   RustealUStructHandle (*create_struct)(const uint8 *name, uint32 name_len);
 

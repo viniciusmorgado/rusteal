@@ -521,7 +521,7 @@ pub struct RustealReifyApi {
         value: *const u8, value_len: u32,
     ) -> RustealErrorCode,
 
-    /// Create a struct in `/Script/Rusteal` (`#[ustruct]`), or find the one a
+    /// Create a struct in the library's package (`#[ustruct]`), or find the one a
     /// previous load created. Its properties are added with `add_property`,
     /// which takes its handle as a class handle.
     pub create_struct: unsafe extern "C" fn(name: *const u8, name_len: u32) -> UStructHandle,
