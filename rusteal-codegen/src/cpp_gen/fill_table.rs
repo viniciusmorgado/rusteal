@@ -7,6 +7,7 @@ use crate::cpp_gen::wrapper::cpp_wrapper_name;
 
 /// Generate the RustealFillFuncTable.cpp file.
 pub fn generate_fill_table(
+    prefix: &str,
     entries: &[FuncEntry],
     _by_class: &BTreeMap<(String, String), Vec<&FuncEntry>>,
 ) -> String {
@@ -18,7 +19,7 @@ pub fn generate_fill_table(
     // Forward-declare all wrapper functions
     out.push_str("// Forward declarations of wrapper functions\n");
     for entry in entries {
-        let c_name = cpp_wrapper_name(&entry.class_name, &entry.func_name);
+        let c_name = cpp_wrapper_name(prefix, &entry.class_name, &entry.func_name);
         out.push_str(&format!("extern \"C\" uint32_t {c_name}(...);\n"));
     }
     out.push('\n');
@@ -27,11 +28,11 @@ pub fn generate_fill_table(
     out.push_str("static void* GRustealFuncTable[RustealFuncId::FUNC_COUNT];\n\n");
 
     // Fill function
-    out.push_str("void RustealFillFuncTable() {\n");
+    out.push_str(&format!("void {prefix}RustealFillFuncTable() {{\n"));
     for entry in entries {
         let const_name =
             crate::rust_gen::func_ids::func_id_const_name(&entry.class_name, &entry.func_name);
-        let c_name = cpp_wrapper_name(&entry.class_name, &entry.func_name);
+        let c_name = cpp_wrapper_name(prefix, &entry.class_name, &entry.func_name);
         out.push_str(&format!(
             "    GRustealFuncTable[RustealFuncId::{const_name}] = (void*)&{c_name};\n"
         ));
@@ -39,11 +40,56 @@ pub fn generate_fill_table(
     out.push_str("}\n\n");
 
     // Getter for the table pointer
-    out.push_str("void** RustealGetFuncTable() {\n");
+    out.push_str(&format!("void** {prefix}RustealGetFuncTable() {{\n"));
     out.push_str("    return GRustealFuncTable;\n");
     out.push_str("}\n\n");
 
-    out.push_str("uint32_t RustealGetFuncCount() {\n    return RustealFuncId::FUNC_COUNT;\n}\n");
+    out.push_str(&format!(
+        "uint32_t {prefix}RustealGetFuncCount() {{\n    return RustealFuncId::FUNC_COUNT;\n}}\n"
+    ));
 
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn entry(func_id: u32, class_name: &str, func_name: &str) -> FuncEntry {
+        let func = serde_json::from_value(serde_json::json!({
+            "name": func_name,
+            "func_flags": 0,
+        }))
+        .unwrap();
+        FuncEntry {
+            func_id,
+            module_name: "engine".to_string(),
+            class_name: class_name.to_string(),
+            func_name: func_name.to_string(),
+            rust_func_name: func_name.to_string(),
+            func,
+            cpp_class_name: format!("A{class_name}"),
+            header: String::new(),
+        }
+    }
+
+    #[test]
+    fn game_library_keeps_the_unprefixed_names() {
+        let code = generate_fill_table("", &[entry(0, "Actor", "GetOwner")], &BTreeMap::new());
+        assert!(code.contains("void RustealFillFuncTable()"), "{code}");
+        assert!(code.contains("void** RustealGetFuncTable()"), "{code}");
+        assert!(code.contains("uint32_t RustealGetFuncCount()"), "{code}");
+        assert!(code.contains("= (void*)&Rusteal_Actor_GetOwner;"), "{code}");
+    }
+
+    #[test]
+    fn plugin_library_prefixes_every_symbol() {
+        let code =
+            generate_fill_table("Inventory_", &[entry(0, "Actor", "GetOwner")], &BTreeMap::new());
+        assert!(code.contains("extern \"C\" uint32_t Inventory_Rusteal_Actor_GetOwner(...);"), "{code}");
+        assert!(code.contains("void Inventory_RustealFillFuncTable()"), "{code}");
+        assert!(code.contains("void** Inventory_RustealGetFuncTable()"), "{code}");
+        assert!(code.contains("uint32_t Inventory_RustealGetFuncCount()"), "{code}");
+        assert!(!code.contains(" RustealFillFuncTable()"), "{code}");
+    }
 }

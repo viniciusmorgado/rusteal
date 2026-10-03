@@ -1,5 +1,6 @@
 #include "RustealDelegateProxy.h"
 #include "RustealApiTable.h"
+#include "RustealLibrary.h"
 #include "RustealModule.h"
 
 // Static member initialization.
@@ -19,10 +20,10 @@ void URustealDelegateProxy::ProcessEvent(UFunction *Function, void *Parms) {
   }
 
   // Delegate invocation path: forward to Rust.
-  const FRustealRustCallbacks *Callbacks = GetRustealRustCallbacks();
-  if (Callbacks && Callbacks->invoke_delegate_callback) {
-    Callbacks->invoke_delegate_callback(CallbackId,
-                                        static_cast<uint8 *>(Parms));
+  if (Library && Library->IsLoaded()) {
+    RustealCallLibrary(Library, [this, Parms](const FRustealRustCallbacks &Cb) {
+      Cb.invoke_delegate_callback(CallbackId, static_cast<uint8 *>(Parms));
+    });
   } else {
     UE_LOG(LogRusteal, Warning,
            TEXT("[Rusteal] DelegateProxy: Rust callbacks not available "

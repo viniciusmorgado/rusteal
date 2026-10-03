@@ -1,9 +1,15 @@
 #include "RustealModule.h"
 #include "HAL/FileManager.h"
+#include "HAL/IConsoleManager.h"
 #include "HAL/PlatformProcess.h"
 #include "Interfaces/IPluginManager.h"
+#include "Misc/App.h"
 #include "Misc/Paths.h"
+#include "Containers/Ticker.h"
+#include "Modules/ModuleManager.h"
 #include "RustealApiTable.h"
+#include "RustealLibraries.h"
+#include "RustealLibrary.h"
 #include "URustealReifiedClass.h"
 
 DEFINE_LOG_CATEGORY(LogRusteal);
@@ -20,29 +26,26 @@ extern FRustealReifyApi GReifyApi;
 extern FRustealWorldApi GWorldApi;
 extern FRustealWidgetApi GWidgetApi;
 extern FRustealInputApi GInputApi;
+extern FRustealConsoleApi GConsoleApi;
 
 // Reify helpers (defined in RustealReifyApiImpl.cpp)
 extern void RustealReifyRegisterDeleteListener();
+extern void RustealReifyUnregisterDeleteListener();
+extern void RustealReifyForEachReifiedInstance(
+    TFunctionRef<void(UObject *, URustealReifiedClass *)> Callback);
 
 // Blueprint children's component lists (defined in URustealReifiedClass.cpp)
 extern void RustealRegisterComponentListResync();
 extern void RustealUnregisterComponentListResync();
-extern void RustealReifyUnregisterDeleteListener();
+
+// A library's console commands and variables (RustealConsoleApiImpl.cpp)
+extern void RustealConsoleForgetLibrary(FRustealLibrary *Library);
 
 // Pinned lifecycle helpers (defined in RustealLifecycleApiImpl.cpp)
-extern void RustealPinnedUnregisterDeleteListener();
-extern void RustealReifyForEachReifiedInstance(
-    TFunctionRef<void(UObject *, URustealReifiedClass *)> Callback);
+extern void RustealPinnedForgetLibrary(FRustealLibrary *Library);
+extern void RustealPinnedShutdown();
 
-// Module-level storage for Rust callbacks (set during StartupModule, read by
-// URustealDelegateProxy).
-static const FRustealRustCallbacks *GRustCallbacks = nullptr;
-
-const FRustealRustCallbacks *GetRustealRustCallbacks() {
-  return GRustCallbacks;
-}
-
-// Forward declarations for generated func_table code
+// The game's generated function table (Generated/RustealFillFuncTable.cpp)
 extern void RustealFillFuncTable();
 extern void **RustealGetFuncTable();
 extern uint32_t RustealGetFuncCount();
@@ -50,7 +53,7 @@ extern uint32_t RustealGetFuncCount();
 #define LOCTEXT_NAMESPACE "FRustealModule"
 
 // ---------------------------------------------------------------------------
-// Logging bridge (the one API implemented in Phase 1 for end-to-end testing)
+// Logging bridge
 // ---------------------------------------------------------------------------
 
 static void RustealLogImpl(uint8 Level, const uint8 *Msg, uint32 MsgLen) {
@@ -72,14 +75,15 @@ static void RustealLogImpl(uint8 Level, const uint8 *Msg, uint32 MsgLen) {
 static FRustealLoggingApi GLoggingApi = {&RustealLogImpl};
 
 // ---------------------------------------------------------------------------
-// API table instance
+// API table: the sub-tables every library shares
 // ---------------------------------------------------------------------------
 
 static FRustealApiTable GApiTable;
+static bool GApiTableFilled = false;
 
 // The Rusteal version this plugin was installed at, from its own descriptor:
 // `Version` holds major * 1000000 + minor * 1000 + patch, the encoding of
-// rusteal_ffi::RUSTEAL_VERSION. The library must carry exactly this one.
+// rusteal_ffi::RUSTEAL_VERSION. A library must carry exactly this one.
 static uint32 RustealPluginVersion() {
   TSharedPtr<IPlugin> Plugin =
       IPluginManager::Get().FindPlugin(TEXT("Rusteal"));
@@ -93,10 +97,12 @@ static FString RustealVersionString(uint32 Version) {
 }
 
 static void FillApiTable() {
+  if (GApiTableFilled) {
+    return;
+  }
   FMemory::Memzero(GApiTable);
   GApiTable.version = RustealPluginVersion();
 
-  // Implemented sub-tables
   GApiTable.logging = &GLoggingApi;
   GApiTable.core = &GCoreApi;
   GApiTable.property = &GPropertyApi;
@@ -108,284 +114,374 @@ static void FillApiTable() {
   GApiTable.world = &GWorldApi;
   GApiTable.widget = &GWidgetApi;
   GApiTable.input = &GInputApi;
+  GApiTable.console = &GConsoleApi;
+  GApiTableFilled = true;
+}
 
-  // Fill generated func_table (Phase 6)
-  RustealFillFuncTable();
-  GApiTable.func_table =
-      reinterpret_cast<const void *const *>(RustealGetFuncTable());
-  GApiTable.func_count = static_cast<uint32>(RustealGetFuncCount());
+// ---------------------------------------------------------------------------
+// Libraries
+// ---------------------------------------------------------------------------
+
+static TArray<TUniquePtr<FRustealLibrary>> GLibraries;
+static FRustealLibrary *GCurrentLibrary = nullptr;
+
+// Every frame, each loaded library's on_tick: work handed back to the game
+// thread and per-frame hooks, in the editor too, with or without a world.
+static FTSTicker::FDelegateHandle GTickerHandle;
+
+static bool TickLibraries(float DeltaSeconds) {
+  // By index: a module loading during a tick may register another library.
+  for (int32 Index = 0; Index < GLibraries.Num(); ++Index) {
+    RustealCallLibrary(GLibraries[Index].Get(),
+                       [DeltaSeconds](const FRustealRustCallbacks &Cb) {
+                         Cb.on_tick(DeltaSeconds);
+                       });
+  }
+  return true;
+}
+
+FRustealLibrary *RustealCurrentLibrary() { return GCurrentLibrary; }
+
+UPackage *RustealCurrentPackage() {
+  const FString Path = GCurrentLibrary && !GCurrentLibrary->PackagePath.IsEmpty()
+                           ? GCurrentLibrary->PackagePath
+                           : FString(TEXT("/Script/Rusteal"));
+  UPackage *Package = FindPackage(nullptr, *Path);
+  if (!Package) {
+    Package = CreatePackage(*Path);
+    Package->SetPackageFlags(PKG_CompiledIn);
+    Package->AddToRoot();
+  }
+  return Package;
+}
+
+FRustealLibraryScope::FRustealLibraryScope(FRustealLibrary *Library)
+    : Previous(GCurrentLibrary) {
+  GCurrentLibrary = Library;
+}
+
+FRustealLibraryScope::~FRustealLibraryScope() { GCurrentLibrary = Previous; }
+
+static FRustealLibrary *FindLibrary(FName Name) {
+  for (const TUniquePtr<FRustealLibrary> &Library : GLibraries) {
+    if (Library->Name == Name) {
+      return Library.Get();
+    }
+  }
+  return nullptr;
+}
+
+FString RustealLibraryFileName(const FString &Stem) {
+  return FString::Printf(TEXT("%s%s.%s"), FPlatformProcess::GetModulePrefix(),
+                         *Stem, FPlatformProcess::GetModuleExtension());
+}
+
+// Same directory and extension as the deployed library, numbered per (re)load
+// so the deployed file is never locked while loaded and a rebuild can always
+// overwrite it.
+static FString HotCopyPath(const FRustealLibrary &Library) {
+  return FPaths::Combine(
+      FPaths::GetPath(Library.SourcePath),
+      FString::Printf(TEXT("%s_hot_%d.%s"),
+                      *FPaths::GetBaseFilename(Library.SourcePath),
+                      Library.ReloadCount,
+                      FPlatformProcess::GetModuleExtension()));
+}
+
+static void FreeHandle(FRustealLibrary &Library) {
+  FPlatformProcess::FreeDllHandle(Library.Handle);
+  Library.Handle = nullptr;
+}
+
+// Load the file at LoadPath and initialize it as Library.
+static bool LoadLibraryFile(FRustealLibrary &Library, const FString &LoadPath) {
+  Library.Handle = FPlatformProcess::GetDllHandle(*LoadPath);
+  if (!Library.Handle) {
+    UE_LOG(LogRusteal, Error, TEXT("[Rusteal] %s: failed to load %s"),
+           *Library.Name.ToString(), *LoadPath);
+    return false;
+  }
+  Library.LoadedPath = LoadPath;
+
+  // Plugin and library must be the same Rusteal version: the API table
+  // layout is tied to it, so anything else is refused before rusteal_init.
+  auto VersionFn = reinterpret_cast<FRustealVersionFn>(
+      FPlatformProcess::GetDllExport(Library.Handle, TEXT("rusteal_version")));
+  const uint32 LibraryVersion = VersionFn ? VersionFn() : 0;
+  if (LibraryVersion != GApiTable.version) {
+    UE_LOG(LogRusteal, Error,
+           TEXT("[Rusteal] %s: version mismatch: plugin %s, library %s. "
+                "Rebuild the project with `rusteal build` (run `rusteal "
+                "upgrade` first if the CLI is newer than the project)."),
+           *Library.Name.ToString(), *RustealVersionString(GApiTable.version),
+           VersionFn ? *RustealVersionString(LibraryVersion)
+                     : TEXT("without a version (0.2.1 or older)"));
+    FreeHandle(Library);
+    return false;
+  }
+
+  auto InitFn = reinterpret_cast<FRustealInitFn>(
+      FPlatformProcess::GetDllExport(Library.Handle, TEXT("rusteal_init")));
+  if (!InitFn) {
+    UE_LOG(LogRusteal, Error, TEXT("[Rusteal] %s: rusteal_init not found"),
+           *Library.Name.ToString());
+    FreeHandle(Library);
+    return false;
+  }
+
+  // Registration runs inside rusteal_init: what it creates is this library's,
+  // and the class default objects it creates get their Rust data through the
+  // callbacks, taken first.
+  auto CallbacksFn = reinterpret_cast<FRustealCallbacksFn>(
+      FPlatformProcess::GetDllExport(Library.Handle, TEXT("rusteal_callbacks")));
+  Library.Callbacks = CallbacksFn ? CallbacksFn() : nullptr;
+  const FRustealRustCallbacks *Callbacks = nullptr;
+  {
+    FRustealLibraryScope Scope(&Library);
+    Callbacks = InitFn(&Library.Table);
+  }
+  Library.Callbacks = nullptr;
+  if (!Callbacks) {
+    UE_LOG(LogRusteal, Error, TEXT("[Rusteal] %s: rusteal_init returned null"),
+           *Library.Name.ToString());
+    FreeHandle(Library);
+    return false;
+  }
+  Library.Callbacks = Callbacks;
+  return true;
+}
+
+// Copy the deployed library and load the copy (the file itself as a fallback).
+static bool LoadLibrary(FRustealLibrary &Library) {
+  if (!FPaths::FileExists(Library.SourcePath)) {
+    UE_LOG(LogRusteal, Warning,
+           TEXT("[Rusteal] %s: no Rust library at %s, its Rust side will not "
+                "be loaded."),
+           *Library.Name.ToString(), *Library.SourcePath);
+    return false;
+  }
+
+  Library.ReloadCount++;
+  const FString CopyPath = HotCopyPath(Library);
+  const uint32 CopyResult =
+      IFileManager::Get().Copy(*CopyPath, *Library.SourcePath);
+  bool bLoaded;
+  if (CopyResult != COPY_OK) {
+    UE_LOG(LogRusteal, Warning,
+           TEXT("[Rusteal] %s: could not copy %s to %s (error %u), loading it "
+                "in place."),
+           *Library.Name.ToString(), *Library.SourcePath, *CopyPath,
+           CopyResult);
+    bLoaded = LoadLibraryFile(Library, Library.SourcePath);
+  } else {
+    bLoaded = LoadLibraryFile(Library, CopyPath);
+  }
+  if (bLoaded) {
+    UE_LOG(LogRusteal, Display, TEXT("[Rusteal] %s: Rust library loaded."),
+           *Library.Name.ToString());
+  }
+  return bLoaded;
+}
+
+static void UnloadLibrary(FRustealLibrary &Library) {
+  if (!Library.Handle) {
+    return;
+  }
+  RustealCallLibrary(&Library, [](const FRustealRustCallbacks &Callbacks) {
+    if (Callbacks.on_shutdown) {
+      Callbacks.on_shutdown();
+    }
+  });
+  auto ShutdownFn = reinterpret_cast<FRustealShutdownFn>(
+      FPlatformProcess::GetDllExport(Library.Handle, TEXT("rusteal_shutdown")));
+  if (ShutdownFn) {
+    FRustealLibraryScope Scope(&Library);
+    ShutdownFn();
+  }
+  Library.Callbacks = nullptr;
+  RustealPinnedForgetLibrary(&Library);
+  RustealConsoleForgetLibrary(&Library);
+  FreeHandle(Library);
+
+  if (!Library.LoadedPath.IsEmpty() &&
+      Library.LoadedPath != Library.SourcePath) {
+    IFileManager::Get().Delete(*Library.LoadedPath, false, true, true);
+  }
+  Library.LoadedPath.Reset();
+  UE_LOG(LogRusteal, Display, TEXT("[Rusteal] %s: Rust library unloaded."),
+         *Library.Name.ToString());
+}
+
+static bool ClassBelongsTo(const URustealReifiedClass *Class,
+                           const FRustealLibrary *Library) {
+  return Class->Library == Library;
+}
+
+// Hot reload: drop the library's Rust data of every object, load the rebuilt
+// library, and construct that data again.
+static void ReloadLibrary(FRustealLibrary &Library) {
+  UE_LOG(LogRusteal, Display, TEXT("[Rusteal] === Hot reload of %s ==="),
+         *Library.Name.ToString());
+
+  if (Library.IsLoaded()) {
+    int32 Dropped = 0;
+    RustealReifyForEachReifiedInstance(
+        [&Library, &Dropped](UObject *Obj, URustealReifiedClass *Class) {
+          if (!ClassBelongsTo(Class, &Library)) {
+            return;
+          }
+          RustealCallLibrary(&Library, [Obj, Class](
+                                           const FRustealRustCallbacks &Cb) {
+            Cb.drop_rust_instance(RustealUObjectHandle{Obj}, Class->RustTypeId,
+                                  nullptr);
+          });
+          Dropped++;
+        });
+    UE_LOG(LogRusteal, Display, TEXT("[Rusteal] Dropped %d Rust instances"),
+           Dropped);
+  }
+  UnloadLibrary(Library);
+
+  if (!LoadLibrary(Library)) {
+    UE_LOG(LogRusteal, Error, TEXT("[Rusteal] Hot reload of %s failed."),
+           *Library.Name.ToString());
+    return;
+  }
+
+  int32 Constructed = 0;
+  RustealReifyForEachReifiedInstance(
+      [&Library, &Constructed](UObject *Obj, URustealReifiedClass *Class) {
+        if (!ClassBelongsTo(Class, &Library)) {
+          return;
+        }
+        const bool bIsCDO = Obj->HasAnyFlags(RF_ClassDefaultObject);
+        RustealCallLibrary(&Library, [Obj, Class,
+                                      bIsCDO](const FRustealRustCallbacks &Cb) {
+          Cb.construct_rust_instance(RustealUObjectHandle{Obj},
+                                     Class->RustTypeId, bIsCDO);
+        });
+        Constructed++;
+      });
+  UE_LOG(LogRusteal, Display,
+         TEXT("[Rusteal] Reconstructed %d Rust instances"), Constructed);
+  UE_LOG(LogRusteal, Display, TEXT("[Rusteal] === Hot reload of %s done ==="),
+         *Library.Name.ToString());
+}
+
+static bool RegisterLibrary(FName Name, const FString &PackagePath,
+                            const FString &LibraryPath, void *const *FuncTable,
+                            uint32 FuncCount) {
+  FRustealLibrary *Library = FindLibrary(Name);
+  if (Library && Library->IsLoaded()) {
+    UE_LOG(LogRusteal, Error, TEXT("[Rusteal] %s: a library of that name is "
+                                   "already loaded."),
+           *Name.ToString());
+    return false;
+  }
+  if (!Library) {
+    Library = GLibraries.Add_GetRef(MakeUnique<FRustealLibrary>()).Get();
+    Library->Name = Name;
+  }
+  Library->SourcePath = LibraryPath;
+  Library->PackagePath = PackagePath;
+  Library->Table = GApiTable;
+  Library->Table.func_table = reinterpret_cast<const void *const *>(FuncTable);
+  Library->Table.func_count = FuncCount;
+  return LoadLibrary(*Library);
+}
+
+bool RustealRegisterLibrary(FName Name, const FString &LibraryPath,
+                            void *const *FuncTable, uint32 FuncCount) {
+  // A plugin's module may start before the Rusteal module.
+  FModuleManager::Get().LoadModuleChecked<IModuleInterface>(TEXT("Rusteal"));
+  return RegisterLibrary(Name, TEXT("/Script/") + Name.ToString(), LibraryPath,
+                         FuncTable, FuncCount);
+}
+
+bool RustealRegisterPluginLibrary(const FString &PluginName,
+                                  void *const *FuncTable, uint32 FuncCount) {
+  TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(PluginName);
+  if (!Plugin.IsValid()) {
+    UE_LOG(LogRusteal, Error,
+           TEXT("[Rusteal] %s: no plugin of that name, its Rust library is "
+                "not loaded."),
+           *PluginName);
+    return false;
+  }
+  const FString Path = FPaths::Combine(
+      Plugin->GetBaseDir(), TEXT("Binaries"),
+      FPlatformProcess::GetBinariesSubdirectory(),
+      RustealLibraryFileName(TEXT("rusteal_") + PluginName));
+  return RustealRegisterLibrary(FName(*PluginName), Path, FuncTable, FuncCount);
+}
+
+void RustealUnregisterLibrary(FName Name) {
+  if (FRustealLibrary *Library = FindLibrary(Name)) {
+    UnloadLibrary(*Library);
+  }
 }
 
 // ---------------------------------------------------------------------------
 // Console command
 // ---------------------------------------------------------------------------
 
+// Rusteal.Reload [Name...]: hot reload the named libraries, or all of them.
+static void ReloadCommand(const TArray<FString> &Args) {
+  if (Args.Num() == 0) {
+    for (const TUniquePtr<FRustealLibrary> &Library : GLibraries) {
+      if (!Library->SourcePath.IsEmpty()) {
+        ReloadLibrary(*Library);
+      }
+    }
+    return;
+  }
+  for (const FString &Arg : Args) {
+    if (FRustealLibrary *Library = FindLibrary(FName(*Arg))) {
+      ReloadLibrary(*Library);
+    } else {
+      UE_LOG(LogRusteal, Error, TEXT("[Rusteal] Rusteal.Reload: no library %s"),
+             *Arg);
+    }
+  }
+}
+
 static FAutoConsoleCommand CmdReload(
     TEXT("Rusteal.Reload"),
-    TEXT("Hot-reload the Rust DLL (unload → copy → load)."),
-    FConsoleCommandDelegate::CreateStatic(&FRustealModule::StaticReload));
-
-void FRustealModule::StaticReload() {
-  FRustealModule &Module =
-      FModuleManager::GetModuleChecked<FRustealModule>(TEXT("Rusteal"));
-  Module.ReloadRustDll();
-}
+    TEXT("Hot-reload Rust libraries (unload, copy, load): the ones named, or "
+         "all of them."),
+    FConsoleCommandWithArgsDelegate::CreateStatic(&ReloadCommand));
 
 // ---------------------------------------------------------------------------
 // Module lifecycle
 // ---------------------------------------------------------------------------
 
-FString FRustealModule::HotCopyPath() const {
-  // Same directory and extension as the source library, numbered per (re)load
-  // so the source file is never locked while loaded.
-  return FPaths::Combine(
-      FPaths::GetPath(DllSourcePath),
-      FString::Printf(TEXT("%srusteal_hot_%d.%s"),
-                      FPlatformProcess::GetModulePrefix(), ReloadCount,
-                      FPlatformProcess::GetModuleExtension()));
-}
-
 void FRustealModule::StartupModule() {
-  // 1. Fill the API table
   FillApiTable();
   RustealRegisterComponentListResync();
+  RustealReifyRegisterDeleteListener();
+  GTickerHandle = FTSTicker::GetCoreTicker().AddTicker(
+      FTickerDelegate::CreateStatic(&TickLibraries));
 
-  // 2. Locate the Rust DLL
-  const FString PluginDir =
-      FPaths::Combine(FPaths::ProjectPluginsDir(), TEXT("Rusteal"));
+  // The game's library, with the function table generated into this module.
   // Platform-native name: rusteal.dll on Windows, librusteal.so on Linux,
-  // librusteal.dylib on macOS. The rusteal-cli deploy step
-  // (HostPlatform::deployed_lib_filename) must agree.
-  DllSourcePath = FPaths::Combine(
-      PluginDir, TEXT("Binaries"), FPlatformProcess::GetBinariesSubdirectory(),
-      FString::Printf(TEXT("%srusteal.%s"), FPlatformProcess::GetModulePrefix(),
-                      FPlatformProcess::GetModuleExtension()));
-
-  if (!FPaths::FileExists(DllSourcePath)) {
-    UE_LOG(LogRusteal, Warning,
-           TEXT("[Rusteal] Rust DLL not found at %s — Rust side will not be "
-                "loaded."),
-           *DllSourcePath);
-    return;
-  }
-
-  // 3. Copy-on-load: never lock the source DLL so that build.py / cargo
-  //    can always overwrite it, and hot reload always reads the latest.
-  ReloadCount++;
-  const FString InitialCopyPath = HotCopyPath();
-
-  uint32 CopyResult =
-      IFileManager::Get().Copy(*InitialCopyPath, *DllSourcePath);
-  if (CopyResult != 0) {
-    UE_LOG(LogRusteal, Error,
-           TEXT("[Rusteal] Failed to copy DLL %s → %s (error %u). Falling back "
-                "to direct load."),
-           *DllSourcePath, *InitialCopyPath, CopyResult);
-    // Fallback: load directly (will lock the source, but at least it works)
-    UE_LOG(LogRusteal, Warning, TEXT("[Rusteal] Using fallback DLL path: %s"),
-           *DllSourcePath);
-    if (!LoadRustDll(DllSourcePath)) {
-      return;
-    }
-  } else if (!LoadRustDll(InitialCopyPath)) {
-    return;
-  }
-
-  UE_LOG(LogRusteal, Display,
-         TEXT("[Rusteal] Rust DLL loaded and initialized successfully."));
+  // librusteal.dylib on macOS. The rusteal-cli deploy step must agree.
+  RustealFillFuncTable();
+  const FString GamePath = FPaths::Combine(
+      FPaths::ProjectPluginsDir(), TEXT("Rusteal"), TEXT("Binaries"),
+      FPlatformProcess::GetBinariesSubdirectory(),
+      RustealLibraryFileName(TEXT("rusteal")));
+  RegisterLibrary(FName(FApp::GetProjectName()), TEXT("/Script/Rusteal"),
+                  GamePath, RustealGetFuncTable(), RustealGetFuncCount());
 }
 
 void FRustealModule::ShutdownModule() {
+  FTSTicker::GetCoreTicker().RemoveTicker(GTickerHandle);
   RustealUnregisterComponentListResync();
-  UnloadRustDll();
-
-  // Clean up the hot-copy DLL (now unlocked).
-  if (!CurrentLoadedDllPath.IsEmpty() &&
-      CurrentLoadedDllPath != DllSourcePath) {
-    IFileManager::Get().Delete(*CurrentLoadedDllPath, false, true, true);
+  for (const TUniquePtr<FRustealLibrary> &Library : GLibraries) {
+    UnloadLibrary(*Library);
   }
-}
-
-// ---------------------------------------------------------------------------
-// DLL load / unload helpers
-// ---------------------------------------------------------------------------
-
-bool FRustealModule::LoadRustDll(const FString &LoadPath) {
-  DllHandle = FPlatformProcess::GetDllHandle(*LoadPath);
-  if (!DllHandle) {
-    UE_LOG(LogRusteal, Error, TEXT("[Rusteal] Failed to load DLL: %s"),
-           *LoadPath);
-    return false;
-  }
-  CurrentLoadedDllPath = LoadPath;
-
-  // Plugin and library must be the same Rusteal version: the API table
-  // layout is tied to it, so anything else is refused before rusteal_init.
-  auto VersionFn = reinterpret_cast<FRustealVersionFn>(
-      FPlatformProcess::GetDllExport(DllHandle, TEXT("rusteal_version")));
-  const uint32 LibraryVersion = VersionFn ? VersionFn() : 0;
-  if (LibraryVersion != GApiTable.version) {
-    UE_LOG(LogRusteal, Error,
-           TEXT("[Rusteal] Version mismatch: plugin %s, library %s. Rebuild "
-                "the project with "
-                "`rusteal build` (run `rusteal upgrade` first if the CLI is "
-                "newer than the project)."),
-           *RustealVersionString(GApiTable.version),
-           VersionFn ? *RustealVersionString(LibraryVersion)
-                     : TEXT("without a version (0.2.1 or older)"));
-    FPlatformProcess::FreeDllHandle(DllHandle);
-    DllHandle = nullptr;
-    return false;
-  }
-
-  // Resolve entry points
-  auto InitFn = reinterpret_cast<FRustealInitFn>(
-      FPlatformProcess::GetDllExport(DllHandle, TEXT("rusteal_init")));
-  if (!InitFn) {
-    UE_LOG(LogRusteal, Error, TEXT("[Rusteal] rusteal_init not found in DLL"));
-    FPlatformProcess::FreeDllHandle(DllHandle);
-    DllHandle = nullptr;
-    return false;
-  }
-
-  // Initialize Rust side
-  RustCallbacks = InitFn(&GApiTable);
-  if (!RustCallbacks) {
-    UE_LOG(LogRusteal, Error, TEXT("[Rusteal] rusteal_init returned null"));
-    FPlatformProcess::FreeDllHandle(DllHandle);
-    DllHandle = nullptr;
-    return false;
-  }
-
-  // Store globally so URustealDelegateProxy can access Rust callbacks.
-  GRustCallbacks = RustCallbacks;
-
-  // Register the UObject delete listener for reified class instance cleanup.
-  RustealReifyRegisterDeleteListener();
-
-  return true;
-}
-
-void FRustealModule::UnloadRustDll() {
-  // Unregister delete listeners before shutting down Rust.
   RustealReifyUnregisterDeleteListener();
-  RustealPinnedUnregisterDeleteListener();
-
-  if (DllHandle) {
-    // Notify Rust side
-    if (RustCallbacks && RustCallbacks->on_shutdown) {
-      RustCallbacks->on_shutdown();
-    }
-
-    // Call rusteal_shutdown if available
-    auto ShutdownFn = reinterpret_cast<FRustealShutdownFn>(
-        FPlatformProcess::GetDllExport(DllHandle, TEXT("rusteal_shutdown")));
-    if (ShutdownFn) {
-      ShutdownFn();
-    }
-
-    FPlatformProcess::FreeDllHandle(DllHandle);
-    DllHandle = nullptr;
-    RustCallbacks = nullptr;
-    GRustCallbacks = nullptr;
-
-    UE_LOG(LogRusteal, Display, TEXT("[Rusteal] Rust DLL unloaded."));
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Reified instance teardown / reconstruct helpers
-// ---------------------------------------------------------------------------
-
-void FRustealModule::TeardownReifiedInstances() {
-  if (DllHandle && RustCallbacks && RustCallbacks->drop_rust_instance) {
-    int32 InstanceCount = 0;
-    RustealReifyForEachReifiedInstance(
-        [this, &InstanceCount](UObject *Obj,
-                               URustealReifiedClass *ReifiedClass) {
-          // TODO: pass bIsCDO to drop_rust_instance when callback signature is
-          // extended bool bIsCDO = Obj->HasAnyFlags(RF_ClassDefaultObject);
-          RustCallbacks->drop_rust_instance(RustealUObjectHandle{Obj},
-                                            ReifiedClass->RustTypeId, nullptr);
-          InstanceCount++;
-        });
-    UE_LOG(LogRusteal, Display, TEXT("[Rusteal] Dropped %d Rust instances"),
-           InstanceCount);
-  }
-}
-
-void FRustealModule::ReconstructReifiedInstances() {
-  if (RustCallbacks && RustCallbacks->construct_rust_instance) {
-    int32 ReconstructCount = 0;
-    RustealReifyForEachReifiedInstance(
-        [this, &ReconstructCount](UObject *Obj,
-                                  URustealReifiedClass *ReifiedClass) {
-          bool bIsCDO = Obj->HasAnyFlags(RF_ClassDefaultObject);
-          RustCallbacks->construct_rust_instance(
-              RustealUObjectHandle{Obj}, ReifiedClass->RustTypeId, bIsCDO);
-          ReconstructCount++;
-        });
-    UE_LOG(LogRusteal, Display,
-           TEXT("[Rusteal] Reconstructed %d Rust instances"), ReconstructCount);
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Hot reload (DLL swap)
-// ---------------------------------------------------------------------------
-
-void FRustealModule::ReloadRustDll() {
-  UE_LOG(LogRusteal, Display, TEXT("[Rusteal] === Hot Reload Begin ==="));
-
-  if (DllSourcePath.IsEmpty()) {
-    UE_LOG(LogRusteal, Error,
-           TEXT("[Rusteal] Hot reload failed: DLL source path not set (was "
-                "initial load skipped?)"));
-    return;
-  }
-
-  // Phase 1: Teardown — drop all Rust instances and unload old DLL
-  TeardownReifiedInstances();
-
-  FString PreviousLoadedPath = CurrentLoadedDllPath;
-  UnloadRustDll();
-
-  if (!PreviousLoadedPath.IsEmpty() && PreviousLoadedPath != DllSourcePath) {
-    IFileManager::Get().Delete(*PreviousLoadedPath, false, true, true);
-  }
-
-  // Phase 2: Copy-on-reload — copy the new DLL to avoid Windows lock
-  if (!FPaths::FileExists(DllSourcePath)) {
-    UE_LOG(LogRusteal, Error,
-           TEXT("[Rusteal] Hot reload failed: %s not found. Did cargo build "
-                "succeed?"),
-           *DllSourcePath);
-    return;
-  }
-
-  ReloadCount++;
-  const FString HotDllPath = HotCopyPath();
-
-  uint32 CopyResult = IFileManager::Get().Copy(*HotDllPath, *DllSourcePath);
-  if (CopyResult != 0) {
-    UE_LOG(
-        LogRusteal, Error,
-        TEXT("[Rusteal] Hot reload failed: could not copy %s → %s (error %u)"),
-        *DllSourcePath, *HotDllPath, CopyResult);
-    return;
-  }
-
-  // Phase 2b: Load the new DLL and re-initialize Rust
-  if (!LoadRustDll(HotDllPath)) {
-    UE_LOG(LogRusteal, Error,
-           TEXT("[Rusteal] Hot reload failed: could not load new DLL"));
-    return;
-  }
-
-  // Phase 3: Reconstruct — rebuild Rust instance data
-  ReconstructReifiedInstances();
-
-  UE_LOG(LogRusteal, Display, TEXT("[Rusteal] === Hot Reload Complete ==="));
+  RustealPinnedShutdown();
 }
 
 #undef LOCTEXT_NAMESPACE

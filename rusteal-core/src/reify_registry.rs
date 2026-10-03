@@ -28,6 +28,9 @@ pub struct ClassRegistration {
     /// (`SubclassOf<MyCharacter>`): every class exists by then.
     pub register: fn(),
     pub finalize: fn(),
+    /// Once its class defaults are written: a config class loads its ini
+    /// values over them.
+    pub after_defaults: fn(),
 }
 inventory::collect!(ClassRegistration);
 
@@ -133,6 +136,7 @@ pub fn register_all_from_inventory() {
                 class_defaults();
             }
         }
+        (reg.after_defaults)();
     }
 
     // Log registration summary (helps diagnose hot-reload issues).

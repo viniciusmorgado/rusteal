@@ -27,6 +27,8 @@ pub mod fname;
 pub mod weak_ptr;
 pub mod widget;
 pub mod input;
+pub mod console;
+pub mod task;
 pub mod world;
 pub mod soft_ref;
 
@@ -44,6 +46,7 @@ pub use logging::{LOG_DISPLAY, LOG_WARNING, LOG_ERROR};
 pub use ffi_guard::ffi_boundary;
 pub use containers::{ContainerElement, OwnedStruct, UeArray, UeMap, UeSet};
 pub use delegate_registry::DelegateBinding;
+pub use console::ConsoleVariable;
 
 // Phase 10 re-exports.
 pub use fname::FName;

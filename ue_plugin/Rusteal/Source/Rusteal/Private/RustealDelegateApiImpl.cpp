@@ -3,6 +3,7 @@
 
 #include "RustealApiTable.h"
 #include "RustealDelegateProxy.h"
+#include "RustealLibrary.h"
 #include "RustealFNameHelper.h"
 #include "UObject/TextProperty.h"
 #include "UObject/UnrealType.h"
@@ -45,6 +46,7 @@ RustealDelegateApi_BindDelegate(RustealUObjectHandle ObjHandle,
   // Create the proxy with Object as outer (lifecycle tied to owner).
   URustealDelegateProxy *Proxy = NewObject<URustealDelegateProxy>(Object);
   Proxy->CallbackId = CallbackId;
+  Proxy->Library = RustealCurrentLibrary();
   Proxy->Signature = DelegateProp->SignatureFunction;
   Proxy->OwnerObject = Object;
 
@@ -96,6 +98,7 @@ RustealDelegateApi_AddMulticast(RustealUObjectHandle ObjHandle,
   // Create the proxy with Object as outer.
   URustealDelegateProxy *Proxy = NewObject<URustealDelegateProxy>(Object);
   Proxy->CallbackId = CallbackId;
+  Proxy->Library = RustealCurrentLibrary();
   Proxy->Signature = MultiProp->SignatureFunction;
   Proxy->OwnerObject = Object;
 
@@ -134,7 +137,8 @@ RustealDelegateApi_RemoveMulticast(RustealUObjectHandle ObjHandle,
   GetObjectsWithOuter(Object, Children, false);
   for (UObject *Child : Children) {
     URustealDelegateProxy *Proxy = Cast<URustealDelegateProxy>(Child);
-    if (Proxy && Proxy->CallbackId == CallbackId) {
+    if (Proxy && Proxy->CallbackId == CallbackId &&
+        Proxy->Library == RustealCurrentLibrary()) {
       FScriptDelegate ScriptDelegate;
       ScriptDelegate.BindUFunction(Proxy, URustealDelegateProxy::FakeFuncName);
       MultiProp->RemoveDelegate(ScriptDelegate, Object);

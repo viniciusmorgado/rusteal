@@ -455,7 +455,7 @@ struct FRustealReifyApi {
                                              const uint8 *value,
                                              uint32 value_len);
 
-  // A struct in /Script/Rusteal (#[ustruct]), or the one a previous load
+  // A struct in the library's package (#[ustruct]), or the one a previous load
   // created. add_property takes its handle as a class handle.
   RustealUStructHandle (*create_struct)(const uint8 *name, uint32 name_len);
 
@@ -476,6 +476,12 @@ struct FRustealReifyApi {
   // /Game/Path/BPI_Foo.BPI_Foo_C), loaded once the engine is initialized.
   ERustealErrorCode (*add_interface)(RustealUClassHandle cls,
                                      const uint8 *path, uint32 path_len);
+
+  // Make a Rust class a config class saved in the `config_name` ini files
+  // (Game: DefaultGame.ini), its Config properties loaded from them now.
+  ERustealErrorCode (*set_class_config)(RustealUClassHandle cls,
+                                        const uint8 *config_name,
+                                        uint32 config_name_len);
 };
 struct FRustealWidgetApi {
   // Create a UMG widget. owning_object should be a PlayerController, World, or
@@ -508,6 +514,48 @@ struct FRustealInputApi {
   // SVirtualJoystick::ShouldDisplayTouchInterface(): whether the platform
   // shows touch controls (Slate, not in reflection).
   bool (*should_display_touch_interface)();
+};
+
+// ---------------------------------------------------------------------------
+// FRustealConsoleApi — console commands and variables (IConsoleManager)
+// ---------------------------------------------------------------------------
+
+// What a console command's callback receives as its params.
+struct FRustealConsoleArgs {
+  // The command's arguments, UTF-8, separated by '\n'.
+  const uint8 *args;
+  uint32 args_len;
+  // The world the command runs in; null when there is none.
+  RustealUObjectHandle world;
+};
+
+struct FRustealConsoleApi {
+  // Register a console command of the calling library: running it invokes
+  // the delegate callback `callback_id` with an FRustealConsoleArgs.
+  ERustealErrorCode (*register_command)(const uint8 *name, uint32 name_len,
+                                        const uint8 *help, uint32 help_len,
+                                        uint64 callback_id);
+
+  // Register a console variable of the calling library: kind 0 bool, 1 int,
+  // 2 float, 3 string, with its default value as text.
+  ERustealErrorCode (*register_variable)(const uint8 *name, uint32 name_len,
+                                         const uint8 *help, uint32 help_len,
+                                         uint32 kind,
+                                         const uint8 *default_value,
+                                         uint32 default_len);
+
+  // Remove a command or variable the calling library registered. A library's
+  // are removed when it unloads.
+  ERustealErrorCode (*unregister)(const uint8 *name, uint32 name_len);
+
+  // Any console variable's value as text, the engine's too.
+  ERustealErrorCode (*get_variable)(const uint8 *name, uint32 name_len,
+                                    uint8 *buf, uint32 buf_len,
+                                    uint32 *out_len);
+
+  // Set a console variable from text, as code does.
+  ERustealErrorCode (*set_variable)(const uint8 *name, uint32 name_len,
+                                    const uint8 *value, uint32 value_len);
 };
 
 struct FRustealWorldApi {
@@ -579,6 +627,7 @@ struct FRustealApiTable {
   const FRustealLoggingApi *logging;
   const FRustealWidgetApi *widget;
   const FRustealInputApi *input;
+  const FRustealConsoleApi *console;
 
   // Generated function-pointer array
   const void *const *func_table;
@@ -599,6 +648,8 @@ struct FRustealRustCallbacks {
   void (*construct_rust_instance)(RustealUObjectHandle obj, uint64 type_id,
                                   bool is_cdo);
   void (*notify_pinned_destroyed)(RustealUObjectHandle handle);
+  // Every frame on the game thread (the core ticker, editor included).
+  void (*on_tick)(float delta_seconds);
 };
 
 // ---------------------------------------------------------------------------
@@ -609,3 +660,4 @@ using FRustealInitFn =
     const FRustealRustCallbacks *(*)(const FRustealApiTable *api_table);
 using FRustealShutdownFn = void (*)();
 using FRustealVersionFn = uint32 (*)();
+using FRustealCallbacksFn = const FRustealRustCallbacks *(*)();

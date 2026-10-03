@@ -32,6 +32,7 @@ pub struct RustealApiTable {
     pub logging: *const RustealLoggingApi,
     pub widget: *const RustealWidgetApi,
     pub input: *const RustealInputApi,
+    pub console: *const RustealConsoleApi,
 
     // ---- Generated function-pointer array (codegen) ----
     /// Flat array indexed by codegen-assigned FuncId. Each pointer targets a
@@ -520,7 +521,7 @@ pub struct RustealReifyApi {
         value: *const u8, value_len: u32,
     ) -> RustealErrorCode,
 
-    /// Create a struct in `/Script/Rusteal` (`#[ustruct]`), or find the one a
+    /// Create a struct in the library's package (`#[ustruct]`), or find the one a
     /// previous load created. Its properties are added with `add_property`,
     /// which takes its handle as a class handle.
     pub create_struct: unsafe extern "C" fn(name: *const u8, name_len: u32) -> UStructHandle,
@@ -548,6 +549,15 @@ pub struct RustealReifyApi {
     pub add_interface: unsafe extern "C" fn(
         cls: UClassHandle,
         path: *const u8, path_len: u32,
+    ) -> RustealErrorCode,
+
+    /// Make a Rust class a config class saved in the `config_name` ini files
+    /// (`Game`: `DefaultGame.ini`), and load its `Config` properties from them
+    /// now. Called once the class defaults are written, which the ini values
+    /// override.
+    pub set_class_config: unsafe extern "C" fn(
+        cls: UClassHandle,
+        config_name: *const u8, config_name_len: u32,
     ) -> RustealErrorCode,
 }
 
@@ -605,6 +615,55 @@ pub struct RustealInputApi {
     /// shows touch controls (virtual joysticks, `bAlwaysShowTouchInterface`,
     /// or faked touch events where the platform displays them).
     pub should_display_touch_interface: unsafe extern "C" fn() -> bool,
+}
+
+/// What a console command's callback receives as its params.
+#[repr(C)]
+pub struct RustealConsoleArgs {
+    /// The command's arguments, UTF-8, separated by `\n`.
+    pub args: *const u8,
+    pub args_len: u32,
+    /// The world the command runs in; null when there is none.
+    pub world: UObjectHandle,
+}
+
+/// Console commands and variables (`IConsoleManager`, not in reflection).
+#[repr(C)]
+pub struct RustealConsoleApi {
+    /// Register a console command of the calling library: running it
+    /// invokes the delegate callback `callback_id` with a
+    /// [`RustealConsoleArgs`]. `InvalidOperation` when the name is taken.
+    pub register_command: unsafe extern "C" fn(
+        name: *const u8, name_len: u32,
+        help: *const u8, help_len: u32,
+        callback_id: u64,
+    ) -> RustealErrorCode,
+
+    /// Register a console variable of the calling library: `kind` 0 bool,
+    /// 1 int, 2 float, 3 string, with its default value as text.
+    pub register_variable: unsafe extern "C" fn(
+        name: *const u8, name_len: u32,
+        help: *const u8, help_len: u32,
+        kind: u32,
+        default_value: *const u8, default_len: u32,
+    ) -> RustealErrorCode,
+
+    /// Remove a command or variable the calling library registered. A
+    /// library's are removed when it unloads.
+    pub unregister: unsafe extern "C" fn(name: *const u8, name_len: u32) -> RustealErrorCode,
+
+    /// Any console variable's value as text, the engine's too.
+    /// `PropertyNotFound` when there is no such variable.
+    pub get_variable: unsafe extern "C" fn(
+        name: *const u8, name_len: u32,
+        buf: *mut u8, buf_len: u32, out_len: *mut u32,
+    ) -> RustealErrorCode,
+
+    /// Set a console variable from text, as code does.
+    pub set_variable: unsafe extern "C" fn(
+        name: *const u8, name_len: u32,
+        value: *const u8, value_len: u32,
+    ) -> RustealErrorCode,
 }
 
 /// World-level queries (spawn, find actors, etc.).

@@ -1,0 +1,5 @@
+# `rusteal plugin new <Name> --template inventory`: a gameplay plugin in Rust.
+description = "A gameplay plugin: items as data assets, an inventory component with its event, a world subsystem, project settings and console commands."
+
+# Printed when the plugin is ready (Tera, same context as the files).
+next_step = "create items (Content Browser > Miscellaneous > Data Asset > {{ plugin }}Item), press Play and type {{ crate_name | replace(from=\"-\", to=\"_\") }}.give /Game/Path/DA_Item 3 in the console"

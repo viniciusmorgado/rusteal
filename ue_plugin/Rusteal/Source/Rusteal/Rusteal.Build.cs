@@ -26,6 +26,15 @@ public class Rusteal : ModuleRules
         // IPluginManager: the plugin reads its own version from its descriptor.
         PrivateDependencyModuleNames.Add("Projects");
 
+        // The game's Rust library, staged with a packaged game: `rusteal build`
+        // deploys it into the plugin's binaries (RustealModule.cpp loads it).
+        string Library = Path.Combine(PluginDirectory, "Binaries", Target.Platform.ToString(),
+            RustealLibraryFileName(Target, "rusteal"));
+        if (File.Exists(Library))
+        {
+            RuntimeDependencies.Add(Library);
+        }
+
         // Modules the generated bindings call into, listed by rusteal-codegen in
         // Generated/module_deps.txt. Absent before the first codegen run, which is fine:
         // the generated wrappers do not exist yet either.
@@ -41,5 +50,20 @@ public class Rusteal : ModuleRules
                 }
             }
         }
+    }
+
+    /// <summary>The platform's file name for a Rust library: librusteal.so,
+    /// rusteal.dll, librusteal.dylib for "rusteal".</summary>
+    public static string RustealLibraryFileName(ReadOnlyTargetRules Target, string Stem)
+    {
+        if (Target.Platform == UnrealTargetPlatform.Win64)
+        {
+            return Stem + ".dll";
+        }
+        if (Target.Platform == UnrealTargetPlatform.Mac)
+        {
+            return "lib" + Stem + ".dylib";
+        }
+        return "lib" + Stem + ".so";
     }
 }

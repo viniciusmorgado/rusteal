@@ -5,7 +5,9 @@
 #include "GameFramework/Actor.h"
 #include "Engine/Engine.h"
 #include "Misc/CoreDelegates.h"
+#include "Serialization/AsyncLoadingEvents.h"
 #include "RustealApiTable.h"
+#include "RustealLibrary.h"
 #include "RustealModule.h"
 #include "UObject/UObjectArray.h"
 #include "UObject/UObjectGlobals.h"
@@ -302,17 +304,6 @@ static void CopyParamsFromParentFunction(UFunction *NewFunc,
 // API implementations
 // ---------------------------------------------------------------------------
 
-// Shared package pointer for all reified classes.
-static UPackage *GRustealReifyPackage = nullptr;
-
-static UPackage *GetOrCreateRustealPackage() {
-  if (!GRustealReifyPackage) {
-    GRustealReifyPackage = CreatePackage(TEXT("/Script/Rusteal"));
-    GRustealReifyPackage->SetPackageFlags(PKG_CompiledIn);
-  }
-  return GRustealReifyPackage;
-}
-
 static RustealUClassHandle CreateClassImpl(const uint8 *Name, uint32 NameLen,
                                            RustealUClassHandle Parent,
                                            uint64 RustTypeId) {
@@ -325,12 +316,15 @@ static RustealUClassHandle CreateClassImpl(const uint8 *Name, uint32 NameLen,
   const FString ClassName = ReifyUtf8ToFString(Name, NameLen);
 
   // --- Hot reload path: if a class with this name already exists, reuse it ---
-  UPackage *RustealPackage = GetOrCreateRustealPackage();
+  // The library's package: /Script/Rusteal for the game's classes,
+  // /Script/<Plugin> for a plugin's.
+  UPackage *RustealPackage = RustealCurrentPackage();
   URustealReifiedClass *Existing =
       FindObject<URustealReifiedClass>(RustealPackage, *ClassName);
   if (Existing) {
     // Update the Rust type ID (may have changed if Rust struct layout changed).
     Existing->RustTypeId = RustTypeId;
+    Existing->Library = RustealCurrentLibrary();
 
     UE_LOG(
         LogRusteal, Display,
@@ -345,6 +339,7 @@ static RustealUClassHandle CreateClassImpl(const uint8 *Name, uint32 NameLen,
       RustealPackage, FName(*ClassName), RF_Public | RF_Standalone);
 
   NewClass->RustTypeId = RustTypeId;
+  NewClass->Library = RustealCurrentLibrary();
 
   // Walk up to find the native (C++) superclass.
   UClass *NativeSuper = ParentClass;
@@ -355,6 +350,9 @@ static RustealUClassHandle CreateClassImpl(const uint8 *Name, uint32 NameLen,
 
   // Set up class hierarchy.
   NewClass->SetSuperStruct(ParentClass);
+  // What instances must be created inside (a game instance subsystem's
+  // GameInstance), as the Blueprint compiler copies it.
+  NewClass->ClassWithin = ParentClass->ClassWithin;
   NewClass->ClassConstructor = &URustealReifiedClass::RustealClassConstructor;
 
   // Propagate inheritable flags from parent (CLASS_HasInstancedReference,
@@ -369,11 +367,13 @@ static RustealUClassHandle CreateClassImpl(const uint8 *Name, uint32 NameLen,
       (ParentClass->ClassFlags & CLASS_Inherit & ~ConfigRelatedFlags) |
       CLASS_CompiledFromBlueprint;
 
+#if WITH_EDITORONLY_DATA
   // Create a stub UBlueprint so that FBlueprintActionDatabase registers
   // our functions.  Without this, the action database sees our class as a
   // UBlueprintGeneratedClass with null ClassGeneratedBy and skips it.
   // The editor's class picker lists the class under this stub's name, so it
   // is RS_<Class>: recognisable as Rust, never mistaken for a BP_ asset.
+  // A packaged game has neither, as cooked Blueprint classes do not.
   UBlueprint *StubBP =
       NewObject<UBlueprint>(RustealPackage, FName(*(TEXT("RS_") + ClassName)),
                             RF_Public | RF_Standalone);
@@ -385,7 +385,6 @@ static RustealUClassHandle CreateClassImpl(const uint8 *Name, uint32 NameLen,
   StubBP->AddToRoot();
   NewClass->ClassGeneratedBy = StubBP;
 
-#if WITH_EDITORONLY_DATA
   // Mark as "cooked" so GetGeneratedClassesHierarchy skips the
   // BS_Error check (our stub UBlueprint is always up-to-date).
   NewClass->bCooked = true;
@@ -465,6 +464,7 @@ static RustealUFunctionHandle AddFunctionImpl(RustealUClassHandle Cls,
     if (URustealReifiedFunction *Reified =
             Cast<URustealReifiedFunction>(ExistingFunc)) {
       Reified->CallbackId = CallbackId;
+      Reified->Library = RustealCurrentLibrary();
       UE_LOG(
           LogRusteal, Display,
           TEXT(
@@ -485,6 +485,7 @@ static RustealUFunctionHandle AddFunctionImpl(RustealUClassHandle Cls,
       !(static_cast<EFunctionFlags>(FuncFlags) & FUNC_Native);
 
   NewFunc->CallbackId = CallbackId;
+  NewFunc->Library = RustealCurrentLibrary();
   NewFunc->FunctionFlags = static_cast<EFunctionFlags>(FuncFlags);
   if (!bScriptEvent) {
     NewFunc->FunctionFlags |= FUNC_Native;
@@ -613,6 +614,15 @@ static ERustealErrorCode FinalizeClassImpl(RustealUClassHandle Cls) {
   // Build the GC reference token stream so the garbage collector can
   // properly trace UObject* references within instances of this class.
   Class->AssembleReferenceTokenStream(true);
+
+  // Register it as compiled-in classes are: a packaged game's loader resolves
+  // a cooked asset's import of a /Script class (a data asset of this class)
+  // from these, the class default object included, which UClass registers
+  // itself.
+  NotifyRegistrationEvent(Class->GetOutermost()->GetFName(), Class->GetFName(),
+                          ENotifyRegistrationType::NRT_Class,
+                          ENotifyRegistrationPhase::NRP_Finished, nullptr, false,
+                          Class);
 
   // Force CDO creation and run BPGC post-load initialization
   // (builds CustomPropertyListForPostConstruction, etc.).
@@ -774,20 +784,25 @@ class FRustealDeleteListener : public FUObjectArray::FUObjectDeleteListener {
 public:
   virtual void NotifyUObjectDeleted(const UObjectBase *Object,
                                     int32 Index) override {
-    // Only handle objects of a reified class or of a Blueprint child of one;
-    // Rust drops the data of every Rust class the object is.
+    // Only handle objects of a reified class or of a Blueprint child of one.
+    // Each library drops the data of every one of its Rust classes the object
+    // is, so it is called once, with its most derived class.
     const TArray<URustealReifiedClass *> Chain =
         URustealReifiedClass::ReifiedChain(Object->GetClass());
-    if (Chain.Num() == 0) {
-      return;
-    }
-    const URustealReifiedClass *ReifiedClass = Chain.Last();
-
-    const FRustealRustCallbacks *Callbacks = GetRustealRustCallbacks();
-    if (Callbacks && Callbacks->drop_rust_instance) {
-      Callbacks->drop_rust_instance(
-          RustealUObjectHandle{const_cast<UObjectBase *>(Object)},
-          ReifiedClass->RustTypeId, nullptr);
+    TArray<FRustealLibrary *, TInlineAllocator<2>> Dropped;
+    for (int32 ChainIndex = Chain.Num() - 1; ChainIndex >= 0; --ChainIndex) {
+      const URustealReifiedClass *ReifiedClass = Chain[ChainIndex];
+      FRustealLibrary *Library = ReifiedClass->Library;
+      if (Dropped.Contains(Library)) {
+        continue;
+      }
+      Dropped.Add(Library);
+      RustealCallLibrary(Library, [Object, ReifiedClass](
+                                      const FRustealRustCallbacks &Cb) {
+        Cb.drop_rust_instance(
+            RustealUObjectHandle{const_cast<UObjectBase *>(Object)},
+            ReifiedClass->RustTypeId, nullptr);
+      });
     }
   }
 
@@ -812,12 +827,10 @@ void RustealReifyUnregisterDeleteListener() {
 
 void RustealReifyForEachReifiedInstance(
     TFunctionRef<void(UObject *, URustealReifiedClass *)> Callback) {
+  // Class default objects included: they have Rust data too, which a
+  // #[class_defaults] method and get_default() use.
   for (FThreadSafeObjectIterator It; It; ++It) {
     UObject *Obj = static_cast<UObject *>(*It);
-    // Skip CDOs — they don't have meaningful Rust instance data.
-    if (Obj->HasAnyFlags(RF_ClassDefaultObject)) {
-      continue;
-    }
     for (URustealReifiedClass *ReifiedClass :
          URustealReifiedClass::ReifiedChain(Obj->GetClass())) {
       Callback(Obj, ReifiedClass);
@@ -831,7 +844,7 @@ void RustealReifyForEachReifiedInstance(
 
 static RustealUStructHandle CreateStructImpl(const uint8 *Name,
                                              uint32 NameLen) {
-  UPackage *RustealPackage = GetOrCreateRustealPackage();
+  UPackage *RustealPackage = RustealCurrentPackage();
   const FName StructName = ReifyUtf8ToFName(Name, NameLen);
 
   // Hot reload: the struct of the previous load, which its properties are
@@ -859,17 +872,22 @@ static ERustealErrorCode FinalizeStructImpl(RustealUStructHandle Handle) {
     return ERustealErrorCode::Ok; // linked already (an outer struct's turn)
   }
   // A Rust struct this one holds is linked first: its size is part of this
-  // one's layout.
-  const UPackage *RustealPackage = GetOrCreateRustealPackage();
+  // one's layout. Engine structs are always linked; a Rust one not yet has
+  // no size.
   for (TFieldIterator<FStructProperty> It(Struct, EFieldIteratorFlags::ExcludeSuper);
        It; ++It) {
-    if (It->Struct && It->Struct->GetOutermost() == RustealPackage) {
+    if (It->Struct && It->Struct->GetStructureSize() == 0) {
       FinalizeStructImpl(RustealUStructHandle{It->Struct});
     }
   }
   Struct->Bind();
   Struct->StaticLink(true);
   Struct->PrepareCppStructOps();
+  // As for classes: cooked assets import it by its /Script path.
+  NotifyRegistrationEvent(Struct->GetOutermost()->GetFName(), Struct->GetFName(),
+                          ENotifyRegistrationType::NRT_Struct,
+                          ENotifyRegistrationPhase::NRP_Finished, nullptr, false,
+                          Struct);
   UE_LOG(LogRusteal, Display, TEXT("[Rusteal] Finalized struct: %s (size: %d)"),
          *Struct->GetName(), Struct->GetStructureSize());
   return ERustealErrorCode::Ok;
@@ -989,6 +1007,30 @@ static ERustealErrorCode AddInterfaceImpl(RustealUClassHandle Cls,
 // Export the API table
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Config classes (project settings)
+// ---------------------------------------------------------------------------
+
+// A class created at runtime has no ClassConfigName, which is why
+// CreateClassImpl leaves the parent's config flags out: they come back here,
+// with the ini files Rust names. Called once the class defaults are written,
+// so the ini values override them.
+static ERustealErrorCode SetClassConfigImpl(RustealUClassHandle Cls,
+                                            const uint8 *Name,
+                                            uint32 NameLen) {
+  URustealReifiedClass *Class =
+      Cast<URustealReifiedClass>(static_cast<UClass *>(Cls.ptr));
+  if (!Class || !Name || NameLen == 0) {
+    return ERustealErrorCode::NullArgument;
+  }
+  Class->ClassConfigName = ReifyUtf8ToFName(Name, NameLen);
+  Class->ClassFlags |= CLASS_Config | CLASS_DefaultConfig;
+  if (UObject *CDO = Class->GetDefaultObject(false)) {
+    CDO->LoadConfig();
+  }
+  return ERustealErrorCode::Ok;
+}
+
 FRustealReifyApi GReifyApi = {
     &CreateClassImpl,         &AddPropertyImpl,
     &AddFunctionImpl,         &AddFunctionParamImpl,
@@ -996,5 +1038,5 @@ FRustealReifyApi GReifyApi = {
     &AddDefaultSubobjectImpl, &FindDefaultSubobjectImpl,
     &SetPropertyMetadataImpl, &CreateStructImpl,
     &FinalizeStructImpl,      &AddDelegateImpl,
-    &AddInterfaceImpl,
+    &AddInterfaceImpl,        &SetClassConfigImpl,
 };

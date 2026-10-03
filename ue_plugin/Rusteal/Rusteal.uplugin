@@ -17,6 +17,11 @@
             "Name": "Rusteal",
             "Type": "Runtime",
             "LoadingPhase": "Default"
+        },
+        {
+            "Name": "RustealEditor",
+            "Type": "Editor",
+            "LoadingPhase": "Default"
         }
     ],
     "Plugins": [

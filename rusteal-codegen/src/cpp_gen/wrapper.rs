@@ -121,9 +121,9 @@ pub fn generate_wrapper_file(entries: &[&FuncEntry], ctx: &CodegenContext) -> St
     out
 }
 
-/// Build the C wrapper function name: Rusteal_ClassName_FuncName
-pub fn cpp_wrapper_name(class_name: &str, func_name: &str) -> String {
-    format!("Rusteal_{class_name}_{func_name}")
+/// Build the C wrapper function name: <prefix>Rusteal_ClassName_FuncName
+pub fn cpp_wrapper_name(prefix: &str, class_name: &str, func_name: &str) -> String {
+    format!("{prefix}Rusteal_{class_name}_{func_name}")
 }
 
 /// Generate a single extern "C" wrapper function.
@@ -136,7 +136,7 @@ fn generate_wrapper_function(out: &mut String, entry: &FuncEntry, ctx: &CodegenC
     let is_blueprint_native = (func.func_flags & FUNC_BLUEPRINT_EVENT != 0)
         && (func.func_flags & FUNC_NATIVE != 0);
 
-    let c_func_name = cpp_wrapper_name(&entry.class_name, func_name);
+    let c_func_name = cpp_wrapper_name(&ctx.cpp_prefix, &entry.class_name, func_name);
 
     // Classify params
     let mut inputs = Vec::new();

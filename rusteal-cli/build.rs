@@ -65,32 +65,41 @@ fn main() {
         source_root.display()
     );
 
-    embed_templates(&manifest_dir, &out_dir);
+    embed_templates(&manifest_dir, &out_dir, "templates", "TEMPLATE_FILES", "template_files.rs");
+    embed_templates(
+        &manifest_dir,
+        &out_dir,
+        "plugin_templates",
+        "PLUGIN_TEMPLATE_FILES",
+        "plugin_template_files.rs",
+    );
 }
 
-/// Embed `templates/` as `TEMPLATE_FILES: &[(&str, &[u8])]`, every file by its
-/// path under `templates/`: `<name>/<variant>/` is what `rusteal new
-/// --template <name> --variant <variant>` adds on top (see src/templates.rs).
-fn embed_templates(manifest_dir: &Path, out_dir: &Path) {
-    let templates_dir = manifest_dir.join("templates");
+/// Embed `dir` as `const_name: &[(&str, &[u8])]` in `out_name`, every file by
+/// its path under `dir`. In `templates/`, `<name>/<variant>/` is what `rusteal
+/// new --template <name> --variant <variant>` adds on top; in
+/// `plugin_templates/`, `<name>/` is what `rusteal plugin new --template
+/// <name>` writes into the plugin (see src/templates.rs).
+fn embed_templates(manifest_dir: &Path, out_dir: &Path, dir: &str, const_name: &str, out_name: &str) {
+    let templates_dir = manifest_dir.join(dir);
     println!("cargo:rerun-if-changed={}", templates_dir.display());
 
     let mut files: Vec<(String, PathBuf)> = Vec::new();
     collect_files(&templates_dir, &templates_dir, &mut files);
     files.sort_by(|a, b| a.0.cmp(&b.0));
 
-    let mut out = String::from("pub const TEMPLATE_FILES: &[(&str, &[u8])] = &[\n");
+    let mut out = format!("pub const {const_name}: &[(&str, &[u8])] = &[\n");
     for (rel_path, path) in &files {
         let abs = path.to_str().expect("non-UTF8 path").replace('\\', "/");
         writeln!(out, "    ({rel_path:?}, include_bytes!({abs:?})),").unwrap();
     }
     out.push_str("];\n");
 
-    let out_file = out_dir.join("template_files.rs");
+    let out_file = out_dir.join(out_name);
     fs::write(&out_file, out)
         .unwrap_or_else(|e| panic!("Failed to write {}: {e}", out_file.display()));
 
-    eprintln!("rusteal build.rs: embedded {} template files", files.len());
+    eprintln!("rusteal build.rs: embedded {} files from {dir}", files.len());
 }
 
 fn collect_files(root: &Path, dir: &Path, out: &mut Vec<(String, PathBuf)>) {

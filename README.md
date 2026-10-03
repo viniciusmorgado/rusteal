@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/logo_nobg_orange.png" alt="Rusteal logo" width="256">
+<img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/logo.png" alt="Rusteal logo" width="256">
 
 # Rusteal
 
@@ -14,9 +14,63 @@
 
 **Rust bindings for Unreal Engine 5.8**
 
-Rusteal lets you write Unreal Engine gameplay in Rust. Your Rust code compiles to a shared library that is loaded by a small UE C++ plugin. All UE API calls cross the FFI boundary through a function pointer table — no C++ compilation required during Rust iteration.
+Rusteal lets you write Unreal Engine games and plugins in Rust: gameplay, reusable gameplay systems, editor tools. Your Rust code compiles to a shared library that is loaded by a small UE C++ plugin. All UE API calls cross the FFI boundary through a function pointer table — no C++ compilation required during Rust iteration.
 
 > **⚠️ Early Stage Project** — Rusteal is under active development and **not ready for production use**. APIs will change without notice, documentation is incomplete, and many UE features are not yet covered. Contributions and feedback are welcome, but please do not use this for shipping projects.
+
+---
+
+## Why use Rusteal
+
+<img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/mascot.png" alt="The Rusteal mascot" width="280" align="right">
+
+**Use every core.**
+
+The gameplay that weighs on a frame (AI for hundreds of
+agents, simulations, pathfinding, procedural generation) spreads across every
+core with `rayon` or threads of your own, and the compiler guarantees the
+threads never race. The results reach Unreal's objects back on the game
+thread, through `task::spawn`.
+
+**Iterate in seconds.**
+
+Your gameplay is a library of its own: Cargo rebuilds
+your crate alone, without the Unreal Build Tool, and `Rusteal.Reload` swaps
+the new code into the running editor.
+
+**Test without the engine.**
+
+Combat rules, inventories, economies and AI
+written as plain Rust run under `cargo test`, with property tests and
+benchmarks, without opening Unreal.
+
+**Crash less.**
+
+The borrow checker rules out use-after-free and data races in
+your code, and a panic is caught at the FFI boundary and logged instead of
+taking the editor down.
+
+**Stay deterministic, share the rules.**
+
+Fixed-point math and seeded random
+numbers give the same simulation on every machine, the base of rollback and
+lockstep netcode. The same rules crate can run in a dedicated Rust server, a
+balancing tool or the web, with Unreal as the presentation.
+
+**Bring the Rust ecosystem.**
+
+crates.io is one line away: `serde` for saves
+and configs, `rapier` for deterministic physics, `ggrs` for rollback,
+`wasmtime` or `rhai` for sandboxed mods, `ort` for local inference.
+
+**Feel at home on both sides.**
+
+`#[uclass]`, `#[uproperty]` and
+`#[ufunction]` speak Unreal's language, so anyone who knows the engine knows
+where things go. Everything around them is Rust: structs and traits, `Result`
+for errors, pattern matching, Cargo, rust-analyzer and clippy.
+
+<br clear="right">
 
 ## Future migration to UE6
 
@@ -41,6 +95,7 @@ This README serves two different readers:
 | You want to | Read | You need |
 |---|---|---|
 | **make a game** with Rusteal | [Making a game](#making-a-game) | the `rusteal` CLI from crates.io; not this repository |
+| **make a plugin** (a gameplay system, an editor tool) with Rusteal | [Making a plugin](#making-a-plugin), after [Making a game](#making-a-game) | the `rusteal` CLI from crates.io; not this repository |
 | **work on Rusteal itself** (its crates, CLI or UE plugins) | [Working on Rusteal](#working-on-rusteal) | a clone of this repository |
 
 ## Acknowledgments
@@ -57,8 +112,9 @@ directory into a project's `Rust/` and add it to the workspace members.
 
 ## Making a game
 
-Everything from here to [Platform Support](#platform-support) is about using
-Rusteal to write a game. None of it needs this repository.
+Everything from here to [Making a plugin](#making-a-plugin) is about using
+Rusteal to write a game, and applies to a plugin's code as well. None of it
+needs this repository.
 
 ### Prerequisites
 
@@ -408,8 +464,11 @@ getter returns a view of the array inside the object, changed in place, and
 a struct's a copy. `default = ...` is for the scalar
 types and enums; the others are set in `#[class_defaults]` or a Blueprint
 child, as the engine's templates do. `EditAnywhere`, `EditDefaultsOnly`,
-`VisibleAnywhere`, `BlueprintReadWrite`, `BlueprintReadOnly` and `SaveGame`
-are UE's specifiers; any other argument is a compile error.
+`VisibleAnywhere`, `BlueprintReadWrite`, `BlueprintReadOnly`, `SaveGame` and
+`Config` are UE's specifiers; any other argument is a compile error. `Config`
+reads and saves a property in the ini files of its class's config category
+(`#[uclass(parent = ..., config = "Game")]`), as project settings do; see
+[Project settings](#project-settings).
 
 `SaveGame` is UE's flag for what a save writes: an archive that is a save
 game archive (`ArIsSaveGame`, the usual way to save actors' state) serializes
@@ -517,10 +576,12 @@ class. It is `BlueprintCallable` unless it says otherwise:
   `ReceiveEndPlay`, `OnPossess` is `ReceivePossess`;
 - `BlueprintImplementableEvent`: an event a Blueprint child implements; the
   method's body is empty, and calling it runs the Blueprint's graph. It
-  takes structs as `&OwnedStruct<T>`.
+  takes structs as `&OwnedStruct<T>`;
+- `Exec`, with the default or with `BlueprintPure`: a console command too,
+  see [Console commands and variables](#console-commands-and-variables).
 
 `name = "K2_OnMovementModeChanged"` gives the UE name when the method's name
-in PascalCase is not it.
+in PascalCase is not it. Any other argument is a compile error.
 
 A class implements UE interfaces by class path: a C++ interface
 (`/Script/Module.Interface`) or a Blueprint Interface asset
@@ -714,7 +775,293 @@ Then in the UE console:
 Rusteal.Reload
 ```
 
-Function implementations update immediately. Adding/removing `uproperty` or `ufunction` requires an editor restart.
+`Rusteal.Reload` swaps every Rust library of the project; `Rusteal.Reload
+<Name>` only one (the game's is named after the project, a plugin's after the
+plugin). Function implementations update immediately. Adding/removing
+`uproperty` or `ufunction` requires an editor restart.
+
+### Packaging a game
+
+```bash
+rusteal package                  # Development, into <project>/Packaged
+rusteal package --shipping --output ~/Builds/MyGame
+```
+
+`rusteal package` builds every library with the release profile, then cooks
+and packages the game for the platform it runs on (the engine's
+`BuildCookRun`). The packaged game stages each Rust library it loads, the
+game's and its runtime plugins'. Assets that only Rust code loads by path
+(`load_object`) are not found by the cooker through references: list their
+directory in *Project Settings > Packaging > Additional Asset Directories to
+Cook*.
+
+## Making a plugin
+
+Rusteal makes Unreal Engine plugins too: a plugin whose code is a Rust
+library of its own, loaded next to the game's. A gameplay system written once
+(an inventory, dialogue, quests, AI) goes into any project as a plugin, and an
+editor tool brings what Rust does well into the editor: work on many assets at
+once, parsers and other libraries from crates.io, all of it off the game
+thread when it is heavy.
+
+A plugin's library is either kind:
+
+| Kind | Where it runs | The plugin's module | What for |
+|---|---|---|---|
+| `runtime` | games and the editor | `Runtime` | gameplay systems, anything a packaged game needs |
+| `editor` | the editor only | `Editor` | tools: menus, asset validation, editor scripting |
+
+Everything in [Making a game](#making-a-game) applies to a plugin's code: its
+classes, properties, functions, components, delegates and interfaces are
+written the same way.
+
+### A new plugin
+
+A plugin lives in a Rusteal project, which builds it with the engine and gives
+it a level to be tried in: the game it is for, or a project made for it.
+
+```bash
+rusteal new PluginLab                                # any Rusteal project works
+cd PluginLab
+rusteal plugin new Inventory                         # Plugins/Inventory/, built
+rusteal plugin new LevelTools --template editor      # an editor plugin
+```
+
+`rusteal plugin new` writes the plugin into the project's `Plugins/`, lists it
+in the `.uproject` and runs the build pipeline. The plugin's name is also its
+C++ module's: letters and digits, not the project's own name.
+
+| Plugin template | What it is |
+|---|---|
+| `blank` (default) | A runtime plugin with a `HelloComponent` in Rust. |
+| `editor` | An editor plugin: an editor subsystem, a *Tools* menu entry counting the project's assets on a background thread, a console command doing the same, and an asset validator. |
+| `inventory` | A runtime gameplay plugin: items as data assets (`<Name>Item`), an inventory component stacking them and broadcasting its changes (`<Name>Component`), a world subsystem (`<Name>Subsystem`), project settings for its limits (`<Name>Settings`) and console commands giving, taking and listing the player's items. |
+
+### Plugin layout
+
+```
+Plugins/Inventory/
+├── Inventory.uplugin           # the plugin, depending on Rusteal
+├── rusteal.toml                # the plugin's library: crate, kind, modules
+├── Source/Inventory/           # its C++ module, which hands the library to Rusteal
+│   └── Generated/              # generated C++ wrappers (versioned)
+├── Rust/
+│   ├── Cargo.toml              # the plugin's own workspace
+│   ├── inventory/              # its code (cdylib)
+│   └── bindings/               # generated by `rusteal build`, committed
+├── Binaries/<Platform>/        # librusteal_Inventory.so, rusteal_Inventory.dll
+└── Content/                    # the plugin's assets
+```
+
+The plugin carries everything it needs, so the directory can be copied into
+another Rusteal project at the same version, or kept in a repository of its
+own. Its `Rust/Cargo.toml` pins the Rusteal crates as the project's does, and
+`rusteal upgrade` moves both.
+
+A plugin's classes live in its module's package, as a C++ plugin's do:
+`/Script/Inventory.InventoryComponent`, where the game's are in
+`/Script/Rusteal`. That is their path in assets, ini sections and editor
+Python (`unreal.load_class(None, "/Script/Inventory.InventoryItem")`).
+
+### Building
+
+`rusteal build` builds every library of the project: the game's and each
+plugin's. `--plugin <Name>` limits the codegen, Cargo and deploy steps to one
+plugin, which is what iterating on it needs:
+
+```bash
+rusteal build --from 4 --plugin Inventory
+```
+
+In the editor, `Rusteal.Reload` swaps every library, `Rusteal.Reload
+Inventory` only that one.
+
+A plugin binds the engine modules its `rusteal.toml` lists, like a game. A
+module far bigger than a plugin needs can be limited to some classes (and the
+ones they derive from):
+
+```toml
+UnrealEd = { module = "unreal_ed", feature = "editor", classes = ["EditorActorSubsystem", "EditorAssetSubsystem"] }
+```
+
+### Subsystems
+
+A subsystem is where a plugin's system usually lives: the engine makes one for
+every class deriving from a subsystem base, with the lifetime of the game, a
+world, the engine or a local player. A Rust class derives from Rusteal's
+parents, which turn the engine's C++ virtuals into events:
+
+| Parent | One per | Events |
+|---|---|---|
+| `RustealGameInstanceSubsystem` | game | `receive_initialize`, `receive_deinitialize`, `receive_should_create_subsystem` |
+| `RustealWorldSubsystem` | world (game and PIE; editor worlds with `bCreateInEditorWorlds`) | the same, `receive_post_initialize`, `receive_world_begin_play`, `receive_tick` with `bWantsTick` |
+| `RustealEngineSubsystem` | process | the same as the game's |
+| `RustealLocalPlayerSubsystem` | local player | the same, `receive_player_controller_changed` |
+| `RustealEditorSubsystem` (editor libraries) | editor | the same as the game's |
+
+```rust
+#[uclass(parent = RustealWorldSubsystem)]
+pub struct Waves {}
+
+#[uclass_impl]
+impl Waves {
+    #[class_defaults]
+    fn class_defaults(&mut self) -> RustealResult<()> {
+        self.as_ref().checked()?.set_wants_tick(true);
+        Ok(())
+    }
+
+    #[ufunction(Override)]
+    fn receive_world_begin_play(&mut self) { /* ... */ }
+
+    #[ufunction(Override)]
+    fn receive_tick(&mut self, delta_seconds: f32) { /* ... */ }
+}
+```
+
+Other code finds it as it finds any subsystem:
+`SubsystemBlueprintLibrary::get_world_subsystem(context, class)`.
+
+### Project settings
+
+A class whose parent is `DeveloperSettings` and that names a config category
+shows in *Project Settings*, its `Config` properties saved in that category's
+files (`config = "Game"`: `Config/DefaultGame.ini`):
+
+```rust
+#[uclass(parent = DeveloperSettings, config = "Game")]
+pub struct InventorySettings {
+    #[uproperty(Config, EditAnywhere, category = "Inventory", default = 20)]
+    max_slots: i32,
+}
+
+let slots = InventorySettings::get_default()?.max_slots();
+```
+
+The plugin templates bind the `DeveloperSettings` module; a game adds it to
+its `rusteal.toml` (`DeveloperSettings = { module = "developer_settings",
+feature = "engine" }` in `[codegen.modules]`). `get_default()` is the class
+default object, which holds the settings: the defaults, overridden by what
+the ini files hold, under the class's path and the properties' UE names:
+
+```ini
+[/Script/Inventory.InventorySettings]
+MaxSlots=30
+```
+
+### Console commands and variables
+
+```rust
+use rusteal_runtime::runtime::console;
+
+pub const GOD_MODE: ConsoleVariable<bool> = ConsoleVariable::new("inventory.infinite");
+
+fn startup() {
+    let _ = GOD_MODE.register("Items are never used up", false);
+    let _ = console::register_command("inventory.give", "inventory.give <item> [count]", |args, world| {
+        // args: ["sword", "2"]; world: the world the command runs in
+    });
+}
+rusteal_runtime::on_load!(startup);
+```
+
+`on_load!` runs a function each time the library loads, hot reloads included:
+an unload removes the library's commands and variables, and the next load
+registers them again. A `ConsoleVariable<T>` (`bool`, `i32`, `f32`,
+`String`) reads and writes any variable by name, the engine's too
+(`ConsoleVariable::<i32>::new("t.MaxFPS").set(60)`).
+
+A `#[ufunction(Exec)]` is a console command on the classes the console reaches,
+as `UFUNCTION(Exec)` is in C++: the player controller, its pawn and HUD, the
+cheat manager, the game mode and the game state. The command is the function's
+UE name: `fn give_gold(&mut self, amount: i32)` is `GiveGold 100`.
+
+### Work off the game thread
+
+UE's objects belong to the game thread; Rust's threads, `rayon` and `tokio`
+are free to do the rest. `task::spawn` runs the work on a thread of its own
+and hands its result back on the game thread, where UE can be called again:
+
+```rust
+use rusteal_runtime::runtime::task;
+
+task::spawn(
+    move || index_assets(&paths),               // a background thread: no UE calls
+    move |index| apply_index(index),            // the game thread, a frame later
+);
+task::run_on_game_thread(|| { /* from any thread */ });
+let handle = task::on_tick(|delta_seconds| { /* every frame, the editor's too */ });
+```
+
+A library waits for its spawned work before it unloads (a hot reload, the
+editor closing), so that no thread runs code that is gone; a result still
+waiting for the game thread then is dropped. `task::is_game_thread()` tells
+where the code runs.
+
+### Editor tools
+
+An editor library binds the editor's modules, which the `editor` template
+lists, and the engine's editor-only functions (`AActor::SetActorLabel`):
+
+- **Editor subsystems**: `RustealEditorSubsystem`, created when the editor
+  starts; the editor's own (`EditorActorSubsystem`, `EditorAssetSubsystem`,
+  `LevelEditorSubsystem`) come from
+  `EditorSubsystemBlueprintLibrary::get_editor_subsystem`, which the
+  template wraps as `editor_subsystem::<T>()`.
+- **Menus**: a class whose parent is `ToolMenuEntryScript`, its `execute`
+  overridden; `init_entry` places it (`LevelEditor.MainMenu.Tools`, a
+  section, a label) and `register_menu_entry` adds it.
+- **Asset validation**: a class whose parent is `EditorValidatorBase` runs
+  when assets are saved or validated (*Validate Assets*): it overrides
+  `K2_CanValidateAsset` and `K2_ValidateLoadedAsset` (returning an
+  `EDataValidationResult` as `u8`) and reports with `asset_fails` and
+  `asset_passes`.
+- **Undo**: `KismetSystemLibrary::begin_transaction`, `transact_object` and
+  `end_transaction` group changes into one undo step.
+
+The `editor` template has a menu entry whose action lists the project's assets
+and counts them on a background thread, the same as a console command, and a
+validator.
+
+### Data assets
+
+A Rust class whose parent is `PrimaryDataAsset` is a kind of asset: *Content
+Browser > Miscellaneous > Data Asset* creates one, its properties edited in the
+editor, and the game loads it like any asset (`load_object::<InventoryItem>`).
+A plugin's items, recipes or dialogue lines are data assets of its own
+classes. Editor Python makes them too, and names their properties by their UE
+names:
+
+```python
+item_class = unreal.load_class(None, "/Script/Inventory.InventoryItem")
+factory = unreal.DataAssetFactory()
+factory.set_editor_property("data_asset_class", item_class)
+apple = unreal.AssetToolsHelpers.get_asset_tools().create_asset("DA_Apple", "/Game/Items", item_class, factory)
+apple.set_editor_property("MaxStack", 5)
+```
+
+### Packaging a plugin
+
+```bash
+rusteal plugin package Inventory --output ~/Packages
+```
+
+builds the plugin's library with the release profile and copies the plugin
+into `~/Packages/Inventory`: its sources (the C++ module, the Rust crate, the
+generated code), content and configuration, its binaries for the platform it
+was built on (the Rust library, the editor module), and none of the build
+output. Another Rusteal project at the same version takes it into its
+`Plugins/` and builds it with `rusteal build`; a binary for another platform
+comes from packaging there. A game packaged with [`rusteal
+package`](#packaging-a-game) stages the libraries of its runtime plugins with
+its own.
+
+### What a plugin cannot do yet
+
+Slate UI, details panel customizations, custom asset editors, scripted asset
+actions, importers and Blueprint nodes are not covered yet; what they take, and
+what to do meanwhile, is in
+[`docs/plugin-roadmap.md`](https://github.com/viniciusmorgado/rusteal/blob/main/docs/plugin-roadmap.md).
 
 ## Platform Support
 
@@ -877,7 +1224,7 @@ with nothing to publish in between.
 | `rusteal-macros` | `#[uclass]`, `#[uclass_impl]` and their attributes |
 | `rusteal-runtime` | what a game depends on; re-exports the above |
 | `rusteal-codegen` | reflection JSON → the `bindings` crate and the C++ wrappers; owns `manual/` |
-| `rusteal-cli` | the `rusteal` binary; owns `templates/` and embeds `ue_plugin/` |
+| `rusteal-cli` | the `rusteal` binary; owns `templates/` and `plugin_templates/`, and embeds `ue_plugin/` |
 
 Changing the C++ plugin means running `cargo run -p rusteal -- sync-plugin`
 before publishing, which refreshes the snapshot the binary embeds.
@@ -910,6 +1257,14 @@ where they were made and played, saved with the engine version Rusteal
 targets. A variant with something to see has a screenshot in
 `assets/templates/`, shown in [Screenshots](#screenshots).
 
+A plugin template is a directory under `rusteal-cli/plugin_templates/`,
+written into `Plugins/<Name>/` by `rusteal plugin new --template <name>`:
+its `template.toml` has the `description` and the `next_step`, and its files
+are rendered the same way, with `plugin`, `crate_name`, `version`,
+`glam_version` and `runtime_path` as context. The plugin's module, its
+`Build.cs` and `<Name>Module.cpp`, come with the template: copy them from
+`blank` (a runtime module) or `editor` (an editor module).
+
 Engine APIs Rusteal uses that Unreal has deprecated are tracked in
 [`docs/ue-deprecations.md`](https://github.com/viniciusmorgado/rusteal/blob/main/docs/ue-deprecations.md): what, since which UE
 version, until when and where. A new engine version means checking its
@@ -922,6 +1277,10 @@ Rust, in the order the template needs it, is mapped in
 How the engine templates' variants were ported, where the Rust ports differ
 from the C++ and what they still work around is in
 [`docs/template-variants.md`](https://github.com/viniciusmorgado/rusteal/blob/main/docs/template-variants.md).
+
+What Rusteal does not do yet for plugins (Slate, details customizations,
+importers, Blueprint nodes...), and what each takes, is in
+[`docs/plugin-roadmap.md`](https://github.com/viniciusmorgado/rusteal/blob/main/docs/plugin-roadmap.md).
 
 What Unreal Engine 6 changes for Rusteal — Verse, Scene Graph, the end of
 Blueprints — and the open questions to check as Epic publishes details are in

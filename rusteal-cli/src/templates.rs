@@ -10,12 +10,19 @@
 // dropped) and everything else is copied as is, and `{{ variable }}` works in
 // folder and file names too (`Rust/{{crate_name}}/src/lib.rs.tera`). Every
 // variant gets the same context, so adding one is adding a directory.
+//
+// `plugin_templates/<template>/` is what `rusteal plugin new --template
+// <template>` writes into `Plugins/<Name>/`, the same way.
 
 use std::path::Path;
 
 use serde::Deserialize;
 
 include!(concat!(env!("OUT_DIR"), "/template_files.rs"));
+include!(concat!(env!("OUT_DIR"), "/plugin_template_files.rs"));
+
+/// The plugin template `rusteal plugin new` uses without `--template`.
+pub const DEFAULT_PLUGIN_TEMPLATE: &str = "blank";
 
 /// The variant `rusteal new` uses without `--variant`; every template has it.
 pub const BASE_VARIANT: &str = "base";
@@ -177,12 +184,80 @@ fn manifest(dir: &str) -> Option<Manifest> {
     Some(toml::from_str(text).unwrap_or_else(|e| panic!("{path}: {e}")))
 }
 
+/// A plugin template's `template.toml`.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PluginManifest {
+    /// One line for the list of plugin templates.
+    pub description: String,
+    /// Printed when the plugin is ready (Tera, with the files' context).
+    pub next_step: String,
+}
+
+/// The plugin templates `rusteal plugin new` offers, by name.
+pub fn plugin_templates() -> Vec<(&'static str, PluginManifest)> {
+    let mut templates: Vec<(&'static str, PluginManifest)> = PLUGIN_TEMPLATE_FILES
+        .iter()
+        .filter_map(|(path, contents)| {
+            let name = path.strip_suffix("/template.toml")?;
+            if name.contains('/') {
+                return None;
+            }
+            let text = std::str::from_utf8(contents)
+                .unwrap_or_else(|e| panic!("{path} is not UTF-8: {e}"));
+            Some((name, toml::from_str(text).unwrap_or_else(|e| panic!("{path}: {e}"))))
+        })
+        .collect();
+    templates.sort_by_key(|(name, _)| (*name != DEFAULT_PLUGIN_TEMPLATE, *name));
+    templates
+}
+
+/// The plugin template named on the command line, matched as loosely as
+/// [`select`] matches templates.
+pub fn select_plugin(template: &str) -> Result<(&'static str, PluginManifest), String> {
+    let wanted = normalize(template);
+    plugin_templates()
+        .into_iter()
+        .find(|(name, _)| normalize(name) == wanted)
+        .ok_or_else(|| {
+            format!(
+                "there is no plugin template '{template}'. The plugin templates are:\n{}",
+                plugin_listing()
+            )
+        })
+}
+
+/// The plugin templates, one line each, for error messages.
+pub fn plugin_listing() -> String {
+    plugin_templates()
+        .iter()
+        .map(|(name, manifest)| format!("  {name:<24} {}\n", manifest.description))
+        .collect()
+}
+
+/// Write the plugin template's files into the plugin's directory `root`.
+/// Returns the number of files written.
+pub fn write_plugin_files(template: &str, root: &Path, context: &tera::Context) -> usize {
+    write_files(PLUGIN_TEMPLATE_FILES, template, root, context)
+}
+
 /// Write the variant's files (`dir`, as [`Selected::dir`]) into `root`, over
 /// what the engine template put there. Returns the number of files written.
 pub fn write_project_files(dir: &str, root: &Path, context: &tera::Context) -> usize {
+    write_files(TEMPLATE_FILES, dir, root, context)
+}
+
+/// Write the files under `dir` of an embedded file set into `root`, but the
+/// manifest.
+fn write_files(
+    files: &[(&str, &[u8])],
+    dir: &str,
+    root: &Path,
+    context: &tera::Context,
+) -> usize {
     let prefix = format!("{dir}/");
     let mut written = 0;
-    for (path, contents) in TEMPLATE_FILES {
+    for (path, contents) in files {
         let Some(rel) = path.strip_prefix(&prefix) else {
             continue;
         };
@@ -252,6 +327,55 @@ mod tests {
         assert!(unknown.contains("blank"), "{unknown}");
         let no_variant = select("blank", Some("nope")).err().unwrap();
         assert!(no_variant.contains("no variant 'nope'"), "{no_variant}");
+    }
+
+    #[test]
+    fn plugin_templates_have_valid_manifests() {
+        let templates = plugin_templates();
+        assert_eq!(templates[0].0, DEFAULT_PLUGIN_TEMPLATE);
+        assert_eq!(select_plugin("Blank").unwrap().0, "blank");
+        let unknown = select_plugin("nope").err().unwrap();
+        assert!(unknown.contains("blank"), "{unknown}");
+    }
+
+    #[test]
+    fn writes_plugin_files_with_rendered_paths() {
+        let root =
+            std::env::temp_dir().join(format!("rusteal-plugin-templates-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let mut context = tera::Context::new();
+        context.insert("plugin", "Inventory");
+        context.insert("crate_name", "inventory");
+        context.insert("version", "0.0.0");
+        context.insert("glam_version", "0.0.0");
+
+        write_plugin_files("blank", &root, &context);
+
+        for rel in [
+            "Inventory.uplugin",
+            "rusteal.toml",
+            ".gitignore",
+            "Source/Inventory/Inventory.Build.cs",
+            "Source/Inventory/Private/InventoryModule.cpp",
+            "Rust/Cargo.toml",
+            "Rust/inventory/Cargo.toml",
+            "Rust/inventory/src/lib.rs",
+        ] {
+            assert!(root.join(rel).is_file(), "{rel} missing");
+        }
+        let module =
+            std::fs::read_to_string(root.join("Source/Inventory/Private/InventoryModule.cpp"))
+                .unwrap();
+        assert!(module.contains("Inventory_RustealFillFuncTable();"), "{module}");
+        assert!(module.contains("IMPLEMENT_MODULE(FInventoryModule, Inventory)"), "{module}");
+        let config: rusteal_codegen::config::PluginConfig =
+            toml::from_str(&std::fs::read_to_string(root.join("rusteal.toml")).unwrap()).unwrap();
+        assert_eq!(config.plugin.crate_name, "inventory");
+        let descriptor: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(root.join("Inventory.uplugin")).unwrap())
+                .unwrap();
+        assert_eq!(descriptor["Modules"][0]["Name"], "Inventory");
+        std::fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]

@@ -1,0 +1,21 @@
+// {{ plugin }}: an inventory, as a gameplay plugin in Rust.
+//
+// - {{ plugin }}Item: an item, a data asset the editor creates (Content Browser >
+//   Miscellaneous > Data Asset).
+// - {{ plugin }}Component: an actor's inventory, stacks of items, with an event
+//   Blueprints and Rust bind.
+// - {{ plugin }}Subsystem: finds an actor's inventory, adding it when asked.
+// - {{ plugin }}Settings: the limits, in Project Settings.
+// - console commands to give, take and list the player's items.
+//
+// `rusteal build` compiles this crate and deploys it as the plugin's library,
+// which the plugin's module hands to Rusteal; `rusteal.toml` in the plugin's
+// root holds the configuration.
+
+rusteal_runtime::entry!();
+
+mod commands;
+mod component;
+mod item;
+mod settings;
+mod subsystem;

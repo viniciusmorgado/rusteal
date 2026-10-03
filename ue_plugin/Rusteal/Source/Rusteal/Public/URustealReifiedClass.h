@@ -4,6 +4,8 @@
 
 #include "URustealReifiedClass.generated.h"
 
+struct FRustealLibrary;
+
 // Describes a default subobject to be created during class construction.
 struct FRustealComponentDef {
   FName SubobjectName;
@@ -26,6 +28,9 @@ public:
   // Rust type ID — used to look up the correct Rust type info
   // (constructor, destructor) in the Rust-side registry.
   uint64 RustTypeId = 0;
+
+  // The Rust library that defines the class (RustealLibraries.h).
+  FRustealLibrary *Library = nullptr;
 
   // The native (C++) superclass. For a Rust class inheriting AActor,
   // this would be AActor::StaticClass(). Used to call the correct

@@ -1,0 +1,81 @@
+// Console commands on the first player's pawn, for trying the inventory out:
+//   {{ crate_name | replace(from="-", to="_") }}.give /Game/Items/DA_Apple 3
+//   {{ crate_name | replace(from="-", to="_") }}.take /Game/Items/DA_Apple
+//   {{ crate_name | replace(from="-", to="_") }}.list
+
+use bindings::core_ue::Object;
+use bindings::engine::GameplayStatics;
+use bindings::prelude::*;
+use rusteal_runtime::runtime::{LOG_DISPLAY, LOG_ERROR, RustealResult, UObjectHandle, UObjectRef, console, ulog};
+
+use crate::component::{{ plugin }}Component;
+use crate::item::{{ plugin }}Item;
+use crate::subsystem::{{ plugin }}Subsystem;
+
+/// The first player's inventory, added if the pawn has none.
+fn player_inventory(world: UObjectHandle) -> RustealResult<{{ plugin }}Component> {
+    // SAFETY: the plugin passes the command's world.
+    let world = unsafe { UObjectRef::<World>::from_raw(world) }.upcast_to::<Object>();
+    let pawn = GameplayStatics::get_player_pawn(world, 0).upcast_to();
+    let mut subsystem = {{ plugin }}Subsystem::get(world)?;
+    {{ plugin }}Component::from_obj(subsystem.inventory_of(pawn, true))
+}
+
+/// An item by its asset path: /Game/Items/DA_Apple or /Game/Items/DA_Apple.DA_Apple.
+fn load_item(path: &str) -> RustealResult<UObjectRef<{{ plugin }}Item>> {
+    let full = match path.rsplit('/').next() {
+        Some(name) if !name.contains('.') => format!("{path}.{name}"),
+        _ => path.to_string(),
+    };
+    load_object::<{{ plugin }}Item>(&full)
+}
+
+fn item_name(item: UObjectRef<{{ plugin }}Item>) -> String {
+    {{ plugin }}Item::from_obj(item)
+        .map(|i| i.display_name())
+        .ok()
+        .filter(|name| !name.is_empty())
+        .or_else(|| item.get_name().ok())
+        .unwrap_or_default()
+}
+
+fn give_or_take(args: &[&str], world: UObjectHandle, give: bool) -> RustealResult<()> {
+    let path = args.first().copied().unwrap_or_default();
+    let count = args.get(1).and_then(|c| c.parse().ok()).unwrap_or(1);
+    let item = load_item(path)?;
+    let mut inventory = player_inventory(world)?;
+    let moved = if give { inventory.add_item(item, count) } else { inventory.remove_item(item, count) };
+    let verb = if give { "added" } else { "removed" };
+    ulog!(LOG_DISPLAY, "[{{ plugin }}] {verb} {moved} {}: {} now", item_name(item), inventory.count_of(item));
+    Ok(())
+}
+
+fn startup() {
+    let prefix = "{{ crate_name | replace(from="-", to="_") }}";
+    let commands: [(&str, &str, fn(&[&str], UObjectHandle) -> RustealResult<()>); 3] = [
+        ("give", "Give the player an item: give <item path> [count]", |a, w| give_or_take(a, w, true)),
+        ("take", "Take an item from the player: take <item path> [count]", |a, w| give_or_take(a, w, false)),
+        ("list", "List the player's items", |_, w| {
+            let inventory = player_inventory(w)?;
+            let stacks = inventory.stacks()?;
+            ulog!(LOG_DISPLAY, "[{{ plugin }}] {} stacks, weight {}", stacks.len(), inventory.total_weight());
+            for (item, count) in stacks {
+                ulog!(LOG_DISPLAY, "[{{ plugin }}]   {} x{count}", item_name(item));
+            }
+            Ok(())
+        }),
+    ];
+    for (name, help, run) in commands {
+        let full = format!("{prefix}.{name}");
+        let label = full.clone();
+        let result = console::register_command(&full, help, move |args, world| {
+            if let Err(e) = run(args, world) {
+                ulog!(LOG_ERROR, "[{{ plugin }}] {label}: {e:?}");
+            }
+        });
+        if let Err(e) = result {
+            ulog!(LOG_ERROR, "[{{ plugin }}] {full}: {e:?}");
+        }
+    }
+}
+rusteal_runtime::on_load!(startup);

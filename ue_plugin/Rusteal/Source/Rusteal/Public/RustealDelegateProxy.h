@@ -3,7 +3,7 @@
 #include "UObject/Object.h"
 #include "RustealDelegateProxy.generated.h"
 
-struct FRustealRustCallbacks;
+struct FRustealLibrary;
 
 // Proxy UObject that bridges UE delegates to Rust closures.
 // Uses the FakeFuncName mechanism: the proxy is bound to a delegate via
@@ -16,6 +16,9 @@ class URustealDelegateProxy : public UObject {
 public:
   // Rust-side callback ID (indexes into the delegate registry).
   uint64 CallbackId = 0;
+
+  // The Rust library the callback is in.
+  FRustealLibrary *Library = nullptr;
 
   // The signature UFunction of the delegate this proxy is bound to.
   // Used by UE to validate parameter compatibility.
