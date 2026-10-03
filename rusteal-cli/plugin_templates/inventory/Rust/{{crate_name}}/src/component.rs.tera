@@ -1,0 +1,132 @@
+// An actor's inventory: stacks of items, each up to its item's max_stack,
+// within the project's limits ({{ plugin }}Settings). Blueprints bind
+// OnInventoryChanged to show it; Rust binds on_inventory_changed_add.
+
+use bindings::engine::ActorComponent;
+use rusteal_runtime::runtime::{RustealResult, UObjectRef, UeArray};
+use rusteal_runtime::{uclass, uclass_impl};
+
+use crate::item::{{ plugin }}Item;
+use crate::settings::{{ plugin }}Settings;
+
+#[uclass(parent = ActorComponent)]
+pub struct {{ plugin }}Component {
+    /// The item of each stack.
+    #[uproperty(VisibleAnywhere, BlueprintReadOnly, category = "{{ plugin }}")]
+    items: UeArray<UObjectRef<{{ plugin }}Item>>,
+    /// How many of its item each stack holds.
+    #[uproperty(VisibleAnywhere, BlueprintReadOnly, category = "{{ plugin }}")]
+    counts: UeArray<i32>,
+}
+
+#[uclass_impl]
+impl {{ plugin }}Component {
+    /// Broadcast when an item's count changes, with its new count.
+    #[udelegate]
+    pub fn on_inventory_changed(&self, item: UObjectRef<{{ plugin }}Item>, count: i32) {}
+
+    /// Add up to `count` of `item`; returns how many fit.
+    #[ufunction]
+    pub fn add_item(&mut self, item: UObjectRef<{{ plugin }}Item>, count: i32) -> i32 {
+        let added = self.try_add(item, count).unwrap_or(0);
+        if added > 0 {
+            self.on_inventory_changed(item, self.count_of(item));
+        }
+        added
+    }
+
+    /// Remove up to `count` of `item`; returns how many were there.
+    #[ufunction]
+    pub fn remove_item(&mut self, item: UObjectRef<{{ plugin }}Item>, count: i32) -> i32 {
+        let removed = self.try_remove(item, count).unwrap_or(0);
+        if removed > 0 {
+            self.on_inventory_changed(item, self.count_of(item));
+        }
+        removed
+    }
+
+    /// How many of `item` the inventory holds.
+    #[ufunction(BlueprintPure)]
+    pub fn count_of(&self, item: UObjectRef<{{ plugin }}Item>) -> i32 {
+        self.stacks()
+            .map(|stacks| stacks.iter().filter(|(i, _)| *i == item).map(|(_, c)| c).sum())
+            .unwrap_or(0)
+    }
+
+    /// The weight of everything held.
+    #[ufunction(BlueprintPure)]
+    pub fn total_weight(&self) -> f32 {
+        self.stacks()
+            .map(|stacks| stacks.iter().map(|(item, count)| weight_of(*item) * *count as f32).sum())
+            .unwrap_or(0.0)
+    }
+
+    /// The stacks, as (item, count).
+    pub fn stacks(&self) -> RustealResult<Vec<(UObjectRef<{{ plugin }}Item>, i32)>> {
+        let items = self.items().to_vec()?;
+        let counts = self.counts().to_vec()?;
+        Ok(items.into_iter().zip(counts).collect())
+    }
+
+    fn try_add(&mut self, item: UObjectRef<{{ plugin }}Item>, count: i32) -> RustealResult<i32> {
+        let definition = {{ plugin }}Item::from_obj(item)?;
+        let settings = {{ plugin }}Settings::get_default()?;
+        let max_stack = definition.max_stack().max(1);
+        let mut wanted = count.max(0);
+        let weight = definition.weight();
+        if settings.max_weight() > 0.0 && weight > 0.0 {
+            let room = ((settings.max_weight() - self.total_weight()) / weight).floor() as i32;
+            wanted = wanted.min(room.max(0));
+        }
+
+        let (items, counts) = (self.items(), self.counts());
+        let mut left = wanted;
+        // Top up the stacks of this item first, then open new ones.
+        for index in 0..items.len()? {
+            if left == 0 {
+                break;
+            }
+            let held = counts.get(index)?;
+            if items.get(index)? == item && held < max_stack {
+                let put = left.min(max_stack - held);
+                counts.set(index, &(held + put))?;
+                left -= put;
+            }
+        }
+        while left > 0 && (items.len()? as i32) < settings.max_slots() {
+            let put = left.min(max_stack);
+            items.push(&item)?;
+            counts.push(&put)?;
+            left -= put;
+        }
+        Ok(wanted - left)
+    }
+
+    fn try_remove(&mut self, item: UObjectRef<{{ plugin }}Item>, count: i32) -> RustealResult<i32> {
+        let (items, counts) = (self.items(), self.counts());
+        let mut left = count.max(0);
+        // The last stacks first, so the first ones stay full.
+        for index in (0..items.len()?).rev() {
+            if left == 0 {
+                break;
+            }
+            if items.get(index)? != item {
+                continue;
+            }
+            let held = counts.get(index)?;
+            let take = left.min(held);
+            if take == held {
+                items.remove(index)?;
+                counts.remove(index)?;
+            } else {
+                counts.set(index, &(held - take))?;
+            }
+            left -= take;
+        }
+        Ok(count.max(0) - left)
+    }
+}
+
+fn weight_of(item: UObjectRef<{{ plugin }}Item>) -> f32 {
+    {{ plugin }}Item::from_obj(item).map(|item| item.weight()).unwrap_or(0.0)
+}

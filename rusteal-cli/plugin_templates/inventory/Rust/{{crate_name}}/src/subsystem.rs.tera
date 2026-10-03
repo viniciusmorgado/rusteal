@@ -1,0 +1,43 @@
+// The world's inventories: finds an actor's, adding one when asked, so any
+// actor (the player's pawn, a chest) can hold items without being set up.
+
+use bindings::core_ue::FTransform;
+use bindings::engine::{Actor, ActorComponent, ActorExt, SubsystemBlueprintLibrary, WorldSubsystem};
+use bindings::rusteal::RustealWorldSubsystem;
+use rusteal_runtime::runtime::{RustealResult, SubclassOf, Transform, UObjectRef, UeClass};
+use rusteal_runtime::{uclass, uclass_impl};
+
+use crate::component::{{ plugin }}Component;
+
+#[uclass(parent = RustealWorldSubsystem)]
+pub struct {{ plugin }}Subsystem {}
+
+#[uclass_impl]
+impl {{ plugin }}Subsystem {
+    /// `actor`'s inventory; with `create`, one is added when it has none.
+    #[ufunction]
+    pub fn inventory_of(&mut self, actor: UObjectRef<Actor>, create: bool) -> UObjectRef<{{ plugin }}Component> {
+        find_or_add(actor, create).unwrap_or_else(|_| UObjectRef::null())
+    }
+}
+
+impl {{ plugin }}Subsystem {
+    /// The subsystem of the world `context` is in.
+    pub fn get(context: UObjectRef<bindings::core_ue::Object>) -> RustealResult<Self> {
+        // SAFETY: the class is a world subsystem's.
+        let class = unsafe { SubclassOf::<WorldSubsystem>::from_raw(Self::static_class()) };
+        Self::from_obj(SubsystemBlueprintLibrary::get_world_subsystem(context, class))
+    }
+}
+
+fn find_or_add(actor: UObjectRef<Actor>, create: bool) -> RustealResult<UObjectRef<{{ plugin }}Component>> {
+    let actor = actor.checked()?;
+    // SAFETY: the class is an actor component's.
+    let class = unsafe { SubclassOf::<ActorComponent>::from_raw({{ plugin }}Component::static_class()) };
+    let mut component = actor.get_component_by_class(class);
+    if component.raw().is_null() && create {
+        let identity = FTransform::from_transform(Transform::IDENTITY);
+        component = actor.add_component_by_class(class, false, &identity, false);
+    }
+    component.cast::<{{ plugin }}Component>()
+}

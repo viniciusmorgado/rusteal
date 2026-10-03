@@ -1,0 +1,19 @@
+// An item: a data asset of this class, one per kind of item (DA_Apple,
+// DA_Sword), made in the editor from Content Browser > Miscellaneous > Data
+// Asset.
+
+use bindings::engine::PrimaryDataAsset;
+use rusteal_runtime::uclass;
+
+#[uclass(parent = PrimaryDataAsset)]
+pub struct {{ plugin }}Item {
+    /// The name players see.
+    #[uproperty(EditAnywhere, BlueprintReadOnly, category = "Item")]
+    display_name: String,
+    /// How many fit in one inventory slot.
+    #[uproperty(EditAnywhere, BlueprintReadOnly, category = "Item", default = 1)]
+    max_stack: i32,
+    /// The weight of one, against the inventory's weight limit.
+    #[uproperty(EditAnywhere, BlueprintReadOnly, category = "Item", default = 0.0)]
+    weight: f32,
+}
