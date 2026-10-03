@@ -17,6 +17,16 @@ use crate::config::{
 };
 use crate::schema::{ClassesFile, EnumsFile, StructsFile};
 
+/// Write `contents` to `path` unless it already holds exactly that: a
+/// regenerated file that did not change keeps its timestamp, so UBT and Cargo
+/// do not rebuild it.
+pub(crate) fn write_if_changed(path: &Path, contents: &str) -> std::io::Result<()> {
+    if std::fs::read(path).is_ok_and(|old| old == contents.as_bytes()) {
+        return Ok(());
+    }
+    std::fs::write(path, contents)
+}
+
 /// Generate the game's library: the bindings crate in `Rust/bindings` and
 /// the C++ wrappers compiled into the Rusteal plugin.
 ///
@@ -162,7 +172,7 @@ fn generate_module_deps(config: &CodegenConfig, host_module: &str, cpp_out: &Pat
     let content = ue_modules.iter().copied().collect::<Vec<_>>().join("\n");
 
     let path = cpp_out.join("module_deps.txt");
-    std::fs::write(&path, &content)
+    write_if_changed(&path, &content)
         .unwrap_or_else(|e| panic!("Failed to write {}: {e}", path.display()));
 
     eprintln!("  module_deps.txt: {:?}", ue_modules.iter().collect::<Vec<_>>());
@@ -341,6 +351,23 @@ fn build_func_table(ctx: &mut context::CodegenContext) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unchanged_output_keeps_its_timestamp() {
+        let dir = std::env::temp_dir().join(format!("rusteal-write-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("out.rs");
+        write_if_changed(&path, "a").unwrap();
+        let old = std::time::SystemTime::now() - std::time::Duration::from_secs(3600);
+        std::fs::File::options().write(true).open(&path).unwrap().set_modified(old).unwrap();
+
+        write_if_changed(&path, "a").unwrap();
+        assert_eq!(std::fs::metadata(&path).unwrap().modified().unwrap(), old);
+        write_if_changed(&path, "b").unwrap();
+        assert_ne!(std::fs::metadata(&path).unwrap().modified().unwrap(), old);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "b");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 
     #[test]
     fn plugin_dependencies_follow_enabled_modules() {

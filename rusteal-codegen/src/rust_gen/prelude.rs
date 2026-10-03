@@ -74,6 +74,6 @@ pub fn write_prelude(src_dir: &Path, ctx: &CodegenContext) {
     }
 
     let path = src_dir.join("prelude.rs");
-    std::fs::write(&path, out)
+    crate::write_if_changed(&path, &out)
         .unwrap_or_else(|e| panic!("Failed to write {}: {e}", path.display()));
 }

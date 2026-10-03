@@ -12,9 +12,11 @@ pub mod cargo_toml;
 pub mod manual;
 pub mod prelude;
 
+use std::collections::HashSet;
 use std::path::Path;
 
 use crate::context::CodegenContext;
+use crate::write_if_changed;
 
 /// Generate all Rust code into the output directory.
 pub fn generate(ctx: &CodegenContext, out_dir: &Path) {
@@ -25,20 +27,19 @@ pub fn generate(ctx: &CodegenContext, out_dir: &Path) {
     // Generate per-module code
     for module_name in ctx.enabled_modules.iter() {
         let module_dir = out_dir.join(module_name);
-        // Start from an empty module directory so types dropped by this run (blocklist,
-        // engine upgrade) do not linger as stale files.
-        if module_dir.exists() {
-            std::fs::remove_dir_all(&module_dir).expect("Failed to clear module directory");
-        }
         std::fs::create_dir_all(&module_dir).expect("Failed to create module directory");
+        // The files this run writes: the others are types dropped since
+        // (blocklist, engine upgrade), removed at the end.
+        let mut written: HashSet<String> = HashSet::new();
 
         // Enums
         if let Some(module_enums) = ctx.module_enums.get(module_name) {
             for e in module_enums {
                 let code = enums::generate_enum(e);
                 let filename = crate::naming::to_snake_case(&e.name) + ".rs";
-                std::fs::write(module_dir.join(&filename), code)
+                write_if_changed(&module_dir.join(&filename), &code)
                     .unwrap_or_else(|err| panic!("Failed to write {filename}: {err}"));
+                written.insert(filename);
             }
         }
 
@@ -47,8 +48,9 @@ pub fn generate(ctx: &CodegenContext, out_dir: &Path) {
             for s in module_structs {
                 let code = structs::generate_struct(s, ctx);
                 let filename = crate::naming::to_snake_case(&s.name) + ".rs";
-                std::fs::write(module_dir.join(&filename), code)
+                write_if_changed(&module_dir.join(&filename), &code)
                     .unwrap_or_else(|err| panic!("Failed to write {filename}: {err}"));
+                written.insert(filename);
             }
         }
 
@@ -57,8 +59,9 @@ pub fn generate(ctx: &CodegenContext, out_dir: &Path) {
             for c in module_classes {
                 let code = classes::generate_class(c, ctx);
                 let filename = crate::naming::to_snake_case(&c.name) + ".rs";
-                std::fs::write(module_dir.join(&filename), code)
+                write_if_changed(&module_dir.join(&filename), &code)
                     .unwrap_or_else(|err| panic!("Failed to write {filename}: {err}"));
+                written.insert(filename);
             }
         }
 
@@ -69,18 +72,40 @@ pub fn generate(ctx: &CodegenContext, out_dir: &Path) {
             ctx.module_structs.get(module_name).map(|v| v.as_slice()),
             ctx.module_classes.get(module_name).map(|v| v.as_slice()),
         );
-        std::fs::write(module_dir.join("mod.rs"), mod_code)
+        write_if_changed(&module_dir.join("mod.rs"), &mod_code)
             .expect("Failed to write module mod.rs");
+        written.insert("mod.rs".to_string());
+        remove_unwritten(&module_dir, &written);
     }
 
     // Generate func_ids.rs
     let func_ids_code = func_ids::generate_rust_func_ids(&ctx.func_table);
-    std::fs::write(out_dir.join("func_ids.rs"), func_ids_code)
+    write_if_changed(&out_dir.join("func_ids.rs"), &func_ids_code)
         .expect("Failed to write func_ids.rs");
 
     // Generate top-level lib.rs
     let lib_code = module::generate_lib_rs(ctx);
-    std::fs::write(out_dir.join("lib.rs"), lib_code).expect("Failed to write lib.rs");
+    write_if_changed(&out_dir.join("lib.rs"), &lib_code).expect("Failed to write lib.rs");
+}
+
+/// Remove the entries of a module directory this run did not write.
+fn remove_unwritten(module_dir: &Path, written: &HashSet<String>) {
+    let Ok(entries) = std::fs::read_dir(module_dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if written.contains(&name) {
+            continue;
+        }
+        let path = entry.path();
+        let removed = if path.is_dir() {
+            std::fs::remove_dir_all(&path)
+        } else {
+            std::fs::remove_file(&path)
+        };
+        removed.unwrap_or_else(|e| panic!("Failed to remove stale {}: {e}", path.display()));
+    }
 }
 
 /// Delete the module directories of modules this run does not generate. `lib.rs`
