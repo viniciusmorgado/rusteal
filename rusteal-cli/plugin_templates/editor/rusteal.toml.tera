@@ -27,6 +27,7 @@ features = ["core", "engine", "input", "slate", "umg", "editor"]
 # engine plugin a package comes from when it is not the engine's own.
 CoreUObject = { module = "core_ue", feature = "core" }
 Engine = { module = "engine", feature = "engine" }
+DeveloperSettings = { module = "developer_settings", feature = "engine" }
 PhysicsCore = { module = "physics_core", feature = "physics-core" }
 InputCore = { module = "input_core", feature = "input" }
 EnhancedInput = { module = "enhanced_input", feature = "enhanced-input" }
