@@ -87,6 +87,11 @@ pub fn run_setup(project_path: &Path, engine_path: &Path) {
             fs::create_dir_all(parent)
                 .unwrap_or_else(|e| panic!("Failed to create {}: {e}", parent.display()));
         }
+        // A file that did not change keeps its timestamp: UBT would otherwise
+        // rebuild the whole plugin, generated wrappers included.
+        if fs::read(&dest).is_ok_and(|old| old == *contents) {
+            continue;
+        }
         fs::write(&dest, contents)
             .unwrap_or_else(|e| panic!("Failed to write {}: {e}", dest.display()));
         written += 1;
@@ -107,10 +112,16 @@ pub fn run_setup(project_path: &Path, engine_path: &Path) {
         fs::create_dir_all(parent)
             .unwrap_or_else(|e| panic!("Failed to create {}: {e}", parent.display()));
     }
-    fs::write(&props_path, &props_content)
-        .unwrap_or_else(|e| panic!("Failed to write {}: {e}", props_path.display()));
+    if !fs::read_to_string(&props_path).is_ok_and(|old| old == props_content) {
+        fs::write(&props_path, &props_content)
+            .unwrap_or_else(|e| panic!("Failed to write {}: {e}", props_path.display()));
+    }
 
-    eprintln!("  Wrote {} plugin files to {}", written, plugins_dir.display());
+    eprintln!(
+        "  Wrote {written} of {} plugin files to {} (the others were unchanged)",
+        PLUGIN_FILES.len(),
+        plugins_dir.display()
+    );
     eprintln!("  Generated {}", props_path.display());
     eprintln!("  Engine path: {}", engine_path_normalized);
 
