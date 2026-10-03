@@ -88,6 +88,11 @@ pub struct ModuleMapping {
     /// outside the engine's own: the Rusteal plugin must list it.
     #[serde(default)]
     pub plugin: Option<String>,
+    /// Only these classes of the module (and the ones they derive from),
+    /// for a module much bigger than what a library needs (`UnrealEd`).
+    /// Absent: every class.
+    #[serde(default)]
+    pub classes: Option<Vec<String>>,
 }
 
 #[derive(Deserialize, Default, Clone)]
@@ -119,6 +124,7 @@ impl CodegenConfig {
                 module: module.to_string(),
                 feature: core.clone(),
                 plugin: None,
+                classes: None,
             });
         };
         add("Rusteal", "rusteal");

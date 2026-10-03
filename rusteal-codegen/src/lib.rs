@@ -13,7 +13,8 @@ pub mod cpp_gen;
 use std::path::Path;
 
 use crate::config::{
-    CodegenConfig, LibraryOutput, PluginConfig, PluginLayout, ProjectConfig, ProjectLayout,
+    CodegenConfig, LibraryKind, LibraryOutput, PluginConfig, PluginLayout, ProjectConfig,
+    ProjectLayout,
 };
 use crate::schema::{ClassesFile, EnumsFile, StructsFile};
 
@@ -121,7 +122,8 @@ pub fn generate_library(uht_input: &Path, codegen: &CodegenConfig, output: &Libr
 
     // Apply filters
     eprintln!("rusteal-codegen: filtering...");
-    filter::apply_filters(&mut ctx, &codegen.blocklist);
+    let blocklist = with_unlisted_classes(&ctx, codegen);
+    filter::apply_filters(&mut ctx, &blocklist, output.kind == LibraryKind::Editor);
 
     // Build function table (assign FuncIds)
     eprintln!("rusteal-codegen: building function table...");
@@ -149,6 +151,36 @@ pub fn generate_library(uht_input: &Path, codegen: &CodegenConfig, output: &Libr
     verify_output(&ctx, &rust_src, &cpp_out);
 
     eprintln!("rusteal-codegen: done!");
+}
+
+/// The blocklist plus, for each module that lists the classes it wants
+/// (`classes = [...]` in `[codegen.modules]`), every other class of it, but
+/// the ones the listed classes derive from.
+fn with_unlisted_classes(ctx: &context::CodegenContext, codegen: &CodegenConfig) -> config::Blocklist {
+    use std::collections::HashSet;
+
+    let mut blocklist = codegen.blocklist.clone();
+    for (package, mapping) in &codegen.modules {
+        let Some(listed) = &mapping.classes else {
+            continue;
+        };
+        let mut wanted: HashSet<&str> = HashSet::new();
+        for name in listed {
+            let mut current = Some(name.as_str());
+            while let Some(class) = current.and_then(|n| ctx.classes.get(n)) {
+                if &class.package != package || !wanted.insert(class.name.as_str()) {
+                    break;
+                }
+                current = class.super_class.as_deref();
+            }
+        }
+        for class in ctx.module_classes.get(&mapping.module).into_iter().flatten() {
+            if !wanted.contains(class.name.as_str()) {
+                blocklist.classes.push(class.name.clone());
+            }
+        }
+    }
+    blocklist
 }
 
 /// Generate module_deps.txt listing UE module names needed by enabled features.
@@ -352,6 +384,39 @@ fn build_func_table(ctx: &mut context::CodegenContext) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn listed_classes_keep_their_ancestors_only() {
+        let class = |name: &str, package: &str, parent: &str| -> schema::ClassInfo {
+            serde_json::from_value(serde_json::json!({
+                "name": name, "cpp_name": format!("U{name}"), "package": package,
+                "header": "", "class_flags": 0, "super": parent,
+            }))
+            .unwrap()
+        };
+        let codegen: CodegenConfig = toml::from_str(
+            r#"
+            features = ["core", "editor"]
+            [modules]
+            CoreUObject = { module = "core_ue", feature = "core" }
+            UnrealEd = { module = "unreal_ed", feature = "editor", classes = ["EditorActorSubsystem"] }
+            "#,
+        )
+        .unwrap();
+        let ctx = context::CodegenContext::new(
+            vec![
+                class("Object", "CoreUObject", ""),
+                class("EditorSubsystemBase", "UnrealEd", "Object"),
+                class("EditorActorSubsystem", "UnrealEd", "EditorSubsystemBase"),
+                class("Factory", "UnrealEd", "Object"),
+            ],
+            vec![],
+            vec![],
+            &codegen,
+        );
+        let blocked = with_unlisted_classes(&ctx, &codegen).classes;
+        assert_eq!(blocked, ["Factory"]);
+    }
 
     #[test]
     fn unchanged_output_keeps_its_timestamp() {
