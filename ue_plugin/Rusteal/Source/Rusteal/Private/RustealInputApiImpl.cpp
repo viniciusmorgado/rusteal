@@ -36,20 +36,62 @@ static bool AddActionBinding(const FRustealActionBinding &Binding) {
   return !bAlreadyBound;
 }
 
-// The FInputActionValue parameter of a handler, or null when it takes none.
-// Sets bValid to false for any other signature.
-static FStructProperty *ActionValueParam(const UFunction *Func, bool &bValid) {
-  bValid = true;
-  if (Func->NumParms == 0) {
-    return nullptr;
+// The parameters a handler may take, in this order and any leading part of
+// it, as the engine's dynamic binding signature has them: the action's value,
+// the seconds it has been evaluated (ElapsedSeconds) and triggered
+// (TriggeredSeconds), and the action itself.
+struct FRustealActionHandlerParams {
+  FStructProperty *Value = nullptr;
+  FFloatProperty *ElapsedSeconds = nullptr;
+  FFloatProperty *TriggeredSeconds = nullptr;
+  FObjectProperty *SourceAction = nullptr;
+};
+
+// Match Func's parameters against that signature; false for any other.
+static bool ActionHandlerParams(const UFunction *Func,
+                                FRustealActionHandlerParams &Out) {
+  Out = FRustealActionHandlerParams();
+  int32 Index = 0;
+  for (TFieldIterator<FProperty> It(Func); It && It->HasAnyPropertyFlags(CPF_Parm);
+       ++It, ++Index) {
+    FProperty *Param = *It;
+    if (Param->HasAnyPropertyFlags(CPF_ReturnParm)) {
+      return false;
+    }
+    switch (Index) {
+    case 0: {
+      FStructProperty *Value = CastField<FStructProperty>(Param);
+      if (!Value || Value->Struct != FInputActionValue::StaticStruct()) {
+        return false;
+      }
+      Out.Value = Value;
+      break;
+    }
+    case 1:
+      Out.ElapsedSeconds = CastField<FFloatProperty>(Param);
+      if (!Out.ElapsedSeconds) {
+        return false;
+      }
+      break;
+    case 2:
+      Out.TriggeredSeconds = CastField<FFloatProperty>(Param);
+      if (!Out.TriggeredSeconds) {
+        return false;
+      }
+      break;
+    case 3: {
+      FObjectProperty *Source = CastField<FObjectProperty>(Param);
+      if (!Source || !UInputAction::StaticClass()->IsChildOf(Source->PropertyClass)) {
+        return false;
+      }
+      Out.SourceAction = Source;
+      break;
+    }
+    default:
+      return false;
+    }
   }
-  FStructProperty *Param = CastField<FStructProperty>(Func->PropertyLink);
-  if (Func->NumParms == 1 && Param &&
-      Param->Struct == FInputActionValue::StaticStruct()) {
-    return Param;
-  }
-  bValid = false;
-  return nullptr;
+  return true;
 }
 
 static ERustealErrorCode BindActionImpl(RustealUObjectHandle ActorHandle,
@@ -84,12 +126,12 @@ static ERustealErrorCode BindActionImpl(RustealUObjectHandle ActorHandle,
            *Actor->GetName(), *Name.ToString());
     return ERustealErrorCode::FunctionNotFound;
   }
-  bool bValid = false;
-  ActionValueParam(Func, bValid);
-  if (!bValid) {
+  FRustealActionHandlerParams Params;
+  if (!ActionHandlerParams(Func, Params)) {
     UE_LOG(LogRusteal, Warning,
-           TEXT("[Rusteal] BindAction: %s::%s must take no parameters or one "
-                "FInputActionValue"),
+           TEXT("[Rusteal] BindAction: %s::%s must take (FInputActionValue, "
+                "float ElapsedSeconds, float TriggeredSeconds, UInputAction*) "
+                "or a leading part of it"),
            *Actor->GetName(), *Name.ToString());
     return ERustealErrorCode::TypeMismatch;
   }
@@ -110,22 +152,34 @@ static ERustealErrorCode BindActionImpl(RustealUObjectHandle ActorHandle,
         if (!Handler) {
           return;
         }
-        bool bHandlerValid = false;
-        FStructProperty *ValueParam = ActionValueParam(Handler, bHandlerValid);
-        if (!bHandlerValid) {
+        FRustealActionHandlerParams HandlerParams;
+        if (!ActionHandlerParams(Handler, HandlerParams)) {
           return;
         }
-        if (!ValueParam) {
+        if (!HandlerParams.Value) {
           Target->ProcessEvent(Handler, nullptr);
           return;
         }
         uint8 *Params =
             static_cast<uint8 *>(FMemory_Alloca(Handler->ParmsSize));
         FMemory::Memzero(Params, Handler->ParmsSize);
+        FStructProperty *ValueParam = HandlerParams.Value;
         ValueParam->InitializeValue_InContainer(Params);
         const FInputActionValue Value = Instance.GetValue();
         ValueParam->CopyCompleteValue(
             ValueParam->ContainerPtrToValuePtr<void>(Params), &Value);
+        if (HandlerParams.ElapsedSeconds) {
+          HandlerParams.ElapsedSeconds->SetPropertyValue_InContainer(
+              Params, Instance.GetElapsedTime());
+        }
+        if (HandlerParams.TriggeredSeconds) {
+          HandlerParams.TriggeredSeconds->SetPropertyValue_InContainer(
+              Params, Instance.GetTriggeredTime());
+        }
+        if (HandlerParams.SourceAction) {
+          HandlerParams.SourceAction->SetObjectPropertyValue_InContainer(
+              Params, const_cast<UInputAction *>(Instance.GetSourceAction().Get()));
+        }
         Target->ProcessEvent(Handler, Params);
         ValueParam->DestroyValue_InContainer(Params);
       });

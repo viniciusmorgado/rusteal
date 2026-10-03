@@ -408,8 +408,30 @@ getter returns a view of the array inside the object, changed in place, and
 a struct's a copy. `default = ...` is for the scalar
 types and enums; the others are set in `#[class_defaults]` or a Blueprint
 child, as the engine's templates do. `EditAnywhere`, `EditDefaultsOnly`,
-`VisibleAnywhere`, `BlueprintReadWrite` and `BlueprintReadOnly` are UE's
-specifiers.
+`VisibleAnywhere`, `BlueprintReadWrite`, `BlueprintReadOnly` and `SaveGame`
+are UE's specifiers; any other argument is a compile error.
+
+`SaveGame` is UE's flag for what a save writes: an archive that is a save
+game archive (`ArIsSaveGame`, the usual way to save actors' state) serializes
+only the properties that carry it. `GameplayStatics::save_game_to_slot` writes
+a `SaveGame` object whole, flagged or not; marking its fields keeps them right
+when it is serialized some other way. A save game class is a Rust class whose
+parent is `SaveGame`:
+
+```rust
+#[uclass(parent = SaveGame)]
+pub struct Progress {
+    #[uproperty(SaveGame)]
+    unlocked_difficulty: i32,
+    #[uproperty(SaveGame)]
+    best_times: UeArray<f32>,
+}
+
+let save = GameplayStatics::create_save_game_object(SubclassOf::<Progress>::base().upcast());
+Progress::from_obj(save)?.set_unlocked_difficulty(2);
+GameplayStatics::save_game_to_slot(save, "progress", 0);
+let loaded = Progress::from_obj(GameplayStatics::load_game_from_slot("progress", 0))?;
+```
 
 A field with no attribute is Rust's alone, kept outside UE's object: its
 getter returns a copy (a clone), `set_` replaces it, and `<field>_mut()`
@@ -500,6 +522,37 @@ class. It is `BlueprintCallable` unless it says otherwise:
 `name = "K2_OnMovementModeChanged"` gives the UE name when the method's name
 in PascalCase is not it.
 
+A class implements UE interfaces by class path: a C++ interface
+(`/Script/Module.Interface`) or a Blueprint Interface asset
+(`/Game/Path/BPI_Foo.BPI_Foo_C`). Its functions are `#[ufunction]`s named as
+the interface's, taking the same parameters in the same order, and returning
+its return value; C++'s `IFoo::Execute_Bar(Object)`, a Blueprint's interface
+message and `DoesImplementInterface` reach them as they reach a Blueprint's.
+
+```rust
+#[uclass(parent = Actor, implements = ["/Game/Interaction/BPI_Usable.BPI_Usable_C"])]
+pub struct Door {
+    #[uproperty(EditAnywhere)]
+    locked: bool,
+}
+
+#[uclass_impl]
+impl Door {
+    /// BPI_Usable's Use(Instigator: Actor) -> bool
+    #[ufunction]
+    fn r#use(&mut self, instigator: UObjectRef<Actor>) -> bool {
+        !self.locked()
+    }
+}
+```
+
+Interfaces load once the engine is initialized (a game module's or an
+asset's cannot be loaded earlier), so the class implements them from then on.
+An interface whose functions are not Blueprint events (marked
+`CannotImplementInterfaceInBlueprint`) has only a C++ implementation and is
+refused, as Blueprints refuse it. Between Rust classes, a Rust trait is the
+lighter tool.
+
 ### Defining UE Structs
 
 A data table's rows, or a struct a class's properties hold, can be declared in
@@ -570,7 +623,22 @@ impl MyCharacter {
 ```
 
 `bind_action` names the function by its UE name (`fn r#move` is `Move`), which
-takes nothing or an `FInputActionValue`; engine functions work too (`"Jump"`).
+takes nothing, or the parameters of the engine's dynamic binding signature or
+a leading part of them: the value, the seconds the action has been evaluated
+and triggered, and the action itself. Engine functions work too (`"Jump"`).
+
+```rust
+#[ufunction]
+fn charge(
+    &mut self,
+    value: UStructRef<FInputActionValue>,
+    elapsed_seconds: f32,   // FInputActionInstance::GetElapsedTime()
+    triggered_seconds: f32, // GetTriggeredTime()
+    source_action: UObjectRef<InputAction>,
+) {
+    // ...
+}
+```
 `enhanced_input_subsystem(controller)` is where a player controller adds its
 mapping contexts.
 
@@ -594,6 +662,34 @@ actor.checked()?.on_destroyed().add(move |destroyed| { /* ... */ })?.detach();
 // A #[ufunction] of this class taking the delegate's parameters.
 me.checked()?.on_actor_begin_overlap().add_ufunction(&me, "BeginOverlap")?;
 ```
+
+A Rust class declares its own multicast delegate with `#[udelegate]` in its
+`#[uclass_impl]` block: C++'s `DECLARE_DYNAMIC_MULTICAST_DELEGATE` and a
+`BlueprintAssignable` property, so Blueprints (a UMG widget showing the
+health, say) bind it like any engine delegate. The method's body stays empty;
+calling it broadcasts. Next to it come `<name>_add(closure)` and
+`<name>_add_ufunction(target, "Function")` for Rust listeners.
+
+```rust
+#[uclass_impl]
+impl PlayerCharacter {
+    /// Broadcast when health or armor change.
+    #[udelegate]
+    pub fn on_health_changed(&self, health: f32, armor: f32) {}
+
+    fn take_hit(&mut self, damage: f32) {
+        // ...
+        self.on_health_changed(self.health(), self.armor()); // broadcast
+    }
+}
+
+// elsewhere
+character.on_health_changed_add(|health, armor| { /* ... */ })?.detach();
+```
+
+Its parameters are the scalar types, objects, classes and structs (as
+`&OwnedStruct<T>`; a closure receives an `OwnedStruct<T>`). `#[udelegate(name =
+"...")]` gives the UE name when the method's PascalCase is not it.
 
 ### Dynamic Calls
 

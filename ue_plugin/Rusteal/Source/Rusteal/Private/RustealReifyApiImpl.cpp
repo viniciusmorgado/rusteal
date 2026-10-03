@@ -3,6 +3,8 @@
 
 #include "Engine/Blueprint.h"
 #include "GameFramework/Actor.h"
+#include "Engine/Engine.h"
+#include "Misc/CoreDelegates.h"
 #include "RustealApiTable.h"
 #include "RustealModule.h"
 #include "UObject/UObjectArray.h"
@@ -873,6 +875,116 @@ static ERustealErrorCode FinalizeStructImpl(RustealUStructHandle Handle) {
   return ERustealErrorCode::Ok;
 }
 
+// A multicast delegate a Rust class declares (#[udelegate]): its signature
+// function, named as UHT names one (<Name>__DelegateSignature) and holding the
+// parameters, and the property holding the delegate, which Blueprints bind
+// (BlueprintAssignable) and call (BlueprintCallable).
+static RustealUFunctionHandle AddDelegateImpl(RustealUClassHandle Cls,
+                                              const uint8 *Name,
+                                              uint32 NameLen,
+                                              uint64 PropFlags) {
+  UClass *Class = static_cast<UClass *>(Cls.ptr);
+  if (!Class) {
+    return RustealUFunctionHandle{nullptr};
+  }
+  const FName PropName = ReifyUtf8ToFName(Name, NameLen);
+
+  // Hot reload: the class keeps its property and signature.
+  for (TFieldIterator<FMulticastDelegateProperty> It(
+           Class, EFieldIteratorFlags::ExcludeSuper);
+       It; ++It) {
+    if (It->GetFName() == PropName) {
+      return RustealUFunctionHandle{It->SignatureFunction};
+    }
+  }
+
+  const FName SignatureName(
+      *FString::Printf(TEXT("%s__DelegateSignature"), *PropName.ToString()));
+  URustealReifiedFunction *Signature =
+      NewObject<URustealReifiedFunction>(Class, SignatureName, RF_Public);
+  Signature->FunctionFlags =
+      FUNC_Public | FUNC_Delegate | FUNC_MulticastDelegate;
+  Signature->CallbackId = 0;
+  // In the class's children, so the class links it with its functions.
+  Signature->Next = Class->Children;
+  Class->Children = Signature;
+
+  FMulticastInlineDelegateProperty *Prop =
+      new FMulticastInlineDelegateProperty(FFieldVariant(Class), PropName,
+                                           RF_Public);
+  Prop->SignatureFunction = Signature;
+  Prop->PropertyFlags |= CPF_BlueprintAssignable | CPF_BlueprintCallable |
+                         static_cast<EPropertyFlags>(PropFlags);
+  Class->AddCppProperty(Prop);
+
+  return RustealUFunctionHandle{Signature};
+}
+
+// Interfaces Rust classes implement, by class path. Rust classes are created
+// while the Rusteal module starts, before game modules and assets load, so
+// the interfaces are resolved once the engine is initialized (at once after
+// that, as on a hot reload).
+static TArray<TPair<TWeakObjectPtr<UClass>, FString>> GPendingInterfaces;
+static bool GInterfacesResolvable = false;
+
+static void ResolveInterface(UClass *Class, const FString &Path) {
+  UClass *Interface = LoadClass<UInterface>(nullptr, *Path);
+  if (!Interface || !Interface->HasAnyClassFlags(CLASS_Interface)) {
+    UE_LOG(LogRusteal, Error,
+           TEXT("[Rusteal] %s implements %s: no interface at that path"),
+           *Class->GetName(), *Path);
+    return;
+  }
+#if WITH_METADATA
+  if (Interface->HasMetaData(TEXT("CannotImplementInterfaceInBlueprint"))) {
+    UE_LOG(LogRusteal, Error,
+           TEXT("[Rusteal] %s implements %s: a C++-only interface (its "
+                "functions are not Blueprint events), which only C++ can "
+                "implement"),
+           *Class->GetName(), *Path);
+    return;
+  }
+#endif
+  if (Class->ImplementsInterface(Interface)) {
+    return;
+  }
+  // As a Blueprint implements one: no C++ vtable (offset 0), its functions
+  // are found by name and called through ProcessEvent.
+  Class->Interfaces.Add(FImplementedInterface(Interface, 0, true));
+  UE_LOG(LogRusteal, Display, TEXT("[Rusteal] %s implements %s"),
+         *Class->GetName(), *Interface->GetPathName());
+}
+
+static void ResolvePendingInterfaces() {
+  GInterfacesResolvable = true;
+  for (const TPair<TWeakObjectPtr<UClass>, FString> &Pending :
+       GPendingInterfaces) {
+    if (UClass *Class = Pending.Key.Get()) {
+      ResolveInterface(Class, Pending.Value);
+    }
+  }
+  GPendingInterfaces.Empty();
+}
+
+static ERustealErrorCode AddInterfaceImpl(RustealUClassHandle Cls,
+                                          const uint8 *Path, uint32 PathLen) {
+  UClass *Class = static_cast<UClass *>(Cls.ptr);
+  if (!Class || !Path) {
+    return ERustealErrorCode::NullArgument;
+  }
+  const FString InterfacePath = ReifyUtf8ToFString(Path, PathLen);
+  if (GInterfacesResolvable || (GEngine && GEngine->IsInitialized())) {
+    GInterfacesResolvable = true;
+    ResolveInterface(Class, InterfacePath);
+    return ERustealErrorCode::Ok;
+  }
+  if (GPendingInterfaces.IsEmpty()) {
+    FCoreDelegates::OnPostEngineInit.AddStatic(&ResolvePendingInterfaces);
+  }
+  GPendingInterfaces.Emplace(Class, InterfacePath);
+  return ERustealErrorCode::Ok;
+}
+
 // ---------------------------------------------------------------------------
 // Export the API table
 // ---------------------------------------------------------------------------
@@ -883,5 +995,6 @@ FRustealReifyApi GReifyApi = {
     &FinalizeClassImpl,       &GetCdoImpl,
     &AddDefaultSubobjectImpl, &FindDefaultSubobjectImpl,
     &SetPropertyMetadataImpl, &CreateStructImpl,
-    &FinalizeStructImpl,
+    &FinalizeStructImpl,      &AddDelegateImpl,
+    &AddInterfaceImpl,
 };

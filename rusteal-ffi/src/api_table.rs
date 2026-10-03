@@ -277,6 +277,10 @@ pub struct RustealReflectionApi {
     /// Find a UEnum by name (`ECollisionChannel`). The handle is the enum's
     /// object, typed like a class handle as `RustealReifyPropExtra::enum_handle`.
     pub find_enum: unsafe extern "C" fn(name: *const u8, name_len: u32) -> UClassHandle,
+
+    /// The signature function of a delegate property (unicast or multicast),
+    /// whose parameters are the delegate's; null for any other property.
+    pub get_delegate_signature: unsafe extern "C" fn(prop: FPropertyHandle) -> UFunctionHandle,
 }
 
 /// Phase 7: Container operations (TArray / TMap / TSet).
@@ -524,6 +528,27 @@ pub struct RustealReifyApi {
     /// Link a struct once its properties are added, after the Rust structs
     /// its properties hold.
     pub finalize_struct: unsafe extern "C" fn(strukt: UStructHandle) -> RustealErrorCode,
+
+    /// Add a multicast delegate property named `name` to a Rust class (a
+    /// `#[udelegate]`), with `prop_flags` on top of `BlueprintAssignable` and
+    /// `BlueprintCallable`, and return its signature function, whose
+    /// parameters `add_function_param` adds. On a reload, the existing
+    /// property's signature.
+    pub add_delegate: unsafe extern "C" fn(
+        cls: UClassHandle,
+        name: *const u8, name_len: u32,
+        prop_flags: u64,
+    ) -> UFunctionHandle,
+
+    /// Make a Rust class implement the UE interface at class path `path`
+    /// (`/Script/Module.Interface`, a Blueprint Interface's
+    /// `/Game/Path/BPI_Foo.BPI_Foo_C`). Interfaces are loaded once the engine
+    /// is initialized, so the class implements it from then on; functions
+    /// named as the interface's, with the same parameters, implement it.
+    pub add_interface: unsafe extern "C" fn(
+        cls: UClassHandle,
+        path: *const u8, path_len: u32,
+    ) -> RustealErrorCode,
 }
 
 pub const RUSTEAL_COMP_ROOT: u32 = 1;
@@ -563,7 +588,8 @@ pub struct RustealWidgetApi {
 pub struct RustealInputApi {
     /// Bind `trigger_event` (an `ETriggerEvent` value) of `action` on `actor`'s
     /// Enhanced Input component to `actor`'s UFUNCTION `function_name`, which
-    /// takes no parameters or one `FInputActionValue`. `InvalidOperation` when
+    /// takes no parameters, or `(FInputActionValue, float ElapsedSeconds, float
+    /// TriggeredSeconds, UInputAction*)` or a leading part of it. `InvalidOperation` when
     /// the actor has no Enhanced Input component yet, `TypeMismatch` when the
     /// function takes anything else. Binding the same function to the same
     /// action and event on the same component again does nothing.
