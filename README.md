@@ -18,6 +18,24 @@ Rusteal lets you write Unreal Engine gameplay in Rust. Your Rust code compiles t
 
 > **⚠️ Early Stage Project** — Rusteal is under active development and **not ready for production use**. APIs will change without notice, documentation is incomplete, and many UE features are not yet covered. Contributions and feedback are welcome, but please do not use this for shipping projects.
 
+## Future migration to UE6
+
+We are aware of the deep changes Unreal Engine 6 makes to the engine's
+foundations: gameplay moving to Verse, Scene Graph replacing Actors and
+Components, and Blueprints being deprecated once the new framework matures. We
+follow them in Epic's own UE6 development stream (`ue6-main` in Epic's Unreal
+Engine repository), and Rusteal's adaptation happens on the
+[`ue6`](https://github.com/viniciusmorgado/rusteal/tree/ue6) branch, which
+stays apart from `main` until UE6 ships.
+
+So far, adapting Rusteal to UE6 looks feasible, with limited impact: Verse is
+being built on the same UObject reflection and Unreal Header Tool that Rusteal
+generates its bindings from. What changes, what Rusteal depends on and the open
+questions are tracked in the
+[UE6 radar](https://github.com/viniciusmorgado/rusteal/blob/ue6/docs/ue6-radar.md), on the `ue6` branch.
+
+---
+
 This README serves two different readers:
 
 | You want to | Read | You need |
@@ -811,7 +829,8 @@ from the C++ and what they still work around is in
 
 What Unreal Engine 6 changes for Rusteal — Verse, Scene Graph, the end of
 Blueprints — and the open questions to check as Epic publishes details are in
-[`docs/ue6-radar.md`](https://github.com/viniciusmorgado/rusteal/blob/main/docs/ue6-radar.md).
+the [UE6 radar](https://github.com/viniciusmorgado/rusteal/blob/ue6/docs/ue6-radar.md), kept on the `ue6` branch (see
+[Future migration to UE6](#future-migration-to-ue6)).
 
 Commits are small — one per fix.
 
