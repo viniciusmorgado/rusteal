@@ -98,7 +98,11 @@ ECS.**
   (`ActorEntity`, `UActorEntityComponent : UActorComponent`), not a
   conversion.
 
-**Actors and Blueprints: no deprecation yet.** No new `UE_DEPRECATED` on
+**Actors and Blueprints: no deprecation on the stream yet, but it is the plan.**
+Epic says they "will eventually be deprecated once the new framework is
+sufficiently mature", with conversion tools; removal would follow the usual
+deprecation cycle (inference), likely years after Early Access. The absence of
+markers only means it has not started. No new `UE_DEPRECATED` on
 `AActor`, `APawn`, `ACharacter`, `UActorComponent`, `UUserWidget` or
 `UBlueprint`; the 300 `UE_DEPRECATED(6.x)` markers are elsewhere (rendering,
 Core). New systems are built so they don't depend on Actor (Mover, editor
@@ -184,7 +188,7 @@ stream on GitHub. Entries are numbered `UE6-NN` and never renumbered.
 | | |
 |---|---|
 | **Why it matters** | Reification creates classes at runtime through Blueprint machinery. While Actors and Blueprints are in UE6 it keeps working; once they are deprecated it needs another way to register Rust-defined types. |
-| **Answer so far** | No deprecation on the stream yet, no conversion tooling. The Blueprint compiler is being restructured (`KismetCompiler` into `BlueprintGraph`), and `UBlueprintGeneratedClass` gained the `NeedsCookRequiresInstanceData` specifier. |
+| **Answer so far** | Epic's plan: deprecated once Scene Graph is mature, with conversion tools, then removed (inference: after a deprecation period of some years). On the stream: no deprecation yet, no conversion tooling. The Blueprint compiler is being restructured (`KismetCompiler` into `BlueprintGraph`), and `UBlueprintGeneratedClass` gained the `NeedsCookRequiresInstanceData` specifier. |
 | **Next check** | Deprecations on `AActor`/`UBlueprint`; the conversion tools; whether reification still works once the Blueprint compiler changes (build the plugin against the stream). |
 | **Status** | open |
 | **Last checked** | 2026-10-02 |
@@ -268,7 +272,7 @@ Not decisions: directions the findings point to, to revisit at each check.
 | 2026 | UE 5.8, the last planned UE5 release; a 5.9 possible, reported as planned in August (unconfirmed by Epic). |
 | End of 2027 | UE6 Early Access. |
 | 2029, roughly | UE6 full release (12–18 months after Early Access). |
-| Later | Actors and Blueprints deprecated, with conversion tools to Scene Graph. |
+| Later | Actors and Blueprints deprecated, with conversion tools to Scene Graph; removed after that (inference). Watch for the first `UE_DEPRECATED` on `AActor` or `UBlueprint`: from then on, Rusteal's reification and the templates' Actor-based classes are on a clock. |
 
 ## Reviewing this file
 
