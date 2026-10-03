@@ -24,34 +24,48 @@ Rusteal lets you write Unreal Engine games and plugins in Rust: gameplay, reusab
 
 <img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/mascot.png" alt="The Rusteal mascot" width="280" align="right">
 
-**Use every core.** The gameplay that weighs on a frame (AI for hundreds of
+**Use every core.**
+
+The gameplay that weighs on a frame (AI for hundreds of
 agents, simulations, pathfinding, procedural generation) spreads across every
 core with `rayon` or threads of your own, and the compiler guarantees the
 threads never race. The results reach Unreal's objects back on the game
 thread, through `task::spawn`.
 
-**Iterate in seconds.** Your gameplay is a library of its own: Cargo rebuilds
+**Iterate in seconds.**
+
+Your gameplay is a library of its own: Cargo rebuilds
 your crate alone, without the Unreal Build Tool, and `Rusteal.Reload` swaps
 the new code into the running editor.
 
-**Test without the engine.** Combat rules, inventories, economies and AI
+**Test without the engine.**
+
+Combat rules, inventories, economies and AI
 written as plain Rust run under `cargo test`, with property tests and
 benchmarks, without opening Unreal.
 
-**Crash less.** The borrow checker rules out use-after-free and data races in
+**Crash less.**
+
+The borrow checker rules out use-after-free and data races in
 your code, and a panic is caught at the FFI boundary and logged instead of
 taking the editor down.
 
-**Stay deterministic, share the rules.** Fixed-point math and seeded random
+**Stay deterministic, share the rules.**
+
+Fixed-point math and seeded random
 numbers give the same simulation on every machine, the base of rollback and
 lockstep netcode. The same rules crate can run in a dedicated Rust server, a
 balancing tool or the web, with Unreal as the presentation.
 
-**Bring the Rust ecosystem.** crates.io is one line away: `serde` for saves
+**Bring the Rust ecosystem.**
+
+crates.io is one line away: `serde` for saves
 and configs, `rapier` for deterministic physics, `ggrs` for rollback,
 `wasmtime` or `rhai` for sandboxed mods, `ort` for local inference.
 
-**Feel at home on both sides.** `#[uclass]`, `#[uproperty]` and
+**Feel at home on both sides.**
+
+`#[uclass]`, `#[uproperty]` and
 `#[ufunction]` speak Unreal's language, so anyone who knows the engine knows
 where things go. Everything around them is Rust: structs and traits, `Result`
 for errors, pattern matching, Cargo, rust-analyzer and clippy.
