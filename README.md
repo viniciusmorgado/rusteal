@@ -18,6 +18,42 @@ Rusteal lets you write Unreal Engine games and plugins in Rust: gameplay, reusab
 
 > **⚠️ Early Stage Project** — Rusteal is under active development and **not ready for production use**. APIs will change without notice, documentation is incomplete, and many UE features are not yet covered. Contributions and feedback are welcome, but please do not use this for shipping projects.
 
+---
+
+<img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/mascot.png" alt="The Rusteal mascot" width="280" align="right">
+
+**Use every core.** Plain Rust data runs in parallel with `rayon` or threads of
+your own. Unreal's objects stay on the game thread, so a frame takes what it
+needs from the engine, does the heavy work off it and hands the result back
+(`task::spawn`). Each call into the engine crosses the FFI boundary, so a few
+large calls beat many small ones.
+
+**Iterate in seconds.** Your code is a library of its own: Cargo rebuilds your
+crate alone, without the Unreal Build Tool, and `Rusteal.Reload` swaps it into
+the running editor. Changing a class's properties or functions still needs a
+restart.
+
+**Test without the engine.** Combat rules, inventories, economies and AI
+written as plain Rust run under `cargo test`, with property tests and
+benchmarks, without opening Unreal.
+
+**Crash less.** The borrow checker rules out use-after-free and data races in
+your code, and a panic is caught at the FFI boundary and logged instead of
+taking the editor down.
+
+**Stay deterministic, share the rules.** Fixed-point math and seeded random
+numbers give the same simulation on every machine, the base of rollback and
+lockstep netcode. The same rules crate can run in a dedicated Rust server, a
+balancing tool or the web, with Unreal as the presentation.
+
+**Bring the Rust ecosystem, and its ergonomics.** crates.io is one line away:
+`serde` for saves and configs, `rapier` for deterministic physics, `ggrs` for
+rollback, `wasmtime` or `rhai` for sandboxed mods, `ort` for local inference.
+You keep Cargo, rust-analyzer, errors as `Result`s, and macros (`#[uclass]`,
+`#[ufunction]`) that read like the C++ they replace.
+
+<br clear="right">
+
 ## Future migration to UE6
 
 We are aware of the deep changes Unreal Engine 6 makes to the engine's
