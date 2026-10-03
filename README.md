@@ -408,8 +408,30 @@ getter returns a view of the array inside the object, changed in place, and
 a struct's a copy. `default = ...` is for the scalar
 types and enums; the others are set in `#[class_defaults]` or a Blueprint
 child, as the engine's templates do. `EditAnywhere`, `EditDefaultsOnly`,
-`VisibleAnywhere`, `BlueprintReadWrite` and `BlueprintReadOnly` are UE's
-specifiers.
+`VisibleAnywhere`, `BlueprintReadWrite`, `BlueprintReadOnly` and `SaveGame`
+are UE's specifiers; any other argument is a compile error.
+
+`SaveGame` is UE's flag for what a save writes: an archive that is a save
+game archive (`ArIsSaveGame`, the usual way to save actors' state) serializes
+only the properties that carry it. `GameplayStatics::save_game_to_slot` writes
+a `SaveGame` object whole, flagged or not; marking its fields keeps them right
+when it is serialized some other way. A save game class is a Rust class whose
+parent is `SaveGame`:
+
+```rust
+#[uclass(parent = SaveGame)]
+pub struct Progress {
+    #[uproperty(SaveGame)]
+    unlocked_difficulty: i32,
+    #[uproperty(SaveGame)]
+    best_times: UeArray<f32>,
+}
+
+let save = GameplayStatics::create_save_game_object(SubclassOf::<Progress>::base().upcast());
+Progress::from_obj(save)?.set_unlocked_difficulty(2);
+GameplayStatics::save_game_to_slot(save, "progress", 0);
+let loaded = Progress::from_obj(GameplayStatics::load_game_from_slot("progress", 0))?;
+```
 
 A field with no attribute is Rust's alone, kept outside UE's object: its
 getter returns a copy (a clone), `set_` replaces it, and `<field>_mut()`
