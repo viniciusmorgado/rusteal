@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/logo_nobg_orange.png" alt="Rusteal logo" width="256">
+<img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/logo.png" alt="Rusteal logo" width="256">
 
 # Rusteal
 
