@@ -389,16 +389,20 @@ impl BuildContext {
     fn step4_cargo_build(&self) {
         for library in &self.libraries {
             eprintln!("  {}: {}", library.label, library.crate_name);
-            let manifest = library.rust_workspace.join("Cargo.toml");
+            // The crate by its own manifest, as the templates lay it out
+            // (Rust/<crate>/): `-p <crate>` is ambiguous when a dependency
+            // has the same name (a plugin named Inventory, a game named Glam).
+            let member = library.rust_workspace.join(&library.crate_name).join("Cargo.toml");
+            let (manifest, package) = if member.is_file() {
+                (member, None)
+            } else {
+                (library.rust_workspace.join("Cargo.toml"), Some(library.crate_name.as_str()))
+            };
             let manifest_str = manifest.to_string_lossy().into_owned();
-            let mut args = vec![
-                "cargo",
-                "build",
-                "--manifest-path",
-                &manifest_str,
-                "-p",
-                &library.crate_name,
-            ];
+            let mut args = vec!["cargo", "build", "--manifest-path", &manifest_str];
+            if let Some(package) = package {
+                args.extend(["-p", package]);
+            }
             if self.release {
                 args.push("--release");
             }
