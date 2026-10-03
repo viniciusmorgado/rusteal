@@ -592,7 +592,22 @@ impl MyCharacter {
 ```
 
 `bind_action` names the function by its UE name (`fn r#move` is `Move`), which
-takes nothing or an `FInputActionValue`; engine functions work too (`"Jump"`).
+takes nothing, or the parameters of the engine's dynamic binding signature or
+a leading part of them: the value, the seconds the action has been evaluated
+and triggered, and the action itself. Engine functions work too (`"Jump"`).
+
+```rust
+#[ufunction]
+fn charge(
+    &mut self,
+    value: UStructRef<FInputActionValue>,
+    elapsed_seconds: f32,   // FInputActionInstance::GetElapsedTime()
+    triggered_seconds: f32, // GetTriggeredTime()
+    source_action: UObjectRef<InputAction>,
+) {
+    // ...
+}
+```
 `enhanced_input_subsystem(controller)` is where a player controller adds its
 mapping contexts.
 
