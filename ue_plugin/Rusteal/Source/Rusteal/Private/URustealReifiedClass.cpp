@@ -3,6 +3,7 @@
 #include "Engine/Blueprint.h"
 #include "GameFramework/Actor.h"
 #include "RustealApiTable.h"
+#include "RustealLibrary.h"
 #include "RustealModule.h"
 
 UClass *URustealReifiedClass::GetAuthoritativeClass() {
@@ -110,14 +111,15 @@ void URustealReifiedClass::RustealClassConstructor(
     }
   }
 
-  // 4. Notify Rust to construct its instance data, one per Rust class.
-  const FRustealRustCallbacks *Callbacks = GetRustealRustCallbacks();
-  if (Callbacks && Callbacks->construct_rust_instance) {
-    bool bIsCDO = Obj->HasAnyFlags(RF_ClassDefaultObject);
-    for (URustealReifiedClass *DataClass : Chain) {
-      Callbacks->construct_rust_instance(RustealUObjectHandle{Obj},
-                                         DataClass->RustTypeId, bIsCDO);
-    }
+  // 4. Notify Rust to construct its instance data, one per Rust class, each
+  // in the library that defines the class.
+  const bool bIsCDO = Obj->HasAnyFlags(RF_ClassDefaultObject);
+  for (URustealReifiedClass *DataClass : Chain) {
+    RustealCallLibrary(DataClass->Library, [Obj, DataClass, bIsCDO](
+                                               const FRustealRustCallbacks &Cb) {
+      Cb.construct_rust_instance(RustealUObjectHandle{Obj},
+                                 DataClass->RustTypeId, bIsCDO);
+    });
   }
 }
 

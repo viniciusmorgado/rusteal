@@ -1,5 +1,6 @@
 #include "URustealReifiedFunction.h"
 #include "RustealApiTable.h"
+#include "RustealLibrary.h"
 #include "RustealModule.h"
 #include "URustealReifiedClass.h"
 
@@ -128,11 +129,13 @@ DEFINE_FUNCTION(URustealReifiedFunction::execCallRustFunction) {
   // Step 3: Forward to Rust via the callback table.
   // ---------------------------------------------------------------
 
-  const FRustealRustCallbacks *Callbacks = GetRustealRustCallbacks();
-  if (Callbacks && Callbacks->invoke_rust_function) {
-    Callbacks->invoke_rust_function(ReifiedFunc->CallbackId,
-                                    RustealUObjectHandle{P_THIS}, ParamsPtr);
-  }
+  UObject *Self = P_THIS;
+  RustealCallLibrary(ReifiedFunc->Library,
+                     [ReifiedFunc, Self, ParamsPtr](const FRustealRustCallbacks &Cb) {
+                       Cb.invoke_rust_function(ReifiedFunc->CallbackId,
+                                               RustealUObjectHandle{Self},
+                                               ParamsPtr);
+                     });
 
   // Copy out parameters back to the caller.
   for (const TPair<FProperty *, uint8 *> &Out : OutDestinations) {

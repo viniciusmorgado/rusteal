@@ -6,6 +6,7 @@
 #include "Engine/Engine.h"
 #include "Misc/CoreDelegates.h"
 #include "RustealApiTable.h"
+#include "RustealLibrary.h"
 #include "RustealModule.h"
 #include "UObject/UObjectArray.h"
 #include "UObject/UObjectGlobals.h"
@@ -329,8 +330,17 @@ static RustealUClassHandle CreateClassImpl(const uint8 *Name, uint32 NameLen,
   URustealReifiedClass *Existing =
       FindObject<URustealReifiedClass>(RustealPackage, *ClassName);
   if (Existing) {
+    // Class names are one namespace for every library.
+    if (Existing->Library && Existing->Library != RustealCurrentLibrary()) {
+      UE_LOG(LogRusteal, Error,
+             TEXT("[Rusteal] CreateClass: %s is already a class of the %s "
+                  "library; class names must be unique across libraries"),
+             *ClassName, *Existing->Library->Name.ToString());
+      return RustealUClassHandle{nullptr};
+    }
     // Update the Rust type ID (may have changed if Rust struct layout changed).
     Existing->RustTypeId = RustTypeId;
+    Existing->Library = RustealCurrentLibrary();
 
     UE_LOG(
         LogRusteal, Display,
@@ -345,6 +355,7 @@ static RustealUClassHandle CreateClassImpl(const uint8 *Name, uint32 NameLen,
       RustealPackage, FName(*ClassName), RF_Public | RF_Standalone);
 
   NewClass->RustTypeId = RustTypeId;
+  NewClass->Library = RustealCurrentLibrary();
 
   // Walk up to find the native (C++) superclass.
   UClass *NativeSuper = ParentClass;
@@ -465,6 +476,7 @@ static RustealUFunctionHandle AddFunctionImpl(RustealUClassHandle Cls,
     if (URustealReifiedFunction *Reified =
             Cast<URustealReifiedFunction>(ExistingFunc)) {
       Reified->CallbackId = CallbackId;
+      Reified->Library = RustealCurrentLibrary();
       UE_LOG(
           LogRusteal, Display,
           TEXT(
@@ -485,6 +497,7 @@ static RustealUFunctionHandle AddFunctionImpl(RustealUClassHandle Cls,
       !(static_cast<EFunctionFlags>(FuncFlags) & FUNC_Native);
 
   NewFunc->CallbackId = CallbackId;
+  NewFunc->Library = RustealCurrentLibrary();
   NewFunc->FunctionFlags = static_cast<EFunctionFlags>(FuncFlags);
   if (!bScriptEvent) {
     NewFunc->FunctionFlags |= FUNC_Native;
@@ -774,20 +787,25 @@ class FRustealDeleteListener : public FUObjectArray::FUObjectDeleteListener {
 public:
   virtual void NotifyUObjectDeleted(const UObjectBase *Object,
                                     int32 Index) override {
-    // Only handle objects of a reified class or of a Blueprint child of one;
-    // Rust drops the data of every Rust class the object is.
+    // Only handle objects of a reified class or of a Blueprint child of one.
+    // Each library drops the data of every one of its Rust classes the object
+    // is, so it is called once, with its most derived class.
     const TArray<URustealReifiedClass *> Chain =
         URustealReifiedClass::ReifiedChain(Object->GetClass());
-    if (Chain.Num() == 0) {
-      return;
-    }
-    const URustealReifiedClass *ReifiedClass = Chain.Last();
-
-    const FRustealRustCallbacks *Callbacks = GetRustealRustCallbacks();
-    if (Callbacks && Callbacks->drop_rust_instance) {
-      Callbacks->drop_rust_instance(
-          RustealUObjectHandle{const_cast<UObjectBase *>(Object)},
-          ReifiedClass->RustTypeId, nullptr);
+    TArray<FRustealLibrary *, TInlineAllocator<2>> Dropped;
+    for (int32 ChainIndex = Chain.Num() - 1; ChainIndex >= 0; --ChainIndex) {
+      const URustealReifiedClass *ReifiedClass = Chain[ChainIndex];
+      FRustealLibrary *Library = ReifiedClass->Library;
+      if (Dropped.Contains(Library)) {
+        continue;
+      }
+      Dropped.Add(Library);
+      RustealCallLibrary(Library, [Object, ReifiedClass](
+                                      const FRustealRustCallbacks &Cb) {
+        Cb.drop_rust_instance(
+            RustealUObjectHandle{const_cast<UObjectBase *>(Object)},
+            ReifiedClass->RustTypeId, nullptr);
+      });
     }
   }
 
