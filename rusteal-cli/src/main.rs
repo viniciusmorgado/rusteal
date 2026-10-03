@@ -1,4 +1,5 @@
-// rusteal: CLI entry point (new, setup, build, generate, upgrade, sync-plugin).
+// rusteal: CLI entry point (new, plugin, setup, build, generate, upgrade,
+// sync-plugin).
 //
 // Commands act on a Rusteal project: the directory holding the .uproject and
 // `rusteal.toml`. It is given as an argument or found by walking up from the
@@ -7,6 +8,7 @@
 mod build_cmd;
 mod global_config;
 mod new_cmd;
+mod plugin_cmd;
 mod project_version;
 mod setup;
 mod sync_plugin;
@@ -17,7 +19,7 @@ use std::path::{Path, PathBuf};
 
 use clap::{Parser, Subcommand};
 
-use rusteal_codegen::config::find_project_root;
+use rusteal_codegen::config::{find_plugins, find_project_root};
 
 use project_version::Scope;
 
@@ -52,6 +54,12 @@ enum Commands {
         #[arg(long)]
         no_build: bool,
     },
+    /// Make and manage Rusteal plugins: UE plugins written in Rust, with their
+    /// own library next to the game's.
+    Plugin {
+        #[command(subcommand)]
+        command: PluginCommands,
+    },
     /// Install the Rusteal plugins and a starter rusteal.toml into a UE project.
     Setup {
         /// The UE project directory (the one holding the .uproject).
@@ -67,12 +75,17 @@ enum Commands {
         /// Start from step N (1-5, default: 1).
         #[arg(long, default_value_t = 1)]
         from: u8,
-        /// Build the game library with the release profile, to ship the game
+        /// Build the libraries with the release profile, to ship the game
         /// (default: the dev profile, to iterate).
         #[arg(long)]
         release: bool,
+        /// Generate, build and deploy only this Rusteal plugin's library
+        /// (the UE steps still build the whole project).
+        #[arg(long)]
+        plugin: Option<String>,
     },
-    /// Generate the bindings crate and the C++ wrappers from the reflection JSON.
+    /// Generate the bindings crates and the C++ wrappers of the game's and the
+    /// Rusteal plugins' libraries from the reflection JSON.
     Generate {
         /// Project directory (default: found from the current directory).
         project: Option<PathBuf>,
@@ -86,6 +99,25 @@ enum Commands {
     },
     /// Sync hand-written plugin files into ue_plugin_embed/ for crates.io packaging.
     SyncPlugin,
+}
+
+#[derive(Subcommand)]
+enum PluginCommands {
+    /// Create a Rusteal plugin in a project (Plugins/<Name>/) and build it.
+    New {
+        /// Plugin name, also its C++ module's: letters and digits.
+        name: String,
+        /// What the plugin starts as (default: `blank`); an unknown name
+        /// lists them all.
+        #[arg(long, default_value = templates::DEFAULT_PLUGIN_TEMPLATE)]
+        template: String,
+        /// The project (default: found from the current directory).
+        #[arg(long)]
+        project: Option<PathBuf>,
+        /// Create the plugin without running the build pipeline.
+        #[arg(long)]
+        no_build: bool,
+    },
 }
 
 fn main() {
@@ -104,6 +136,18 @@ fn main() {
                 build: !no_build,
             });
         }
+        Commands::Plugin { command: PluginCommands::New { name, template, project, no_build } } => {
+            let root = project_root(project.as_deref());
+            check_version(&root, Scope::PinsAndPlugins);
+            let engine = global_config::engine_path();
+            plugin_cmd::run_plugin_new(&plugin_cmd::PluginNewOptions {
+                name: &name,
+                template: &template,
+                root: &root,
+                engine: &engine,
+                build: !no_build,
+            });
+        }
         Commands::Setup { project } => {
             // A project that already has its Rust workspace keeps the version
             // it pins; the plugins this installs must be that version.
@@ -113,16 +157,19 @@ fn main() {
             let engine = global_config::engine_path();
             setup::run_setup(&project, &engine);
         }
-        Commands::Build { project, step, from, release } => {
+        Commands::Build { project, step, from, release, plugin } => {
             let root = project_root(project.as_deref());
             check_version(&root, Scope::PinsAndPlugins);
             let engine = global_config::engine_path();
-            build_cmd::run_build(&root, &engine, step, from, release);
+            build_cmd::run_build(&root, &engine, step, from, release, plugin.as_deref());
         }
         Commands::Generate { project } => {
             let root = project_root(project.as_deref());
             check_version(&root, Scope::PinsAndPlugins);
             rusteal_codegen::run_generate(&root);
+            for plugin in find_plugins(&root) {
+                rusteal_codegen::run_generate_plugin(&root, &plugin);
+            }
         }
         Commands::Upgrade { project } => {
             let root = project_root(project.as_deref());

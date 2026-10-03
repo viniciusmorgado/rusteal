@@ -146,6 +146,11 @@ pub fn default_crate_name(project_path: &Path) -> String {
     let name = find_uproject(project_path)
         .and_then(|path| path.file_stem().map(|s| s.to_string_lossy().into_owned()))
         .unwrap_or_else(|| "game".to_string());
+    crate_name_for(&name)
+}
+
+/// Cargo package name for a UE name: `MyProject` → `my-project`.
+pub fn crate_name_for(name: &str) -> String {
     let mut out = String::new();
     for (i, c) in name.chars().enumerate() {
         if c.is_uppercase() && i > 0 {
@@ -231,8 +236,13 @@ fn register_uproject_plugins(project_path: &Path) {
 
 /// Generate C++ stub files so the first UE build can link before codegen runs.
 fn generate_cpp_stubs(project_path: &Path) {
-    let generated_dir = project_path.join("Plugins/Rusteal/Source/Rusteal/Generated");
-    fs::create_dir_all(&generated_dir)
+    write_cpp_stubs(&project_path.join("Plugins/Rusteal/Source/Rusteal/Generated"), "");
+}
+
+/// Write the stubs of a library's generated C++ into `generated_dir`, its
+/// symbols prefixed by `prefix` (empty for the game, `<Plugin>_` for a plugin).
+pub fn write_cpp_stubs(generated_dir: &Path, prefix: &str) {
+    fs::create_dir_all(generated_dir)
         .unwrap_or_else(|e| panic!("Failed to create {}: {e}", generated_dir.display()));
 
     // Only for a project that never ran codegen: re-running setup (to update the
@@ -242,9 +252,13 @@ fn generate_cpp_stubs(project_path: &Path) {
         return;
     }
 
+    let fill_table = STUB_FILL_TABLE_CPP
+        .replace("void RustealFillFuncTable", &format!("void {prefix}RustealFillFuncTable"))
+        .replace("void** RustealGetFuncTable", &format!("void** {prefix}RustealGetFuncTable"))
+        .replace("uint32_t RustealGetFuncCount", &format!("uint32_t {prefix}RustealGetFuncCount"));
     let files: &[(&str, &str)] = &[
         ("RustealFuncIds.h", STUB_FUNC_IDS_H),
-        ("RustealFillFuncTable.cpp", STUB_FILL_TABLE_CPP),
+        ("RustealFillFuncTable.cpp", &fill_table),
         ("module_deps.txt", STUB_MODULE_DEPS),
     ];
 

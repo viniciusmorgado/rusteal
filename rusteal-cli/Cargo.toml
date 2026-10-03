@@ -7,7 +7,7 @@ repository.workspace = true
 description = "Rust bindings for Unreal Engine 5.8.2"
 readme = "../README.md"
 build = "build.rs"
-include = ["src/**", "templates/**", "build.rs", "Cargo.toml", "ue_plugin_embed/**"]
+include = ["src/**", "templates/**", "plugin_templates/**", "build.rs", "Cargo.toml", "ue_plugin_embed/**"]
 
 [dependencies]
 rusteal-codegen = { workspace = true }

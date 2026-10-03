@@ -1,6 +1,7 @@
 // rusteal upgrade: move a project to this CLI's Rusteal version.
 //
-// Rewrites the three pins in Rust/Cargo.toml, replaces the UE plugins
+// Rewrites the three pins in Rust/Cargo.toml (and in each Rusteal plugin's
+// Rust/Cargo.toml), replaces the UE plugins
 // wholesale (files a newer version dropped must not stay behind) and runs the
 // build pipeline, which regenerates the bindings and the C++ wrappers.
 
@@ -39,12 +40,17 @@ pub fn run_upgrade(root: &Path) {
     } else {
         eprintln!("rusteal upgrade: {current} -> {cli}");
     }
-    let manifest_path = root.join("Rust/Cargo.toml");
-    let manifest = std::fs::read_to_string(&manifest_path)
-        .unwrap_or_else(|e| fail(&format!("cannot read {}: {e}", manifest_path.display())));
-    std::fs::write(&manifest_path, rewrite_pins(&manifest, cli))
-        .unwrap_or_else(|e| fail(&format!("cannot write {}: {e}", manifest_path.display())));
-    eprintln!("  {}: {} pinned to ={cli}", manifest_path.display(), PINNED.join(", "));
+    let workspaces = std::iter::once(root.join("Rust")).chain(
+        rusteal_codegen::config::find_plugins(root).into_iter().map(|p| p.rust_workspace()),
+    );
+    for workspace in workspaces {
+        let manifest_path = workspace.join("Cargo.toml");
+        let manifest = std::fs::read_to_string(&manifest_path)
+            .unwrap_or_else(|e| fail(&format!("cannot read {}: {e}", manifest_path.display())));
+        std::fs::write(&manifest_path, rewrite_pins(&manifest, cli))
+            .unwrap_or_else(|e| fail(&format!("cannot write {}: {e}", manifest_path.display())));
+        eprintln!("  {}: {} pinned to ={cli}", manifest_path.display(), PINNED.join(", "));
+    }
 
     for plugin in PLUGINS {
         let dir = root.join("Plugins").join(plugin);
@@ -54,7 +60,7 @@ pub fn run_upgrade(root: &Path) {
         }
     }
     setup::run_setup(root, &engine);
-    build_cmd::run_build(root, &engine, None, 1, false);
+    build_cmd::run_build(root, &engine, None, 1, false, None);
 
     eprintln!("\nrusteal upgrade: done, the project is at {cli}.");
 }

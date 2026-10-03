@@ -20,7 +20,7 @@ use crate::{build_cmd, setup, templates};
 const TEXT_EXTENSIONS: &[&str] = &["cpp", "h", "ini", "cs"];
 
 /// glam version written into a new project's workspace.
-const GLAM_VERSION: &str = "0.33";
+pub const GLAM_VERSION: &str = "0.33";
 
 pub struct NewOptions<'a> {
     pub name: &'a str,
@@ -69,13 +69,13 @@ pub fn run_new(opts: &NewOptions) {
     let context = template_context(opts.name, &crate_name, opts.runtime_path);
     let written = templates::write_project_files(&selected.dir(), &root, &context);
     eprintln!("rusteal new: {written} files from the {template_name} template (crate {crate_name})");
-    write_bindings_placeholder(&root);
+    write_bindings_placeholder(&ProjectLayout::new(&root).bindings_crate());
 
     eprintln!("rusteal new: installing the Rusteal plugins");
     setup::run_setup(&root, opts.engine);
 
     if opts.build {
-        build_cmd::run_build(&root, opts.engine, None, 1, false);
+        build_cmd::run_build(&root, opts.engine, None, 1, false, None);
     }
 
     eprintln!("\nrusteal new: done.");
@@ -567,10 +567,9 @@ fn template_context(project: &str, crate_name: &str, runtime_path: Option<&Path>
     ctx
 }
 
-/// The bindings crate is written by the build; leave a placeholder so the
-/// workspace resolves before the first `rusteal build`.
-fn write_bindings_placeholder(root: &Path) {
-    let bindings = ProjectLayout::new(root).bindings_crate();
+/// The bindings crate is written by the build; leave a placeholder in
+/// `bindings` so the workspace resolves before the first `rusteal build`.
+pub fn write_bindings_placeholder(bindings: &Path) {
     if bindings.join("Cargo.toml").exists() {
         return;
     }
