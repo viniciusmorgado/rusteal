@@ -8,7 +8,8 @@ use crate::ffi_dispatch;
 
 /// Bind `trigger_event` (an `ETriggerEvent` value) of `action` on `actor`'s
 /// Enhanced Input component to `actor`'s UFUNCTION `function` (its UE name),
-/// which takes no parameters or one `FInputActionValue`: the C++
+/// which takes no parameters, or `(FInputActionValue, f32 elapsed seconds,
+/// f32 triggered seconds, InputAction)` or a leading part of it: the C++
 /// `EnhancedInputComponent->BindAction(Action, TriggerEvent, this, &AFoo::Function)`.
 ///
 /// The actor must have its input component, which a pawn gets when a local

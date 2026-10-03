@@ -44,9 +44,13 @@ impl InputActionValueExt for UStructRef<FInputActionValue> {
 }
 
 /// Bind `trigger_event` of `action` on `actor`'s Enhanced Input component to
-/// the actor's UFUNCTION named `function`, which takes no parameters or one
-/// `UStructRef<FInputActionValue>`: the C++
+/// the actor's UFUNCTION named `function`: the C++
 /// `EnhancedInputComponent->BindAction(Action, TriggerEvent, this, &AFoo::Function)`.
+///
+/// The function takes no parameters, or the engine's dynamic binding
+/// signature or a leading part of it: `UStructRef<FInputActionValue>`, then
+/// `f32` elapsed seconds and `f32` triggered seconds (the action instance's
+/// `GetElapsedTime`/`GetTriggeredTime`), then the `UObjectRef<InputAction>`.
 ///
 /// `function` is the UE name: `"DoMove"` for `#[ufunction] fn do_move`, or an
 /// engine function such as `"Jump"`. The actor must have its input component,

@@ -563,7 +563,8 @@ pub struct RustealWidgetApi {
 pub struct RustealInputApi {
     /// Bind `trigger_event` (an `ETriggerEvent` value) of `action` on `actor`'s
     /// Enhanced Input component to `actor`'s UFUNCTION `function_name`, which
-    /// takes no parameters or one `FInputActionValue`. `InvalidOperation` when
+    /// takes no parameters, or `(FInputActionValue, float ElapsedSeconds, float
+    /// TriggeredSeconds, UInputAction*)` or a leading part of it. `InvalidOperation` when
     /// the actor has no Enhanced Input component yet, `TypeMismatch` when the
     /// function takes anything else. Binding the same function to the same
     /// action and event on the same component again does nothing.
