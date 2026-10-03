@@ -1,0 +1,22 @@
+// The editor subsystem: the engine creates it when the editor starts and
+// destroys it when the editor closes.
+
+use bindings::rusteal_editor::RustealEditorSubsystem;
+use rusteal_runtime::runtime::{LOG_DISPLAY, ulog};
+use rusteal_runtime::{uclass, uclass_impl};
+
+#[uclass(parent = RustealEditorSubsystem)]
+pub struct {{ plugin }}EditorSubsystem {}
+
+#[uclass_impl]
+impl {{ plugin }}EditorSubsystem {
+    #[ufunction(Override)]
+    fn receive_initialize(&mut self) {
+        ulog!(LOG_DISPLAY, "[{{ plugin }}] Hello from the editor");
+    }
+
+    #[ufunction(Override)]
+    fn receive_deinitialize(&mut self) {
+        ulog!(LOG_DISPLAY, "[{{ plugin }}] The editor is closing");
+    }
+}

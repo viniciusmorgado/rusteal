@@ -1,0 +1,5 @@
+# `rusteal plugin new <Name> --template editor`: an editor plugin in Rust.
+description = "An editor plugin (the editor only) with an editor subsystem written in Rust."
+
+# Printed when the plugin is ready (Tera, same context as the files).
+next_step = "open the project in the editor: the Output Log shows [{{ plugin }}] Hello from the editor"

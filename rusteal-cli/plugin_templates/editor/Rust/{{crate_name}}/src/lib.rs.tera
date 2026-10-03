@@ -1,0 +1,10 @@
+// {{ plugin }}: an editor plugin in Rust.
+//
+// `rusteal build` compiles this crate and deploys it as the plugin's library,
+// which the plugin's Editor module hands to Rusteal when the editor starts;
+// `rusteal.toml` in the plugin's root holds the configuration. Nothing of it
+// goes into a packaged game.
+
+rusteal_runtime::entry!();
+
+mod subsystem;
