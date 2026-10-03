@@ -5,6 +5,7 @@
 #include "Interfaces/IPluginManager.h"
 #include "Misc/App.h"
 #include "Misc/Paths.h"
+#include "Containers/Ticker.h"
 #include "Modules/ModuleManager.h"
 #include "RustealApiTable.h"
 #include "RustealLibraries.h"
@@ -123,6 +124,21 @@ static void FillApiTable() {
 
 static TArray<TUniquePtr<FRustealLibrary>> GLibraries;
 static FRustealLibrary *GCurrentLibrary = nullptr;
+
+// Every frame, each loaded library's on_tick: work handed back to the game
+// thread and per-frame hooks, in the editor too, with or without a world.
+static FTSTicker::FDelegateHandle GTickerHandle;
+
+static bool TickLibraries(float DeltaSeconds) {
+  // By index: a module loading during a tick may register another library.
+  for (int32 Index = 0; Index < GLibraries.Num(); ++Index) {
+    RustealCallLibrary(GLibraries[Index].Get(),
+                       [DeltaSeconds](const FRustealRustCallbacks &Cb) {
+                         Cb.on_tick(DeltaSeconds);
+                       });
+  }
+  return true;
+}
 
 FRustealLibrary *RustealCurrentLibrary() { return GCurrentLibrary; }
 
@@ -427,6 +443,8 @@ void FRustealModule::StartupModule() {
   FillApiTable();
   RustealRegisterComponentListResync();
   RustealReifyRegisterDeleteListener();
+  GTickerHandle = FTSTicker::GetCoreTicker().AddTicker(
+      FTickerDelegate::CreateStatic(&TickLibraries));
 
   // The game's library, with the function table generated into this module.
   // Platform-native name: rusteal.dll on Windows, librusteal.so on Linux,
@@ -441,6 +459,7 @@ void FRustealModule::StartupModule() {
 }
 
 void FRustealModule::ShutdownModule() {
+  FTSTicker::GetCoreTicker().RemoveTicker(GTickerHandle);
   RustealUnregisterComponentListResync();
   for (const TUniquePtr<FRustealLibrary> &Library : GLibraries) {
     UnloadLibrary(*Library);

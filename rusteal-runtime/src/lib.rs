@@ -63,6 +63,9 @@ extern "C" fn real_construct_rust_instance(
 
 extern "C" fn real_on_shutdown() {
     runtime::ffi_boundary((), || {
+        // The spawned work first: no thread may run this library's code once
+        // it is gone.
+        runtime::task::shutdown();
         runtime::reify_registry::clear_all();
         runtime::delegate_registry::clear_all();
         runtime::pinned::clear_all();
@@ -75,6 +78,12 @@ extern "C" fn real_notify_pinned_destroyed(handle: ffi::UObjectHandle) {
     });
 }
 
+extern "C" fn real_on_tick(delta_seconds: f32) {
+    runtime::ffi_boundary((), || {
+        runtime::task::tick(delta_seconds);
+    });
+}
+
 #[doc(hidden)]
 pub static __CALLBACKS: ffi::RustealRustCallbacks = ffi::RustealRustCallbacks {
     drop_rust_instance: real_drop_rust_instance,
@@ -83,6 +92,7 @@ pub static __CALLBACKS: ffi::RustealRustCallbacks = ffi::RustealRustCallbacks {
     on_shutdown: real_on_shutdown,
     construct_rust_instance: real_construct_rust_instance,
     notify_pinned_destroyed: real_notify_pinned_destroyed,
+    on_tick: real_on_tick,
 };
 
 // ---------------------------------------------------------------------------
@@ -113,6 +123,7 @@ pub unsafe fn init(api_table: *const ffi::RustealApiTable) -> *const ffi::Rustea
 
         // Delegate API table storage to rusteal-core.
         runtime::init_api(api_table);
+        runtime::task::mark_game_thread();
 
         log_greeting();
         register_all_classes();

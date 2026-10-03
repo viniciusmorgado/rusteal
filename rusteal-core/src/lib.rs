@@ -28,6 +28,7 @@ pub mod weak_ptr;
 pub mod widget;
 pub mod input;
 pub mod console;
+pub mod task;
 pub mod world;
 pub mod soft_ref;
 

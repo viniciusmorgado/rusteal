@@ -33,4 +33,8 @@ pub struct RustealRustCallbacks {
 
     /// Called by C++ when a Pinned object is destroyed (DestroyActor, level unload, etc.).
     pub notify_pinned_destroyed: extern "C" fn(handle: UObjectHandle),
+
+    /// Called by C++ every frame on the game thread (the core ticker: in the
+    /// editor and in games, with or without a world).
+    pub on_tick: extern "C" fn(delta_seconds: f32),
 }

@@ -648,6 +648,8 @@ struct FRustealRustCallbacks {
   void (*construct_rust_instance)(RustealUObjectHandle obj, uint64 type_id,
                                   bool is_cdo);
   void (*notify_pinned_destroyed)(RustealUObjectHandle handle);
+  // Every frame on the game thread (the core ticker, editor included).
+  void (*on_tick)(float delta_seconds);
 };
 
 // ---------------------------------------------------------------------------
