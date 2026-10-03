@@ -13,6 +13,7 @@ Plugins/*/Source/*/obj/
 
 # Rust build output
 Rust/target/
+Plugins/*/Rust/target/
 
 # Generated project files
 *.sln
