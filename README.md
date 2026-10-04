@@ -363,6 +363,9 @@ one:
 # The Rust libraries (steps 4-5), while you work on the game
 rusteal build
 
+# The same, every time a source file changes, until Ctrl+C
+rusteal watch
+
 # Every step
 rusteal build --all
 
@@ -779,7 +782,9 @@ rusteal build
 
 The editor reloads each library as soon as `rusteal build` deploys it again,
 with a notification (`Rusteal.AutoReload 0` in the console turns that off).
-To reload by hand, in the UE console:
+`rusteal watch` runs that build every time you save a Rust file, so saving is
+all it takes; a build that fails prints its errors and the watch goes on
+(`--plugin <Name>` watches one plugin). To reload by hand, in the UE console:
 ```
 Rusteal.Reload
 ```

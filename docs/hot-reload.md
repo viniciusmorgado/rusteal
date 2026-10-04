@@ -34,6 +34,21 @@ a half-written library. The numbered copies a reload loads and the partial
 file sit in the same directory and are ignored: only the deployed file
 counts.
 
+## rusteal watch
+
+`rusteal watch` (`rusteal-cli/src/watch_cmd.rs`) closes the loop from the
+other side: it polls the `.rs` and `.toml` files of the game's and the
+plugins' Rust workspaces (not `target/`, not the generated `bindings/`), and
+once they have settled, runs `rusteal build` (steps 4 and 5) as a child
+process, so a failed build prints its errors and the watch goes on. With the
+editor reloading on deploy, saving a file is the whole loop: save, build,
+deploy, reload, reinstance.
+
+It polls instead of using the platform's file events: the workspaces are
+small, polling behaves the same everywhere, and it needs no dependency. A
+change to `rusteal.toml` or to the engine still needs `rusteal build --all`,
+which watch does not run.
+
 ## Shapes
 
 A class's shape is a hash of what its UClass is built from, computed by the
