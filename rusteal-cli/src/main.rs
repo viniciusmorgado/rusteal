@@ -15,6 +15,7 @@ mod setup;
 mod sync_plugin;
 mod templates;
 mod upgrade_cmd;
+mod watch_cmd;
 
 use std::path::{Path, PathBuf};
 
@@ -88,6 +89,15 @@ enum Commands {
         release: bool,
         /// Generate, build and deploy only this Rusteal plugin's library
         /// (the UE steps still build the whole project).
+        #[arg(long)]
+        plugin: Option<String>,
+    },
+    /// Build and deploy the Rust libraries (`rusteal build`) every time their
+    /// sources change; the editor reloads each one as it is deployed.
+    Watch {
+        /// Project directory (default: found from the current directory).
+        project: Option<PathBuf>,
+        /// Watch and build only this Rusteal plugin's library.
         #[arg(long)]
         plugin: Option<String>,
     },
@@ -209,6 +219,11 @@ fn main() {
             let engine = global_config::engine_path();
             let from = first_build_step(all, step, from);
             build_cmd::run_build(&root, &engine, step, from, release, plugin.as_deref());
+        }
+        Commands::Watch { project, plugin } => {
+            let root = project_root(project.as_deref());
+            check_version(&root, Scope::PinsAndPlugins);
+            watch_cmd::run_watch(&root, plugin.as_deref());
         }
         Commands::Generate { project } => {
             let root = project_root(project.as_deref());
