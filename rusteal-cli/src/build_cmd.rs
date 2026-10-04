@@ -452,12 +452,25 @@ impl BuildContext {
             fs::create_dir_all(&library.deploy_dir).unwrap_or_else(|e| {
                 panic!("Failed to create {}: {e}", library.deploy_dir.display())
             });
-            fs::copy(&src, &dest).unwrap_or_else(|e| panic!("Failed to copy DLL: {e}"));
+            deploy(&src, &dest).unwrap_or_else(|e| panic!("Failed to copy DLL: {e}"));
 
             eprintln!("  {}: copied {}", library.label, src.display());
             eprintln!("      -> {} (renamed to {deployed_name})", dest.display());
         }
     }
+}
+
+/// Copy a built library to where it is loaded from, all at once: written next
+/// to it under another name, then renamed over it, so the editor, which
+/// reloads a library as soon as its file changes, never reads half of one.
+fn deploy(src: &Path, dest: &Path) -> std::io::Result<()> {
+    let mut partial = dest.as_os_str().to_owned();
+    partial.push(".partial");
+    let partial = PathBuf::from(partial);
+    fs::copy(src, &partial)?;
+    fs::rename(&partial, dest).inspect_err(|_| {
+        let _ = fs::remove_file(&partial);
+    })
 }
 
 /// Run an external command, printing it and exiting on failure.
@@ -479,5 +492,31 @@ pub fn run_cmd(args: &[&str]) {
         let code = status.code().unwrap_or(1);
         eprintln!("\n  Command failed with exit code {code}");
         std::process::exit(code);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::deploy;
+
+    #[test]
+    fn deploy_replaces_the_library_and_leaves_nothing_else() {
+        let dir = std::env::temp_dir().join(format!("rusteal-deploy-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let built = dir.join("libgame.so");
+        let deployed = dir.join("librusteal.so");
+        std::fs::write(&deployed, b"old").unwrap();
+        std::fs::write(&built, b"new").unwrap();
+
+        deploy(&built, &deployed).unwrap();
+
+        assert_eq!(std::fs::read(&deployed).unwrap(), b"new");
+        let mut names: Vec<_> = std::fs::read_dir(&dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().into_string().unwrap())
+            .collect();
+        names.sort();
+        assert_eq!(names, ["libgame.so", "librusteal.so"]);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }
