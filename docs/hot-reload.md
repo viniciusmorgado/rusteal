@@ -19,6 +19,21 @@ way it is. The commands are in the README, [Hot Reload](../README.md#hot-reload)
 4. The objects of the replaced classes are reinstanced.
 5. Every object of the library's classes gets its Rust data again.
 
+## Reloading on deploy
+
+The RustealEditor module reloads a library by itself when `rusteal build`
+deploys it again (`RustealAutoReload.cpp`): it watches the directory each
+library is deployed to with the engine's DirectoryWatcher, and once the
+deployed file has not changed for half a second, reloads that library and
+says so in an editor notification. `Rusteal.AutoReload 0` turns it off;
+`Rusteal.Reload` still works either way.
+
+The deploy step copies the library next to the deployed file
+(`librusteal.so.partial`) and renames it over it, so the watcher never sees
+a half-written library. The numbered copies a reload loads and the partial
+file sit in the same directory and are ignored: only the deployed file
+counts.
+
 ## Shapes
 
 A class's shape is a hash of what its UClass is built from, computed by the

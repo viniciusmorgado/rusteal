@@ -777,7 +777,9 @@ During development, rebuild your Rust library and reload without restarting the 
 rusteal build
 ```
 
-Then in the UE console:
+The editor reloads each library as soon as `rusteal build` deploys it again,
+with a notification (`Rusteal.AutoReload 0` in the console turns that off).
+To reload by hand, in the UE console:
 ```
 Rusteal.Reload
 ```
