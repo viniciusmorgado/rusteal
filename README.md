@@ -784,8 +784,13 @@ Rusteal.Reload
 
 `Rusteal.Reload` swaps every Rust library of the project; `Rusteal.Reload
 <Name>` only one (the game's is named after the project, a plugin's after the
-plugin). Function implementations update immediately. Adding/removing
-`uproperty` or `ufunction` requires an editor restart.
+plugin). Function bodies update immediately. A class whose `#[uproperty]`s,
+`#[component]`s, `#[ufunction]`s or parent changed is created again, and its
+objects move to the new class: the actors in the level, its Blueprint
+children and its Rust subclasses, keeping their property values. Rust-private
+fields start over on every reload. A changed `#[ustruct]` still needs an editor
+restart, and so does a changed class outside the editor (`-game`). How it
+works, and why: [docs/hot-reload.md](docs/hot-reload.md).
 
 ### Packaging a game
 
