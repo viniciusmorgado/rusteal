@@ -34,6 +34,21 @@ RUSTEAL_API void RustealUnregisterLibrary(FName Name);
  * prefix and extension (librusteal.so, rusteal.dll, librusteal.dylib). */
 RUSTEAL_API FString RustealLibraryFileName(const FString &Stem);
 
+/** Each library registered so far: its name and the file `rusteal build`
+ * deploys it to, which a hot reload loads again. */
+RUSTEAL_API void RustealForEachLibrary(
+    TFunctionRef<void(FName Name, const FString &DeployedPath)> Callback);
+
+/** Called when a library is registered, with the same arguments: a plugin's
+ * module may start after whoever watches the libraries. */
+DECLARE_MULTICAST_DELEGATE_TwoParams(FRustealLibraryRegistered, FName,
+                                     const FString &);
+RUSTEAL_API FRustealLibraryRegistered &RustealOnLibraryRegistered();
+
+/** Hot reload the library Name, as `Rusteal.Reload Name` does. False when
+ * there is no such library or it failed to load (the Output Log says why). */
+RUSTEAL_API bool RustealReloadLibrary(FName Name);
+
 /** Moves the objects of the classes a hot reload replaced (old, new) to their
  * new class: a Rust class whose properties, functions or parent changed is
  * created again, and its objects, default object and Blueprint children

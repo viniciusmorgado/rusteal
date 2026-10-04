@@ -1,5 +1,6 @@
 #include "Kismet2/ReloadUtilities.h"
 #include "Modules/ModuleManager.h"
+#include "RustealAutoReload.h"
 #include "RustealLibraries.h"
 
 // The objects of the Rust classes a hot reload replaced move to the new
@@ -20,9 +21,16 @@ class FRustealEditorModule : public IModuleInterface {
 public:
   virtual void StartupModule() override {
     RustealSetClassReinstancer(&ReinstanceClasses);
+    AutoReload.Start();
   }
 
-  virtual void ShutdownModule() override { RustealSetClassReinstancer(nullptr); }
+  virtual void ShutdownModule() override {
+    AutoReload.Stop();
+    RustealSetClassReinstancer(nullptr);
+  }
+
+private:
+  FRustealAutoReload AutoReload;
 };
 
 IMPLEMENT_MODULE(FRustealEditorModule, RustealEditor)

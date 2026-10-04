@@ -319,8 +319,8 @@ static bool ClassBelongsTo(const URustealReifiedClass *Class,
 }
 
 // Hot reload: drop the library's Rust data of every object, load the rebuilt
-// library, and construct that data again.
-static void ReloadLibrary(FRustealLibrary &Library) {
+// library, and construct that data again. False when it failed to load.
+static bool ReloadLibrary(FRustealLibrary &Library) {
   UE_LOG(LogRusteal, Display, TEXT("[Rusteal] === Hot reload of %s ==="),
          *Library.Name.ToString());
 
@@ -351,7 +351,7 @@ static void ReloadLibrary(FRustealLibrary &Library) {
   if (!bLoaded) {
     UE_LOG(LogRusteal, Error, TEXT("[Rusteal] Hot reload of %s failed."),
            *Library.Name.ToString());
-    return;
+    return false;
   }
 
   int32 Constructed = 0;
@@ -372,6 +372,7 @@ static void ReloadLibrary(FRustealLibrary &Library) {
          TEXT("[Rusteal] Reconstructed %d Rust instances"), Constructed);
   UE_LOG(LogRusteal, Display, TEXT("[Rusteal] === Hot reload of %s done ==="),
          *Library.Name.ToString());
+  return true;
 }
 
 static bool RegisterLibrary(FName Name, const FString &PackagePath,
@@ -393,7 +394,9 @@ static bool RegisterLibrary(FName Name, const FString &PackagePath,
   Library->Table = GApiTable;
   Library->Table.func_table = reinterpret_cast<const void *const *>(FuncTable);
   Library->Table.func_count = FuncCount;
-  return LoadLibrary(*Library);
+  const bool bLoaded = LoadLibrary(*Library);
+  RustealOnLibraryRegistered().Broadcast(Name, LibraryPath);
+  return bLoaded;
 }
 
 bool RustealRegisterLibrary(FName Name, const FString &LibraryPath,
@@ -425,6 +428,23 @@ void RustealUnregisterLibrary(FName Name) {
   if (FRustealLibrary *Library = FindLibrary(Name)) {
     UnloadLibrary(*Library);
   }
+}
+
+void RustealForEachLibrary(
+    TFunctionRef<void(FName Name, const FString &DeployedPath)> Callback) {
+  for (const TUniquePtr<FRustealLibrary> &Library : GLibraries) {
+    Callback(Library->Name, Library->SourcePath);
+  }
+}
+
+FRustealLibraryRegistered &RustealOnLibraryRegistered() {
+  static FRustealLibraryRegistered Registered;
+  return Registered;
+}
+
+bool RustealReloadLibrary(FName Name) {
+  FRustealLibrary *Library = FindLibrary(Name);
+  return Library && ReloadLibrary(*Library);
 }
 
 // ---------------------------------------------------------------------------

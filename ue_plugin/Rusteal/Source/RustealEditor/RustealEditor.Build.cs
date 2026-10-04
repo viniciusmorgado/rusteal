@@ -17,11 +17,15 @@ public class RustealEditor : ModuleRules
         ]);
 
         // Rusteal: the libraries it hosts; UnrealEd: FReload, which reinstances
-        // the Rust classes a hot reload replaced.
+        // the Rust classes a hot reload replaced; DirectoryWatcher and Slate:
+        // reloading a library when it is deployed again, with a notification.
         PrivateDependencyModuleNames.AddRange(
         [
             "Rusteal",
             "UnrealEd",
+            "DirectoryWatcher",
+            "Slate",
+            "SlateCore",
         ]);
     }
 }
