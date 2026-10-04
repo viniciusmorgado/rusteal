@@ -132,5 +132,25 @@ is known:
   Blueprint's nodes, as it would for a C++ class; the Blueprint shows the
   errors after its recompile.
 
-What is tested, and what is still to be tested, is in the test list of the
-branch that brought this (m1/structural-reload onwards).
+## Tested
+
+Headless, in a blank project on UE 5.8.3 (Linux), with Python driving the
+editor:
+
+- a property and a function added to a class with an actor placed in the
+  level, a Blueprint child placed too, and a Rust subclass: all three are
+  reinstanced, keep the values set on them, get the new property's default,
+  and run the new function;
+- a function body changed alone: the class is kept;
+- the property and the function removed: reinstanced again, the values kept;
+- the level and the Blueprint saved after those reloads load in a new editor
+  session, with no reference to a retired class;
+- a Rusteal plugin's class changed: reloading the plugin's library
+  reinstances it and leaves the game's library alone;
+- reloading on deploy, and `Rusteal.AutoReload 0`;
+- `rusteal watch` with the editor open: saving the file is enough; a build
+  that fails keeps the watch going.
+
+Not tested yet: a reload during Play In Editor, a Blueprint whose graph uses a
+removed property or function, a changed parent class, interfaces, components
+added or removed, Windows and macOS.
