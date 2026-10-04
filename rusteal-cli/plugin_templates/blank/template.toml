@@ -1,0 +1,5 @@
+# `rusteal plugin new <Name>`: a runtime plugin with a component in Rust.
+description = "A runtime plugin (games and the editor) with a HelloComponent written in Rust."
+
+# Printed when the plugin is ready (Tera, same context as the files).
+next_step = "add a HelloComponent to an actor in the level and press Play"

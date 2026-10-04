@@ -204,6 +204,19 @@ static RustealUClassHandle FindEnumImpl(const uint8 *Name, uint32 NameLen) {
   return RustealUClassHandle{Found};
 }
 
+static RustealUFunctionHandle
+GetDelegateSignatureImpl(RustealFPropertyHandle PropHandle) {
+  FProperty *Prop = static_cast<FProperty *>(PropHandle.ptr);
+  if (FMulticastDelegateProperty *Multicast =
+          CastField<FMulticastDelegateProperty>(Prop)) {
+    return RustealUFunctionHandle{Multicast->SignatureFunction};
+  }
+  if (FDelegateProperty *Unicast = CastField<FDelegateProperty>(Prop)) {
+    return RustealUFunctionHandle{Unicast->SignatureFunction};
+  }
+  return RustealUFunctionHandle{nullptr};
+}
+
 // ---------------------------------------------------------------------------
 // Static instance
 // ---------------------------------------------------------------------------
@@ -228,4 +241,5 @@ FRustealReflectionApi GReflectionApi = {
     &DestroyStructImpl,
     &CopyStructImpl,
     &FindEnumImpl,
+    &GetDelegateSignatureImpl,
 };

@@ -1,0 +1,26 @@
+// The {{ plugin }} module hands the plugin's Rust library to Rusteal, which
+// loads it with the function table generated for it.
+
+#include "Modules/ModuleManager.h"
+#include "RustealLibraries.h"
+
+// Generated/RustealFillFuncTable.cpp, written by `rusteal build --all`.
+extern void {{ plugin }}_RustealFillFuncTable();
+extern void **{{ plugin }}_RustealGetFuncTable();
+extern uint32_t {{ plugin }}_RustealGetFuncCount();
+
+class F{{ plugin }}Module : public IModuleInterface {
+public:
+  virtual void StartupModule() override {
+    {{ plugin }}_RustealFillFuncTable();
+    RustealRegisterPluginLibrary(TEXT("{{ plugin }}"),
+                                 {{ plugin }}_RustealGetFuncTable(),
+                                 {{ plugin }}_RustealGetFuncCount());
+  }
+
+  virtual void ShutdownModule() override {
+    RustealUnregisterLibrary(TEXT("{{ plugin }}"));
+  }
+};
+
+IMPLEMENT_MODULE(F{{ plugin }}Module, {{ plugin }})

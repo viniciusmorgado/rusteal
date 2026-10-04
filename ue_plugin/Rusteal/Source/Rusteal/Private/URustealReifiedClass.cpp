@@ -3,6 +3,7 @@
 #include "Engine/Blueprint.h"
 #include "GameFramework/Actor.h"
 #include "RustealApiTable.h"
+#include "RustealLibrary.h"
 #include "RustealModule.h"
 
 UClass *URustealReifiedClass::GetAuthoritativeClass() {
@@ -110,14 +111,15 @@ void URustealReifiedClass::RustealClassConstructor(
     }
   }
 
-  // 4. Notify Rust to construct its instance data, one per Rust class.
-  const FRustealRustCallbacks *Callbacks = GetRustealRustCallbacks();
-  if (Callbacks && Callbacks->construct_rust_instance) {
-    bool bIsCDO = Obj->HasAnyFlags(RF_ClassDefaultObject);
-    for (URustealReifiedClass *DataClass : Chain) {
-      Callbacks->construct_rust_instance(RustealUObjectHandle{Obj},
-                                         DataClass->RustTypeId, bIsCDO);
-    }
+  // 4. Notify Rust to construct its instance data, one per Rust class, each
+  // in the library that defines the class.
+  const bool bIsCDO = Obj->HasAnyFlags(RF_ClassDefaultObject);
+  for (URustealReifiedClass *DataClass : Chain) {
+    RustealCallLibrary(DataClass->Library, [Obj, DataClass, bIsCDO](
+                                               const FRustealRustCallbacks &Cb) {
+      Cb.construct_rust_instance(RustealUObjectHandle{Obj},
+                                 DataClass->RustTypeId, bIsCDO);
+    });
   }
 }
 
@@ -144,6 +146,7 @@ URustealReifiedClass::ReifiedChain(const UClass *Class) {
 // list, so the components were missing there. Instances are not affected:
 // AActor::PostInitProperties rebuilds the list. Rebuild it on the default
 // object once it is final.
+#if WITH_EDITOR
 static void ResyncOwnedComponents(UObject *Object) {
   AActor *Defaults = Cast<AActor>(Object);
   if (!Defaults || !Defaults->HasAnyFlags(RF_ClassDefaultObject)) {
@@ -164,7 +167,12 @@ static void ResyncOwnedComponents(UObject *Object) {
 static FDelegateHandle GPostCDOCompiledHandle;
 static FDelegateHandle GAssetLoadedHandle;
 
+#endif // WITH_EDITOR
+
+// Editor only: a packaged game loads no Blueprint and compiles no default
+// object.
 void RustealRegisterComponentListResync() {
+#if WITH_EDITOR
   GPostCDOCompiledHandle =
       FCoreUObjectDelegates::OnObjectPostCDOCompiled.AddLambda(
           [](UObject *Defaults, const FObjectPostCDOCompiledContext &) {
@@ -179,9 +187,12 @@ void RustealRegisterComponentListResync() {
           }
         }
       });
+#endif
 }
 
 void RustealUnregisterComponentListResync() {
+#if WITH_EDITOR
   FCoreUObjectDelegates::OnObjectPostCDOCompiled.Remove(GPostCDOCompiledHandle);
   FCoreUObjectDelegates::OnAssetLoaded.Remove(GAssetLoadedHandle);
+#endif
 }

@@ -1,0 +1,24 @@
+// {{ plugin }}: an editor plugin in Rust.
+//
+// `rusteal build` compiles this crate and deploys it as the plugin's library,
+// which the plugin's Editor module hands to Rusteal when the editor starts;
+// `rusteal.toml` in the plugin's root holds the configuration. Nothing of it
+// goes into a packaged game.
+
+rusteal_runtime::entry!();
+
+mod menu;
+mod subsystem;
+mod validator;
+
+use bindings::editor_subsystem::EditorSubsystem;
+use bindings::unreal_ed::EditorSubsystemBlueprintLibrary;
+use rusteal_runtime::runtime::{RustealResult, SubclassOf, UObjectRef, UeClass};
+
+/// One of the editor's subsystems (EditorAssetSubsystem, EditorActorSubsystem,
+/// a Rust one), as C++'s GEditor->GetEditorSubsystem<T>().
+pub fn editor_subsystem<T: UeClass>() -> RustealResult<UObjectRef<T>> {
+    // SAFETY: T is an editor subsystem class.
+    let class = unsafe { SubclassOf::<EditorSubsystem>::from_raw(T::static_class()) };
+    EditorSubsystemBlueprintLibrary::get_editor_subsystem(class).cast::<T>()
+}

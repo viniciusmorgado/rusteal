@@ -1,0 +1,9 @@
+// {{ plugin }}: a plugin in Rust.
+//
+// `rusteal build` compiles this crate and deploys it as the plugin's library,
+// which the plugin's module hands to Rusteal; `rusteal.toml` in the plugin's
+// root holds the configuration.
+
+rusteal_runtime::entry!();
+
+mod hello;

@@ -598,9 +598,8 @@ public static class RustealExport
                 && !func.FunctionFlags.HasAnyFlags(EFunctionFlags.BlueprintCallable))
                 return false;
 
-            // Skip editor-only functions
-            if (func.FunctionFlags.HasAnyFlags(EFunctionFlags.EditorOnly))
-                return false;
+            // Editor-only functions (WITH_EDITOR) are exported with their
+            // EditorOnly flag: codegen keeps them for editor libraries only.
 
             // Skip deprecated functions (UE marks these via metadata, not flags)
             if (func.MetaData.ContainsKey("DeprecatedFunction"))

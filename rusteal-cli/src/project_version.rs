@@ -3,7 +3,9 @@
 // The generated bindings (manual/ included) and the UE plugins come from the
 // CLI; the runtime crates come from the pins in the project's Rust/Cargo.toml.
 // All of them are tied to one version, so the CLI refuses to build or
-// generate for a project at another one and says how to line them up.
+// generate for a project at another one and says how to line them up. A
+// Rusteal plugin's Rust/Cargo.toml (Plugins/<Name>/Rust/) pins them too, to
+// the same version.
 
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -154,7 +156,7 @@ fn explain(verdict: &Verdict, cli: Version) -> Option<String> {
     })
 }
 
-/// Read and check the pins of the project at `root`.
+/// Read and check the pins of the project, or Rusteal plugin, at `root`.
 pub fn read_pins(root: &Path) -> Result<Pins, String> {
     let path = root.join("Rust/Cargo.toml");
     let text = std::fs::read_to_string(&path).map_err(|e| {
@@ -191,6 +193,14 @@ pub fn check(root: &Path, scope: Scope) -> Result<(), String> {
     let pins = read_pins(root)?;
     if let Some(message) = explain(&compare(&pins, cli, cli_checkout().as_deref()), cli) {
         return Err(message);
+    }
+    for plugin in rusteal_codegen::config::find_plugins(root) {
+        let plugin_pins = read_pins(&plugin.dir)?;
+        if let Some(message) =
+            explain(&compare(&plugin_pins, cli, cli_checkout().as_deref()), cli)
+        {
+            return Err(format!("the {} plugin: {message}", plugin.name));
+        }
     }
     if let Scope::PinsAndPlugins = scope {
         for plugin in PLUGINS {

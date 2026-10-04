@@ -12,10 +12,24 @@ pub mod cpp_gen;
 
 use std::path::Path;
 
-use crate::config::{ProjectConfig, ProjectLayout};
+use crate::config::{
+    CodegenConfig, LibraryKind, LibraryOutput, PluginConfig, PluginLayout, ProjectConfig,
+    ProjectLayout,
+};
 use crate::schema::{ClassesFile, EnumsFile, StructsFile};
 
-/// Run the generate command. Main entry point for codegen.
+/// Write `contents` to `path` unless it already holds exactly that: a
+/// regenerated file that did not change keeps its timestamp, so UBT and Cargo
+/// do not rebuild it.
+pub(crate) fn write_if_changed(path: &Path, contents: &str) -> std::io::Result<()> {
+    if std::fs::read(path).is_ok_and(|old| old == contents.as_bytes()) {
+        return Ok(());
+    }
+    std::fs::write(path, contents)
+}
+
+/// Generate the game's library: the bindings crate in `Rust/bindings` and
+/// the C++ wrappers compiled into the Rusteal plugin.
 ///
 /// `project_root` is the directory holding the .uproject and `rusteal.toml`.
 pub fn run_generate(project_root: &Path) {
@@ -23,17 +37,34 @@ pub fn run_generate(project_root: &Path) {
         eprintln!("rusteal-codegen: {e}");
         std::process::exit(1);
     });
-    let codegen = &config.codegen;
     let layout = ProjectLayout::new(project_root);
+    generate_library(&layout.uht_json(), &config.codegen, &layout.game_output());
+}
 
-    let uht_input = layout.uht_json();
+/// Generate a Rusteal plugin's library: the bindings crate in the plugin's
+/// `Rust/bindings` and the C++ wrappers compiled into the plugin's module,
+/// from the project's reflection JSON.
+pub fn run_generate_plugin(project_root: &Path, plugin: &PluginLayout) {
+    let config = PluginConfig::load(&plugin.dir).unwrap_or_else(|e| {
+        eprintln!("rusteal-codegen: {e}");
+        std::process::exit(1);
+    });
+    let layout = ProjectLayout::new(project_root);
+    eprintln!("rusteal-codegen: plugin {}", plugin.name);
+    generate_library(&layout.uht_json(), &config.codegen, &plugin.output(config.plugin.kind));
+}
+
+/// Generate one library's bindings crate and C++ wrappers from the
+/// reflection JSON in `uht_input`.
+pub fn generate_library(uht_input: &Path, codegen: &CodegenConfig, output: &LibraryOutput) {
+    let codegen = &codegen.for_library(output.kind);
     let classes_path = uht_input.join("rusteal_classes.json");
     let structs_path = uht_input.join("rusteal_structs.json");
     let enums_path = uht_input.join("rusteal_enums.json");
     // The generated crate's directory; its sources go under `src/`.
-    let rust_out = layout.bindings_crate();
+    let rust_out = output.bindings_crate.clone();
     let rust_src = rust_out.join("src");
-    let cpp_out = layout.cpp_generated();
+    let cpp_out = output.cpp_generated.clone();
 
     eprintln!("rusteal-codegen: loading JSON...");
 
@@ -73,6 +104,7 @@ pub fn run_generate(project_root: &Path) {
         enums_json.enums,
         codegen,
     );
+    ctx.cpp_prefix = output.cpp_prefix.clone();
 
     eprintln!(
         "  Enabled modules: {:?}",
@@ -90,7 +122,8 @@ pub fn run_generate(project_root: &Path) {
 
     // Apply filters
     eprintln!("rusteal-codegen: filtering...");
-    filter::apply_filters(&mut ctx, &codegen.blocklist);
+    let blocklist = with_unlisted_classes(&ctx, codegen);
+    filter::apply_filters(&mut ctx, &blocklist, output.kind == LibraryKind::Editor);
 
     // Build function table (assign FuncIds)
     eprintln!("rusteal-codegen: building function table...");
@@ -109,9 +142,9 @@ pub fn run_generate(project_root: &Path) {
     cpp_gen::generate(&ctx, &cpp_out);
 
     // Generate module_deps.txt for Rusteal.Build.cs, and list the plugins
-    // those modules come from in Rusteal.uplugin
-    generate_module_deps(codegen, &cpp_out);
-    update_plugin_dependencies(codegen, &layout.plugin_descriptor());
+    // those modules come from in the host plugin's descriptor
+    generate_module_deps(codegen, &output.host_module, &cpp_out);
+    update_plugin_dependencies(codegen, &output.plugin_descriptor);
 
     // Post-generate verification
     eprintln!("rusteal-codegen: verifying output...");
@@ -120,8 +153,39 @@ pub fn run_generate(project_root: &Path) {
     eprintln!("rusteal-codegen: done!");
 }
 
+/// The blocklist plus, for each module that lists the classes it wants
+/// (`classes = [...]` in `[codegen.modules]`), every other class of it, but
+/// the ones the listed classes derive from.
+fn with_unlisted_classes(ctx: &context::CodegenContext, codegen: &CodegenConfig) -> config::Blocklist {
+    use std::collections::HashSet;
+
+    let mut blocklist = codegen.blocklist.clone();
+    for (package, mapping) in &codegen.modules {
+        let Some(listed) = &mapping.classes else {
+            continue;
+        };
+        let mut wanted: HashSet<&str> = HashSet::new();
+        for name in listed {
+            let mut current = Some(name.as_str());
+            while let Some(class) = current.and_then(|n| ctx.classes.get(n)) {
+                if &class.package != package || !wanted.insert(class.name.as_str()) {
+                    break;
+                }
+                current = class.super_class.as_deref();
+            }
+        }
+        for class in ctx.module_classes.get(&mapping.module).into_iter().flatten() {
+            if !wanted.contains(class.name.as_str()) {
+                blocklist.classes.push(class.name.clone());
+            }
+        }
+    }
+    blocklist
+}
+
 /// Generate module_deps.txt listing UE module names needed by enabled features.
-fn generate_module_deps(config: &crate::config::CodegenConfig, cpp_out: &Path) {
+/// The module the wrappers compile into is never its own dependency.
+fn generate_module_deps(config: &CodegenConfig, host_module: &str, cpp_out: &Path) {
     use std::collections::BTreeSet;
 
     let enabled_features: std::collections::HashSet<&str> =
@@ -136,11 +200,12 @@ fn generate_module_deps(config: &crate::config::CodegenConfig, cpp_out: &Path) {
             ue_modules.insert(pkg.as_str());
         }
     }
+    ue_modules.remove(host_module);
 
     let content = ue_modules.iter().copied().collect::<Vec<_>>().join("\n");
 
     let path = cpp_out.join("module_deps.txt");
-    std::fs::write(&path, &content)
+    write_if_changed(&path, &content)
         .unwrap_or_else(|e| panic!("Failed to write {}: {e}", path.display()));
 
     eprintln!("  module_deps.txt: {:?}", ue_modules.iter().collect::<Vec<_>>());
@@ -149,7 +214,7 @@ fn generate_module_deps(config: &crate::config::CodegenConfig, cpp_out: &Path) {
 /// Add the engine plugins of the enabled modules (`plugin = "StateTree"` in
 /// `[codegen.modules]`) to the Rusteal plugin's descriptor: UBT wants a plugin
 /// to list the plugins whose modules it links. Plugins already listed stay.
-fn update_plugin_dependencies(config: &crate::config::CodegenConfig, descriptor: &Path) {
+fn update_plugin_dependencies(config: &CodegenConfig, descriptor: &Path) {
     let Ok(text) = std::fs::read_to_string(descriptor) else {
         return; // no installed plugin (a codegen test): nothing to update
     };
@@ -168,11 +233,11 @@ fn update_plugin_dependencies(config: &crate::config::CodegenConfig, descriptor:
 
     let plugins = json
         .as_object_mut()
-        .expect("Rusteal.uplugin is a JSON object")
+        .expect("a plugin descriptor is a JSON object")
         .entry("Plugins")
         .or_insert_with(|| serde_json::Value::Array(Vec::new()))
         .as_array_mut()
-        .expect("Rusteal.uplugin's Plugins is an array");
+        .expect("a plugin descriptor's Plugins is an array");
     let mut added = Vec::new();
     for name in wanted {
         if plugins.iter().any(|p| p["Name"] == name) {
@@ -188,7 +253,8 @@ fn update_plugin_dependencies(config: &crate::config::CodegenConfig, descriptor:
     out.push('\n');
     std::fs::write(descriptor, out)
         .unwrap_or_else(|e| panic!("Failed to write {}: {e}", descriptor.display()));
-    eprintln!("  Rusteal.uplugin: now depends on {added:?}");
+    let name = descriptor.file_name().unwrap_or_default().to_string_lossy();
+    eprintln!("  {name}: now depends on {added:?}");
 }
 
 /// Verify codegen output integrity.
@@ -318,6 +384,56 @@ fn build_func_table(ctx: &mut context::CodegenContext) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn listed_classes_keep_their_ancestors_only() {
+        let class = |name: &str, package: &str, parent: &str| -> schema::ClassInfo {
+            serde_json::from_value(serde_json::json!({
+                "name": name, "cpp_name": format!("U{name}"), "package": package,
+                "header": "", "class_flags": 0, "super": parent,
+            }))
+            .unwrap()
+        };
+        let codegen: CodegenConfig = toml::from_str(
+            r#"
+            features = ["core", "editor"]
+            [modules]
+            CoreUObject = { module = "core_ue", feature = "core" }
+            UnrealEd = { module = "unreal_ed", feature = "editor", classes = ["EditorActorSubsystem"] }
+            "#,
+        )
+        .unwrap();
+        let ctx = context::CodegenContext::new(
+            vec![
+                class("Object", "CoreUObject", ""),
+                class("EditorSubsystemBase", "UnrealEd", "Object"),
+                class("EditorActorSubsystem", "UnrealEd", "EditorSubsystemBase"),
+                class("Factory", "UnrealEd", "Object"),
+            ],
+            vec![],
+            vec![],
+            &codegen,
+        );
+        let blocked = with_unlisted_classes(&ctx, &codegen).classes;
+        assert_eq!(blocked, ["Factory"]);
+    }
+
+    #[test]
+    fn unchanged_output_keeps_its_timestamp() {
+        let dir = std::env::temp_dir().join(format!("rusteal-write-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("out.rs");
+        write_if_changed(&path, "a").unwrap();
+        let old = std::time::SystemTime::now() - std::time::Duration::from_secs(3600);
+        std::fs::File::options().write(true).open(&path).unwrap().set_modified(old).unwrap();
+
+        write_if_changed(&path, "a").unwrap();
+        assert_eq!(std::fs::metadata(&path).unwrap().modified().unwrap(), old);
+        write_if_changed(&path, "b").unwrap();
+        assert_ne!(std::fs::metadata(&path).unwrap().modified().unwrap(), old);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "b");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 
     #[test]
     fn plugin_dependencies_follow_enabled_modules() {

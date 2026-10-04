@@ -1,0 +1,5 @@
+# `rusteal plugin new <Name> --template editor`: an editor plugin in Rust.
+description = "An editor plugin (the editor only) in Rust: an editor subsystem, a menu entry, an asset validator and a console command."
+
+# Printed when the plugin is ready (Tera, same context as the files).
+next_step = "open the project in the editor: Tools > {{ plugin }} > Count assets; saving an asset whose name has no type prefix (SM_, T_) fails validation"

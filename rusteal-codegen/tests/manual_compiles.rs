@@ -334,7 +334,7 @@ use rusteal_runtime::runtime::{
 };
 use rusteal_runtime::{uclass, uclass_impl, ustruct};
 
-#[uclass(parent = Pawn)]
+#[uclass(parent = Pawn, implements = ["/Script/Engine.ActorSoundParameterInterface"])]
 pub struct Probe {
     #[component(attach = "root_component")]
     arm: SceneComponent,
@@ -380,6 +380,8 @@ pub struct Probe {
     soft_action: SoftObjectRef<InputAction>,
     #[uproperty(EditAnywhere)]
     row: OwnedStruct<ProbeRow>,
+    #[uproperty(SaveGame, default = 3)]
+    best_lap: i32,
     // Rust's alone: not Copy.
     visits: Vec<String>,
 }
@@ -498,6 +500,12 @@ impl Probe {
     #[ufunction(BlueprintImplementableEvent)]
     fn on_damaged(&self, damage: f32, location: &OwnedStruct<FVector>) {}
 
+    #[udelegate]
+    pub fn on_health_changed(&self, health: f32, instigator: UObjectRef<Actor>, at: &OwnedStruct<FVector>) {}
+
+    #[udelegate(name = "OnEmptied")]
+    pub fn emptied(&self) {}
+
     #[ufunction(Override, name = "BlueprintUpdateCamera")]
     fn update_camera(
         &mut self,
@@ -524,6 +532,17 @@ pub fn worlds(probe: UObjectRef<Probe>, class: SubclassOf<Pawn>) -> RustealResul
     actor.checked()?.on_destroyed().add_ufunction(&probe, "PickClass")?;
     let world = probe.get_world()?;
     world.spawn_actor_of_class(class, &OwnedStruct::new())
+}
+
+pub fn delegates(probe: &Probe) -> RustealResult<()> {
+    let binding = probe.on_health_changed_add(|health: f32, _instigator: UObjectRef<Actor>, at: OwnedStruct<FVector>| {
+        let _ = (health, at);
+    })?;
+    binding.detach();
+    probe.emptied_add_ufunction(&probe.as_ref(), "PickClass")?;
+    probe.on_health_changed(50.0, UObjectRef::null(), &OwnedStruct::new());
+    probe.emptied();
+    Ok(())
 }
 
 pub fn upcasts(probe: UObjectRef<Probe>, pc: UObjectRef<PlayerController>) -> (UObjectRef<Actor>, UObjectRef<Pawn>) {

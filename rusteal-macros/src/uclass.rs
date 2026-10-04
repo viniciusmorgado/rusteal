@@ -17,6 +17,13 @@ use crate::prop_type;
 struct UClassArgs {
     parent_path: syn::Path,  // Full Rust path for compile-time type checking
     parent_name: String,     // Last segment string for runtime find_class
+    /// UE interfaces the class implements, by class path
+    /// (`/Script/Module.Interface`, `/Game/Path/BPI_Foo.BPI_Foo_C`).
+    implements: Vec<String>,
+    /// `config = "Game"`: a config class, its `Config` properties saved in
+    /// that category's ini files (`DefaultGame.ini`), as `UCLASS(Config=Game,
+    /// defaultconfig)`.
+    config: Option<String>,
 }
 
 fn parse_uclass_args(attr: TokenStream) -> syn::Result<UClassArgs> {
@@ -32,7 +39,38 @@ fn parse_uclass_args(attr: TokenStream) -> syn::Result<UClassArgs> {
             });
 
     let mut parent_path: Option<syn::Path> = None;
+    let mut implements = Vec::new();
+    let mut config = None;
     for meta in &metas {
+        if let Meta::NameValue(nv) = meta
+            && nv.path.is_ident("config")
+        {
+            config = Some(str_value(&nv.value, "config")?);
+            continue;
+        }
+        if let Meta::NameValue(nv) = meta
+            && nv.path.is_ident("implements")
+        {
+            let paths = match &nv.value {
+                Expr::Array(array) => array.elems.iter().collect::<Vec<_>>(),
+                other => vec![other],
+            };
+            for path in paths {
+                match path {
+                    Expr::Lit(syn::ExprLit { lit: syn::Lit::Str(s), .. }) if s.value().starts_with('/') => {
+                        implements.push(s.value());
+                    }
+                    other => {
+                        return Err(syn::Error::new_spanned(
+                            other,
+                            "`implements` lists UE interface class paths: \
+                             implements = [\"/Script/Module.Interface\", \"/Game/Path/BPI_Foo.BPI_Foo_C\"]",
+                        ));
+                    }
+                }
+            }
+            continue;
+        }
         if let Meta::NameValue(nv) = meta
             && nv.path.is_ident("parent")
         {
@@ -63,7 +101,7 @@ fn parse_uclass_args(attr: TokenStream) -> syn::Result<UClassArgs> {
         .last()
         .map(|s| s.ident.to_string())
         .unwrap_or_default();
-    Ok(UClassArgs { parent_path, parent_name })
+    Ok(UClassArgs { parent_path, parent_name, implements, config })
 }
 
 /// Specifiers parsed from #[uproperty(...)].
@@ -79,6 +117,12 @@ pub(crate) struct UPropertyArgs {
     edit_anywhere: bool,
     edit_defaults_only: bool,
     visible_anywhere: bool,
+    /// `SaveGame`: written by `SaveGameToSlot`, which only serializes
+    /// properties carrying the flag.
+    save_game: bool,
+    /// `Config`: read from and saved to the ini files of the class's
+    /// `config` category.
+    config: bool,
     pub(crate) default_expr: Option<Expr>,
     /// The UE name when it is not the field's (`NPC` for `npc`).
     name: Option<String>,
@@ -118,6 +162,17 @@ pub(crate) fn parse_uproperty_args(attr: &syn::Attribute) -> syn::Result<UProper
                     args.edit_defaults_only = true;
                 } else if p.is_ident("VisibleAnywhere") {
                     args.visible_anywhere = true;
+                } else if p.is_ident("SaveGame") {
+                    args.save_game = true;
+                } else if p.is_ident("Config") {
+                    args.config = true;
+                } else {
+                    return Err(syn::Error::new_spanned(
+                        p,
+                        "unknown #[uproperty] argument: expected BlueprintReadWrite, \
+                         BlueprintReadOnly, EditAnywhere, EditDefaultsOnly, VisibleAnywhere, \
+                         SaveGame, Config, default = ..., name = \"...\" or category = \"...\"",
+                    ));
                 }
             }
             Meta::NameValue(nv)
@@ -130,7 +185,9 @@ pub(crate) fn parse_uproperty_args(attr: &syn::Attribute) -> syn::Result<UProper
             Meta::NameValue(nv) if nv.path.is_ident("category") => {
                 args.category = Some(str_value(&nv.value, "category")?);
             }
-            _ => {}
+            other => {
+                return Err(syn::Error::new_spanned(other, "unknown #[uproperty] argument"));
+            }
         }
     }
     Ok(args)
@@ -366,6 +423,8 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
     let register_fn_name = format_ident!("__rusteal_register_{}", to_snake_case(&struct_name_str));
     let members_fn_name = format_ident!("__rusteal_members_{}", to_snake_case(&struct_name_str));
     let finalize_fn_name = format_ident!("__rusteal_finalize_{}", to_snake_case(&struct_name_str));
+    let after_defaults_fn_name =
+        format_ident!("__rusteal_after_defaults_{}", to_snake_case(&struct_name_str));
 
     let type_id_value = prop_type::fnv1a_hash(&struct_name_str);
 
@@ -525,6 +584,18 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
         }
     });
 
+    // get_default: the class default object, which for a settings class
+    // holds the project's settings.
+    accessor_methods.push(quote! {
+        /// The class default object: what every instance starts from, and
+        /// for a config class (`config = "..."`) the values its ini files hold.
+        pub fn get_default() -> ::rusteal_runtime::runtime::RustealResult<Self> {
+            let class = <Self as ::rusteal_runtime::runtime::UeClass>::static_class();
+            let cdo = unsafe { ::rusteal_runtime::runtime::ffi_dispatch::reify_get_cdo(class) };
+            Self::from_obj(unsafe { ::rusteal_runtime::runtime::UObjectRef::<Self>::from_raw(cdo) })
+        }
+    });
+
     let accessors_impl = quote! {
         impl #struct_name {
             /// The Rust type ID the class's instance data is registered under.
@@ -545,6 +616,23 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
 
     // Generate add_property calls
     let add_prop_stmts = add_property_statements(&uprops);
+    let add_interface_stmts: Vec<TokenStream> = args
+        .implements
+        .iter()
+        .map(|path| {
+            let bytes = path.as_bytes();
+            let len = path.len() as u32;
+            quote! {
+                unsafe {
+                    ::rusteal_runtime::runtime::ffi_dispatch::reify_add_interface(
+                        class,
+                        [#(#bytes),*].as_ptr(),
+                        #len,
+                    );
+                }
+            }
+        })
+        .collect();
 
     // Generate add_default_subobject calls
     let mut add_comp_stmts: Vec<TokenStream> = Vec::new();
@@ -697,6 +785,9 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
             // Add properties (finalize deferred to __rusteal_finalize)
             #(#add_prop_stmts)*
 
+            // Interfaces, which the engine adds once they can be loaded
+            #(#add_interface_stmts)*
+
             // Register default subobjects
             #(#add_comp_stmts)*
         }
@@ -728,6 +819,39 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
             let msg = concat!("[Rusteal] ", stringify!(#struct_name), " registered successfully");
             let bytes = msg.as_bytes();
             unsafe { ::rusteal_runtime::runtime::ffi_dispatch::logging_log(0, bytes.as_ptr(), bytes.len() as u32); }
+        }
+    };
+
+    // Once the class defaults are written: a config class loads its ini
+    // values over them.
+    let config_stmt = args.config.as_ref().map(|config| {
+        let config_bytes = config.as_bytes();
+        let config_len = config.len() as u32;
+        quote! {
+            let result = unsafe {
+                ::rusteal_runtime::runtime::ffi_dispatch::reify_set_class_config(
+                    class,
+                    [#(#config_bytes),*].as_ptr(),
+                    #config_len,
+                )
+            };
+            if result != ::rusteal_runtime::ffi::RustealErrorCode::Ok {
+                let msg = concat!("[Rusteal] ", stringify!(#struct_name), ": set_class_config failed");
+                let bytes = msg.as_bytes();
+                unsafe { ::rusteal_runtime::runtime::ffi_dispatch::logging_log(2, bytes.as_ptr(), bytes.len() as u32); }
+            }
+        }
+    });
+    let after_defaults_fn = quote! {
+        #[doc(hidden)]
+        pub fn #after_defaults_fn_name() {
+            let Some(&class) = #class_handle_name.get() else {
+                return;
+            };
+            if class.is_null() {
+                return;
+            }
+            #config_stmt
         }
     };
 
@@ -791,6 +915,7 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
         #accessors_impl
         #register_fn
         #finalize_fn
+        #after_defaults_fn
 
         ::rusteal_runtime::__inventory::submit! {
             ::rusteal_runtime::runtime::reify_registry::ClassRegistration {
@@ -798,6 +923,7 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
                 create: #register_fn_name,
                 register: #members_fn_name,
                 finalize: #finalize_fn_name,
+                after_defaults: #after_defaults_fn_name,
             }
         }
     })
@@ -1091,6 +1217,12 @@ pub(crate) fn add_property_statements(uprops: &[UPropertyField]) -> Vec<TokenStr
             flag_parts.push(quote! { ::rusteal_runtime::ffi::CPF_EDIT });
             flag_parts.push(quote! { ::rusteal_runtime::ffi::CPF_EDIT_CONST });
         }
+        if prop.args.save_game {
+            flag_parts.push(quote! { ::rusteal_runtime::ffi::CPF_SAVE_GAME });
+        }
+        if prop.args.config {
+            flag_parts.push(quote! { ::rusteal_runtime::ffi::CPF_CONFIG });
+        }
         if flag_parts.is_empty() {
             flag_parts.push(quote! { 0u64 });
         }
@@ -1145,4 +1277,67 @@ pub(crate) fn add_property_statements(uprops: &[UPropertyField]) -> Vec<TokenStr
 
     }
     add_prop_stmts
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use syn::parse_quote;
+
+    #[test]
+    fn implements_takes_interface_paths() {
+        let args = parse_uclass_args(quote::quote!(parent = Actor, implements = ["/Script/Game.Usable", "/Game/BPI_X.BPI_X_C"])).unwrap();
+        assert_eq!(args.implements, ["/Script/Game.Usable", "/Game/BPI_X.BPI_X_C"]);
+        let one = parse_uclass_args(quote::quote!(parent = Actor, implements = "/Script/Game.Usable")).unwrap();
+        assert_eq!(one.implements, ["/Script/Game.Usable"]);
+        assert!(parse_uclass_args(quote::quote!(parent = Actor, implements = [Usable])).is_err());
+        assert!(parse_uclass_args(quote::quote!(parent = Actor, implements = ["Usable"])).is_err());
+    }
+
+    #[test]
+    fn config_names_the_ini_category() {
+        let args = parse_uclass_args(quote::quote!(parent = DeveloperSettings, config = "Game")).unwrap();
+        assert_eq!(args.config.as_deref(), Some("Game"));
+        assert!(parse_uclass_args(quote::quote!(parent = Actor)).unwrap().config.is_none());
+        assert!(parse_uclass_args(quote::quote!(parent = Actor, config = Game)).is_err());
+    }
+
+    #[test]
+    fn config_sets_the_property_flag() {
+        let field = UPropertyField {
+            ident: parse_quote!(max_items),
+            ty: parse_quote!(i32),
+            args: parse_uproperty_args(&parse_quote!(#[uproperty(Config, EditAnywhere)])).unwrap(),
+        };
+        assert!(add_property_statements(&[field])[0].to_string().contains("CPF_CONFIG"));
+    }
+
+    #[test]
+    fn save_game_is_a_uproperty_argument() {
+        let attr: syn::Attribute = parse_quote!(#[uproperty(EditAnywhere, SaveGame)]);
+        let args = parse_uproperty_args(&attr).unwrap();
+        assert!(args.save_game && args.edit_anywhere);
+    }
+
+    #[test]
+    fn save_game_sets_the_property_flag() {
+        let field = |attr: syn::Attribute| UPropertyField {
+            ident: parse_quote!(best_time),
+            ty: parse_quote!(f32),
+            args: parse_uproperty_args(&attr).unwrap(),
+        };
+        let flagged = add_property_statements(&[field(parse_quote!(#[uproperty(SaveGame)]))]);
+        assert!(flagged[0].to_string().contains("CPF_SAVE_GAME"));
+        let plain = add_property_statements(&[field(parse_quote!(#[uproperty(EditAnywhere)]))]);
+        assert!(!plain[0].to_string().contains("CPF_SAVE_GAME"));
+    }
+
+    #[test]
+    fn unknown_uproperty_arguments_are_errors() {
+        let attr: syn::Attribute = parse_quote!(#[uproperty(EditAnywhere, Replicated)]);
+        let err = parse_uproperty_args(&attr).err().unwrap();
+        assert!(err.to_string().contains("unknown #[uproperty] argument"));
+        let attr: syn::Attribute = parse_quote!(#[uproperty(meta = "x")]);
+        assert!(parse_uproperty_args(&attr).is_err());
+    }
 }

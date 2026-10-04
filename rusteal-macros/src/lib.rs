@@ -3,6 +3,7 @@
 mod prop_type;
 mod uclass;
 mod uclass_impl;
+mod udelegate;
 mod ustruct;
 
 /// Attribute macro for defining a Rust struct as a UE class.

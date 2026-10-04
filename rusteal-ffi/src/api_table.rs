@@ -32,6 +32,7 @@ pub struct RustealApiTable {
     pub logging: *const RustealLoggingApi,
     pub widget: *const RustealWidgetApi,
     pub input: *const RustealInputApi,
+    pub console: *const RustealConsoleApi,
 
     // ---- Generated function-pointer array (codegen) ----
     /// Flat array indexed by codegen-assigned FuncId. Each pointer targets a
@@ -277,6 +278,10 @@ pub struct RustealReflectionApi {
     /// Find a UEnum by name (`ECollisionChannel`). The handle is the enum's
     /// object, typed like a class handle as `RustealReifyPropExtra::enum_handle`.
     pub find_enum: unsafe extern "C" fn(name: *const u8, name_len: u32) -> UClassHandle,
+
+    /// The signature function of a delegate property (unicast or multicast),
+    /// whose parameters are the delegate's; null for any other property.
+    pub get_delegate_signature: unsafe extern "C" fn(prop: FPropertyHandle) -> UFunctionHandle,
 }
 
 /// Phase 7: Container operations (TArray / TMap / TSet).
@@ -516,7 +521,7 @@ pub struct RustealReifyApi {
         value: *const u8, value_len: u32,
     ) -> RustealErrorCode,
 
-    /// Create a struct in `/Script/Rusteal` (`#[ustruct]`), or find the one a
+    /// Create a struct in the library's package (`#[ustruct]`), or find the one a
     /// previous load created. Its properties are added with `add_property`,
     /// which takes its handle as a class handle.
     pub create_struct: unsafe extern "C" fn(name: *const u8, name_len: u32) -> UStructHandle,
@@ -524,6 +529,36 @@ pub struct RustealReifyApi {
     /// Link a struct once its properties are added, after the Rust structs
     /// its properties hold.
     pub finalize_struct: unsafe extern "C" fn(strukt: UStructHandle) -> RustealErrorCode,
+
+    /// Add a multicast delegate property named `name` to a Rust class (a
+    /// `#[udelegate]`), with `prop_flags` on top of `BlueprintAssignable` and
+    /// `BlueprintCallable`, and return its signature function, whose
+    /// parameters `add_function_param` adds. On a reload, the existing
+    /// property's signature.
+    pub add_delegate: unsafe extern "C" fn(
+        cls: UClassHandle,
+        name: *const u8, name_len: u32,
+        prop_flags: u64,
+    ) -> UFunctionHandle,
+
+    /// Make a Rust class implement the UE interface at class path `path`
+    /// (`/Script/Module.Interface`, a Blueprint Interface's
+    /// `/Game/Path/BPI_Foo.BPI_Foo_C`). Interfaces are loaded once the engine
+    /// is initialized, so the class implements it from then on; functions
+    /// named as the interface's, with the same parameters, implement it.
+    pub add_interface: unsafe extern "C" fn(
+        cls: UClassHandle,
+        path: *const u8, path_len: u32,
+    ) -> RustealErrorCode,
+
+    /// Make a Rust class a config class saved in the `config_name` ini files
+    /// (`Game`: `DefaultGame.ini`), and load its `Config` properties from them
+    /// now. Called once the class defaults are written, which the ini values
+    /// override.
+    pub set_class_config: unsafe extern "C" fn(
+        cls: UClassHandle,
+        config_name: *const u8, config_name_len: u32,
+    ) -> RustealErrorCode,
 }
 
 pub const RUSTEAL_COMP_ROOT: u32 = 1;
@@ -563,7 +598,8 @@ pub struct RustealWidgetApi {
 pub struct RustealInputApi {
     /// Bind `trigger_event` (an `ETriggerEvent` value) of `action` on `actor`'s
     /// Enhanced Input component to `actor`'s UFUNCTION `function_name`, which
-    /// takes no parameters or one `FInputActionValue`. `InvalidOperation` when
+    /// takes no parameters, or `(FInputActionValue, float ElapsedSeconds, float
+    /// TriggeredSeconds, UInputAction*)` or a leading part of it. `InvalidOperation` when
     /// the actor has no Enhanced Input component yet, `TypeMismatch` when the
     /// function takes anything else. Binding the same function to the same
     /// action and event on the same component again does nothing.
@@ -579,6 +615,55 @@ pub struct RustealInputApi {
     /// shows touch controls (virtual joysticks, `bAlwaysShowTouchInterface`,
     /// or faked touch events where the platform displays them).
     pub should_display_touch_interface: unsafe extern "C" fn() -> bool,
+}
+
+/// What a console command's callback receives as its params.
+#[repr(C)]
+pub struct RustealConsoleArgs {
+    /// The command's arguments, UTF-8, separated by `\n`.
+    pub args: *const u8,
+    pub args_len: u32,
+    /// The world the command runs in; null when there is none.
+    pub world: UObjectHandle,
+}
+
+/// Console commands and variables (`IConsoleManager`, not in reflection).
+#[repr(C)]
+pub struct RustealConsoleApi {
+    /// Register a console command of the calling library: running it
+    /// invokes the delegate callback `callback_id` with a
+    /// [`RustealConsoleArgs`]. `InvalidOperation` when the name is taken.
+    pub register_command: unsafe extern "C" fn(
+        name: *const u8, name_len: u32,
+        help: *const u8, help_len: u32,
+        callback_id: u64,
+    ) -> RustealErrorCode,
+
+    /// Register a console variable of the calling library: `kind` 0 bool,
+    /// 1 int, 2 float, 3 string, with its default value as text.
+    pub register_variable: unsafe extern "C" fn(
+        name: *const u8, name_len: u32,
+        help: *const u8, help_len: u32,
+        kind: u32,
+        default_value: *const u8, default_len: u32,
+    ) -> RustealErrorCode,
+
+    /// Remove a command or variable the calling library registered. A
+    /// library's are removed when it unloads.
+    pub unregister: unsafe extern "C" fn(name: *const u8, name_len: u32) -> RustealErrorCode,
+
+    /// Any console variable's value as text, the engine's too.
+    /// `PropertyNotFound` when there is no such variable.
+    pub get_variable: unsafe extern "C" fn(
+        name: *const u8, name_len: u32,
+        buf: *mut u8, buf_len: u32, out_len: *mut u32,
+    ) -> RustealErrorCode,
+
+    /// Set a console variable from text, as code does.
+    pub set_variable: unsafe extern "C" fn(
+        name: *const u8, name_len: u32,
+        value: *const u8, value_len: u32,
+    ) -> RustealErrorCode,
 }
 
 /// World-level queries (spawn, find actors, etc.).
