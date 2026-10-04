@@ -2,7 +2,7 @@ using System.IO;
 using UnrealBuildTool;
 
 // The {{ plugin }} module: it hosts the plugin's Rust library and compiles the
-// C++ wrappers `rusteal build` generates for it into Generated/.
+// C++ wrappers `rusteal build --all` generates for it into Generated/.
 public class {{ plugin }} : ModuleRules
 {
     public {{ plugin }}(ReadOnlyTargetRules Target) : base(Target)
@@ -21,7 +21,7 @@ public class {{ plugin }} : ModuleRules
             RuntimeDependencies.Add(Library);
         }
 
-        // Modules the generated wrappers call into, listed by `rusteal build`.
+        // Modules the generated wrappers call into, listed by `rusteal build --all`.
         string DepsFile = Path.Combine(ModuleDirectory, "Generated", "module_deps.txt");
         if (File.Exists(DepsFile))
         {

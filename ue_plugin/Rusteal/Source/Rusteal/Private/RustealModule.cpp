@@ -211,7 +211,7 @@ static bool LoadLibraryFile(FRustealLibrary &Library, const FString &LoadPath) {
   if (LibraryVersion != GApiTable.version) {
     UE_LOG(LogRusteal, Error,
            TEXT("[Rusteal] %s: version mismatch: plugin %s, library %s. "
-                "Rebuild the project with `rusteal build` (run `rusteal "
+                "Rebuild the project with `rusteal build --all` (run `rusteal "
                 "upgrade` first if the CLI is newer than the project)."),
            *Library.Name.ToString(), *RustealVersionString(GApiTable.version),
            VersionFn ? *RustealVersionString(LibraryVersion)

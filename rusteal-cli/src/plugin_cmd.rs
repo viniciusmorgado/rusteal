@@ -1,7 +1,7 @@
 // `rusteal plugin new`: a Rusteal plugin in a project, `Plugins/<Name>/`.
 //
 // A Rusteal plugin is a UE plugin whose code is a Rust library: its own Cargo
-// workspace, bindings and C++ module, built by `rusteal build` with the rest
+// workspace, bindings and C++ module, built by `rusteal build --all` with the rest
 // of the project and loaded next to the game's library. It is self-contained,
 // so it can be copied into another Rusteal project at the same version.
 
@@ -52,7 +52,7 @@ pub fn run_plugin_new(opts: &PluginNewOptions) {
 
     eprintln!("\nrusteal plugin new: done.");
     if !opts.build {
-        eprintln!("  rusteal build      # UE build, bindings, plugin, cargo, deploy");
+        eprintln!("  rusteal build --all   # UE build, bindings, plugin, cargo, deploy");
     }
     let next_step = tera::Tera::one_off(&manifest.next_step, &context, false)
         .unwrap_or_else(|e| panic!("Failed to render next_step: {e}"));

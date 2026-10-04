@@ -4,7 +4,7 @@
 #include "Modules/ModuleManager.h"
 #include "RustealLibraries.h"
 
-// Generated/RustealFillFuncTable.cpp, written by `rusteal build`.
+// Generated/RustealFillFuncTable.cpp, written by `rusteal build --all`.
 extern void {{ plugin }}_RustealFillFuncTable();
 extern void **{{ plugin }}_RustealGetFuncTable();
 extern uint32_t {{ plugin }}_RustealGetFuncCount();

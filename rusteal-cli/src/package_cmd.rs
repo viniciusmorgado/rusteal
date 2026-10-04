@@ -78,7 +78,7 @@ pub fn run_plugin_package(root: &Path, engine: &Path, name: &str, output: &Path)
         "  Copy it into another Rusteal project's Plugins/ (the project must be at Rusteal {}),",
         env!("CARGO_PKG_VERSION")
     );
-    eprintln!("  list it in the .uproject and run `rusteal build` there.");
+    eprintln!("  list it in the .uproject and run `rusteal build --all` there.");
 }
 
 /// What a plugin package leaves out: build output, and the numbered copies

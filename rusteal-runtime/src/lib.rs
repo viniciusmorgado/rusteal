@@ -3,7 +3,7 @@
 // generates the library entry points through `rusteal_runtime::entry!()`.
 //
 // The Unreal types themselves are not here: they are generated per project by
-// `rusteal build` into the game's own `bindings` crate, whose features decide
+// `rusteal build --all` into the game's own `bindings` crate, whose features decide
 // which engine modules exist.
 
 // Re-exports for proc macro path resolution and user access.
