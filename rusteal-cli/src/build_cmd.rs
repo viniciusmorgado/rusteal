@@ -326,12 +326,18 @@ impl BuildContext {
         let uproject = self.uproject_path();
         let uproject_abs = canonical_no_prefix(&uproject);
 
+        // -NoHotReload: with an editor of this engine open (another project's
+        // too), UBT would otherwise name the binaries for a C++ hot reload
+        // (-0001) and fail to link a module against another one of the same
+        // plugin (RustealEditor against Rusteal). Rusteal never hot reloads
+        // C++: a change to it needs an editor restart.
         run_cmd(&[
             script.to_str().unwrap(),
             &target,
             platform.ubt_platform,
             "Development",
             &format!("-Project={}", uproject_abs.display()),
+            "-NoHotReload",
         ]);
     }
 
