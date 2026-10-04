@@ -66,16 +66,22 @@ enum Commands {
         /// The UE project directory (the one holding the .uproject).
         project: PathBuf,
     },
-    /// Run the build pipeline: UE build, codegen, UE rebuild, cargo build, deploy.
+    /// Build the Rust libraries and deploy them (steps 4-5 of the pipeline);
+    /// `--all` runs the whole pipeline: UE build, codegen, UE rebuild, cargo
+    /// build, deploy.
     Build {
         /// Project directory (default: found from the current directory).
         project: Option<PathBuf>,
+        /// Run every step (1-5): needed after changing rusteal.toml or the
+        /// engine, which regenerates the bindings and the C++ wrappers.
+        #[arg(long, conflicts_with_all = ["step", "from"])]
+        all: bool,
         /// Run only step N (1-5).
-        #[arg(long)]
+        #[arg(long, conflicts_with = "from")]
         step: Option<u8>,
-        /// Start from step N (1-5, default: 1).
-        #[arg(long, default_value_t = 1)]
-        from: u8,
+        /// Start from step N (1-5, default: 4, the Rust libraries).
+        #[arg(long)]
+        from: Option<u8>,
         /// Build the libraries with the release profile, to ship the game
         /// (default: the dev profile, to iterate).
         #[arg(long)]
@@ -197,10 +203,11 @@ fn main() {
             let engine = global_config::engine_path();
             setup::run_setup(&project, &engine);
         }
-        Commands::Build { project, step, from, release, plugin } => {
+        Commands::Build { project, all, step, from, release, plugin } => {
             let root = project_root(project.as_deref());
             check_version(&root, Scope::PinsAndPlugins);
             let engine = global_config::engine_path();
+            let from = first_build_step(all, step, from);
             build_cmd::run_build(&root, &engine, step, from, release, plugin.as_deref());
         }
         Commands::Generate { project } => {
@@ -219,6 +226,12 @@ fn main() {
             sync_plugin::run_sync();
         }
     }
+}
+
+/// The step `rusteal build` starts from: the Rust libraries by default, every
+/// step with `--all` (or with `--step`, which ignores it).
+fn first_build_step(all: bool, step: Option<u8>, from: Option<u8>) -> u8 {
+    from.unwrap_or(if all || step.is_some() { 1 } else { build_cmd::RUST_STEP })
 }
 
 /// Stop unless the project is at this CLI's Rusteal version.
@@ -246,9 +259,9 @@ fn project_root(given: Option<&Path>) -> PathBuf {
 
 #[cfg(test)]
 mod tests {
-    use clap::CommandFactory;
+    use clap::{CommandFactory, Parser};
 
-    use super::Cli;
+    use super::{Cli, first_build_step};
 
     #[test]
     fn cli_definition_is_valid() {
@@ -258,5 +271,25 @@ mod tests {
     #[test]
     fn version_is_the_crate_version() {
         assert_eq!(Cli::command().get_version(), Some(env!("CARGO_PKG_VERSION")));
+    }
+
+    #[test]
+    fn build_runs_the_rust_steps_unless_told_otherwise() {
+        assert_eq!(first_build_step(false, None, None), 4);
+        assert_eq!(first_build_step(true, None, None), 1);
+        assert_eq!(first_build_step(false, None, Some(2)), 2);
+        assert_eq!(first_build_step(false, Some(3), None), 1);
+    }
+
+    #[test]
+    fn build_all_excludes_step_and_from() {
+        for args in [
+            &["rusteal", "build", "--all", "--from", "2"][..],
+            &["rusteal", "build", "--all", "--step", "2"],
+            &["rusteal", "build", "--step", "2", "--from", "3"],
+        ] {
+            assert!(Cli::try_parse_from(args).is_err(), "{args:?} should be refused");
+        }
+        assert!(Cli::try_parse_from(["rusteal", "build", "--all", "--release"]).is_ok());
     }
 }

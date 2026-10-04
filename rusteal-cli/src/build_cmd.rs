@@ -25,6 +25,10 @@ pub fn canonical_no_prefix(path: &Path) -> PathBuf {
     abs
 }
 
+/// The first step that only builds Rust: `rusteal build` without `--all`
+/// starts there.
+pub const RUST_STEP: u8 = 4;
+
 /// Run the build pipeline.
 ///
 /// `project_root` holds the .uproject and `rusteal.toml`; `engine_path` is the
@@ -93,6 +97,8 @@ pub fn run_build(
     eprintln!("  Rusteal build pipeline");
     if step.is_some() {
         eprintln!("  Running step {} only", steps[0]);
+    } else if from == RUST_STEP {
+        eprintln!("  Running steps {RUST_STEP}-5: the Rust libraries (--all runs every step)");
     } else if from > 1 {
         eprintln!("  Running steps {from}-5");
     } else {
@@ -388,6 +394,16 @@ impl BuildContext {
     /// the profile the workspace's `Cargo.toml` sets.
     fn step4_cargo_build(&self) {
         for library in &self.libraries {
+            // Until codegen runs, `bindings` is the placeholder `rusteal new`
+            // writes, and the crate cannot compile against it.
+            if !library.rust_workspace.join("bindings/src/func_ids.rs").is_file() {
+                eprintln!(
+                    "Error: the {} library's bindings have not been generated yet: \
+                     run `rusteal build --all` once.",
+                    library.label
+                );
+                std::process::exit(1);
+            }
             eprintln!("  {}: {}", library.label, library.crate_name);
             // The crate by its own manifest, as the templates lay it out
             // (Rust/<crate>/): `-p <crate>` is ambiguous when a dependency

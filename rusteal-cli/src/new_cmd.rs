@@ -81,7 +81,7 @@ pub fn run_new(opts: &NewOptions) {
     eprintln!("\nrusteal new: done.");
     eprintln!("  cd {}", root.display());
     if !opts.build {
-        eprintln!("  rusteal build      # UE build, bindings, plugin, cargo, deploy");
+        eprintln!("  rusteal build --all   # UE build, bindings, plugin, cargo, deploy");
     }
     let next_step = tera::Tera::one_off(&manifest.next_step, &context, false)
         .unwrap_or_else(|e| panic!("Failed to render next_step: {e}"));
@@ -568,7 +568,7 @@ fn template_context(project: &str, crate_name: &str, runtime_path: Option<&Path>
 }
 
 /// The bindings crate is written by the build; leave a placeholder in
-/// `bindings` so the workspace resolves before the first `rusteal build`.
+/// `bindings` so the workspace resolves before the first `rusteal build --all`.
 pub fn write_bindings_placeholder(bindings: &Path) {
     if bindings.join("Cargo.toml").exists() {
         return;
@@ -577,11 +577,11 @@ pub fn write_bindings_placeholder(bindings: &Path) {
         .unwrap_or_else(|e| panic!("Failed to create {}: {e}", bindings.display()));
     write(
         &bindings.join("Cargo.toml"),
-        "# Placeholder, replaced by the codegen step of `rusteal build`.\n\n\
+        "# Placeholder, replaced by the codegen step of `rusteal build --all`.\n\n\
          [package]\nname = \"bindings\"\nversion = \"0.0.0\"\nedition = \"2024\"\npublish = false\n\n\
          [dependencies]\nrusteal-core = { workspace = true }\nrusteal-ffi = { workspace = true }\n",
     );
-    write(&bindings.join("src/lib.rs"), "// Written by `rusteal build`.\n");
+    write(&bindings.join("src/lib.rs"), "// Written by `rusteal build --all`.\n");
 }
 
 fn write(path: &Path, contents: &str) {

@@ -27,7 +27,7 @@ number and moves to [Fixed](#fixed).
 ## Adding an entry
 
 1. Build a project with the engine version in question and collect the
-   warnings: `rusteal build` prints them as
+   warnings: `rusteal build --all` prints them as
    `warning: '<API>' is deprecated: <message> [-Wdeprecated-declarations]`.
 2. For each API, find the `UE_DEPRECATED(<version>, ...)` line in the engine
    headers under `Engine/Source/` for **Deprecated in**.
@@ -89,7 +89,7 @@ constructors already ignore the flags and forward to the ones without them
 Deprecated engine functions and classes that are still reflected, so codegen
 wraps them in `Plugins/Rusteal/Source/Rusteal/Generated/` and exposes them in the
 `bindings` crate. Nothing in Rusteal has to change: when the engine removes one,
-UHT stops exporting it and the next `rusteal build` stops generating it. Game
+UHT stops exporting it and the next `rusteal build --all` stops generating it. Game
 code that calls it from Rust breaks at that point, so these are listed for
 whoever uses them.
 
