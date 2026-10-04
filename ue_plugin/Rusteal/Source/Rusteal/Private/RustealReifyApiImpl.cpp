@@ -7,6 +7,7 @@
 #include "Misc/CoreDelegates.h"
 #include "Serialization/AsyncLoadingEvents.h"
 #include "RustealApiTable.h"
+#include "RustealLibraries.h"
 #include "RustealLibrary.h"
 #include "RustealModule.h"
 #include "UObject/UObjectArray.h"
@@ -301,12 +302,85 @@ static void CopyParamsFromParentFunction(UFunction *NewFunc,
 }
 
 // ---------------------------------------------------------------------------
+// Classes a hot reload replaces
+// ---------------------------------------------------------------------------
+
+static FRustealClassReinstancer GClassReinstancer;
+
+// The classes replaced while the library being loaded registers its own
+// (old, new), reinstanced once it is done.
+static TArray<TPair<UClass *, UClass *>> GReplacedClasses;
+
+void RustealSetClassReinstancer(FRustealClassReinstancer Reinstancer) {
+  GClassReinstancer = MoveTemp(Reinstancer);
+}
+
+// A class a hot reload replaces: moved out of the library's package, as the
+// engine's own reload moves a changed native class (ReloadProcessObject), so
+// the new one takes its name; and cut from Rust, whose library has no code
+// for it anymore: its objects lose their Rust data, its functions do nothing.
+static void RetireClass(URustealReifiedClass *Old) {
+  Old->Library = nullptr;
+  for (UField *Field = Old->Children; Field; Field = Field->Next) {
+    if (URustealReifiedFunction *Function = Cast<URustealReifiedFunction>(Field)) {
+      Function->Library = nullptr;
+    }
+  }
+
+  const ERenameFlags Flags =
+      REN_DontCreateRedirectors | REN_NonTransactional | REN_DoNotDirty;
+#if WITH_EDITORONLY_DATA
+  if (UBlueprint *Stub = Cast<UBlueprint>(Old->ClassGeneratedBy)) {
+    Stub->RemoveFromRoot();
+    Stub->ClearFlags(RF_Standalone | RF_Public);
+    Stub->Rename(*MakeUniqueObjectName(GetTransientPackage(), Stub->GetClass(),
+                                       *(TEXT("RUSTEAL_") + Stub->GetName()))
+                      .ToString(),
+                 GetTransientPackage(), Flags);
+  }
+  // Not a Blueprint's class anymore: the engine's reinstancing recompiles the
+  // Blueprint of each subclass of a replaced class, and a Rust subclass's
+  // stub has nothing to compile (the Rust subclass is replaced on its own).
+  Old->ClassGeneratedBy = nullptr;
+#endif
+
+  Old->RemoveFromRoot();
+  Old->ClearFlags(RF_Standalone | RF_Public);
+  if (UObject *CDO = Old->GetDefaultObject(false)) {
+    CDO->RemoveFromRoot();
+    CDO->ClearFlags(RF_Standalone | RF_Public);
+  }
+  // Renaming a class renames its default object with it.
+  Old->Rename(*MakeUniqueObjectName(GetTransientPackage(), Old->GetClass(),
+                                    *(TEXT("RUSTEAL_") + Old->GetName()))
+                   .ToString(),
+              GetTransientPackage(), Flags);
+  Old->SetFlags(RF_Transient);
+  // Until reinstanced, which lets it go.
+  Old->AddToRoot();
+}
+
+void RustealReifyReinstanceReplacedClasses() {
+  if (GReplacedClasses.IsEmpty()) {
+    return;
+  }
+  TArray<TPair<UClass *, UClass *>> Replaced = MoveTemp(GReplacedClasses);
+  GReplacedClasses.Reset();
+  UE_LOG(LogRusteal, Display,
+         TEXT("[Rusteal] Hot reload: reinstancing %d changed class(es)"),
+         Replaced.Num());
+  if (GClassReinstancer) {
+    GClassReinstancer(Replaced);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // API implementations
 // ---------------------------------------------------------------------------
 
 static RustealUClassHandle CreateClassImpl(const uint8 *Name, uint32 NameLen,
                                            RustealUClassHandle Parent,
-                                           uint64 RustTypeId) {
+                                           uint64 RustTypeId, uint64 Shape) {
   UClass *ParentClass = static_cast<UClass *>(Parent.ptr);
   if (!ParentClass) {
     UE_LOG(LogRusteal, Error, TEXT("[Rusteal] CreateClass: null parent class"));
@@ -321,17 +395,34 @@ static RustealUClassHandle CreateClassImpl(const uint8 *Name, uint32 NameLen,
   UPackage *RustealPackage = RustealCurrentPackage();
   URustealReifiedClass *Existing =
       FindObject<URustealReifiedClass>(RustealPackage, *ClassName);
-  if (Existing) {
+  // Its properties, functions or parent changed (a Rust parent replaced
+  // counts: the class's layout starts with its parent's).
+  const bool bChanged =
+      Existing &&
+      (Existing->Shape != Shape || Existing->GetSuperClass() != ParentClass);
+  if (Existing && (!bChanged || !GClassReinstancer)) {
     // Update the Rust type ID (may have changed if Rust struct layout changed).
     Existing->RustTypeId = RustTypeId;
     Existing->Library = RustealCurrentLibrary();
 
-    UE_LOG(
-        LogRusteal, Display,
-        TEXT("[Rusteal] Hot reload: reusing existing class %s (type_id: %llu)"),
-        *ClassName, RustTypeId);
-
+    if (bChanged) {
+      UE_LOG(LogRusteal, Warning,
+             TEXT("[Rusteal] Hot reload: %s changed (its properties, functions "
+                  "or parent), which only the editor can apply: restart to use "
+                  "the new class."),
+             *ClassName);
+    } else {
+      UE_LOG(LogRusteal, Display,
+             TEXT("[Rusteal] Hot reload: reusing existing class %s (type_id: "
+                  "%llu)"),
+             *ClassName, RustTypeId);
+    }
     return RustealUClassHandle{Existing};
+  }
+  if (Existing) {
+    UE_LOG(LogRusteal, Display,
+           TEXT("[Rusteal] Hot reload: %s changed, replacing it"), *ClassName);
+    RetireClass(Existing);
   }
 
   // --- Normal path: create new class ---
@@ -340,6 +431,10 @@ static RustealUClassHandle CreateClassImpl(const uint8 *Name, uint32 NameLen,
 
   NewClass->RustTypeId = RustTypeId;
   NewClass->Library = RustealCurrentLibrary();
+  NewClass->Shape = Shape;
+  if (Existing) {
+    GReplacedClasses.Emplace(Existing, NewClass);
+  }
 
   // Walk up to find the native (C++) superclass.
   UClass *NativeSuper = ParentClass;
@@ -842,20 +937,32 @@ void RustealReifyForEachReifiedInstance(
 // Structs declared in Rust (#[ustruct])
 // ---------------------------------------------------------------------------
 
+// The shape each Rust struct was created with (create_struct).
+static TMap<TWeakObjectPtr<UScriptStruct>, uint64> GStructShapes;
+
 static RustealUStructHandle CreateStructImpl(const uint8 *Name,
-                                             uint32 NameLen) {
+                                             uint32 NameLen, uint64 Shape) {
   UPackage *RustealPackage = RustealCurrentPackage();
   const FName StructName = ReifyUtf8ToFName(Name, NameLen);
 
   // Hot reload: the struct of the previous load, which its properties are
-  // added to again by name (AddPropertyImpl reuses them).
+  // added to again by name (AddPropertyImpl reuses them). Structs are not
+  // reinstanced: one whose fields changed keeps its old ones.
   if (UScriptStruct *Existing =
           FindObject<UScriptStruct>(RustealPackage, *StructName.ToString())) {
+    const uint64 *OldShape = GStructShapes.Find(Existing);
+    if (OldShape && *OldShape != Shape) {
+      UE_LOG(LogRusteal, Warning,
+             TEXT("[Rusteal] Hot reload: the fields of struct %s changed, which "
+                  "a hot reload does not apply: restart the editor to use them."),
+             *StructName.ToString());
+    }
     return RustealUStructHandle{Existing};
   }
 
   UScriptStruct *NewStruct = NewObject<UScriptStruct>(
       RustealPackage, StructName, RF_Public | RF_Standalone);
+  GStructShapes.Add(NewStruct, Shape);
 #if WITH_EDITORONLY_DATA
   // A data table can take it as its row structure, a Blueprint as a variable.
   NewStruct->SetMetaData(TEXT("BlueprintType"), TEXT("true"));

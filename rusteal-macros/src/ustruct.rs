@@ -10,6 +10,7 @@ use quote::{format_ident, quote};
 use syn::{Fields, ItemStruct, parse2};
 
 use crate::prop_type;
+use crate::shape;
 use crate::uclass::{
     UPropertyField, add_property_statements, parse_uproperty_args, property_accessors,
     to_screaming_snake, to_snake_case,
@@ -68,6 +69,9 @@ pub fn expand_ustruct(attr: TokenStream, item: TokenStream) -> syn::Result<Token
         uprops.push(UPropertyField { ident, ty: field.ty.clone(), args });
     }
 
+    // What its UScriptStruct is built from: its fields.
+    let shape_value =
+        shape::hash(fields.named.iter().filter_map(|f| shape::field(f, &["uproperty"])));
     let handle_name = format_ident!("__RUSTEAL_STRUCT_HANDLE_{}", to_screaming_snake(&name_str));
     let create_fn = format_ident!("__rusteal_create_struct_{}", to_snake_case(&name_str));
     let members_fn = format_ident!("__rusteal_struct_members_{}", to_snake_case(&name_str));
@@ -146,6 +150,7 @@ pub fn expand_ustruct(attr: TokenStream, item: TokenStream) -> syn::Result<Token
                 ::rusteal_runtime::runtime::ffi_dispatch::reify_create_struct(
                     [#(#name_bytes),*].as_ptr(),
                     #name_len,
+                    #shape_value,
                 )
             };
             if handle.is_null() {

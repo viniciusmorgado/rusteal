@@ -33,6 +33,7 @@ extern void RustealReifyRegisterDeleteListener();
 extern void RustealReifyUnregisterDeleteListener();
 extern void RustealReifyForEachReifiedInstance(
     TFunctionRef<void(UObject *, URustealReifiedClass *)> Callback);
+extern void RustealReifyReinstanceReplacedClasses();
 
 // Blueprint children's component lists (defined in URustealReifiedClass.cpp)
 extern void RustealRegisterComponentListResync();
@@ -342,7 +343,12 @@ static void ReloadLibrary(FRustealLibrary &Library) {
   }
   UnloadLibrary(Library);
 
-  if (!LoadLibrary(Library)) {
+  const bool bLoaded = LoadLibrary(Library);
+  // The classes whose properties, functions or parent changed were created
+  // again: their objects move to them, getting Rust data as they are built
+  // (none if the library failed after creating them).
+  RustealReifyReinstanceReplacedClasses();
+  if (!bLoaded) {
     UE_LOG(LogRusteal, Error, TEXT("[Rusteal] Hot reload of %s failed."),
            *Library.Name.ToString());
     return;

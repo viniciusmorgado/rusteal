@@ -20,10 +20,14 @@ use crate::{lock_or_recover, read_or_recover, write_or_recover};
 pub struct ClassRegistration {
     /// The class's Rust type ID.
     pub type_id: u64,
-    /// Create the UClass (type info, parent, class handle). `false` while its
-    /// parent, a Rust class not created yet, is missing; on the last try the
-    /// missing parent is logged and it returns `true`.
-    pub create: fn(last_try: bool) -> bool,
+    /// What the `#[uclass]` builds the UClass from (its arguments and UE
+    /// fields), hashed: with its impl blocks', how a hot reload tells the
+    /// class changed.
+    pub shape: u64,
+    /// Create the UClass (type info, parent, class handle) with its shape.
+    /// `false` while its parent, a Rust class not created yet, is missing; on
+    /// the last try the missing parent is logged and it returns `true`.
+    pub create: fn(last_try: bool, shape: u64) -> bool,
     /// Add its properties and components, which may name other Rust classes
     /// (`SubclassOf<MyCharacter>`): every class exists by then.
     pub register: fn(),
@@ -51,6 +55,8 @@ inventory::collect!(StructRegistration);
 pub struct ClassFunctionRegistration {
     /// The Rust type ID of the class the block implements.
     pub type_id: u64,
+    /// Its UE functions' and delegates' signatures, hashed.
+    pub shape: u64,
     pub register_functions: fn(),
     pub class_defaults: Option<fn()>,
 }
@@ -91,7 +97,7 @@ pub fn register_all_from_inventory() {
     loop {
         let before = pending.len();
         pending.retain(|reg| {
-            if (reg.create)(false) {
+            if (reg.create)(false, class_shape(reg)) {
                 ordered.push(reg);
                 false
             } else {
@@ -104,7 +110,7 @@ pub fn register_all_from_inventory() {
     }
     // Parents never created: log them.
     for reg in pending {
-        (reg.create)(true);
+        (reg.create)(true, class_shape(reg));
     }
 
     // Structs, which classes' properties and functions may hold, and whose
@@ -149,6 +155,29 @@ pub fn register_all_from_inventory() {
     unsafe {
         crate::ffi_dispatch::logging_log(0, bytes.as_ptr(), bytes.len() as u32);
     }
+}
+
+/// A class's shape: its `#[uclass]`'s and its impl blocks', in any order.
+fn class_shape(class: &ClassRegistration) -> u64 {
+    let mut blocks: Vec<u64> = inventory::iter::<ClassFunctionRegistration>
+        .into_iter()
+        .filter(|block| block.type_id == class.type_id)
+        .map(|block| block.shape)
+        .collect();
+    blocks.sort_unstable();
+    combine_shapes(class.shape, &blocks)
+}
+
+/// FNV-1a over the shapes' bytes.
+fn combine_shapes(class: u64, blocks: &[u64]) -> u64 {
+    let mut hash: u64 = 0xcbf29ce484222325;
+    for part in std::iter::once(class).chain(blocks.iter().copied()) {
+        for byte in part.to_le_bytes() {
+            hash ^= byte as u64;
+            hash = hash.wrapping_mul(0x100000001b3);
+        }
+    }
+    hash
 }
 
 use rusteal_ffi::UObjectHandle;
@@ -359,4 +388,18 @@ pub fn get_instance_data(obj: UObjectHandle, type_id: u64) -> *mut u8 {
         .and_then(|entries| entries.iter().find(|e| e.type_id == type_id))
         .map(|e| e.data)
         .unwrap_or(std::ptr::null_mut())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::combine_shapes;
+
+    #[test]
+    fn every_part_of_a_class_makes_its_shape() {
+        let shape = combine_shapes(1, &[2, 3]);
+        assert_eq!(shape, combine_shapes(1, &[2, 3]));
+        assert_ne!(shape, combine_shapes(9, &[2, 3]));
+        assert_ne!(shape, combine_shapes(1, &[2, 4]));
+        assert_ne!(shape, combine_shapes(1, &[2]));
+    }
 }

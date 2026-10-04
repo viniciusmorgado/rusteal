@@ -1,6 +1,7 @@
 // rusteal-macros: proc macros for #[uclass], #[ustruct], #[ufunction], #[uproperty].
 
 mod prop_type;
+mod shape;
 mod uclass;
 mod uclass_impl;
 mod udelegate;

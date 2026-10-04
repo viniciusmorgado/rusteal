@@ -451,11 +451,15 @@ pub struct RustealDelegateApi {
 /// Phase 9: Reify — runtime class creation, property/function registration.
 #[repr(C)]
 pub struct RustealReifyApi {
+    /// `shape`: what the class is built from, hashed (its UE fields and
+    /// functions). On a hot reload, a class of that name with another shape
+    /// is replaced by a new one, and its objects are reinstanced.
     pub create_class: unsafe extern "C" fn(
         name: *const u8,
         name_len: u32,
         parent: UClassHandle,
         rust_type_id: u64,
+        shape: u64,
     ) -> UClassHandle,
 
     pub add_property: unsafe extern "C" fn(
@@ -523,8 +527,10 @@ pub struct RustealReifyApi {
 
     /// Create a struct in the library's package (`#[ustruct]`), or find the one a
     /// previous load created. Its properties are added with `add_property`,
-    /// which takes its handle as a class handle.
-    pub create_struct: unsafe extern "C" fn(name: *const u8, name_len: u32) -> UStructHandle,
+    /// which takes its handle as a class handle. `shape`: its fields, hashed;
+    /// a struct whose shape changed is not reinstanced on a hot reload.
+    pub create_struct:
+        unsafe extern "C" fn(name: *const u8, name_len: u32, shape: u64) -> UStructHandle,
 
     /// Link a struct once its properties are added, after the Rust structs
     /// its properties hold.

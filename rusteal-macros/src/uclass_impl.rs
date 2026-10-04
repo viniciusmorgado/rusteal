@@ -8,6 +8,7 @@ use syn::{parse2, FnArg, Ident, ImplItem, ImplItemFn, ItemImpl, Meta, ReceiverKi
 use syn::punctuated::Punctuated;
 
 use crate::prop_type;
+use crate::shape;
 use crate::uclass::{to_snake_case, to_screaming_snake};
 use crate::udelegate;
 
@@ -72,11 +73,17 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
     let mut ufunctions: Vec<UFunctionInfo> = Vec::new();
     let mut delegates: Vec<udelegate::DelegateInfo> = Vec::new();
     let mut class_defaults: Option<&ImplItemFn> = None;
+    // The signatures of its UE functions and delegates: what it adds to the
+    // class's UClass.
+    let mut shape_parts: Vec<String> = Vec::new();
     let mut clean_impl = input.clone();
 
     for item in &input.items {
         if let ImplItem::Fn(method) = item {
             let has_ufunction = method.attrs.iter().any(|a| a.path().is_ident("ufunction"));
+            if has_ufunction || udelegate::is_udelegate(method) {
+                shape_parts.push(shape::declaration(&method.attrs, &["ufunction", "udelegate"], &method.sig));
+            }
             if has_ufunction {
                 ufunctions.push(parse_ufunction(method)?);
             }
@@ -459,6 +466,8 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
         None => (quote! {}, quote! { None }),
     };
 
+    let shape_value = shape::hash(shape_parts);
+
     Ok(quote! {
         #clean_impl
         #(#delegate_methods)*
@@ -468,6 +477,7 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
         ::rusteal_runtime::__inventory::submit! {
             ::rusteal_runtime::runtime::reify_registry::ClassFunctionRegistration {
                 type_id: #struct_name::__RUSTEAL_TYPE_ID,
+                shape: #shape_value,
                 register_functions: #register_fns_name,
                 class_defaults: #class_defaults_entry,
             }

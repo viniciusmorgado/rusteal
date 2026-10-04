@@ -29,8 +29,13 @@ public:
   // (constructor, destructor) in the Rust-side registry.
   uint64 RustTypeId = 0;
 
-  // The Rust library that defines the class (RustealLibraries.h).
+  // The Rust library that defines the class (RustealLibraries.h); null once
+  // a hot reload replaced the class.
   FRustealLibrary *Library = nullptr;
+
+  // What the class is built from, hashed by Rust (its UE fields and
+  // functions): a hot reload that brings another shape replaces the class.
+  uint64 Shape = 0;
 
   // The native (C++) superclass. For a Rust class inheriting AActor,
   // this would be AActor::StaticClass(). Used to call the correct

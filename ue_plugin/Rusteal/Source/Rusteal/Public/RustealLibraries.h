@@ -33,3 +33,15 @@ RUSTEAL_API void RustealUnregisterLibrary(FName Name);
 /** The file name `rusteal build` deploys a library as: Stem with the platform's
  * prefix and extension (librusteal.so, rusteal.dll, librusteal.dylib). */
 RUSTEAL_API FString RustealLibraryFileName(const FString &Stem);
+
+/** Moves the objects of the classes a hot reload replaced (old, new) to their
+ * new class: a Rust class whose properties, functions or parent changed is
+ * created again, and its objects, default object and Blueprint children
+ * follow it. */
+using FRustealClassReinstancer =
+    TFunction<void(const TArray<TPair<UClass *, UClass *>> &Classes)>;
+
+/** The editor module sets the reinstancer (docs/hot-reload.md); without one
+ * (a game), a hot reload keeps a changed class as it was and asks for a
+ * restart. */
+RUSTEAL_API void RustealSetClassReinstancer(FRustealClassReinstancer Reinstancer);

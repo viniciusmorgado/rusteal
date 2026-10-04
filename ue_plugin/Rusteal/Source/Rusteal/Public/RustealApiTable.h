@@ -412,9 +412,12 @@ struct FRustealReifyPropExtra {
 // ---------------------------------------------------------------------------
 
 struct FRustealReifyApi {
+  // shape: what the class is built from, hashed (its UE fields and
+  // functions). On a hot reload, a class of that name with another shape is
+  // replaced by a new one, and its objects are reinstanced.
   RustealUClassHandle (*create_class)(const uint8 *name, uint32 name_len,
                                       RustealUClassHandle parent,
-                                      uint64 rust_type_id);
+                                      uint64 rust_type_id, uint64 shape);
 
   RustealFPropertyHandle (*add_property)(RustealUClassHandle cls,
                                          const uint8 *name, uint32 name_len,
@@ -456,8 +459,11 @@ struct FRustealReifyApi {
                                              uint32 value_len);
 
   // A struct in the library's package (#[ustruct]), or the one a previous load
-  // created. add_property takes its handle as a class handle.
-  RustealUStructHandle (*create_struct)(const uint8 *name, uint32 name_len);
+  // created. add_property takes its handle as a class handle. shape: its
+  // fields, hashed; a struct whose shape changed is not reinstanced on a hot
+  // reload.
+  RustealUStructHandle (*create_struct)(const uint8 *name, uint32 name_len,
+                                        uint64 shape);
 
   // Link a struct once its properties are added (the Rust structs its
   // properties hold first).

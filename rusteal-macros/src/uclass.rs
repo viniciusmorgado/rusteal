@@ -8,6 +8,7 @@ use syn::{parse2, Expr, Fields, Ident, ItemStruct, Meta, Token};
 use syn::punctuated::Punctuated;
 
 use crate::prop_type;
+use crate::shape;
 
 // ---------------------------------------------------------------------------
 // Attribute parsing
@@ -312,6 +313,7 @@ struct ComponentField {
 // ---------------------------------------------------------------------------
 
 pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream> {
+    let attr_shape = format!("uclass({attr})");
     let args = parse_uclass_args(attr)?;
     let input: ItemStruct = parse2(item)?;
 
@@ -427,6 +429,11 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
         format_ident!("__rusteal_after_defaults_{}", to_snake_case(&struct_name_str));
 
     let type_id_value = prop_type::fnv1a_hash(&struct_name_str);
+    // What its UClass is built from: its arguments and its UE fields.
+    let shape_value = shape::hash(
+        std::iter::once(attr_shape)
+            .chain(fields.iter().filter_map(|f| shape::field(f, &["uproperty", "component"]))),
+    );
 
     // --- 1. Rewritten user struct (thin handle) ---
     let user_struct = quote! {
@@ -720,7 +727,7 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
 
     let register_fn = quote! {
         #[doc(hidden)]
-        pub fn #register_fn_name(last_try: bool) -> bool {
+        pub fn #register_fn_name(last_try: bool, shape: u64) -> bool {
             const TYPE_ID: u64 = #type_id_value;
 
             // Find parent class; a Rust parent may not be created yet
@@ -763,6 +770,7 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
                     #struct_name_byte_len,
                     parent,
                     TYPE_ID,
+                    shape,
                 )
             };
             if class.is_null() {
@@ -920,6 +928,7 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
         ::rusteal_runtime::__inventory::submit! {
             ::rusteal_runtime::runtime::reify_registry::ClassRegistration {
                 type_id: #type_id_value,
+                shape: #shape_value,
                 create: #register_fn_name,
                 register: #members_fn_name,
                 finalize: #finalize_fn_name,
