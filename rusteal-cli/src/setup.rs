@@ -123,7 +123,7 @@ pub fn run_setup(project_path: &Path, engine_path: &Path) {
         plugins_dir.display()
     );
     eprintln!("  Generated {}", props_path.display());
-    eprintln!("  Engine path: {}", engine_path_normalized);
+    eprintln!("  Engine path: {engine_path_normalized}");
 
     // --- Step 2: Starter rusteal.toml in the project ---
     generate_config(project_path);

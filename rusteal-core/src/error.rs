@@ -69,8 +69,7 @@ pub fn ffi_infallible(code: RustealErrorCode) {
     debug_assert_eq!(
         code,
         RustealErrorCode::Ok,
-        "FFI call returned {:?} after pre-validation",
-        code
+        "FFI call returned {code:?} after pre-validation"
     );
 }
 
@@ -80,9 +79,7 @@ pub fn ffi_infallible_ctx(code: RustealErrorCode, ctx: &str) {
     debug_assert_eq!(
         code,
         RustealErrorCode::Ok,
-        "FFI '{}' returned {:?} after pre-validation",
-        ctx,
-        code
+        "FFI '{ctx}' returned {code:?} after pre-validation"
     );
 }
 
