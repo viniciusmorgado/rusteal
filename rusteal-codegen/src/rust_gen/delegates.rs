@@ -283,7 +283,7 @@ pub fn generate_delegate_impls(
         let class_name = d.class_name;
         let prop_name = &d.prop.name;
         let prop_name_len = prop_name.len();
-        let byte_lit = format!("b\"{}\\0\"", prop_name);
+        let byte_lit = format!("b\"{prop_name}\\0\"");
 
         out.push_str(&format!(
             "    fn {rust_name}(&self) -> {struct_name} {{\n\
@@ -326,7 +326,7 @@ pub fn generate_delegate_structs(
             .unwrap_or(&d.prop.name);
         let sig_name = format!("{sig_name_base}__DelegateSignature");
         let sig_name_len = sig_name.len();
-        let sig_byte_lit = format!("b\"{}\\0\"", sig_name);
+        let sig_byte_lit = format!("b\"{sig_name}\\0\"");
 
         // Build closure param types for the user-facing closure signature
         let callback_params: Vec<String> = d.params.iter().map(|p| p.rust_type.clone()).collect();
@@ -382,7 +382,7 @@ pub fn generate_delegate_structs(
                     .and_then(|n| n.as_str())
                     .unwrap_or(&p.name);
                 let pname_len = param_ue_name.len();
-                let pname_lit = format!("b\"{}\\0\"", param_ue_name);
+                let pname_lit = format!("b\"{param_ue_name}\\0\"");
                 out.push_str(&format!(
                     "                {{\n\
                      \x20                   let param_prop = rusteal_core::ffi_dispatch::reflection_get_function_param(\n\

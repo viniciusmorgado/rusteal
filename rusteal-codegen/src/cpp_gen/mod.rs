@@ -27,7 +27,7 @@ pub fn generate(ctx: &CodegenContext, out_dir: &Path) {
     let mut written: HashSet<String> = HashSet::new();
     for ((module, class), entries) in &by_class {
         let code = wrapper::generate_wrapper_file(entries, ctx);
-        let filename = format!("RustealFunc_{}_{}.cpp", module, class);
+        let filename = format!("RustealFunc_{module}_{class}.cpp");
         write_if_changed(&out_dir.join(&filename), &code)
             .unwrap_or_else(|e| panic!("Failed to write {filename}: {e}"));
         written.insert(filename);

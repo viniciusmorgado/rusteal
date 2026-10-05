@@ -216,7 +216,7 @@ pub fn generate_property(
         to_snake_case(prop_name)
     };
     let prop_name_len = prop_name.len();
-    let byte_lit = format!("b\"{}\\0\"", prop_name);
+    let byte_lit = format!("b\"{prop_name}\\0\"");
 
     // Fixed array properties: use indexed access via get_property_at/set_property_at
     if prop.array_dim > 1 {
