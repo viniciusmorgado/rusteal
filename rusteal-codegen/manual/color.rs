@@ -1,5 +1,3 @@
-// Color ↔ OwnedStruct<FColor> conversions.
-
 use rusteal_core::{Color, OwnedStruct};
 
 use crate::core_ue::{FColor, FColorExt};
@@ -11,6 +9,7 @@ pub trait OwnedFColorExt {
 impl OwnedFColorExt for OwnedStruct<FColor> {
     fn to_color(&self) -> Color {
         let r = self.as_ref();
+
         Color::new(r.get_r(), r.get_g(), r.get_b(), r.get_a())
     }
 }
@@ -23,6 +22,7 @@ impl FColor {
         r.set_g(c.g);
         r.set_b(c.b);
         r.set_a(c.a);
+
         s
     }
 }

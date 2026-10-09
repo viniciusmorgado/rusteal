@@ -1,12 +1,4 @@
-// RustealContractTests.cpp — Compile-time FFI contract tests.
-// These static_asserts ensure C++ handle types and API structs
-// are layout-compatible with their Rust #[repr(C)] counterparts.
-
 #include "RustealApiTable.h"
-
-// ---------------------------------------------------------------------------
-// Handle sizes (must match Rust side exactly)
-// ---------------------------------------------------------------------------
 
 static_assert(sizeof(RustealUObjectHandle) == 8,
               "RustealUObjectHandle must be 8 bytes");
@@ -23,16 +15,8 @@ static_assert(sizeof(RustealFNameHandle) == 8,
 static_assert(sizeof(RustealFWeakObjectHandle) == 8,
               "RustealFWeakObjectHandle must be 8 bytes");
 
-// ---------------------------------------------------------------------------
-// Error code size
-// ---------------------------------------------------------------------------
-
 static_assert(sizeof(ERustealErrorCode) == 4,
               "ERustealErrorCode must be 4 bytes (uint32)");
-
-// ---------------------------------------------------------------------------
-// Handle alignment
-// ---------------------------------------------------------------------------
 
 static_assert(alignof(RustealUObjectHandle) == alignof(void *),
               "RustealUObjectHandle alignment");
@@ -47,18 +31,10 @@ static_assert(alignof(RustealUStructHandle) == alignof(void *),
 static_assert(alignof(RustealFNameHandle) == alignof(uint64),
               "RustealFNameHandle alignment");
 
-// ---------------------------------------------------------------------------
-// Weak object handle layout
-// ---------------------------------------------------------------------------
-
 static_assert(offsetof(RustealFWeakObjectHandle, object_index) == 0,
               "FWeakObjectHandle::object_index at offset 0");
 static_assert(offsetof(RustealFWeakObjectHandle, object_serial_number) == 4,
               "FWeakObjectHandle::object_serial_number at offset 4");
-
-// ---------------------------------------------------------------------------
-// Reify property metadata layout (rusteal-ffi/src/reify_types.rs)
-// ---------------------------------------------------------------------------
 
 static_assert(sizeof(FRustealReifyPropExtra) == 40,
               "FRustealReifyPropExtra must be 40 bytes");
@@ -66,10 +42,6 @@ static_assert(offsetof(FRustealReifyPropExtra, enum_underlying) == 32,
               "FRustealReifyPropExtra::enum_underlying at offset 32");
 static_assert(offsetof(FRustealReifyPropExtra, inner_prop_type) == 36,
               "FRustealReifyPropExtra::inner_prop_type at offset 36");
-
-// ---------------------------------------------------------------------------
-// Console command arguments (rusteal-ffi/src/api_table.rs)
-// ---------------------------------------------------------------------------
 
 static_assert(sizeof(FRustealConsoleArgs) == 24,
               "FRustealConsoleArgs must be 24 bytes");

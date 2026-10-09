@@ -1,8 +1,5 @@
-// Reify FFI types: property type enum, extra metadata struct, and flag constants.
-
 use crate::handles::*;
 
-/// Property type discriminator for reify API.
 #[repr(u32)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RustealReifyPropType {
@@ -24,28 +21,18 @@ pub enum RustealReifyPropType {
     Class = 15,
     Struct = 16,
     Enum = 17,
-    /// `TArray` of the type in `RustealReifyPropExtra::inner_prop_type`, whose
-    /// class/struct/enum fields describe the element.
     Array = 18,
-    /// `TSoftObjectPtr` of the class in `RustealReifyPropExtra::class_handle`.
     SoftObject = 19,
 }
 
-/// Extra metadata for Object/Class/Struct/Enum/Array properties.
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
 pub struct RustealReifyPropExtra {
-    /// Object/Class property class handle.
     pub class_handle: UClassHandle,
-    /// Class property metaclass handle.
     pub meta_class_handle: UClassHandle,
-    /// Struct property UScriptStruct handle.
     pub struct_handle: UStructHandle,
-    /// Enum type handle (UEnum* cast to UClassHandle).
     pub enum_handle: UClassHandle,
-    /// Enum backing type size.
     pub enum_underlying: u32,
-    /// Array property element type (a `RustealReifyPropType`, not `Array`).
     pub inner_prop_type: u32,
 }
 

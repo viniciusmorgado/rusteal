@@ -1,4 +1,3 @@
-/// FFI error codes shared between Rust and C++.
 #[repr(u32)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RustealErrorCode {

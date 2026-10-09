@@ -1,6 +1,3 @@
-// Plane ↔ OwnedStruct<FPlane> conversions.
-// FPlane inherits from FVector (X, Y, Z) and adds W.
-
 use glam::DVec3;
 use rusteal_core::{OwnedStruct, Plane};
 
@@ -10,7 +7,6 @@ pub trait OwnedFPlaneExt {
     fn to_plane(&self) -> Plane;
 }
 
-/// Reinterpret a FPlane struct ref as a FVector struct ref to access inherited X/Y/Z.
 #[inline]
 unsafe fn plane_as_vector(plane: &rusteal_core::UStructRef<FPlane>) -> rusteal_core::UStructRef<FVector> {
     unsafe { rusteal_core::UStructRef::<FVector>::from_raw(plane.as_ptr().0 as *mut u8) }
@@ -22,6 +18,7 @@ impl OwnedFPlaneExt for OwnedStruct<FPlane> {
         let vec_ref = unsafe { plane_as_vector(&r) };
         let normal = DVec3::new(vec_ref.get_x(), vec_ref.get_y(), vec_ref.get_z());
         let d = r.get_w();
+
         Plane::new(normal, d)
     }
 }
@@ -35,6 +32,7 @@ impl FPlane {
         vec_ref.set_y(p.normal.y);
         vec_ref.set_z(p.normal.z);
         r.set_w(p.d);
+
         s
     }
 }

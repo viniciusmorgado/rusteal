@@ -1,55 +1,38 @@
-// Delegate codegen: generates typed delegate accessor methods and wrapper structs.
-//
-// For each delegate property on a class, we generate:
-// 1. A trait method returning a typed delegate handle struct
-// 2. The delegate handle struct with bind()/add() methods that accept typed closures
-//
-// The handle struct wraps the UObject owner + FPropertyHandle, and the bind/add
-// methods register a closure in the Rust delegate_registry, then call the C++ API.
-
 use crate::context::CodegenContext;
 use crate::naming::to_snake_case;
 use crate::schema::PropertyInfo;
 use crate::type_map::{self, ConversionKind};
 
-/// Information about a delegate property to generate code for.
 pub struct DelegateInfo<'a> {
     pub prop: &'a PropertyInfo,
     pub class_name: &'a str,
-    /// Rust name for the accessor method (snake_case).
     pub rust_name: String,
-    /// Struct name for the delegate wrapper (PascalCase).
     pub struct_name: String,
-    /// Whether this is a multicast delegate.
     pub is_multicast: bool,
-    /// Parsed delegate parameters.
     pub params: Vec<DelegateParam>,
 }
 
-/// A single parameter in a delegate signature.
 pub struct DelegateParam {
     pub name: String,
     pub rust_type: String,
     pub conversion: ParamConversion,
 }
 
-/// How to read a delegate param from the raw params buffer.
 pub enum ParamConversion {
-    /// Primitive: read directly as the type (bool, i32, f32, etc.)
     Primitive(String),
-    /// Object reference: read UObjectHandle, wrap in UObjectRef<T>.
     ObjectRef(String),
-    /// Enum: read underlying repr, convert via from_value.
-    Enum { rust_type: String, repr: String },
-    /// FName: use read_param FFI to properly pack FName (Editor-safe).
+    Enum {
+        rust_type: String,
+        repr: String,
+    },
     FName,
-    /// String/FText: use read_param FFI to read UTF-8 string.
     String,
-    /// Struct: use read_param FFI to read struct bytes, wrap in OwnedStruct<T>.
-    Struct { struct_name: String, cpp_name: String },
+    Struct {
+        struct_name: String,
+        cpp_name: String,
+    },
 }
 
-/// Collect delegate properties from a class and resolve their param types.
 pub fn collect_delegate_props<'a>(
     props: &'a [PropertyInfo],
     class_name: &'a str,
@@ -67,6 +50,7 @@ pub fn collect_delegate_props<'a>(
             prop.meta_class_name.as_deref(),
             prop.interface_name.as_deref(),
         );
+
         if !matches!(
             mapped.rust_to_ffi,
             ConversionKind::Delegate | ConversionKind::MulticastDelegate
@@ -76,11 +60,11 @@ pub fn collect_delegate_props<'a>(
 
         let is_multicast = matches!(mapped.rust_to_ffi, ConversionKind::MulticastDelegate);
 
-        // Parse func_info params
         let func_info = match &prop.func_info {
             Some(fi) => fi,
             None => continue,
         };
+
         let params_json = match func_info.get("params").and_then(|p| p.as_array()) {
             Some(params) => params,
             None => &Vec::new() as &Vec<serde_json::Value>,
@@ -94,6 +78,7 @@ pub fn collect_delegate_props<'a>(
                 .get("name")
                 .and_then(|n| n.as_str())
                 .unwrap_or("unknown");
+
             let param_type = match param_value.get("type").and_then(|t| t.as_str()) {
                 Some(t) => t,
                 None => {
@@ -158,10 +143,7 @@ fn resolve_delegate_param(
                         rust_type: en.to_string(),
                         conversion: ParamConversion::Enum {
                             rust_type: en.to_string(),
-                            repr: ctx
-                                .enum_actual_repr(en)
-                                .unwrap_or("u8")
-                                .to_string(),
+                            repr: ctx.enum_actual_repr(en).unwrap_or("u8").to_string(),
                         },
                     })
                 } else {
@@ -193,7 +175,6 @@ fn resolve_delegate_param(
             rust_type: "String".into(),
             conversion: ParamConversion::String,
         }),
-        // A class (`TSubclassOf<T>`), typed by its meta class.
         "ClassProperty"
             if value
                 .get("meta_class_name")
@@ -201,6 +182,7 @@ fn resolve_delegate_param(
                 .is_some_and(|meta| ctx.classes.contains_key(meta)) =>
         {
             let meta = value["meta_class_name"].as_str().unwrap_or_default();
+
             Some(DelegateParam {
                 name: param_name,
                 rust_type: format!("rusteal_core::SubclassOf<{meta}>"),
@@ -209,6 +191,7 @@ fn resolve_delegate_param(
         }
         "ObjectProperty" | "ClassProperty" => {
             let cls = value.get("class_name").and_then(|v| v.as_str());
+
             if let Some(cls) = cls {
                 if ctx.classes.contains_key(cls) {
                     Some(DelegateParam {
@@ -229,9 +212,11 @@ fn resolve_delegate_param(
         }
         "EnumProperty" => {
             let en = value.get("enum_name").and_then(|v| v.as_str())?;
+
             if !ctx.enums.contains_key(en) {
                 return None;
             }
+
             Some(DelegateParam {
                 name: param_name,
                 rust_type: en.to_string(),
@@ -244,9 +229,11 @@ fn resolve_delegate_param(
         "StructProperty" => {
             let sn = value.get("struct_name").and_then(|v| v.as_str())?;
             let si = ctx.structs.get(sn)?;
+
             if !si.has_static_struct {
                 return None;
             }
+
             Some(DelegateParam {
                 name: param_name,
                 rust_type: format!("rusteal_core::OwnedStruct<{}>", si.cpp_name),
@@ -268,15 +255,7 @@ fn prim_param(name: String, ty: &str) -> Option<DelegateParam> {
     })
 }
 
-// ---------------------------------------------------------------------------
-// Code generation
-// ---------------------------------------------------------------------------
-
-/// Generate trait method implementations for delegate properties (used as default impls).
-pub fn generate_delegate_impls(
-    out: &mut String,
-    delegates: &[DelegateInfo],
-) {
+pub fn generate_delegate_impls(out: &mut String, delegates: &[DelegateInfo]) {
     for d in delegates {
         let rust_name = &d.rust_name;
         let struct_name = &d.struct_name;
@@ -299,13 +278,7 @@ pub fn generate_delegate_impls(
     }
 }
 
-/// Generate delegate wrapper structs with typed bind/add methods.
-/// These are emitted at the top of the class file (before the trait).
-pub fn generate_delegate_structs(
-    out: &mut String,
-    delegates: &[DelegateInfo],
-    class_name: &str,
-) {
+pub fn generate_delegate_structs(out: &mut String, delegates: &[DelegateInfo], class_name: &str) {
     for d in delegates {
         let struct_name = &d.struct_name;
         let is_multicast = d.is_multicast;
@@ -317,30 +290,37 @@ pub fn generate_delegate_structs(
              }}\n\n"
         ));
 
-        // Build the closure parameter types and extraction code.
-        // UHT exports the stripped function name (e.g., "OnEditableTextBoxCommittedEvent"),
-        // but UE stores the signature UFunction with "__DelegateSignature" suffix.
-        let sig_name_base = d.prop.func_info.as_ref()
+        let sig_name_base = d
+            .prop
+            .func_info
+            .as_ref()
             .and_then(|fi| fi.get("name"))
             .and_then(|n| n.as_str())
             .unwrap_or(&d.prop.name);
+
         let sig_name = format!("{sig_name_base}__DelegateSignature");
         let sig_name_len = sig_name.len();
         let sig_byte_lit = format!("b\"{sig_name}\\0\"");
 
-        // Build closure param types for the user-facing closure signature
         let callback_params: Vec<String> = d.params.iter().map(|p| p.rust_type.clone()).collect();
         let callback_sig = callback_params.join(", ");
 
         let method_name = if is_multicast { "add" } else { "bind" };
-        let api_fn = if is_multicast { "bind_multicast" } else { "bind_unicast" };
 
-        out.push_str(&format!(
-            "impl {struct_name} {{\n"
-        ));
+        let api_fn = if is_multicast {
+            "bind_multicast"
+        } else {
+            "bind_unicast"
+        };
 
-        // Bind a UFunction by name, as C++'s AddDynamic / BindDynamic.
-        let ufunction_method = if is_multicast { "add_ufunction" } else { "bind_ufunction" };
+        out.push_str(&format!("impl {struct_name} {{\n"));
+
+        let ufunction_method = if is_multicast {
+            "add_ufunction"
+        } else {
+            "bind_ufunction"
+        };
+
         out.push_str(&format!(
             "    /// Bind `target`'s UFunction named `function` (a `#[ufunction]` of a Rust\n\
              \x20   /// class, say), as C++'s `{}` does{}.\n\
@@ -354,14 +334,13 @@ pub fn generate_delegate_structs(
             if is_multicast { ": once, however many times it is called" } else { "" },
         ));
 
-        // Generate the bind/add method
         out.push_str(&format!(
             "    pub fn {method_name}(&self, mut callback: impl FnMut({callback_sig}) + Send + 'static) -> rusteal_core::RustealResult<rusteal_core::DelegateBinding> {{\n"
         ));
 
-        // If there are params, we need to resolve offsets + property handles via OnceLock
         if !d.params.is_empty() {
             let n_params = d.params.len();
+
             out.push_str(&format!(
                 "        static PARAM_INFO: std::sync::OnceLock<[(u32, rusteal_core::FPropertyHandle); {n_params}]> = std::sync::OnceLock::new();\n\
                  \x20       let param_info = PARAM_INFO.get_or_init(|| unsafe {{\n\
@@ -372,17 +351,25 @@ pub fn generate_delegate_structs(
             ));
 
             for p in &d.params {
-                let param_ue_name = &d.prop.func_info.as_ref()
+                let param_ue_name = &d
+                    .prop
+                    .func_info
+                    .as_ref()
                     .and_then(|fi| fi.get("params"))
                     .and_then(|ps| ps.as_array())
-                    .and_then(|arr| arr.iter().find(|v| {
-                        v.get("name").and_then(|n| n.as_str()).map(to_snake_case) == Some(p.name.clone())
-                    }))
+                    .and_then(|arr| {
+                        arr.iter().find(|v| {
+                            v.get("name").and_then(|n| n.as_str()).map(to_snake_case)
+                                == Some(p.name.clone())
+                        })
+                    })
                     .and_then(|v| v.get("name"))
                     .and_then(|n| n.as_str())
                     .unwrap_or(&p.name);
+
                 let pname_len = param_ue_name.len();
                 let pname_lit = format!("b\"{param_ue_name}\\0\"");
+
                 out.push_str(&format!(
                     "                {{\n\
                      \x20                   let param_prop = rusteal_core::ffi_dispatch::reflection_get_function_param(\n\
@@ -395,11 +382,10 @@ pub fn generate_delegate_structs(
             out.push_str(
                 "            ]\n\
                  \x20       });\n\
-                 \x20       #[allow(unused_variables)] let param_info = param_info;\n"
+                 \x20       #[allow(unused_variables)] let param_info = param_info;\n",
             );
         }
 
-        // Build the closure wrapper that extracts typed params from NativePtr
         if d.params.is_empty() {
             out.push_str(&format!(
                 "        let owner = self.owner;\n\
@@ -409,6 +395,7 @@ pub fn generate_delegate_structs(
                  \x20       }})\n\
                  \x20   }}\n"
             ));
+
             out.push_str("}\n\n");
             continue;
         }
@@ -420,9 +407,9 @@ pub fn generate_delegate_structs(
              \x20           unsafe {{\n"
         ));
 
-        // Extract each parameter
         for (i, p) in d.params.iter().enumerate() {
             let var_name = &p.name;
+
             match &p.conversion {
                 ParamConversion::Primitive(ty) => {
                     out.push_str(&format!(
@@ -513,9 +500,9 @@ pub fn generate_delegate_structs(
             }
         }
 
-        // Call the user's callback with extracted params
         let param_names: Vec<&str> = d.params.iter().map(|p| p.name.as_str()).collect();
         let call_args = param_names.join(", ");
+
         out.push_str(&format!(
             "                callback({call_args});\n\
              \x20           }}\n\

@@ -1,0 +1,173 @@
+# Hot reload
+
+How Rusteal swaps a Rust library while the editor runs, and why it is built the
+way it is. The commands are in the README, [Hot Reload](../README.md#hot-reload).
+
+## What a reload does
+
+`Rusteal.Reload [Name]` reloads one library, or all of them:
+
+1. The Rust data of every object of the library's classes is dropped. The
+   UE properties (`#[uproperty]`) live in the objects' memory and stay;
+   Rust-private fields start over from `Default`.
+2. The library is unloaded and the deployed file is loaded again, through a
+   numbered file (`librusteal_hot_N.so`), so a build can always replace the
+   deployed one. On Linux and macOS it is a hard link, made in no time
+   whatever the library's size; on Windows, where a loaded DLL's file stays
+   locked, a copy. A link is safe because the deploy step replaces the
+   deployed file with a new one rather than writing into it: copying a
+   library over the deployed file by hand would change the loaded one.
+3. `rusteal_init` registers the library's classes again. A class whose
+   **shape** is unchanged is reused: its functions point to the new code. A
+   class whose shape changed is replaced (below).
+4. The objects of the replaced classes are reinstanced.
+5. Every object of the library's classes gets its Rust data again.
+
+The Output Log ends each reload with how long it took, phase by phase.
+
+## Reloading on deploy
+
+The RustealEditor module reloads a library by itself when `rusteal build`
+deploys it again (`RustealAutoReload.cpp`): it watches the directory each
+library is deployed to with the engine's DirectoryWatcher, and once the
+deployed file has not changed for half a second, reloads that library and
+says so in an editor notification. `Rusteal.AutoReload 0` turns it off;
+`Rusteal.Reload` still works either way.
+
+The deploy step copies the library next to the deployed file
+(`librusteal.so.partial`) and renames it over it, so the watcher never sees
+a half-written library. The numbered files a reload loads and the partial
+file sit in the same directory and are ignored: only the deployed file
+counts.
+
+## rusteal watch
+
+`rusteal watch` (`rusteal-cli/src/watch_cmd.rs`) closes the loop from the
+other side: it polls the `.rs` and `.toml` files of the game's and the
+plugins' Rust workspaces (not `target/`, not the generated `bindings/`), and
+once they have settled, runs `rusteal build` (steps 4 and 5) as a child
+process, so a failed build prints its errors and the watch goes on. With the
+editor reloading on deploy, saving a file is the whole loop: save, build,
+deploy, reload, reinstance.
+
+It polls instead of using the platform's file events: the workspaces are
+small, polling behaves the same everywhere, and it needs no dependency. A
+change to `rusteal.toml` or to the engine still needs `rusteal build --all`,
+which watch does not run.
+
+## Shapes
+
+A class's shape is a hash of what its UClass is built from, computed by the
+macros at compile time:
+
+- `#[uclass(...)]`'s arguments: the parent, `implements`, `config`;
+- each `#[uproperty]` and `#[component]` field: its attribute, name and type;
+- each `#[ufunction]` and `#[udelegate]` method of its `#[uclass_impl]`
+  blocks: its attribute and signature.
+
+Method bodies, doc comments and Rust-private fields are not part of it, so
+changing code alone keeps the class. The order of fields and methods does not
+count either. A class whose Rust parent was replaced is replaced too, since
+its layout starts with its parent's.
+
+A `#[ustruct]` has a shape as well, but structs are not reinstanced: a changed
+struct is logged, and keeps its old fields until the editor restarts.
+
+## Replacing a class
+
+When a class's shape changed, `CreateClassImpl`
+(`ue_plugin/Rusteal/Source/Rusteal/Private/RustealReifyApiImpl.cpp`) retires
+the old class and creates a new one with the same name:
+
+- the old class moves to the transient package as `RUSTEAL_<Name>`, with its
+  default object, as the engine's reload moves a changed native class
+  (`ReloadProcessObject` in `CoreUObject/Private/UObject/DeferredRegistry.cpp`);
+- it is cut from Rust: its objects get no Rust data, its functions do nothing;
+- its stub Blueprint moves with it, and the class stops pointing to it, so
+  the engine does not try to recompile a Rust subclass's stub.
+
+Once the library is loaded, the module hands the (old, new) pairs to the
+class reinstancer, which the RustealEditor module registers.
+
+## Why FReload, not Live Coding
+
+Live Coding is the editor's own hot reload for C++, so it was the first thing
+to look at. It does not fit, for three reasons:
+
+- **It is Windows only.** Its sources are in
+  `Engine/Source/Developer/Windows/LiveCoding`; on Linux and macOS it is not
+  built at all.
+- **It patches machine code.** It recompiles the changed C++ files with the
+  engine's compiler and patches the functions inside the running process (it
+  is Live++ underneath). A Rust library is built by Cargo, not by UBT: there
+  is nothing for it to patch.
+- **Rusteal already swaps code, on every platform.** Every call between the
+  engine and Rust goes through function tables, so loading the new library
+  and pointing the functions at it is the whole code swap.
+
+What Rusteal lacked was the other half: moving existing objects to a class
+whose structure changed. **Live Coding does not do that part itself either.**
+With *Enable Reinstancing* on (`bEnableReinstancing`), it hands the changed
+classes to `FReload`, an editor class of the engine:
+
+- `Engine/Source/Editor/UnrealEd/Public/Kismet2/ReloadUtilities.h`, exported
+  with `UNREALED_API`, so any editor module can use it;
+- `NotifyChange(New, Old)` for each changed class, then `Reinstance()`: the
+  engine reinstances the objects (actors in the level included), the default
+  object, and the Blueprint children of the old class, which it reparents to
+  the new one and recompiles; `Finalize()` replaces the remaining references.
+  Rusteal skips its garbage collection: the old objects go with the engine's
+  next one, rather than a full collection stalling every reload.
+
+The RustealEditor module does exactly that
+(`ue_plugin/Rusteal/Source/RustealEditor/Private/RustealEditorModule.cpp`),
+with `EActiveReloadType::Reinstancing`. Rusteal only has to detect the change
+and create the new class; the migration is the engine's, the same code path
+the editor uses for Live Coding and Blueprint compiles.
+
+## Limits
+
+What FReload does not support for Live Coding, Rusteal does not support
+either; and classes created at runtime are not what it was written for. What
+is known:
+
+- **Without the editor** (a game, `-game`), there is no reinstancer: a changed
+  class is kept as it was, with a warning to restart.
+- **Structs** (`#[ustruct]`) are not reinstanced (above).
+- **Rust-private fields** start over on every reload, changed or not.
+- Removing a property or a function that a Blueprint uses breaks that
+  Blueprint's nodes, as it would for a C++ class: the node gets a compile
+  error, and putting the function back clears it. The engine only recompiles
+  a replaced class's Blueprint children, so the RustealEditor module also
+  recompiles the loaded Blueprints whose nodes use the class without deriving
+  from it (a Level Blueprint calling one of its functions). Without that,
+  their old bytecode called the removed function by name, and the engine
+  stopped with a fatal error on Play.
+
+## Tested
+
+Headless, in a blank project on UE 5.8.3 (Linux), with Python driving the
+editor:
+
+- a property and a function added to a class with an actor placed in the
+  level, a Blueprint child placed too, and a Rust subclass: all three are
+  reinstanced, keep the values set on them, get the new property's default,
+  and run the new function;
+- a function body changed alone: the class is kept;
+- the property and the function removed: reinstanced again, the values kept;
+- the level and the Blueprint saved after those reloads load in a new editor
+  session, with no reference to a retired class;
+- a Rusteal plugin's class changed: reloading the plugin's library
+  reinstances it and leaves the game's library alone;
+- a Level Blueprint calling a function of a Blueprint child of a Rust class:
+  the function removed, its node is a compile error and Play In Editor runs;
+  the function back, the Level Blueprint calls it again;
+- reloading on deploy, and `Rusteal.AutoReload 0`;
+- `rusteal watch` with the editor open: saving the file is enough; a build
+  that fails keeps the watch going.
+
+By hand, in a Third Person project: logic and structure changes reloaded
+during Play In Editor.
+
+Not tested yet: a changed parent class, interfaces, components added or
+removed, Windows and macOS.

@@ -1,33 +1,30 @@
 using System.IO;
 using UnrealBuildTool;
 
-// The {{ plugin }} module: it hosts the plugin's Rust library and compiles the
-// C++ wrappers `rusteal build --all` generates for it into Generated/.
 public class {{ plugin }} : ModuleRules
 {
     public {{ plugin }}(ReadOnlyTargetRules Target) : base(Target)
     {
         PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 
-        // Rusteal loads the Rust library (RustealLibraries.h).
         PrivateDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "Rusteal" });
 
-        // The Rust library, staged with a packaged game: `rusteal build` deploys
-        // it into the plugin's binaries.
         string Library = Path.Combine(PluginDirectory, "Binaries", Target.Platform.ToString(),
             LibraryFileName(Target, "rusteal_{{ plugin }}"));
+
         if (File.Exists(Library))
         {
             RuntimeDependencies.Add(Library);
         }
 
-        // Modules the generated wrappers call into, listed by `rusteal build --all`.
         string DepsFile = Path.Combine(ModuleDirectory, "Generated", "module_deps.txt");
+
         if (File.Exists(DepsFile))
         {
             foreach (string Module in File.ReadAllLines(DepsFile))
             {
                 string Trimmed = Module.Trim();
+
                 if (Trimmed.Length > 0 && !PrivateDependencyModuleNames.Contains(Trimmed))
                 {
                     PrivateDependencyModuleNames.Add(Trimmed);
@@ -36,18 +33,18 @@ public class {{ plugin }} : ModuleRules
         }
     }
 
-    // The platform's file name for a Rust library: librusteal_X.so,
-    // rusteal_X.dll, librusteal_X.dylib.
     private static string LibraryFileName(ReadOnlyTargetRules Target, string Stem)
     {
         if (Target.Platform == UnrealTargetPlatform.Win64)
         {
             return Stem + ".dll";
         }
+
         if (Target.Platform == UnrealTargetPlatform.Mac)
         {
             return "lib" + Stem + ".dylib";
         }
+
         return "lib" + Stem + ".so";
     }
 }

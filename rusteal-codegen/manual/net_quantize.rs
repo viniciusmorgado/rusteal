@@ -1,6 +1,3 @@
-// The hit result's locations and normals (`FVector_NetQuantize*`) are FVector
-// subclasses: `to_dvec3()` reads them as it reads an FVector.
-
 use glam::DVec3;
 use rusteal_core::{OwnedStruct, UeStruct};
 
@@ -10,8 +7,6 @@ use crate::engine::{
 };
 use crate::manual::vector::OwnedFVectorExt;
 
-/// X, Y and Z of a struct that is an FVector underneath (reflection finds
-/// inherited properties too).
 fn read_xyz<T: UeStruct>(value: &OwnedStruct<T>) -> DVec3 {
     let read = |name: &str| {
         let prop = unsafe {
@@ -21,13 +16,17 @@ fn read_xyz<T: UeStruct>(value: &OwnedStruct<T>) -> DVec3 {
                 name.len() as u32,
             )
         };
+
         let mut out = 0.0f64;
+
         rusteal_core::ffi_infallible_ctx(
             unsafe { rusteal_core::ffi_dispatch::property_get_f64(value.as_ref().as_ptr(), prop, &mut out) },
             name,
         );
+
         out
     };
+
     DVec3::new(read("X"), read("Y"), read("Z"))
 }
 

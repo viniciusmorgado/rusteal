@@ -1,7 +1,3 @@
-// The TwinStick variant's gameplay classes in Rust: a twin stick shooter with
-// projectiles, dashes and area attacks against waves of NPCs run by a
-// StateTree, a score with a combo multiplier, and pickups.
-
 pub mod ai_controller;
 pub mod aoe_attack;
 pub mod character;
