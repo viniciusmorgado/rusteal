@@ -1,10 +1,6 @@
 #include "RustealSubsystems.h"
 #include "Engine/World.h"
 
-// ---------------------------------------------------------------------------
-// Game instance
-// ---------------------------------------------------------------------------
-
 bool URustealGameInstanceSubsystem::ShouldCreateSubsystem(
     UObject *Outer) const {
   return Super::ShouldCreateSubsystem(Outer) &&
@@ -27,10 +23,6 @@ void URustealGameInstanceSubsystem::Deinitialize() {
   Super::Deinitialize();
 }
 
-// ---------------------------------------------------------------------------
-// World
-// ---------------------------------------------------------------------------
-
 bool URustealWorldSubsystem::ShouldCreateSubsystem(UObject *Outer) const {
   return Super::ShouldCreateSubsystem(Outer) &&
          ReceiveShouldCreateSubsystem(Outer);
@@ -46,6 +38,7 @@ bool URustealWorldSubsystem::DoesSupportWorldType(
   if (WorldType == EWorldType::Game || WorldType == EWorldType::PIE) {
     return true;
   }
+
   return bCreateInEditorWorlds && WorldType == EWorldType::Editor;
 }
 
@@ -80,10 +73,6 @@ TStatId URustealWorldSubsystem::GetStatId() const {
   RETURN_QUICK_DECLARE_CYCLE_STAT(URustealWorldSubsystem, STATGROUP_Tickables);
 }
 
-// ---------------------------------------------------------------------------
-// Engine
-// ---------------------------------------------------------------------------
-
 bool URustealEngineSubsystem::ShouldCreateSubsystem(UObject *Outer) const {
   return Super::ShouldCreateSubsystem(Outer) &&
          ReceiveShouldCreateSubsystem(Outer);
@@ -103,10 +92,6 @@ void URustealEngineSubsystem::Deinitialize() {
   ReceiveDeinitialize();
   Super::Deinitialize();
 }
-
-// ---------------------------------------------------------------------------
-// Local player
-// ---------------------------------------------------------------------------
 
 bool URustealLocalPlayerSubsystem::ShouldCreateSubsystem(UObject *Outer) const {
   return Super::ShouldCreateSubsystem(Outer) &&

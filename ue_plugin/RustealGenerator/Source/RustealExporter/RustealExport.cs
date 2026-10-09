@@ -1,9 +1,3 @@
-// UHT exporter for Rusteal: exports UE reflection data to JSON for codegen consumption.
-//
-// This is a UBT plugin exporter that runs during Unreal Header Tool processing.
-// It produces three JSON files (classes, structs, enums) consumed by rusteal-codegen.
-//
-
 #nullable disable
 
 using EpicGames.Core;
@@ -24,12 +18,10 @@ public static class RustealExport
 {
     #region Filter Constants
 
-    // Property flags that always disqualify from export
     private const EPropertyFlags NoExportPropFlags =
         EPropertyFlags.NativeAccessSpecifierPrivate |
         EPropertyFlags.NativeAccessSpecifierProtected;
 
-    // Function flags that always disqualify from export
     private const EFunctionFlags NoExportFuncFlags =
         EFunctionFlags.NetServer |
         EFunctionFlags.NetRequest |
@@ -37,15 +29,12 @@ public static class RustealExport
         EFunctionFlags.Private |
         EFunctionFlags.Delegate;
 
-    // Property flags indicating script-exposed fields
     private const EPropertyFlags ScriptExposedPropFlags =
         EPropertyFlags.BlueprintVisible | EPropertyFlags.BlueprintAssignable;
 
-    // Function flags indicating script-exposed fields
     private const EFunctionFlags ScriptExposedFuncFlags =
         EFunctionFlags.BlueprintCallable | EFunctionFlags.BlueprintEvent;
 
-    // NoExport structs with TBaseStructure<> registration path
     private static readonly HashSet<string> NeedRegisterStruct =
     [
         "Rotator", "Quat", "Transform", "Color", "LinearColor", "Plane",
@@ -91,11 +80,8 @@ public static class RustealExport
             WriteJsonFiles();
         }
 
-        // ── Type Collection ─────────────────────────────────────────────
-
         private void CollectTypes()
         {
-            // Export all modules — package-to-module mapping is done downstream by codegen.
             foreach (UhtModule module in _session.Modules)
             {
                 string package = module.ShortName;
@@ -124,11 +110,10 @@ public static class RustealExport
             }
         }
 
-        // ── Class Export ────────────────────────────────────────────────
-
         private void TryExportClass(UhtClass classObj, string package, UhtHeaderFile header)
         {
             string name = StripPrefix(classObj.SourceName);
+
             if (!_exportedClassNames.Add(name))
                 return;
 
@@ -139,6 +124,7 @@ public static class RustealExport
             }
 
             var props = new JsonArray();
+
             foreach (UhtProperty prop in classObj.Properties)
             {
                 if (ShouldExportProperty(prop))
@@ -146,6 +132,7 @@ public static class RustealExport
             }
 
             var funcs = new JsonArray();
+
             foreach (UhtFunction func in classObj.Functions)
             {
                 if (ShouldExportFunction(func))
@@ -153,6 +140,7 @@ public static class RustealExport
             }
 
             var interfaces = new JsonArray();
+
             foreach (UhtStruct baseStruct in classObj.Bases)
             {
                 if (baseStruct is UhtClass iface)
@@ -178,10 +166,6 @@ public static class RustealExport
             });
         }
 
-        /// <summary>
-        /// Whether another module can include the header: one in a Classes or
-        /// Public folder, not an Internal or Private one.
-        /// </summary>
         private static bool IsPublicHeader(UhtHeaderFile header)
         {
             return header.HeaderFileType == UhtHeaderFileType.Classes
@@ -190,15 +174,12 @@ public static class RustealExport
 
         private static bool ShouldExportClass(UhtClass classObj)
         {
-            // Skip deprecated classes
             if (classObj.ClassFlags.HasAnyFlags(EClassFlags.Deprecated))
                 return false;
 
-            // Must be an API class
             if (!IsApiClass(classObj))
                 return false;
 
-            // Must be script-exposed or have script-exposed fields
             return IsScriptExposed(classObj) || HasScriptExposedFields(classObj);
         }
 
@@ -208,11 +189,10 @@ public static class RustealExport
                 || classObj.ClassFlags.HasAnyFlags(EClassFlags.RequiredAPI);
         }
 
-        // ── Struct Export ───────────────────────────────────────────────
-
         private void TryExportStruct(UhtScriptStruct structObj, string package, UhtHeaderFile header)
         {
             string name = StripPrefix(structObj.SourceName);
+
             if (!_exportedStructNames.Add(name))
                 return;
 
@@ -223,6 +203,7 @@ public static class RustealExport
             }
 
             var props = new JsonArray();
+
             foreach (UhtProperty prop in structObj.Properties)
             {
                 if (ShouldExportProperty(prop))
@@ -236,8 +217,6 @@ public static class RustealExport
             bool hasStaticStruct = !structObj.ScriptStructFlags.HasAnyFlags(EStructFlags.NoExport)
                                 || NeedRegisterStruct.Contains(name);
 
-            // A NoExport struct is only mirrored in this header (NoExportTypes.h);
-            // its real declaration is elsewhere, so there is nothing to include.
             string structHeader = structObj.ScriptStructFlags.HasAnyFlags(EStructFlags.NoExport)
                 ? ""
                 : header.IncludeFilePath ?? header.ModuleRelativeFilePath ?? "";
@@ -261,11 +240,10 @@ public static class RustealExport
             return IsScriptExposed(structObj) || HasScriptExposedFields(structObj);
         }
 
-        // ── Enum Export ─────────────────────────────────────────────────
-
         private void TryExportEnum(UhtEnum enumObj, string package)
         {
             string name = enumObj.SourceName;
+
             if (!_exportedEnumNames.Add(name))
                 return;
 
@@ -275,21 +253,22 @@ public static class RustealExport
                 return;
             }
 
-            // UHT stores -1 for the values it did not parse; recompute those.
             Dictionary<string, long> evaluated = enumObj.EnumValues.Any(v => v.Value == -1)
                 ? RustealEnumValues.Evaluate(enumObj)
                 : null;
 
             var pairs = new JsonArray();
+
             foreach (UhtEnumValue val in enumObj.EnumValues)
             {
-                // Strip "EnumName::" prefix from enum class values
                 string valName = val.Name;
                 int colonIdx = valName.LastIndexOf("::", StringComparison.Ordinal);
+
                 if (colonIdx >= 0)
                     valName = valName[(colonIdx + 2)..];
 
                 long value = val.Value;
+
                 if (value == -1 && evaluated != null && evaluated.TryGetValue(valName, out long computed))
                 {
                     value = computed;
@@ -300,6 +279,7 @@ public static class RustealExport
                     valName,
                     value
                 };
+
                 pairs.Add(pair);
             }
 
@@ -340,14 +320,10 @@ public static class RustealExport
             return !enumObj.MetaData.ContainsKey("NotBlueprintType");
         }
 
-        // ── Filtering Helpers ───────────────────────────────────────────
-
-        /// <summary>
-        /// Walk the inheritance chain checking BlueprintType / NotBlueprintType metadata .
-        /// </summary>
         private static bool IsScriptExposed(UhtType type)
         {
             UhtType current = type;
+
             while (current != null)
             {
                 if (current.MetaData.ContainsKey("BlueprintType")
@@ -364,15 +340,14 @@ public static class RustealExport
                     _ => null,
                 };
             }
+
             return false;
         }
 
-        /// <summary>
-        /// Check if any property or function in the hierarchy is script-exposed .
-        /// </summary>
         private static bool HasScriptExposedFields(UhtStruct structObj)
         {
             UhtStruct current = structObj;
+
             while (current != null)
             {
                 foreach (UhtType child in current.Children)
@@ -393,38 +368,25 @@ public static class RustealExport
                     _ => null,
                 };
             }
+
             return false;
         }
 
-        // ── Property Export ─────────────────────────────────────────────
-
         private static bool ShouldExportProperty(UhtProperty prop)
         {
-            // Skip private/protected, unless Blueprint or a child class's
-            // defaults can reach them: UHT allows BlueprintReadOnly/ReadWrite on a
-            // private member only with AllowPrivateAccess (ACharacter's Mesh,
-            // CharacterMovement, CapsuleComponent), a Blueprint-assignable
-            // protected delegate (UEnvQueryInstanceBlueprintWrapper's
-            // OnQueryFinishedEvent) is bound from Blueprint graphs, and an
-            // editable protected one (AController's bAttachToPawn) is what a
-            // Blueprint child sets in its defaults. Rust reaches them the same
-            // way, by reflection.
             if (prop.PropertyFlags.HasAnyFlags(NoExportPropFlags)
                 && !prop.PropertyFlags.HasAnyFlags(EPropertyFlags.BlueprintVisible | EPropertyFlags.BlueprintAssignable | EPropertyFlags.Edit))
                 return false;
 
-            // Skip deprecated
             if (prop.PropertyFlags.HasAnyFlags(EPropertyFlags.Deprecated))
                 return false;
 
-            // Skip editor-only (default: not exporting editor props)
             if (prop.PropertyFlags.HasAnyFlags(EPropertyFlags.EditorOnly))
                 return false;
 
             return true;
         }
 
-        /// <summary>Export a class/struct member property.</summary>
         private static JsonObject ExportProperty(UhtProperty prop)
         {
             var info = new JsonObject
@@ -444,7 +406,6 @@ public static class RustealExport
             return info;
         }
 
-        /// <summary>Export a function parameter.</summary>
         private static JsonObject ExportParam(UhtProperty prop, UhtFunction ownerFunc)
         {
             var info = new JsonObject
@@ -456,17 +417,17 @@ public static class RustealExport
 
             PopulateSubTypeFields(prop, info);
 
-            // Default value from function metadata: CPP_Default_{ParamName}
             string defaultKey = $"CPP_Default_{prop.SourceName}";
+
             if (ownerFunc.MetaData.TryGetValue(defaultKey, out string defaultVal))
                 info["default"] = defaultVal;
+
             else
                 info["default"] = (JsonNode)null;
 
             return info;
         }
 
-        /// <summary>Export a container inner property (recursive, minimal).</summary>
         private static JsonObject ExportInnerProperty(UhtProperty prop)
         {
             var info = new JsonObject
@@ -475,17 +436,13 @@ public static class RustealExport
                 ["type"] = GetPropertyTypeName(prop),
                 ["prop_flags"] = unchecked((long)(ulong)prop.PropertyFlags),
             };
+
             PopulateSubTypeFields(prop, info);
             return info;
         }
 
-        /// <summary>
-        /// Populate sub-type fields based on property type.
-        /// Uses separate if-blocks (not else-if) because types may set multiple fields.
-        /// </summary>
         private static void PopulateSubTypeFields(UhtProperty prop, JsonObject info)
         {
-            // Initialize all sub-type fields to null
             info["enum_name"] = (JsonNode)null;
             info["enum_cpp_name"] = (JsonNode)null;
             info["enum_cpp_form"] = (JsonNode)null;
@@ -499,7 +456,6 @@ public static class RustealExport
             info["key_prop"] = (JsonNode)null;
             info["value_prop"] = (JsonNode)null;
 
-            // ByteProperty with enum
             if (prop is UhtByteProperty { Enum: not null } byteProp)
             {
                 info["enum_name"] = byteProp.Enum.SourceName;
@@ -507,72 +463,62 @@ public static class RustealExport
                 info["enum_cpp_form"] = (int)byteProp.Enum.CppForm;
             }
 
-            // EnumProperty
             if (prop is UhtEnumProperty enumProp)
             {
                 info["enum_name"] = enumProp.Enum.SourceName;
                 info["enum_cpp_name"] = enumProp.Enum.SourceName;
                 info["enum_cpp_form"] = (int)enumProp.Enum.CppForm;
+
                 info["enum_underlying_type"] = enumProp.UnderlyingProperty != null
                     ? GetUnderlyingTypeName(enumProp.UnderlyingProperty)
                     : "uint8";
             }
 
-            // ObjectPropertyBase → class_name (covers Object, ObjectPtr, Weak, Soft, Class subtypes)
             if (prop is UhtObjectPropertyBase objPropBase)
             {
                 info["class_name"] = StripPrefix(objPropBase.Class.SourceName);
             }
 
-            // ClassProperty → meta_class_name (TSubclassOf<T>)
             if (prop is UhtClassProperty classProp)
             {
                 info["meta_class_name"] = StripPrefix(classProp.MetaClass.SourceName);
             }
 
-            // SoftClassProperty → meta_class_name (TSoftClassPtr<T>)
             if (prop is UhtSoftClassProperty softClassProp)
             {
                 info["meta_class_name"] = StripPrefix(softClassProp.MetaClass.SourceName);
             }
 
-            // InterfaceProperty → interface_name
             if (prop is UhtInterfaceProperty ifaceProp)
             {
                 info["interface_name"] = StripPrefix(ifaceProp.InterfaceClass.SourceName);
             }
 
-            // StructProperty → struct_name
             if (prop is UhtStructProperty structProp)
             {
                 info["struct_name"] = StripPrefix(structProp.ScriptStruct.SourceName);
             }
 
-            // DelegateProperty → func_info
             if (prop is UhtDelegateProperty delProp)
             {
                 info["func_info"] = ExportDelegateSignature(delProp.Function);
             }
 
-            // MulticastDelegateProperty → func_info (covers Inline and Sparse subtypes)
             if (prop is UhtMulticastDelegateProperty mdelProp)
             {
                 info["func_info"] = ExportDelegateSignature(mdelProp.Function);
             }
 
-            // ArrayProperty → inner_prop (recursive)
             if (prop is UhtArrayProperty arrProp)
             {
                 info["inner_prop"] = ExportInnerProperty(arrProp.ValueProperty);
             }
 
-            // SetProperty → element_prop (recursive)
             if (prop is UhtSetProperty setProp)
             {
                 info["element_prop"] = ExportInnerProperty(setProp.ValueProperty);
             }
 
-            // MapProperty → key_prop + value_prop (recursive)
             if (prop is UhtMapProperty mapProp)
             {
                 info["key_prop"] = ExportInnerProperty(mapProp.KeyProperty);
@@ -580,32 +526,21 @@ public static class RustealExport
             }
         }
 
-        // ── Function Export ─────────────────────────────────────────────
-
         private static bool ShouldExportFunction(UhtFunction func)
         {
-            // Only export regular functions (not delegates)
             if (func.FunctionType != UhtFunctionType.Function)
                 return false;
 
-            // Skip functions with excluded flags
             if (func.FunctionFlags.HasAnyFlags(NoExportFuncFlags))
                 return false;
 
-            // A protected function only when a Blueprint child can call it
-            // (UStateTreeTaskBlueprintBase::FinishTask), as a Rust child then can.
             if (func.FunctionFlags.HasAnyFlags(EFunctionFlags.Protected)
                 && !func.FunctionFlags.HasAnyFlags(EFunctionFlags.BlueprintCallable))
                 return false;
 
-            // Editor-only functions (WITH_EDITOR) are exported with their
-            // EditorOnly flag: codegen keeps them for editor libraries only.
-
-            // Skip deprecated functions (UE marks these via metadata, not flags)
             if (func.MetaData.ContainsKey("DeprecatedFunction"))
                 return false;
 
-            // Must be Native, unless it's a BlueprintEvent override
             if (!func.FunctionFlags.HasAnyFlags(EFunctionFlags.Native)
                 && !func.FunctionFlags.HasAnyFlags(EFunctionFlags.BlueprintEvent))
                 return false;
@@ -617,14 +552,12 @@ public static class RustealExport
         {
             var funcParams = new JsonArray();
 
-            // Parameters (excluding return)
             foreach (UhtType childType in func.ParameterProperties.Span)
             {
                 if (childType is UhtProperty param)
                     funcParams.Add(ExportParam(param, func));
             }
 
-            // Return value (at end of params array, with CPF_ReturnParm flag)
             if (func.ReturnProperty != null)
                 funcParams.Add(ExportParam(func.ReturnProperty, func));
 
@@ -659,8 +592,6 @@ public static class RustealExport
             };
         }
 
-        // ── JSON Output ─────────────────────────────────────────────────
-
         private void WriteJsonFiles()
         {
             var writerOptions = new JsonWriterOptions
@@ -689,10 +620,12 @@ public static class RustealExport
         {
             string path = _factory.MakePath(name, ".json");
             using var stream = new MemoryStream();
+
             using (var writer = new Utf8JsonWriter(stream, writerOptions))
             {
                 content.WriteTo(writer);
             }
+
             string json = Encoding.UTF8.GetString(stream.ToArray());
             _factory.CommitOutput(path, new StringBuilder(json));
         }
@@ -700,33 +633,25 @@ public static class RustealExport
         private static JsonArray ToJsonArray(List<JsonObject> items)
         {
             var arr = new JsonArray();
+
             foreach (var item in items)
                 arr.Add(item);
+
             return arr;
         }
 
-        // ── Utilities ───────────────────────────────────────────────────
-
-        /// <summary>
-        /// Strip common UE type prefixes: A (actors), U (objects), F (structs).
-        /// Does NOT strip E (enums) — enum names are used as-is.
-        /// </summary>
         private static string StripPrefix(string name)
         {
             if (name.Length <= 1) return name;
+
             if (name[0] is 'A' or 'U' or 'F' && char.IsUpper(name[1]))
                 return name[1..];
+
             return name;
         }
 
-        /// <summary>
-        /// Map a UhtProperty subclass to its JSON type name string.
-        /// Normalizes ObjectPtrProperty → ObjectProperty, ClassPtrProperty → ClassProperty.
-        /// Order matters: more specific types must come before their base classes.
-        /// </summary>
         private static string GetPropertyTypeName(UhtProperty prop) => prop switch
         {
-            // Numeric types (no inheritance issues)
             UhtBoolProperty => "BoolProperty",
             UhtByteProperty => "ByteProperty",
             UhtInt8Property => "Int8Property",
@@ -740,16 +665,13 @@ public static class RustealExport
             UhtDoubleProperty => "DoubleProperty",
             UhtLargeWorldCoordinatesRealProperty => "DoubleProperty",
 
-            // String types
             UhtStrProperty => "StrProperty",
             UhtNameProperty => "NameProperty",
             UhtTextProperty => "TextProperty",
 
-            // Enum / Struct
             UhtEnumProperty => "EnumProperty",
             UhtStructProperty => "StructProperty",
 
-            // Object hierarchy: most specific first
             UhtClassProperty => "ClassProperty",
             UhtSoftClassProperty => "SoftClassProperty",
             UhtSoftObjectProperty => "SoftObjectProperty",
@@ -757,21 +679,17 @@ public static class RustealExport
             UhtLazyObjectPtrProperty => "LazyObjectProperty",
             UhtObjectProperty => "ObjectProperty",
 
-            // Interface
             UhtInterfaceProperty => "InterfaceProperty",
 
-            // Delegates: most specific first
             UhtDelegateProperty => "DelegateProperty",
             UhtMulticastInlineDelegateProperty => "MulticastInlineDelegateProperty",
             UhtMulticastSparseDelegateProperty => "MulticastSparseDelegateProperty",
             UhtMulticastDelegateProperty => "MulticastDelegateProperty",
 
-            // Containers
             UhtArrayProperty => "ArrayProperty",
             UhtSetProperty => "SetProperty",
             UhtMapProperty => "MapProperty",
 
-            // Other
             UhtFieldPathProperty => "FieldPathProperty",
 
             _ => prop.EngineClassName,
@@ -781,6 +699,7 @@ public static class RustealExport
         {
             if (string.IsNullOrEmpty(prop.ArrayDimensions))
                 return 1;
+
             return int.TryParse(prop.ArrayDimensions, out int dim) ? dim : 2;
         }
 

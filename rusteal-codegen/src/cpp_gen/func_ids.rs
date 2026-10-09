@@ -1,9 +1,6 @@
-// C++ RustealFuncIds.h generation.
-
 use crate::context::FuncEntry;
 use crate::rust_gen::func_ids::func_id_const_name;
 
-/// Generate the RustealFuncIds.h header file.
 pub fn generate_cpp_func_ids(entries: &[FuncEntry]) -> String {
     let mut out = String::with_capacity(entries.len() * 60 + 512);
 
@@ -19,6 +16,7 @@ pub fn generate_cpp_func_ids(entries: &[FuncEntry]) -> String {
     }
 
     out.push('\n');
+
     out.push_str(&format!(
         "    constexpr uint32_t FUNC_COUNT = {};\n",
         entries.len()

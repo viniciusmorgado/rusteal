@@ -1,9 +1,6 @@
-// The editor subsystem: the engine creates it when the editor starts and
-// destroys it when the editor closes. It adds the plugin's menu entry.
-
+use bindings::manual::world_ext::new_object;
 use bindings::rusteal_editor::RustealEditorSubsystem;
 use bindings::tool_menus::{ToolMenuEntryScript, ToolMenuEntryScriptExt};
-use bindings::manual::world_ext::new_object;
 use rusteal_runtime::runtime::{FName, LOG_DISPLAY, LOG_WARNING, RustealResult, UObjectRef, ulog};
 use rusteal_runtime::{uclass, uclass_impl};
 
@@ -11,7 +8,6 @@ use crate::menu::{{ plugin }}MenuEntry;
 
 #[uclass(parent = RustealEditorSubsystem)]
 pub struct {{ plugin }}EditorSubsystem {
-    /// The menu entry, kept alive by the subsystem.
     #[uproperty(BlueprintReadOnly, category = "{{ plugin }}")]
     menu_entry: UObjectRef<ToolMenuEntryScript>,
 }
@@ -21,6 +17,7 @@ impl {{ plugin }}EditorSubsystem {
     #[ufunction(Override)]
     fn receive_initialize(&mut self) {
         ulog!(LOG_DISPLAY, "[{{ plugin }}] Hello from the editor");
+
         if let Err(e) = self.add_menu_entry() {
             ulog!(LOG_WARNING, "[{{ plugin }}] no menu entry: {e:?}");
         }
@@ -33,10 +30,11 @@ impl {{ plugin }}EditorSubsystem {
         }
     }
 
-    /// Tools > {{ plugin }} > Count assets, in the level editor's main menu.
     fn add_menu_entry(&mut self) -> RustealResult<()> {
-        let entry = new_object::<{{ plugin }}MenuEntry>(&self.as_ref())?.upcast_to::<ToolMenuEntryScript>();
+        let entry =
+            new_object::<{{ plugin }}MenuEntry>(&self.as_ref())?.upcast_to::<ToolMenuEntryScript>();
         let script = entry.checked()?;
+
         script.init_entry(
             FName::new("{{ plugin }}").handle(),
             FName::new("LevelEditor.MainMenu.Tools").handle(),
@@ -45,8 +43,10 @@ impl {{ plugin }}EditorSubsystem {
             Some("Count assets"),
             Some("Count the project's assets by type, off the game thread"),
         );
+
         script.register_menu_entry();
         self.set_menu_entry(entry);
+
         Ok(())
     }
 }

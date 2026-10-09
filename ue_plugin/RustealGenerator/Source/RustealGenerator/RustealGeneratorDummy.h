@@ -1,7 +1,3 @@
-// Dummy UCLASS to ensure RustealGenerator appears in the UHT manifest.
-// The RustealExporter UBT plugin requires its ModuleName to be present in the
-// manifest so that MakePath() can determine the output directory.
-
 #pragma once
 
 #include "UObject/Object.h"

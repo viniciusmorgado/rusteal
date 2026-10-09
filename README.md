@@ -385,6 +385,9 @@ one:
 # The Rust libraries (steps 4-5), while you work on the game
 rusteal build
 
+# The same, every time a source file changes, until Ctrl+C
+rusteal watch
+
 # Every step
 rusteal build --all
 
@@ -414,14 +417,18 @@ crate's own `Cargo.toml` they are ignored with a warning):
   must still run well in the editor. Only the game crate, the one that
   changes, is barely optimized; the runtime crates and the generated
   bindings, which compile once, are fully optimized. A change to the game
-  crate rebuilds in about a second.
+  crate rebuilds in about a second. The game crate has full debug info; the
+  dependencies and the bindings keep only file and line, enough for
+  backtraces: with all of theirs, the library would be over a hundred
+  megabytes, which every hot reload loads again.
 - **release** (shipping): the fastest library possible, however long it
   takes to build. The whole program is optimized as one unit (link-time
   optimization, a single codegen unit), which also drops the parts of the
   bindings the game does not use.
 
-The settings follow Bevy's recommendations for game projects
-([Bevy setup](https://bevy.org/learn/quick-start/getting-started/setup/)). The
+The optimization levels follow Bevy's recommendations for game projects
+([Bevy setup](https://bevy.org/learn/quick-start/getting-started/setup/));
+trimming the dependencies' debug info is Rusteal's, for hot reload. The
 Rusteal crates and the `rusteal` binary are not affected: these profiles only
 shape the game's library.
 
@@ -799,15 +806,24 @@ During development, rebuild your Rust library and reload without restarting the 
 rusteal build
 ```
 
-Then in the UE console:
+The editor reloads each library as soon as `rusteal build` deploys it again,
+with a notification (`Rusteal.AutoReload 0` in the console turns that off).
+`rusteal watch` runs that build every time you save a Rust file, so saving is
+all it takes; a build that fails prints its errors and the watch goes on
+(`--plugin <Name>` watches one plugin). To reload by hand, in the UE console:
 ```
 Rusteal.Reload
 ```
 
 `Rusteal.Reload` swaps every Rust library of the project; `Rusteal.Reload
 <Name>` only one (the game's is named after the project, a plugin's after the
-plugin). Function implementations update immediately. Adding/removing
-`uproperty` or `ufunction` requires an editor restart.
+plugin). Function bodies update immediately. A class whose `#[uproperty]`s,
+`#[component]`s, `#[ufunction]`s or parent changed is created again, and its
+objects move to the new class: the actors in the level, its Blueprint
+children and its Rust subclasses, keeping their property values. Rust-private
+fields start over on every reload. A changed `#[ustruct]` still needs an editor
+restart, and so does a changed class outside the editor (`-game`). How it
+works, and why: [docs/hot-reload.md](docs/hot-reload.md).
 
 ### Packaging a game
 

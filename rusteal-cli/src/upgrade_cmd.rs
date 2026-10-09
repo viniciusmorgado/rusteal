@@ -1,17 +1,11 @@
-// rusteal upgrade: move a project to this CLI's Rusteal version.
-//
-// Rewrites the three pins in Rust/Cargo.toml (and in each Rusteal plugin's
-// Rust/Cargo.toml), replaces the UE plugins
-// wholesale (files a newer version dropped must not stay behind) and runs the
-// build pipeline, which regenerates the bindings and the C++ wrappers.
-
 use std::path::Path;
 
-use crate::project_version::{self, Pins, Scope, Version, PINNED, PLUGINS};
+use crate::project_version::{self, PINNED, PLUGINS, Pins, Scope, Version};
 use crate::{build_cmd, global_config, setup};
 
 pub fn run_upgrade(root: &Path) {
     let cli = Version::cli();
+
     let current = match project_version::read_pins(root).unwrap_or_else(|e| fail(&e)) {
         Pins::Exact(version) => version,
         Pins::Checkout(dir) => fail(&format!(
@@ -23,42 +17,60 @@ pub fn run_upgrade(root: &Path) {
             root = root.display(),
         )),
     };
+
     if current > cli {
         fail(&format!(
             "this project is at Rusteal {current}, newer than this CLI ({cli}).\n  \
              Install its version: cargo install rusteal@{current}"
         ));
     }
+
     if current == cli && project_version::check(root, Scope::PinsAndPlugins).is_ok() {
         eprintln!("rusteal upgrade: the project is already at {cli}.");
         return;
     }
+
     let engine = global_config::engine_path();
 
     if current == cli {
-        eprintln!("rusteal upgrade: the project is at {cli}, its plugins are not; reinstalling them");
+        eprintln!(
+            "rusteal upgrade: the project is at {cli}, its plugins are not; reinstalling them"
+        );
     } else {
         eprintln!("rusteal upgrade: {current} -> {cli}");
     }
+
     let workspaces = std::iter::once(root.join("Rust")).chain(
-        rusteal_codegen::config::find_plugins(root).into_iter().map(|p| p.rust_workspace()),
+        rusteal_codegen::config::find_plugins(root)
+            .into_iter()
+            .map(|p| p.rust_workspace()),
     );
+
     for workspace in workspaces {
         let manifest_path = workspace.join("Cargo.toml");
+
         let manifest = std::fs::read_to_string(&manifest_path)
             .unwrap_or_else(|e| fail(&format!("cannot read {}: {e}", manifest_path.display())));
+
         std::fs::write(&manifest_path, rewrite_pins(&manifest, cli))
             .unwrap_or_else(|e| fail(&format!("cannot write {}: {e}", manifest_path.display())));
-        eprintln!("  {}: {} pinned to ={cli}", manifest_path.display(), PINNED.join(", "));
+
+        eprintln!(
+            "  {}: {} pinned to ={cli}",
+            manifest_path.display(),
+            PINNED.join(", ")
+        );
     }
 
     for plugin in PLUGINS {
         let dir = root.join("Plugins").join(plugin);
+
         if dir.exists() {
             std::fs::remove_dir_all(&dir)
                 .unwrap_or_else(|e| fail(&format!("cannot remove {}: {e}", dir.display())));
         }
     }
+
     setup::run_setup(root, &engine);
     build_cmd::run_build(root, &engine, None, 1, false, None);
 
@@ -70,16 +82,17 @@ fn fail(message: &str) -> ! {
     std::process::exit(1);
 }
 
-/// Rewrite the pins in the text of a Rust/Cargo.toml to `=version`, line by
-/// line inside `[workspace.dependencies]`, keeping everything else as it is.
 pub fn rewrite_pins(manifest: &str, version: Version) -> String {
     let mut in_deps = false;
     let mut out = String::with_capacity(manifest.len());
+
     for line in manifest.split_inclusive('\n') {
         let trimmed = line.trim_start();
+
         if trimmed.starts_with('[') {
             in_deps = trimmed.starts_with("[workspace.dependencies]");
         }
+
         let pinned = if in_deps {
             PINNED.iter().find(|name| {
                 trimmed
@@ -89,6 +102,7 @@ pub fn rewrite_pins(manifest: &str, version: Version) -> String {
         } else {
             None
         };
+
         match pinned {
             Some(name) => {
                 let indent = &line[..line.len() - trimmed.len()];
@@ -98,6 +112,7 @@ pub fn rewrite_pins(manifest: &str, version: Version) -> String {
             None => out.push_str(line),
         }
     }
+
     out
 }
 
@@ -127,10 +142,16 @@ glam = "0.33.8"
         assert_eq!(rewritten, EXACT.replace("=0.2.1", "=0.3.0"));
         assert_eq!(parse_pins(&rewritten), Ok(Pins::Exact(v("0.3.0"))));
 
-        let table = EXACT.replace("rusteal-core = \"=0.2.1\"", "rusteal-core = { version = \"=0.2.1\" }");
-        assert_eq!(rewrite_pins(&table, v("0.3.0")), EXACT.replace("=0.2.1", "=0.3.0"));
+        let table = EXACT.replace(
+            "rusteal-core = \"=0.2.1\"",
+            "rusteal-core = { version = \"=0.2.1\" }",
+        );
 
-        // Outside [workspace.dependencies] nothing changes.
+        assert_eq!(
+            rewrite_pins(&table, v("0.3.0")),
+            EXACT.replace("=0.2.1", "=0.3.0")
+        );
+
         let other = "[dependencies]\nrusteal-core = \"=0.2.1\"\n";
         assert_eq!(rewrite_pins(other, v("0.3.0")), other);
     }

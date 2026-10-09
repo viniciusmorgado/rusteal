@@ -1,8 +1,3 @@
-// The Shooter variant's gameplay classes in Rust: a first person arena
-// shooter with weapon pickups (a weapon data table of `WeaponTableRow`s),
-// projectiles, teams and scores, and NPCs run by a StateTree with AI
-// perception and an EnvQuery.
-
 pub mod ai_controller;
 pub mod character;
 pub mod env_query;

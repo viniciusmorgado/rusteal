@@ -1,5 +1,3 @@
-// Transform ↔ OwnedStruct<FTransform> conversions (nested struct fields).
-
 use rusteal_core::{OwnedStruct, Transform};
 
 use crate::core_ue::{FTransform, FTransformExt};
