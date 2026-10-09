@@ -40,7 +40,7 @@ pub fn generate_struct(s: &StructInfo, ctx: &CodegenContext) -> String {
     if s.has_static_struct {
         let name_bytes = stripped.as_bytes();
         let name_len = name_bytes.len();
-        let byte_lit = format!("b\"{}\\0\"", stripped);
+        let byte_lit = format!("b\"{stripped}\\0\"");
 
         out.push_str(&format!(
             "impl rusteal_core::UeStruct for {name} {{\n\

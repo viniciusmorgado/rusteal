@@ -202,7 +202,7 @@ pub fn generate_property(
     };
 
     let prop_name_len = prop_name.len();
-    let byte_lit = format!("b\"{}\\0\"", prop_name);
+    let byte_lit = format!("b\"{prop_name}\\0\"");
 
     if prop.array_dim > 1 {
         generate_fixed_array_property(

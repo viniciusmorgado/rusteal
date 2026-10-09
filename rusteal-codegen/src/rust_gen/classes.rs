@@ -49,7 +49,7 @@ pub fn generate_class(class: &ClassInfo, ctx: &CodegenContext) -> String {
     ));
 
     let name_bytes_len = name.len();
-    let byte_lit = format!("b\"{}\\0\"", name);
+    let byte_lit = format!("b\"{name}\\0\"");
 
     out.push_str(&format!(
         "impl rusteal_core::UeClass for {name} {{\n\
@@ -960,7 +960,7 @@ fn generate_container_function(
     out.push_str("        {\n");
 
     let ue_name_len = ue_name.len();
-    let ue_name_byte_lit = format!("b\"{}\\0\"", ue_name);
+    let ue_name_byte_lit = format!("b\"{ue_name}\\0\"");
 
     out.push_str(&format!(
         "        const FN_ID: u32 = {func_id};\n\
@@ -975,7 +975,7 @@ fn generate_container_function(
     for cp in &container_params {
         let param_name = &cp.param.name;
         let param_name_len = param_name.len();
-        let param_byte_lit = format!("b\"{}\\0\"", param_name);
+        let param_byte_lit = format!("b\"{param_name}\\0\"");
 
         out.push_str(&format!(
             "                ((*rusteal_core::api().reflection).get_function_param)(\n\

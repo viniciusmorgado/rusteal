@@ -118,8 +118,7 @@ pub fn register_all_from_inventory() {
     let total_funcs = read_or_recover(func_registry()).len();
 
     let msg = format!(
-        "[Rusteal] register_all_from_inventory: {} classes, {} impl blocks, {} function callbacks",
-        class_count, func_reg_count, total_funcs,
+        "[Rusteal] register_all_from_inventory: {class_count} classes, {func_reg_count} impl blocks, {total_funcs} function callbacks",
     );
 
     let bytes = msg.as_bytes();
@@ -285,8 +284,7 @@ pub fn invoke_function(callback_id: u64, obj: UObjectHandle, params: NativePtr) 
         let vec_len = read_or_recover(func_registry()).len();
 
         let msg = format!(
-            "[Rusteal] invoke_function: callback_id {} not found (registry size = {})",
-            callback_id, vec_len,
+            "[Rusteal] invoke_function: callback_id {callback_id} not found (registry size = {vec_len})",
         );
 
         let bytes = msg.as_bytes();

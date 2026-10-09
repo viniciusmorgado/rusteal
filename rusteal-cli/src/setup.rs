@@ -121,7 +121,7 @@ pub fn run_setup(project_path: &Path, engine_path: &Path) {
     );
 
     eprintln!("  Generated {}", props_path.display());
-    eprintln!("  Engine path: {}", engine_path_normalized);
+    eprintln!("  Engine path: {engine_path_normalized}");
 
     generate_config(project_path);
 

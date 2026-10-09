@@ -327,8 +327,7 @@ fn verify_output(ctx: &context::CodegenContext, rust_out: &Path, cpp_out: &Path)
 
     if errors.is_empty() {
         eprintln!(
-            "  OK: {} modules, {} classes, {} structs, {} enums, {} functions",
-            module_count, class_count, struct_count, enum_count, func_count
+            "  OK: {module_count} modules, {class_count} classes, {struct_count} structs, {enum_count} enums, {func_count} functions"
         );
     } else {
         eprintln!("  Verification FAILED:");

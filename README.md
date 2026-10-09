@@ -137,22 +137,44 @@ The engine brings the rest: the clang 20.1.8 toolchain UBT compiles with
 
 | Dependency | Version | Where from | What for |
 |---|---|---|---|
-| Visual Studio | 2022 17.8 or newer, or 2026 18.0 or newer | [visualstudio.microsoft.com](https://visualstudio.microsoft.com) | the C++ compiler UBT uses, and the linker Rust uses |
+| Visual Studio IDE | Community, Professional or Enterprise; 2022 17.8 or newer, or 2026 18.0 or newer | [visualstudio.microsoft.com](https://visualstudio.microsoft.com) | the C++ compiler UBT uses, and the linker Rust uses |
 | Rust | stable, 1.88 or newer, `x86_64-pc-windows-msvc` | [rustup](https://rustup.rs) (`rustup-init.exe`) | installing the `rusteal` CLI, building your game crate |
 | Unreal Engine | 5.8 | the Epic Games Launcher | the game |
 
-In the Visual Studio Installer, the workloads and components the engine asks for:
+Any edition of the Visual Studio IDE works (Community is free). In the Visual
+Studio Installer (**Modify** on an existing install), the **Workloads** tab needs
+exactly two workloads:
 
-- workloads **Desktop development with C++**, **Game development with C++**
-  (with its Unreal Engine components) and **.NET desktop development**;
-- **MSVC v143 x64/x86 build tools 14.44** for Visual Studio 2022 (14.50 for
-  2026). The engine refuses 14.39 to 14.43, 14.44 before 14.44.35211 and 14.50
-  before 14.50.35723;
-- **Windows 11 SDK 10.0.22621** (10.0.19041 at least);
+| Workload | Section | What the engine takes from it |
+|---|---|---|
+| **Desktop development with C++** | Desktop & Mobile | MSVC, the C++ compiler and linker; the Windows SDK |
+| **.NET desktop development** | Desktop & Mobile | the .NET Framework SDK (UBT stops with *Could not find NetFxSDK install dir* without it) |
+
+**Game development with C++** and its Unreal Engine components are optional:
+they add the IDE's Unreal integration, which the engine's command-line build,
+the one Rusteal runs, does not use.
+
+Then, in the **Individual components** tab, check that these are selected:
+
+- **MSVC v143 x64/x86 build tools 14.44** for Visual Studio 2022, **MSVC
+  x64/x86 build tools 14.50** for 2026. The engine refuses 14.39 to 14.43,
+  14.44 before 14.44.35211 and 14.50 before 14.50.35723, and warns about
+  versions newer than these (the "latest" component of Visual Studio 2026
+  installs 14.51); with both installed, it picks the one it prefers;
+- **Windows 11 SDK 10.0.22621** (10.0.19041 at least; UBT stops with
+  *Platform Win64 is not a valid platform to build* without one);
 - **.NET Framework 4.6.2 targeting pack**.
 
 Install Visual Studio before Rust: rustup uses its build tools for the MSVC
 toolchain. The engine brings the .NET SDK for UBT and UHT.
+
+Rust must use the MSVC host: `rustup show` prints *Default host:
+x86_64-pc-windows-msvc*. If your default toolchain is a `-windows-gnu` one,
+for another project, it can stay: set the default host
+(`rustup set default-host x86_64-pc-windows-msvc`) and install
+`stable-x86_64-pc-windows-msvc`, then pin it in your game project, either with
+a `rust-toolchain.toml` or, for the directory holding your projects,
+`rustup override set stable-x86_64-pc-windows-msvc --path <dir>`.
 
 ### Install
 
@@ -1109,6 +1131,12 @@ Everything in [Making a game › Prerequisites](#prerequisites), plus:
 | Git | the distribution's package (`git`); on Windows, [Git for Windows](https://git-scm.com/download/win) | cloning the repository |
 | [clangd](https://clangd.llvm.org) (optional) | the distribution's package or LLVM; Zed downloads it on its own | C++ support in the editor, for `ue_plugin/` |
 | [.NET 10 SDK](https://dotnet.microsoft.com/download) (optional) | Microsoft, or the distribution's package (`dotnet-sdk-10.0`) | C# support in the editor, for the exporter in `ue_plugin/RustealGenerator/` |
+
+The checkout builds with the MSRV, Rust 1.88.0, whatever your default
+toolchain is: `rust-toolchain.toml` pins it, and rustup installs it on the
+first `cargo` command. The file names no host, so rustup completes it with its
+default host; on Windows that must be `x86_64-pc-windows-msvc` (see the
+Windows prerequisites above).
 
 ### Development environment
 
