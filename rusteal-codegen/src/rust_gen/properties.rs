@@ -8,7 +8,6 @@ pub struct PropertyContext {
     pub handle_expr: String,
     pub pre_access: String,
     pub container_expr: String,
-    pub is_class: bool,
 }
 
 pub fn rust_property_name(prop: &PropertyInfo) -> String {
@@ -225,9 +224,7 @@ pub fn generate_property(
             | ConversionKind::ContainerMap
             | ConversionKind::ContainerSet
     ) {
-        if pctx.is_class
-            && let Some(container_type) = type_map::resolve_container_rust_type(prop, Some(ctx))
-        {
+        if let Some(container_type) = type_map::resolve_container_rust_type(prop, Some(ctx)) {
             generate_container_getter(
                 out,
                 &rust_name,
@@ -874,9 +871,10 @@ fn generate_container_getter(
     emit_pre_access(out, pctx);
 
     let turbofish_type = container_type.replace('<', "::<");
+    let c = &pctx.container_expr;
 
     out.push_str(&format!(
-        "        {turbofish_type}::new(h, prop)\n\
+        "        {turbofish_type}::new({c}, prop)\n\
          \x20   }}\n\n"
     ));
 }

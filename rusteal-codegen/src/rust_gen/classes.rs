@@ -164,7 +164,6 @@ pub fn generate_class(class: &ClassInfo, ctx: &CodegenContext) -> String {
         handle_expr: format!("{name}::static_class()"),
         pre_access: "let h = self.handle();".to_string(),
         container_expr: "h".to_string(),
-        is_class: true,
     };
 
     delegates::generate_delegate_structs(&mut out, &own_delegate_infos, name);
