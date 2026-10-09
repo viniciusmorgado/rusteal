@@ -1,4 +1,5 @@
 #include "RustealApiTable.h"
+#include "RustealFNameHelper.h"
 #include "UObject/UObjectGlobals.h"
 #include "UObject/UnrealType.h"
 
@@ -17,6 +18,7 @@
 static bool IsRawCopyableElement(FProperty *InnerProp) {
   return !CastField<FStrProperty>(InnerProp) &&
          !CastField<FTextProperty>(InnerProp) &&
+         !CastField<FNameProperty>(InnerProp) &&
          !CastField<FObjectPropertyBase>(InnerProp) &&
          !CastField<FStructProperty>(InnerProp);
 }
@@ -50,6 +52,14 @@ static void ReadElement(FProperty *InnerProp, const void *ElemPtr,
 
     if (OutWritten)
       *OutWritten = sizeof(uint32) + CopyLen;
+  } else if (CastField<FNameProperty>(InnerProp)) {
+    const uint64 Packed =
+        RustealPackFName(*static_cast<const FName *>(ElemPtr));
+
+    FMemory::Memcpy(OutBuf, &Packed, sizeof(uint64));
+
+    if (OutWritten)
+      *OutWritten = sizeof(uint64);
   } else if (FObjectPropertyBase *ObjProp =
                  CastField<FObjectPropertyBase>(InnerProp)) {
     UObject *Obj = ObjProp->GetObjectPropertyValue(ElemPtr);
@@ -92,6 +102,10 @@ static void WriteElement(FProperty *InnerProp, void *ElemPtr,
 
     FString Value(Len, UTF8_TO_TCHAR(Utf8Str));
     TextProp->SetPropertyValue(ElemPtr, FText::FromString(Value));
+  } else if (CastField<FNameProperty>(InnerProp)) {
+    uint64 Packed = 0;
+    FMemory::Memcpy(&Packed, InBuf, sizeof(uint64));
+    *static_cast<FName *>(ElemPtr) = RustealUnpackFName(Packed);
   } else if (FObjectPropertyBase *ObjProp =
                  CastField<FObjectPropertyBase>(InnerProp)) {
     UObject *Obj = nullptr;

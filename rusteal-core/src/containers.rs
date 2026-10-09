@@ -77,7 +77,6 @@ unsafe impl ContainerElement for UObjectHandle {
 
 unsafe impl ContainerElement for rusteal_ffi::FNameHandle {
     const BUF_SIZE: u32 = 8;
-    const RAW_COPYABLE: bool = true;
 
     #[inline]
     unsafe fn read_from_buf(buf: *const u8, _written: u32) -> Self {
@@ -96,7 +95,6 @@ unsafe impl ContainerElement for rusteal_ffi::FNameHandle {
 
 unsafe impl ContainerElement for crate::fname::FName {
     const BUF_SIZE: u32 = 8;
-    const RAW_COPYABLE: bool = true;
 
     #[inline]
     unsafe fn read_from_buf(buf: *const u8, written: u32) -> Self {
