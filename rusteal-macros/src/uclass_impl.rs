@@ -804,7 +804,7 @@ fn implementable_event_body(uf: &UFunctionInfo) -> syn::Block {
         None => (
             quote! { () },
             quote! { let _ = result; Ok(()) },
-            quote! { () },
+            TokenStream::new(),
         ),
         Some(ret) => {
             let ty = &ret.rust_ty;
