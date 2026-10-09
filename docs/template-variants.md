@@ -22,6 +22,14 @@ left.
 - **Assets are moved, not rebuilt.** `[CoreRedirects]` send the C++ classes
   to the Rust ones while the assets are resaved; the resaved assets name the
   Rust classes and are what the template ships.
+- **Placed actors of a World Partition level** keep their first native class
+  in their actor descriptor: a placed `BP_TimeTrialTrackGate` names
+  `/Script/TP_VehicleAdv.TimeTrialTrackGate`. A Rust class is not native, so
+  a redirect to it leaves the descriptor invalid and the level skips the
+  actor. While the level is resaved, the old class is redirected to
+  `/Script/Engine.Actor` instead; the actor then loads as its Blueprint, whose
+  parent is already the Rust class, and the resaved descriptor names
+  `Actor`.
 - **C++ virtuals become events** (below). A Blueprint child that implements
   the same event in its graph hides the Rust one, so a port checks that the
   variant's Blueprints only hold data there.
@@ -72,6 +80,16 @@ left.
   elapsed and triggered seconds too). The Strategy player controller's touch
   hold reads how long the finger has been down; the Rust controller times the
   hold from the action's `Started` event.
+- **Delegates the C++ keeps out of reflection.** The TimeTrial widgets
+  declare `FStartRaceDelegate` and `FCountdownFinishedDelegate` without a
+  `UPROPERTY`, so only C++ binds them; the Rust widgets declare them with
+  `#[udelegate]`, which Blueprints can bind as well.
+- **Vehicle setups.** The C++ cars fill their movement component's
+  `EngineSetup`, `TransmissionSetup`, `SteeringSetup`, `DifferentialSetup`
+  and `WheelSetups` in the constructor; the Rust cars read each struct, change
+  its fields and write it back in `#[class_defaults]` (`setup.rs`). The
+  structs are not Blueprint types, so the exporter binds them because the
+  movement component's properties hold them.
 - **C++ quirks are kept.** The Strategy unit's constructor calls
   `SetFixedBrakingDistance(200.0f)` and then `SetFixedBrakingDistance(true)`,
   which sets the distance to 1; the Rust unit sets 1.
@@ -82,11 +100,19 @@ left.
 |---|---|---|
 | Delegates declared in Rust | Fixed: `#[udelegate]` declares a multicast delegate on a Rust class, broadcast from Rust and bindable from Blueprint and Rust. | The ports still call their listener directly, as written before it existed. |
 | The input action instance in handlers | Fixed: handlers may take the elapsed and triggered seconds and the action, as the engine's dynamic binding signature does. | The Strategy port still times the hold from `Started`. |
+| Moving a component attached to a skeletal mesh socket in `#[class_defaults]` | `#[class_defaults]` runs on the finished default object, where the mesh has no skeletal mesh yet, so the move asks for a socket that is not there: the First Person camera (`head`) and the OffRoad tires (`VisWheel_FR`, `VisWheel_BR`) log `GetSocketInfoByName` warnings at startup, where the C++ constructors doing the same log none. | None needed: the transform is right once the mesh is assigned. |
 | C++ delegates of engine components | `codegen` or `manual`: hand-written bindings for delegates outside reflection (`UPathFollowingComponent::OnRequestFinished`). | A reflected delegate raised for the same thing. |
 
 ## Engine issues seen in the variants
 
 These show in the engine's own C++ projects too; they are not the ports'.
+
+- Loading the OffRoad level logs that an external actor
+  (`Lvl_Offroad/B/9M/ZNZM1Q9PKXHV07GMT8Q6NN`) depends on a package that is
+  not available.
+- The TimeTrial countdown is a widget animation, which does not play in an
+  editor started with `-nullrhi`: headless tests call the countdown widget's
+  `FinishCountdown` themselves.
 
 - The Combat and Horror levels place a door frame whose mesh,
   `/Game/LevelPrototyping/Interactable/Door/Assets/Meshes/SM_DoorFrame_Edge`,

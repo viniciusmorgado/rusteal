@@ -238,6 +238,9 @@ templates make it, and opens and plays the variant's level.
 | `third-person` | `combat` | Melee combat: combo and charged attacks, enemies run by a StateTree, spawners, checkpoints, damageable props. |
 | `third-person` | `platforming` | Double jump, wall jump, coyote time, a dash, local multiplayer and respawn. |
 | `third-person` | `side-scrolling` | A side view platformer: soft platforms, jump pads, moving platforms, pickups with a counter and an NPC run by a StateTree. |
+| `vehicle` | | The engine's Vehicle template: its sports car and offroad car on Chaos Vehicles, game mode, player controller and speed and gear HUD in Rust, playable as it comes (keyboard, gamepad, steering wheel, touch). |
+| `vehicle` | `offroad` | The offroad car on an offroad level, its game mode ready for local split screen players. |
+| `vehicle` | `time-trial` | A race track with a start countdown, gates to pass in order, laps and the best lap time. |
 
 Names are matched loosely (`side-scrolling`, `SideScrolling`), and `rusteal
 new` with an unknown template or variant lists them all.
