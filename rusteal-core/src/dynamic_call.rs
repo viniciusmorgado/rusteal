@@ -3,8 +3,8 @@ use std::any::Any;
 use rusteal_ffi::{FNameHandle, FPropertyHandle, UFunctionHandle, UObjectHandle};
 
 use crate::error::{RustealError, RustealResult, check_ffi};
-use crate::fname::FName;
 use crate::ffi_dispatch::{self, NATIVE_PTR_NULL, NativePtr, native_ptr_is_null};
+use crate::fname::FName;
 use crate::object_ref::UObjectRef;
 use crate::traits::UeClass;
 
@@ -163,7 +163,11 @@ impl DynamicCallResult {
             let mut handle = FNameHandle::default();
 
             check_ffi(unsafe {
-                ffi_dispatch::property_get_fname(params_as_container(self.params), prop, &mut handle)
+                ffi_dispatch::property_get_fname(
+                    params_as_container(self.params),
+                    prop,
+                    &mut handle,
+                )
             })?;
 
             let name = FName(handle);
