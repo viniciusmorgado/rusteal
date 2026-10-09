@@ -1,21 +1,14 @@
-// The Rusteal version as an integer: major * 1_000_000 + minor * 1_000 + patch
-// (0.2.1 -> 2001). Crates, the UE plugins and this contract always carry the
-// same version. The plugin checks the library's `rusteal_version()` export
-// before calling `rusteal_init`, and writes its own version into
-// `RustealApiTable::version`, which the library checks again.
-
-/// The version of this crate, encoded.
 pub const RUSTEAL_VERSION: u32 = encode_version(env!("CARGO_PKG_VERSION"));
 
-/// Encode `major.minor.patch`. Anything else is a panic — at compile time for
-/// [`RUSTEAL_VERSION`].
 pub const fn encode_version(version: &str) -> u32 {
     let bytes = version.as_bytes();
     let mut parts = [0u32; 3];
     let mut part = 0;
     let mut i = 0;
+
     while i < bytes.len() {
         let b = bytes[i];
+
         if b == b'.' {
             part += 1;
             assert!(part < 3, "version must be major.minor.patch");
@@ -23,14 +16,20 @@ pub const fn encode_version(version: &str) -> u32 {
             assert!(b.is_ascii_digit(), "version must be major.minor.patch");
             parts[part] = parts[part] * 10 + (b - b'0') as u32;
         }
+
         i += 1;
     }
+
     assert!(part == 2, "version must be major.minor.patch");
-    assert!(parts[1] < 1_000 && parts[2] < 1_000, "minor and patch must be below 1000");
+
+    assert!(
+        parts[1] < 1_000 && parts[2] < 1_000,
+        "minor and patch must be below 1000"
+    );
+
     parts[0] * 1_000_000 + parts[1] * 1_000 + parts[2]
 }
 
-/// `major.minor.patch` back from an encoded version, for messages.
 pub fn decode_version(version: u32) -> String {
     format!(
         "{}.{}.{}",

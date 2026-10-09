@@ -1,6 +1,3 @@
-// RustealReifyApiImpl.cpp — FRustealReifyApi implementation + UObject delete
-// listener.
-
 #include "Engine/Blueprint.h"
 #include "GameFramework/Actor.h"
 #include "Engine/Engine.h"
@@ -17,21 +14,16 @@
 #include "URustealReifiedClass.h"
 #include "URustealReifiedFunction.h"
 
-// Helper: convert UTF-8 byte slice to FName.
 static FName ReifyUtf8ToFName(const uint8 *Name, uint32 NameLen) {
   const FString Str(NameLen,
                     UTF8_TO_TCHAR(reinterpret_cast<const char *>(Name)));
+
   return FName(*Str);
 }
 
-// Helper: convert UTF-8 byte slice to FString.
 static FString ReifyUtf8ToFString(const uint8 *Name, uint32 NameLen) {
   return FString(NameLen, UTF8_TO_TCHAR(reinterpret_cast<const char *>(Name)));
 }
-
-// ---------------------------------------------------------------------------
-// Helper: Create an FProperty by type enum
-// ---------------------------------------------------------------------------
 
 static FProperty *CreatePropertyByType(FFieldVariant Owner, FName PropName,
                                        ERustealReifyPropType PropType,
@@ -108,12 +100,12 @@ static FProperty *CreatePropertyByType(FFieldVariant Owner, FName PropName,
   }
   case ERustealReifyPropType::Class: {
     FClassProperty *ClsProp = new FClassProperty(Owner, PropName, RF_Public);
-    // The value is a UClass, restricted to MetaClass and its subclasses.
     if (Extra) {
       ClsProp->PropertyClass =
           Extra->class_handle.ptr
               ? static_cast<UClass *>(Extra->class_handle.ptr)
               : UClass::StaticClass();
+
       ClsProp->MetaClass =
           Extra->meta_class_handle.ptr
               ? static_cast<UClass *>(Extra->meta_class_handle.ptr)
@@ -134,6 +126,7 @@ static FProperty *CreatePropertyByType(FFieldVariant Owner, FName PropName,
       UE_LOG(
           LogRusteal, Error,
           TEXT("[Rusteal] CreatePropertyByType(Struct): null struct_handle"));
+
       return nullptr;
     }
     FStructProperty *StructProp =
@@ -149,11 +142,11 @@ static FProperty *CreatePropertyByType(FFieldVariant Owner, FName PropName,
     if (!EnumType) {
       UE_LOG(LogRusteal, Error,
              TEXT("[Rusteal] CreatePropertyByType(Enum): null enum_handle"));
+
       return nullptr;
     }
     FEnumProperty *EnumProp = new FEnumProperty(Owner, PropName, RF_Public);
     EnumProp->SetEnum(EnumType);
-    // Create the underlying numeric property
     FNumericProperty *UnderlyingProp =
         new FByteProperty(EnumProp, TEXT("UnderlyingType"), RF_Public);
     EnumProp->AddCppProperty(UnderlyingProp);
@@ -169,10 +162,10 @@ static FProperty *CreatePropertyByType(FFieldVariant Owner, FName PropName,
              TEXT("[Rusteal] CreatePropertyByType(Array): missing or nested "
                   "element type for %s"),
              *PropName.ToString());
+
       return nullptr;
     }
     FArrayProperty *ArrayProp = new FArrayProperty(Owner, PropName);
-    // The element is named after the array, as UHT names it.
     FProperty *Inner = CreatePropertyByType(FFieldVariant(ArrayProp), PropName,
                                             InnerType, Extra);
     if (!Inner) {
@@ -203,26 +196,19 @@ static FProperty *CreatePropertyByType(FFieldVariant Owner, FName PropName,
   return Prop;
 }
 
-// ---------------------------------------------------------------------------
-// Helper: Copy parameter properties from a parent function to a new override
-// ---------------------------------------------------------------------------
-
 static void CopyParamsFromParentFunction(UFunction *NewFunc,
                                          UFunction *ParentFunc) {
   for (FField *SrcField = ParentFunc->ChildProperties; SrcField;
        SrcField = SrcField->Next) {
     FProperty *SrcProp = CastField<FProperty>(SrcField);
+
     if (!SrcProp) {
       continue;
     }
 
-    // Map source property type back to our enum so we can use
-    // CreatePropertyByType
     ERustealReifyPropType PropType;
     FRustealReifyPropExtra Extra = {};
 
-    // Check FClassProperty before FObjectProperty (FClassProperty extends
-    // FObjectProperty)
     if (SrcProp->IsA<FBoolProperty>()) {
       PropType = ERustealReifyPropType::Bool;
     } else if (SrcProp->IsA<FInt8Property>()) {
@@ -256,12 +242,15 @@ static void CopyParamsFromParentFunction(UFunction *NewFunc,
       Extra.struct_handle.ptr = CastField<FStructProperty>(SrcProp)->Struct;
     } else if (SrcProp->IsA<FClassProperty>()) {
       PropType = ERustealReifyPropType::Class;
+
       Extra.class_handle.ptr =
           CastField<FClassProperty>(SrcProp)->PropertyClass;
+
       Extra.meta_class_handle.ptr =
           CastField<FClassProperty>(SrcProp)->MetaClass;
     } else if (SrcProp->IsA<FObjectProperty>()) {
       PropType = ERustealReifyPropType::Object;
+
       Extra.class_handle.ptr =
           CastField<FObjectProperty>(SrcProp)->PropertyClass;
     } else if (SrcProp->IsA<FEnumProperty>()) {
@@ -272,6 +261,7 @@ static void CopyParamsFromParentFunction(UFunction *NewFunc,
              TEXT("[Rusteal] CopyParamsFromParent: unsupported property type "
                   "'%s' for param '%s', skipping"),
              *SrcProp->GetClass()->GetName(), *SrcProp->GetName());
+
       continue;
     }
 
@@ -280,83 +270,78 @@ static void CopyParamsFromParentFunction(UFunction *NewFunc,
 
     if (NewProp) {
       NewProp->PropertyFlags = SrcProp->PropertyFlags;
-      // As UHT flags a function with out parameters: ProcessEvent hands a
-      // native function the caller's out addresses only then.
+
       if (NewProp->HasAnyPropertyFlags(CPF_OutParm) &&
           !NewProp->HasAnyPropertyFlags(CPF_ReturnParm)) {
         NewFunc->FunctionFlags |= FUNC_HasOutParms;
       }
 
-      // Append to end of ChildProperties (preserve parameter order)
       if (!NewFunc->ChildProperties) {
         NewFunc->ChildProperties = NewProp;
       } else {
         FField *Last = NewFunc->ChildProperties;
+
         while (Last->Next) {
           Last = Last->Next;
         }
+
         Last->Next = NewProp;
       }
     }
   }
 }
 
-// ---------------------------------------------------------------------------
-// Classes a hot reload replaces
-// ---------------------------------------------------------------------------
-
 static FRustealClassReinstancer GClassReinstancer;
 
-// The classes replaced while the library being loaded registers its own
-// (old, new), reinstanced once it is done.
 static TArray<TPair<UClass *, UClass *>> GReplacedClasses;
 
 void RustealSetClassReinstancer(FRustealClassReinstancer Reinstancer) {
   GClassReinstancer = MoveTemp(Reinstancer);
 }
 
-// A class a hot reload replaces: moved out of the library's package, as the
-// engine's own reload moves a changed native class (ReloadProcessObject), so
-// the new one takes its name; and cut from Rust, whose library has no code
-// for it anymore: its objects lose their Rust data, its functions do nothing.
 static void RetireClass(URustealReifiedClass *Old) {
   Old->Library = nullptr;
+
   for (UField *Field = Old->Children; Field; Field = Field->Next) {
-    if (URustealReifiedFunction *Function = Cast<URustealReifiedFunction>(Field)) {
+    if (URustealReifiedFunction *Function =
+            Cast<URustealReifiedFunction>(Field)) {
       Function->Library = nullptr;
     }
   }
 
   const ERenameFlags Flags =
       REN_DontCreateRedirectors | REN_NonTransactional | REN_DoNotDirty;
+
 #if WITH_EDITORONLY_DATA
+
   if (UBlueprint *Stub = Cast<UBlueprint>(Old->ClassGeneratedBy)) {
     Stub->RemoveFromRoot();
     Stub->ClearFlags(RF_Standalone | RF_Public);
+
     Stub->Rename(*MakeUniqueObjectName(GetTransientPackage(), Stub->GetClass(),
                                        *(TEXT("RUSTEAL_") + Stub->GetName()))
                       .ToString(),
                  GetTransientPackage(), Flags);
   }
-  // Not a Blueprint's class anymore: the engine's reinstancing recompiles the
-  // Blueprint of each subclass of a replaced class, and a Rust subclass's
-  // stub has nothing to compile (the Rust subclass is replaced on its own).
+
   Old->ClassGeneratedBy = nullptr;
 #endif
 
   Old->RemoveFromRoot();
   Old->ClearFlags(RF_Standalone | RF_Public);
+
   if (UObject *CDO = Old->GetDefaultObject(false)) {
     CDO->RemoveFromRoot();
     CDO->ClearFlags(RF_Standalone | RF_Public);
   }
-  // Renaming a class renames its default object with it.
+
   Old->Rename(*MakeUniqueObjectName(GetTransientPackage(), Old->GetClass(),
                                     *(TEXT("RUSTEAL_") + Old->GetName()))
                    .ToString(),
               GetTransientPackage(), Flags);
+
   Old->SetFlags(RF_Transient);
-  // Until reinstanced, which lets it go.
+
   Old->AddToRoot();
 }
 
@@ -364,24 +349,24 @@ void RustealReifyReinstanceReplacedClasses() {
   if (GReplacedClasses.IsEmpty()) {
     return;
   }
+
   TArray<TPair<UClass *, UClass *>> Replaced = MoveTemp(GReplacedClasses);
   GReplacedClasses.Reset();
+
   UE_LOG(LogRusteal, Display,
          TEXT("[Rusteal] Hot reload: reinstancing %d changed class(es)"),
          Replaced.Num());
+
   if (GClassReinstancer) {
     GClassReinstancer(Replaced);
   }
 }
 
-// ---------------------------------------------------------------------------
-// API implementations
-// ---------------------------------------------------------------------------
-
 static RustealUClassHandle CreateClassImpl(const uint8 *Name, uint32 NameLen,
                                            RustealUClassHandle Parent,
                                            uint64 RustTypeId, uint64 Shape) {
   UClass *ParentClass = static_cast<UClass *>(Parent.ptr);
+
   if (!ParentClass) {
     UE_LOG(LogRusteal, Error, TEXT("[Rusteal] CreateClass: null parent class"));
     return RustealUClassHandle{nullptr};
@@ -389,19 +374,15 @@ static RustealUClassHandle CreateClassImpl(const uint8 *Name, uint32 NameLen,
 
   const FString ClassName = ReifyUtf8ToFString(Name, NameLen);
 
-  // --- Hot reload path: if a class with this name already exists, reuse it ---
-  // The library's package: /Script/Rusteal for the game's classes,
-  // /Script/<Plugin> for a plugin's.
   UPackage *RustealPackage = RustealCurrentPackage();
+
   URustealReifiedClass *Existing =
       FindObject<URustealReifiedClass>(RustealPackage, *ClassName);
-  // Its properties, functions or parent changed (a Rust parent replaced
-  // counts: the class's layout starts with its parent's).
-  const bool bChanged =
-      Existing &&
-      (Existing->Shape != Shape || Existing->GetSuperClass() != ParentClass);
+
+  const bool bChanged = Existing && (Existing->Shape != Shape ||
+                                     Existing->GetSuperClass() != ParentClass);
+
   if (Existing && (!bChanged || !GClassReinstancer)) {
-    // Update the Rust type ID (may have changed if Rust struct layout changed).
     Existing->RustTypeId = RustTypeId;
     Existing->Library = RustealCurrentLibrary();
 
@@ -417,61 +398,56 @@ static RustealUClassHandle CreateClassImpl(const uint8 *Name, uint32 NameLen,
                   "%llu)"),
              *ClassName, RustTypeId);
     }
+
     return RustealUClassHandle{Existing};
   }
+
   if (Existing) {
     UE_LOG(LogRusteal, Display,
            TEXT("[Rusteal] Hot reload: %s changed, replacing it"), *ClassName);
+
     RetireClass(Existing);
   }
 
-  // --- Normal path: create new class ---
   URustealReifiedClass *NewClass = NewObject<URustealReifiedClass>(
       RustealPackage, FName(*ClassName), RF_Public | RF_Standalone);
 
   NewClass->RustTypeId = RustTypeId;
   NewClass->Library = RustealCurrentLibrary();
   NewClass->Shape = Shape;
+
   if (Existing) {
     GReplacedClasses.Emplace(Existing, NewClass);
   }
 
-  // Walk up to find the native (C++) superclass.
   UClass *NativeSuper = ParentClass;
+
   while (NativeSuper && !NativeSuper->HasAnyClassFlags(CLASS_Native)) {
     NativeSuper = NativeSuper->GetSuperClass();
   }
+
   NewClass->NativeSuperClass = NativeSuper ? NativeSuper : ParentClass;
 
-  // Set up class hierarchy.
   NewClass->SetSuperStruct(ParentClass);
-  // What instances must be created inside (a game instance subsystem's
-  // GameInstance), as the Blueprint compiler copies it.
+
   NewClass->ClassWithin = ParentClass->ClassWithin;
   NewClass->ClassConstructor = &URustealReifiedClass::RustealClassConstructor;
 
-  // Propagate inheritable flags from parent (CLASS_HasInstancedReference,
-  // etc.). Bind() propagates ClassCastFlags but NOT CLASS_Inherit flags.
-  // Exclude config-related flags: dynamically-created classes don't have a
-  // ClassConfigName and would crash in GetConfigName()/LoadConfig().
   constexpr EClassFlags ConfigRelatedFlags =
       EClassFlags(CLASS_Config | CLASS_DefaultConfig | CLASS_PerObjectConfig |
                   CLASS_ConfigDoNotCheckDefaults | CLASS_GlobalUserConfig |
                   CLASS_ProjectUserConfig | CLASS_PerPlatformConfig);
+
   NewClass->ClassFlags |=
       (ParentClass->ClassFlags & CLASS_Inherit & ~ConfigRelatedFlags) |
       CLASS_CompiledFromBlueprint;
 
 #if WITH_EDITORONLY_DATA
-  // Create a stub UBlueprint so that FBlueprintActionDatabase registers
-  // our functions.  Without this, the action database sees our class as a
-  // UBlueprintGeneratedClass with null ClassGeneratedBy and skips it.
-  // The editor's class picker lists the class under this stub's name, so it
-  // is RS_<Class>: recognisable as Rust, never mistaken for a BP_ asset.
-  // A packaged game has neither, as cooked Blueprint classes do not.
+
   UBlueprint *StubBP =
       NewObject<UBlueprint>(RustealPackage, FName(*(TEXT("RS_") + ClassName)),
                             RF_Public | RF_Standalone);
+
   StubBP->GeneratedClass = NewClass;
   StubBP->SkeletonGeneratedClass = NewClass;
   StubBP->ParentClass = ParentClass;
@@ -480,12 +456,9 @@ static RustealUClassHandle CreateClassImpl(const uint8 *Name, uint32 NameLen,
   StubBP->AddToRoot();
   NewClass->ClassGeneratedBy = StubBP;
 
-  // Mark as "cooked" so GetGeneratedClassesHierarchy skips the
-  // BS_Error check (our stub UBlueprint is always up-to-date).
   NewClass->bCooked = true;
 #endif
 
-  // Prevent garbage collection.
   NewClass->AddToRoot();
 
   UE_LOG(
@@ -500,26 +473,24 @@ static RustealFPropertyHandle
 AddPropertyImpl(RustealUClassHandle Cls, const uint8 *Name, uint32 NameLen,
                 uint32 PropType, uint64 PropFlags,
                 const FRustealReifyPropExtra *Extra) {
-  // A class, or a struct (create_struct), whose handle comes as a class's.
   UStruct *Class = static_cast<UStruct *>(Cls.ptr);
+
   if (!Class) {
     return RustealFPropertyHandle{nullptr};
   }
 
   const FName PropName = ReifyUtf8ToFName(Name, NameLen);
 
-  // --- Hot reload path: if a property with this name already exists, reuse it
-  // ---
   for (FProperty *P = Class->PropertyLink; P; P = P->PropertyLinkNext) {
     if (P->GetOwnerStruct() == Class && P->GetFName() == PropName) {
       UE_LOG(LogRusteal, Display,
              TEXT("[Rusteal] Hot reload: reusing existing property %s::%s"),
              *Class->GetName(), *PropName.ToString());
+
       return RustealFPropertyHandle{P};
     }
   }
 
-  // --- Normal path: create new property ---
   FProperty *Prop =
       CreatePropertyByType(FFieldVariant(Class), PropName,
                            static_cast<ERustealReifyPropType>(PropType), Extra);
@@ -529,11 +500,12 @@ AddPropertyImpl(RustealUClassHandle Cls, const uint8 *Name, uint32 NameLen,
   }
 
   Prop->PropertyFlags |= static_cast<EPropertyFlags>(PropFlags);
-  // The element of an array takes the flags UHT passes on to it.
+
   if (FArrayProperty *ArrayProp = CastField<FArrayProperty>(Prop)) {
     ArrayProp->Inner->PropertyFlags |=
         static_cast<EPropertyFlags>(PropFlags) & CPF_PropagateToArrayInner;
   }
+
   Class->AddCppProperty(Prop);
 
   return RustealFPropertyHandle{Prop};
@@ -544,58 +516,51 @@ static RustealUFunctionHandle AddFunctionImpl(RustealUClassHandle Cls,
                                               uint64 CallbackId,
                                               uint32 FuncFlags) {
   UClass *Class = static_cast<UClass *>(Cls.ptr);
+
   if (!Class) {
     return RustealUFunctionHandle{nullptr};
   }
 
   const FString FuncName = ReifyUtf8ToFString(Name, NameLen);
 
-  // --- Hot reload path: if this function already exists, just update the
-  // callback ID. The class's own only: a Rust parent's function of the same
-  // name is the one this overrides. ---
   UFunction *ExistingFunc = Class->FindFunctionByName(
       FName(*FuncName), EIncludeSuperFlag::ExcludeSuper);
+
   if (ExistingFunc) {
     if (URustealReifiedFunction *Reified =
             Cast<URustealReifiedFunction>(ExistingFunc)) {
       Reified->CallbackId = CallbackId;
       Reified->Library = RustealCurrentLibrary();
+
       UE_LOG(
           LogRusteal, Display,
           TEXT(
               "[Rusteal] Hot reload: updated CallbackId for %s::%s (id: %llu)"),
           *Class->GetName(), *FuncName, CallbackId);
+
       return RustealUFunctionHandle{ExistingFunc};
     }
   }
 
-  // --- Normal path: create new function ---
   URustealReifiedFunction *NewFunc = NewObject<URustealReifiedFunction>(
       Class, FName(*FuncName), RF_Public | RF_MarkAsNative);
 
-  // Without FUNC_Native it is a BlueprintImplementableEvent declared in
-  // Rust: no Rust code behind it, a Blueprint child's graph is its body (an
-  // empty script until one overrides it), and Rust calls it by name.
   const bool bScriptEvent =
       !(static_cast<EFunctionFlags>(FuncFlags) & FUNC_Native);
 
   NewFunc->CallbackId = CallbackId;
   NewFunc->Library = RustealCurrentLibrary();
   NewFunc->FunctionFlags = static_cast<EFunctionFlags>(FuncFlags);
+
   if (!bScriptEvent) {
     NewFunc->FunctionFlags |= FUNC_Native;
-    // Set the native function pointer to the thunk.
+
     NewFunc->SetNativeFunc(&URustealReifiedFunction::execCallRustFunction);
   }
 
-  // Link into the class's Children list so TFieldIterator<UFunction> can
-  // discover it (used by Blueprint action menu, StaticLink, etc.).
   NewFunc->Next = Class->Children;
   Class->Children = NewFunc;
 
-  // For Override functions (BlueprintEvent), copy parameter definitions from
-  // the parent class's function. This way the macro doesn't need to know how
-  // to register struct/complex parameter types — they're inherited from UHT.
   if (!bScriptEvent &&
       (static_cast<EFunctionFlags>(FuncFlags) & FUNC_BlueprintEvent)) {
     UFunction *ParentFunc =
@@ -605,17 +570,18 @@ static RustealUFunctionHandle AddFunctionImpl(RustealUClassHandle Cls,
 
     if (ParentFunc) {
       CopyParamsFromParentFunction(NewFunc, ParentFunc);
+
       UE_LOG(LogRusteal, Display,
              TEXT("[Rusteal] Override %s::%s: copied params from parent %s"),
              *Class->GetName(), *FuncName, *ParentFunc->GetOuter()->GetName());
     }
   }
 
-  // Register the native function name for the VM.
   if (!bScriptEvent) {
     Class->AddNativeFunction(*FuncName,
                              &URustealReifiedFunction::execCallRustFunction);
   }
+
   Class->AddFunctionToFunctionMap(NewFunc, NewFunc->GetFName());
 
   return RustealUFunctionHandle{NewFunc};
@@ -627,13 +593,13 @@ AddFunctionParamImpl(RustealUFunctionHandle Func, const uint8 *Name,
                      const FRustealReifyPropExtra *Extra) {
   URustealReifiedFunction *Function =
       Cast<URustealReifiedFunction>(static_cast<UFunction *>(Func.ptr));
+
   if (!Function) {
     return ERustealErrorCode::NullArgument;
   }
 
   const FName ParamName = ReifyUtf8ToFName(Name, NameLen);
 
-  // --- Hot reload path: if a param with this name already exists, reuse it ---
   for (FField *Field = Function->ChildProperties; Field; Field = Field->Next) {
     if (FProperty *Existing = CastField<FProperty>(Field)) {
       if (Existing->GetFName() == ParamName) {
@@ -642,7 +608,6 @@ AddFunctionParamImpl(RustealUFunctionHandle Func, const uint8 *Name,
     }
   }
 
-  // --- Normal path: create new parameter property ---
   FProperty *Param =
       CreatePropertyByType(FFieldVariant(Function), ParamName,
                            static_cast<ERustealReifyPropType>(PropType), Extra);
@@ -651,24 +616,22 @@ AddFunctionParamImpl(RustealUFunctionHandle Func, const uint8 *Name,
     return ERustealErrorCode::InternalError;
   }
 
-  // Set parameter flags (CPF_Parm must always be set for function parameters).
   Param->PropertyFlags |= static_cast<EPropertyFlags>(ParamFlags) | CPF_Parm;
+
   if (Param->HasAnyPropertyFlags(CPF_OutParm) &&
       !Param->HasAnyPropertyFlags(CPF_ReturnParm)) {
     Function->FunctionFlags |= FUNC_HasOutParms;
   }
 
-  // Append to the END of ChildProperties instead of using AddCppProperty
-  // (which prepends). This keeps parameters in declaration order, matching
-  // UHT convention. The Blueprint compiler, bytecode VM, and our thunk all
-  // iterate ChildProperties in linked-list order, so they must agree.
   if (Function->ChildProperties == nullptr) {
     Function->ChildProperties = Param;
   } else {
     FField *Last = Function->ChildProperties;
+
     while (Last->Next) {
       Last = Last->Next;
     }
+
     Last->Next = Param;
   }
 
@@ -678,22 +641,21 @@ AddFunctionParamImpl(RustealUFunctionHandle Func, const uint8 *Name,
 static ERustealErrorCode FinalizeClassImpl(RustealUClassHandle Cls) {
   URustealReifiedClass *Class =
       Cast<URustealReifiedClass>(static_cast<UClass *>(Cls.ptr));
+
   if (!Class) {
     return ERustealErrorCode::NullArgument;
   }
 
-  // Rust writes the class defaults next.
   Class->InvalidateCustomPropertyList();
 
-  // Hot reload path: if already finalized (Bind/StaticLink done), skip.
   if (Class->HasAnyClassFlags(CLASS_Constructed)) {
     UE_LOG(LogRusteal, Display,
            TEXT("[Rusteal] Hot reload: class %s already finalized, skipping"),
            *Class->GetName());
+
     return ERustealErrorCode::Ok;
   }
 
-  // Finalize function parameter layouts: Bind → StaticLink each function.
   for (TFieldIterator<UFunction> FuncIt(Class,
                                         EFieldIteratorFlags::ExcludeSuper);
        FuncIt; ++FuncIt) {
@@ -702,31 +664,19 @@ static ERustealErrorCode FinalizeClassImpl(RustealUClassHandle Cls) {
     Func->StaticLink(true);
   }
 
-  // Finalize the class itself.
   Class->Bind();
   Class->StaticLink(true);
 
-  // Build the GC reference token stream so the garbage collector can
-  // properly trace UObject* references within instances of this class.
   Class->AssembleReferenceTokenStream(true);
 
-  // Register it as compiled-in classes are: a packaged game's loader resolves
-  // a cooked asset's import of a /Script class (a data asset of this class)
-  // from these, the class default object included, which UClass registers
-  // itself.
   NotifyRegistrationEvent(Class->GetOutermost()->GetFName(), Class->GetFName(),
                           ENotifyRegistrationType::NRT_Class,
-                          ENotifyRegistrationPhase::NRP_Finished, nullptr, false,
-                          Class);
+                          ENotifyRegistrationPhase::NRP_Finished, nullptr,
+                          false, Class);
 
-  // Force CDO creation and run BPGC post-load initialization
-  // (builds CustomPropertyListForPostConstruction, etc.).
   UObject *CDO = Class->GetDefaultObject(true);
   Class->PostLoadDefaultObject(CDO);
 
-  // Enable ticking if this class overrides ReceiveTick.
-  // Some native classes (e.g. AGameModeBase) set bCanEverTick=false in their
-  // C++ constructor, which makes SetActorTickEnabled(true) silently fail.
   if (AActor *ActorCDO = Cast<AActor>(CDO)) {
     for (TFieldIterator<UFunction> FuncIt(Class,
                                           EFieldIteratorFlags::ExcludeSuper);
@@ -734,10 +684,12 @@ static ERustealErrorCode FinalizeClassImpl(RustealUClassHandle Cls) {
       if ((*FuncIt)->GetFName() == FName(TEXT("ReceiveTick"))) {
         ActorCDO->PrimaryActorTick.bCanEverTick = true;
         ActorCDO->PrimaryActorTick.bStartWithTickEnabled = true;
+
         UE_LOG(LogRusteal, Display,
                TEXT("[Rusteal] Enabled tick for %s (ReceiveTick override "
                     "detected)"),
                *Class->GetName());
+
         break;
       }
     }
@@ -749,23 +701,27 @@ static ERustealErrorCode FinalizeClassImpl(RustealUClassHandle Cls) {
       *Class->GetName(), Class->GetPropertiesSize(),
       Class->GetSuperClass() ? Class->GetSuperClass()->GetPropertiesSize() : 0);
 
-  // Validate property chain integrity.
   int32 PropCount = 0;
+
   for (FProperty *P = Class->PropertyLink; P; P = P->PropertyLinkNext) {
     if (P->GetOwnerClass() == Class) {
       UE_LOG(LogRusteal, Display,
              TEXT("[Rusteal]   Property: %s offset=%d size=%d"), *P->GetName(),
              P->GetOffset_ForInternal(), P->GetSize());
     }
+
     PropCount++;
+
     if (PropCount > 10000) {
       UE_LOG(
           LogRusteal, Error,
           TEXT(
               "[Rusteal] PropertyLink chain appears corrupt (>10000 entries)"));
+
       break;
     }
   }
+
   UE_LOG(LogRusteal, Display, TEXT("[Rusteal]   Total properties in chain: %d"),
          PropCount);
 
@@ -774,15 +730,13 @@ static ERustealErrorCode FinalizeClassImpl(RustealUClassHandle Cls) {
 
 static RustealUObjectHandle GetCdoImpl(RustealUClassHandle Cls) {
   UClass *Class = static_cast<UClass *>(Cls.ptr);
+
   if (!Class) {
     return RustealUObjectHandle{nullptr};
   }
+
   return RustealUObjectHandle{Class->GetDefaultObject()};
 }
-
-// ---------------------------------------------------------------------------
-// Default subobject registration
-// ---------------------------------------------------------------------------
 
 static ERustealErrorCode AddDefaultSubobjectImpl(
     RustealUClassHandle Cls, const uint8 *Name, uint32 NameLen,
@@ -791,10 +745,12 @@ static ERustealErrorCode AddDefaultSubobjectImpl(
     const uint8 *AttachSocket, uint32 SocketLen) {
   URustealReifiedClass *RC =
       Cast<URustealReifiedClass>(static_cast<UClass *>(Cls.ptr));
+
   if (!RC)
     return ERustealErrorCode::InvalidCast;
 
   UClass *CompUClass = static_cast<UClass *>(CompClass.ptr);
+
   if (!CompUClass)
     return ERustealErrorCode::PropertyNotFound;
 
@@ -803,37 +759,37 @@ static ERustealErrorCode AddDefaultSubobjectImpl(
   Def.ComponentClass = CompUClass;
   Def.bIsRoot = (Flags & 1) != 0;
   Def.bIsTransient = (Flags & 2) != 0;
+
   Def.AttachParentName =
       AttachLen > 0 ? FName(ReifyUtf8ToFString(AttachParent, AttachLen))
                     : NAME_None;
+
   Def.AttachSocketName =
       SocketLen > 0 ? FName(ReifyUtf8ToFString(AttachSocket, SocketLen))
                     : NAME_None;
 
-  // Hot reload: avoid duplicate defs
   RC->ComponentDefs.RemoveAll([&](const FRustealComponentDef &D) {
     return D.SubobjectName == Def.SubobjectName;
   });
+
   UE_LOG(LogRusteal, Display,
          TEXT("[Rusteal] Registered default subobject '%s' (class: %s) on %s"),
          *Def.SubobjectName.ToString(), *CompUClass->GetName(), *RC->GetName());
 
-  // Reference the component from a property, as a C++
-  // `UPROPERTY(VisibleAnywhere) UFooComponent* Name` does: named as the
-  // subobject unless the class gives it its own name. The editor saves,
-  // shows and reinstances a class's components through these references;
-  // without one, a Blueprint child drops the component when the editor
-  // regenerates it (TP-GAP-04).
   Def.PropertyName = PropertyLen > 0 ? ReifyUtf8ToFName(Property, PropertyLen)
                                      : Def.SubobjectName;
+
   if (!FindFProperty<FProperty>(RC, Def.PropertyName)) {
     FObjectProperty *CompProp =
         new FObjectProperty(FFieldVariant(RC), Def.PropertyName);
+
     CompProp->PropertyClass = CompUClass;
+
     CompProp->PropertyFlags |= CPF_Edit | CPF_EditConst | CPF_BlueprintVisible |
                                CPF_BlueprintReadOnly | CPF_ExportObject |
                                CPF_InstancedReference | CPF_ZeroConstructor |
                                CPF_NoDestructor;
+
 #if WITH_EDITORONLY_DATA
     CompProp->SetMetaData(TEXT("EditInline"), TEXT("true"));
 #endif
@@ -849,6 +805,7 @@ static RustealUObjectHandle FindDefaultSubobjectImpl(RustealUObjectHandle Owner,
                                                      const uint8 *Name,
                                                      uint32 NameLen) {
   UObject *Obj = static_cast<UObject *>(Owner.ptr);
+
   if (!Obj)
     return RustealUObjectHandle{nullptr};
 
@@ -861,43 +818,45 @@ static ERustealErrorCode
 SetPropertyMetadataImpl(RustealFPropertyHandle Prop, const uint8 *Key,
                         uint32 KeyLen, const uint8 *Value, uint32 ValueLen) {
   FProperty *Property = static_cast<FProperty *>(Prop.ptr);
+
   if (!Property) {
     return ERustealErrorCode::NullArgument;
   }
+
 #if WITH_EDITORONLY_DATA
+
   Property->SetMetaData(ReifyUtf8ToFName(Key, KeyLen),
                         ReifyUtf8ToFString(Value, ValueLen));
+
 #endif
   return ERustealErrorCode::Ok;
 }
-
-// ---------------------------------------------------------------------------
-// FRustealDeleteListener — Notifies Rust when a reified-class instance is GC'd
-// ---------------------------------------------------------------------------
 
 class FRustealDeleteListener : public FUObjectArray::FUObjectDeleteListener {
 public:
   virtual void NotifyUObjectDeleted(const UObjectBase *Object,
                                     int32 Index) override {
-    // Only handle objects of a reified class or of a Blueprint child of one.
-    // Each library drops the data of every one of its Rust classes the object
-    // is, so it is called once, with its most derived class.
     const TArray<URustealReifiedClass *> Chain =
         URustealReifiedClass::ReifiedChain(Object->GetClass());
+
     TArray<FRustealLibrary *, TInlineAllocator<2>> Dropped;
+
     for (int32 ChainIndex = Chain.Num() - 1; ChainIndex >= 0; --ChainIndex) {
       const URustealReifiedClass *ReifiedClass = Chain[ChainIndex];
       FRustealLibrary *Library = ReifiedClass->Library;
+
       if (Dropped.Contains(Library)) {
         continue;
       }
+
       Dropped.Add(Library);
-      RustealCallLibrary(Library, [Object, ReifiedClass](
-                                      const FRustealRustCallbacks &Cb) {
-        Cb.drop_rust_instance(
-            RustealUObjectHandle{const_cast<UObjectBase *>(Object)},
-            ReifiedClass->RustTypeId, nullptr);
-      });
+
+      RustealCallLibrary(
+          Library, [Object, ReifiedClass](const FRustealRustCallbacks &Cb) {
+            Cb.drop_rust_instance(
+                RustealUObjectHandle{const_cast<UObjectBase *>(Object)},
+                ReifiedClass->RustTypeId, nullptr);
+          });
     }
   }
 
@@ -916,55 +875,50 @@ void RustealReifyUnregisterDeleteListener() {
   GUObjectArray.RemoveUObjectDeleteListener(&GDeleteListener);
 }
 
-// ---------------------------------------------------------------------------
-// Hot reload helpers (called from RustealModule.cpp)
-// ---------------------------------------------------------------------------
-
 void RustealReifyForEachReifiedInstance(
     TFunctionRef<void(UObject *, URustealReifiedClass *)> Callback) {
-  // Class default objects included: they have Rust data too, which a
-  // #[class_defaults] method and get_default() use.
-  for (FThreadSafeObjectIterator It; It; ++It) {
-    UObject *Obj = static_cast<UObject *>(*It);
-    for (URustealReifiedClass *ReifiedClass :
-         URustealReifiedClass::ReifiedChain(Obj->GetClass())) {
+  TArray<UObject *> Objects;
+
+  for (TObjectIterator<URustealReifiedClass> ClassIt; ClassIt; ++ClassIt) {
+    URustealReifiedClass *ReifiedClass = *ClassIt;
+    Objects.Reset();
+
+    GetObjectsOfClass(ReifiedClass, Objects, true, RF_NoFlags);
+
+    for (UObject *Obj : Objects) {
       Callback(Obj, ReifiedClass);
     }
   }
 }
 
-// ---------------------------------------------------------------------------
-// Structs declared in Rust (#[ustruct])
-// ---------------------------------------------------------------------------
-
-// The shape each Rust struct was created with (create_struct).
 static TMap<TWeakObjectPtr<UScriptStruct>, uint64> GStructShapes;
 
-static RustealUStructHandle CreateStructImpl(const uint8 *Name,
-                                             uint32 NameLen, uint64 Shape) {
+static RustealUStructHandle CreateStructImpl(const uint8 *Name, uint32 NameLen,
+                                             uint64 Shape) {
   UPackage *RustealPackage = RustealCurrentPackage();
   const FName StructName = ReifyUtf8ToFName(Name, NameLen);
 
-  // Hot reload: the struct of the previous load, which its properties are
-  // added to again by name (AddPropertyImpl reuses them). Structs are not
-  // reinstanced: one whose fields changed keeps its old ones.
   if (UScriptStruct *Existing =
           FindObject<UScriptStruct>(RustealPackage, *StructName.ToString())) {
     const uint64 *OldShape = GStructShapes.Find(Existing);
+
     if (OldShape && *OldShape != Shape) {
-      UE_LOG(LogRusteal, Warning,
-             TEXT("[Rusteal] Hot reload: the fields of struct %s changed, which "
-                  "a hot reload does not apply: restart the editor to use them."),
-             *StructName.ToString());
+      UE_LOG(
+          LogRusteal, Warning,
+          TEXT("[Rusteal] Hot reload: the fields of struct %s changed, which "
+               "a hot reload does not apply: restart the editor to use them."),
+          *StructName.ToString());
     }
+
     return RustealUStructHandle{Existing};
   }
 
   UScriptStruct *NewStruct = NewObject<UScriptStruct>(
       RustealPackage, StructName, RF_Public | RF_Standalone);
+
   GStructShapes.Add(NewStruct, Shape);
 #if WITH_EDITORONLY_DATA
-  // A data table can take it as its row structure, a Blueprint as a variable.
+
   NewStruct->SetMetaData(TEXT("BlueprintType"), TEXT("true"));
 #endif
   return RustealUStructHandle{NewStruct};
@@ -972,49 +926,49 @@ static RustealUStructHandle CreateStructImpl(const uint8 *Name,
 
 static ERustealErrorCode FinalizeStructImpl(RustealUStructHandle Handle) {
   UScriptStruct *Struct = static_cast<UScriptStruct *>(Handle.ptr);
+
   if (!Struct) {
     return ERustealErrorCode::NullArgument;
   }
+
   if (Struct->GetStructureSize() > 0) {
-    return ERustealErrorCode::Ok; // linked already (an outer struct's turn)
+    return ERustealErrorCode::Ok;
   }
-  // A Rust struct this one holds is linked first: its size is part of this
-  // one's layout. Engine structs are always linked; a Rust one not yet has
-  // no size.
-  for (TFieldIterator<FStructProperty> It(Struct, EFieldIteratorFlags::ExcludeSuper);
+
+  for (TFieldIterator<FStructProperty> It(Struct,
+                                          EFieldIteratorFlags::ExcludeSuper);
        It; ++It) {
     if (It->Struct && It->Struct->GetStructureSize() == 0) {
       FinalizeStructImpl(RustealUStructHandle{It->Struct});
     }
   }
+
   Struct->Bind();
   Struct->StaticLink(true);
   Struct->PrepareCppStructOps();
-  // As for classes: cooked assets import it by its /Script path.
-  NotifyRegistrationEvent(Struct->GetOutermost()->GetFName(), Struct->GetFName(),
-                          ENotifyRegistrationType::NRT_Struct,
-                          ENotifyRegistrationPhase::NRP_Finished, nullptr, false,
-                          Struct);
+
+  NotifyRegistrationEvent(
+      Struct->GetOutermost()->GetFName(), Struct->GetFName(),
+      ENotifyRegistrationType::NRT_Struct,
+      ENotifyRegistrationPhase::NRP_Finished, nullptr, false, Struct);
+
   UE_LOG(LogRusteal, Display, TEXT("[Rusteal] Finalized struct: %s (size: %d)"),
          *Struct->GetName(), Struct->GetStructureSize());
+
   return ERustealErrorCode::Ok;
 }
 
-// A multicast delegate a Rust class declares (#[udelegate]): its signature
-// function, named as UHT names one (<Name>__DelegateSignature) and holding the
-// parameters, and the property holding the delegate, which Blueprints bind
-// (BlueprintAssignable) and call (BlueprintCallable).
 static RustealUFunctionHandle AddDelegateImpl(RustealUClassHandle Cls,
-                                              const uint8 *Name,
-                                              uint32 NameLen,
+                                              const uint8 *Name, uint32 NameLen,
                                               uint64 PropFlags) {
   UClass *Class = static_cast<UClass *>(Cls.ptr);
+
   if (!Class) {
     return RustealUFunctionHandle{nullptr};
   }
+
   const FName PropName = ReifyUtf8ToFName(Name, NameLen);
 
-  // Hot reload: the class keeps its property and signature.
   for (TFieldIterator<FMulticastDelegateProperty> It(
            Class, EFieldIteratorFlags::ExcludeSuper);
        It; ++It) {
@@ -1025,116 +979,122 @@ static RustealUFunctionHandle AddDelegateImpl(RustealUClassHandle Cls,
 
   const FName SignatureName(
       *FString::Printf(TEXT("%s__DelegateSignature"), *PropName.ToString()));
+
   URustealReifiedFunction *Signature =
       NewObject<URustealReifiedFunction>(Class, SignatureName, RF_Public);
+
   Signature->FunctionFlags =
       FUNC_Public | FUNC_Delegate | FUNC_MulticastDelegate;
+
   Signature->CallbackId = 0;
-  // In the class's children, so the class links it with its functions.
+
   Signature->Next = Class->Children;
   Class->Children = Signature;
 
-  FMulticastInlineDelegateProperty *Prop =
-      new FMulticastInlineDelegateProperty(FFieldVariant(Class), PropName,
-                                           RF_Public);
+  FMulticastInlineDelegateProperty *Prop = new FMulticastInlineDelegateProperty(
+      FFieldVariant(Class), PropName, RF_Public);
+
   Prop->SignatureFunction = Signature;
+
   Prop->PropertyFlags |= CPF_BlueprintAssignable | CPF_BlueprintCallable |
                          static_cast<EPropertyFlags>(PropFlags);
+
   Class->AddCppProperty(Prop);
 
   return RustealUFunctionHandle{Signature};
 }
 
-// Interfaces Rust classes implement, by class path. Rust classes are created
-// while the Rusteal module starts, before game modules and assets load, so
-// the interfaces are resolved once the engine is initialized (at once after
-// that, as on a hot reload).
 static TArray<TPair<TWeakObjectPtr<UClass>, FString>> GPendingInterfaces;
 static bool GInterfacesResolvable = false;
 
 static void ResolveInterface(UClass *Class, const FString &Path) {
   UClass *Interface = LoadClass<UInterface>(nullptr, *Path);
+
   if (!Interface || !Interface->HasAnyClassFlags(CLASS_Interface)) {
     UE_LOG(LogRusteal, Error,
            TEXT("[Rusteal] %s implements %s: no interface at that path"),
            *Class->GetName(), *Path);
+
     return;
   }
+
 #if WITH_METADATA
+
   if (Interface->HasMetaData(TEXT("CannotImplementInterfaceInBlueprint"))) {
     UE_LOG(LogRusteal, Error,
            TEXT("[Rusteal] %s implements %s: a C++-only interface (its "
                 "functions are not Blueprint events), which only C++ can "
                 "implement"),
            *Class->GetName(), *Path);
+
     return;
   }
+
 #endif
+
   if (Class->ImplementsInterface(Interface)) {
     return;
   }
-  // As a Blueprint implements one: no C++ vtable (offset 0), its functions
-  // are found by name and called through ProcessEvent.
+
   Class->Interfaces.Add(FImplementedInterface(Interface, 0, true));
+
   UE_LOG(LogRusteal, Display, TEXT("[Rusteal] %s implements %s"),
          *Class->GetName(), *Interface->GetPathName());
 }
 
 static void ResolvePendingInterfaces() {
   GInterfacesResolvable = true;
+
   for (const TPair<TWeakObjectPtr<UClass>, FString> &Pending :
        GPendingInterfaces) {
     if (UClass *Class = Pending.Key.Get()) {
       ResolveInterface(Class, Pending.Value);
     }
   }
+
   GPendingInterfaces.Empty();
 }
 
 static ERustealErrorCode AddInterfaceImpl(RustealUClassHandle Cls,
                                           const uint8 *Path, uint32 PathLen) {
   UClass *Class = static_cast<UClass *>(Cls.ptr);
+
   if (!Class || !Path) {
     return ERustealErrorCode::NullArgument;
   }
+
   const FString InterfacePath = ReifyUtf8ToFString(Path, PathLen);
+
   if (GInterfacesResolvable || (GEngine && GEngine->IsInitialized())) {
     GInterfacesResolvable = true;
     ResolveInterface(Class, InterfacePath);
     return ERustealErrorCode::Ok;
   }
+
   if (GPendingInterfaces.IsEmpty()) {
     FCoreDelegates::OnPostEngineInit.AddStatic(&ResolvePendingInterfaces);
   }
+
   GPendingInterfaces.Emplace(Class, InterfacePath);
   return ERustealErrorCode::Ok;
 }
 
-// ---------------------------------------------------------------------------
-// Export the API table
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// Config classes (project settings)
-// ---------------------------------------------------------------------------
-
-// A class created at runtime has no ClassConfigName, which is why
-// CreateClassImpl leaves the parent's config flags out: they come back here,
-// with the ini files Rust names. Called once the class defaults are written,
-// so the ini values override them.
 static ERustealErrorCode SetClassConfigImpl(RustealUClassHandle Cls,
-                                            const uint8 *Name,
-                                            uint32 NameLen) {
+                                            const uint8 *Name, uint32 NameLen) {
   URustealReifiedClass *Class =
       Cast<URustealReifiedClass>(static_cast<UClass *>(Cls.ptr));
+
   if (!Class || !Name || NameLen == 0) {
     return ERustealErrorCode::NullArgument;
   }
+
   Class->ClassConfigName = ReifyUtf8ToFName(Name, NameLen);
   Class->ClassFlags |= CLASS_Config | CLASS_DefaultConfig;
+
   if (UObject *CDO = Class->GetDefaultObject(false)) {
     CDO->LoadConfig();
   }
+
   return ERustealErrorCode::Ok;
 }
 

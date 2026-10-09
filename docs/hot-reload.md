@@ -10,14 +10,20 @@ way it is. The commands are in the README, [Hot Reload](../README.md#hot-reload)
 1. The Rust data of every object of the library's classes is dropped. The
    UE properties (`#[uproperty]`) live in the objects' memory and stay;
    Rust-private fields start over from `Default`.
-2. The library is unloaded and the deployed file is loaded again, from a
-   numbered copy (`librusteal_hot_N.so`), so a build can always overwrite the
-   deployed file.
+2. The library is unloaded and the deployed file is loaded again, through a
+   numbered file (`librusteal_hot_N.so`), so a build can always replace the
+   deployed one. On Linux and macOS it is a hard link, made in no time
+   whatever the library's size; on Windows, where a loaded DLL's file stays
+   locked, a copy. A link is safe because the deploy step replaces the
+   deployed file with a new one rather than writing into it: copying a
+   library over the deployed file by hand would change the loaded one.
 3. `rusteal_init` registers the library's classes again. A class whose
    **shape** is unchanged is reused: its functions point to the new code. A
    class whose shape changed is replaced (below).
 4. The objects of the replaced classes are reinstanced.
 5. Every object of the library's classes gets its Rust data again.
+
+The Output Log ends each reload with how long it took, phase by phase.
 
 ## Reloading on deploy
 
@@ -30,7 +36,7 @@ says so in an editor notification. `Rusteal.AutoReload 0` turns it off;
 
 The deploy step copies the library next to the deployed file
 (`librusteal.so.partial`) and renames it over it, so the watcher never sees
-a half-written library. The numbered copies a reload loads and the partial
+a half-written library. The numbered files a reload loads and the partial
 file sit in the same directory and are ignored: only the deployed file
 counts.
 
@@ -109,8 +115,9 @@ classes to `FReload`, an editor class of the engine:
 - `NotifyChange(New, Old)` for each changed class, then `Reinstance()`: the
   engine reinstances the objects (actors in the level included), the default
   object, and the Blueprint children of the old class, which it reparents to
-  the new one and recompiles; `Finalize()` replaces the remaining references
-  and collects the old objects.
+  the new one and recompiles; `Finalize()` replaces the remaining references.
+  Rusteal skips its garbage collection: the old objects go with the engine's
+  next one, rather than a full collection stalling every reload.
 
 The RustealEditor module does exactly that
 (`ue_plugin/Rusteal/Source/RustealEditor/Private/RustealEditorModule.cpp`),
@@ -129,8 +136,13 @@ is known:
 - **Structs** (`#[ustruct]`) are not reinstanced (above).
 - **Rust-private fields** start over on every reload, changed or not.
 - Removing a property or a function that a Blueprint uses breaks that
-  Blueprint's nodes, as it would for a C++ class; the Blueprint shows the
-  errors after its recompile.
+  Blueprint's nodes, as it would for a C++ class: the node gets a compile
+  error, and putting the function back clears it. The engine only recompiles
+  a replaced class's Blueprint children, so the RustealEditor module also
+  recompiles the loaded Blueprints whose nodes use the class without deriving
+  from it (a Level Blueprint calling one of its functions). Without that,
+  their old bytecode called the removed function by name, and the engine
+  stopped with a fatal error on Play.
 
 ## Tested
 
@@ -147,10 +159,15 @@ editor:
   session, with no reference to a retired class;
 - a Rusteal plugin's class changed: reloading the plugin's library
   reinstances it and leaves the game's library alone;
+- a Level Blueprint calling a function of a Blueprint child of a Rust class:
+  the function removed, its node is a compile error and Play In Editor runs;
+  the function back, the Level Blueprint calls it again;
 - reloading on deploy, and `Rusteal.AutoReload 0`;
 - `rusteal watch` with the editor open: saving the file is enough; a build
   that fails keeps the watch going.
 
-Not tested yet: a reload during Play In Editor, a Blueprint whose graph uses a
-removed property or function, a changed parent class, interfaces, components
-added or removed, Windows and macOS.
+By hand, in a Third Person project: logic and structure changes reloaded
+during Play In Editor.
+
+Not tested yet: a changed parent class, interfaces, components added or
+removed, Windows and macOS.

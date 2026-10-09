@@ -1,15 +1,8 @@
-// The generated crate's `prelude`: the engine types a game reaches for first.
-//
-// A curated list, feature-gated exactly like the modules it draws from — never
-// a glob of the generated modules, which would bring thousands of names and
-// collide across extension traits.
-
 use std::collections::HashSet;
 use std::path::Path;
 
 use crate::context::CodegenContext;
 
-/// One prelude entry: the feature that must be on, and the `use` path.
 const ENTRIES: &[(&str, &str)] = &[
     (
         "core",
@@ -36,11 +29,23 @@ const ENTRIES: &[(&str, &str)] = &[
     ("core", "crate::manual::color::OwnedFColorExt"),
     ("core", "crate::manual::plane::OwnedFPlaneExt"),
     ("core", "crate::manual::ue_box2d::OwnedFBox2DExt"),
-    ("engine", "crate::engine::{Actor, ActorExt, World, WorldExt}"),
-    ("engine", "crate::manual::world_ext::{ObjectWorldExt, WorldSpawnExt, find_object, load_object}"),
+    (
+        "engine",
+        "crate::engine::{Actor, ActorExt, World, WorldExt}",
+    ),
+    (
+        "engine",
+        "crate::manual::world_ext::{ObjectWorldExt, WorldSpawnExt, find_object, load_object}",
+    ),
     ("engine", "crate::manual::collision::object_type_query"),
-    ("engine", "crate::manual::data_table::{DataTableRowHandleRowExt, find_data_table_row}"),
-    ("umg", "crate::manual::widget_ext::{create_widget, create_widget_of_class}"),
+    (
+        "engine",
+        "crate::manual::data_table::{DataTableRowHandleRowExt, find_data_table_row}",
+    ),
+    (
+        "umg",
+        "crate::manual::widget_ext::{create_widget, create_widget_of_class}",
+    ),
     ("input", "crate::input_core::FKey"),
     ("input", "crate::manual::fkey::FKeyExt"),
     (
@@ -49,8 +54,6 @@ const ENTRIES: &[(&str, &str)] = &[
     ),
 ];
 
-/// Write `src/prelude.rs`, keeping only the entries whose feature exists in
-/// this generation (a feature no module maps to would never compile).
 pub fn write_prelude(src_dir: &Path, ctx: &CodegenContext) {
     let available: HashSet<&str> = ctx
         .enabled_modules
@@ -66,14 +69,19 @@ pub fn write_prelude(src_dir: &Path, ctx: &CodegenContext) {
          //     use rusteal_runtime::prelude::*;\n\
          //     use bindings::prelude::*;\n\n",
     );
+
     for (feature, path) in ENTRIES {
         if !available.contains(feature) {
             continue;
         }
-        out.push_str(&format!("#[cfg(feature = \"{feature}\")]\npub use {path};\n"));
+
+        out.push_str(&format!(
+            "#[cfg(feature = \"{feature}\")]\npub use {path};\n"
+        ));
     }
 
     let path = src_dir.join("prelude.rs");
+
     crate::write_if_changed(&path, &out)
         .unwrap_or_else(|e| panic!("Failed to write {}: {e}", path.display()));
 }

@@ -1,5 +1,3 @@
-// LinearColor ↔ OwnedStruct<FLinearColor> conversions.
-
 use rusteal_core::{LinearColor, OwnedStruct};
 
 use crate::core_ue::{FLinearColor, FLinearColorExt};
@@ -11,6 +9,7 @@ pub trait OwnedFLinearColorExt {
 impl OwnedFLinearColorExt for OwnedStruct<FLinearColor> {
     fn to_linear_color(&self) -> LinearColor {
         let r = self.as_ref();
+
         LinearColor::new(r.get_r(), r.get_g(), r.get_b(), r.get_a())
     }
 }
@@ -23,6 +22,7 @@ impl FLinearColor {
         r.set_g(c.g);
         r.set_b(c.b);
         r.set_a(c.a);
+
         s
     }
 }

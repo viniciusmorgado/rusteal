@@ -1,5 +1,3 @@
-// Rust class generation: marker types, UeClass trait, properties, functions.
-
 use std::collections::HashSet;
 
 use crate::context::{CodegenContext, FuncEntry};
@@ -12,41 +10,47 @@ use super::delegates;
 use super::param_helpers;
 use super::properties::{self, PropertyContext};
 
-/// Generate Rust code for a single UE class.
 pub fn generate_class(class: &ClassInfo, ctx: &CodegenContext) -> String {
     let mut out = String::with_capacity(8192);
 
-    // Import traits and types from own module and all other enabled modules
     out.push_str("use super::*;\n");
-    out.push_str("use rusteal_core::{UeClass, UeStruct, UeEnum, UeHandle, ValidHandle, Pinned, Checked};\n");
-    let current_module = ctx.package_to_module.get(&class.package).map(|s| s.as_str()).unwrap_or("");
-    // Sorted: the generated crate is versioned with the project, so the output
-    // has to be the same on every run (enabled_modules is a HashSet).
+
+    out.push_str(
+        "use rusteal_core::{UeClass, UeStruct, UeEnum, UeHandle, ValidHandle, Pinned, Checked};\n",
+    );
+
+    let current_module = ctx
+        .package_to_module
+        .get(&class.package)
+        .map(|s| s.as_str())
+        .unwrap_or("");
+
     let mut modules: Vec<&String> = ctx.enabled_modules.iter().collect();
     modules.sort();
+
     for module in modules {
         if module != current_module {
             if let Some(feature) = ctx.feature_for_module(module) {
                 out.push_str(&format!("#[cfg(feature = \"{feature}\")]\n"));
             }
+
             out.push_str(&format!("use crate::{module}::*;\n"));
         }
     }
+
     out.push('\n');
 
-    let name = &class.name;         // e.g., "Actor"
-    let cpp_name = &class.cpp_name; // e.g., "AActor"
+    let name = &class.name;
+    let cpp_name = &class.cpp_name;
 
-    // Use the JSON `name` as the Rust struct name.
-    // This keeps it consistent with UE naming (Actor, Pawn, etc.)
     out.push_str(&format!(
         "/// UE class `{cpp_name}`.\n\
          pub struct {name};\n\n"
     ));
 
-    // UeClass trait impl
     let name_bytes_len = name.len();
     let byte_lit = format!("b\"{}\\0\"", name);
+
     out.push_str(&format!(
         "impl rusteal_core::UeClass for {name} {{\n\
          \x20   fn static_class() -> rusteal_core::UClassHandle {{\n\
@@ -58,19 +62,23 @@ pub fn generate_class(class: &ClassInfo, ctx: &CodegenContext) -> String {
          }}\n\n"
     ));
 
-    // HasParent impl (must come before early-return — a class with no own
-    // members still needs HasParent for the Deref chain)
     if let Some(parent) = &class.super_class
         && ctx.classes.contains_key(parent.as_str())
     {
-        // Cfg-gate if parent is in a different module
         let parent_class = ctx.classes.get(parent.as_str()).unwrap();
-        let parent_module = ctx.package_to_module.get(&parent_class.package)
-            .map(|s| s.as_str()).unwrap_or("");
+
+        let parent_module = ctx
+            .package_to_module
+            .get(&parent_class.package)
+            .map(|s| s.as_str())
+            .unwrap_or("");
+
         if parent_module != current_module
-            && let Some(feature) = ctx.feature_for_module(parent_module) {
-                out.push_str(&format!("#[cfg(feature = \"{feature}\")]\n"));
-            }
+            && let Some(feature) = ctx.feature_for_module(parent_module)
+        {
+            out.push_str(&format!("#[cfg(feature = \"{feature}\")]\n"));
+        }
+
         out.push_str(&format!(
             "impl rusteal_core::HasParent for {name} {{\n\
              \x20   type Parent = {parent};\n\
@@ -78,52 +86,52 @@ pub fn generate_class(class: &ClassInfo, ctx: &CodegenContext) -> String {
         ));
     }
 
-    // Inherits: the class is itself and each of its ancestors, for
-    // `UObjectRef::upcast_to`.
     let mut ancestor = Some(name.as_str());
+
     while let Some(class_name) = ancestor {
         let Some(ancestor_class) = ctx.classes.get(class_name) else {
             break;
         };
+
         let ancestor_module = ctx
             .package_to_module
             .get(&ancestor_class.package)
             .map(|s| s.as_str())
             .unwrap_or("");
+
         if ancestor_module != current_module
             && let Some(feature) = ctx.feature_for_module(ancestor_module)
         {
             out.push_str(&format!("#[cfg(feature = \"{feature}\")]\n"));
         }
-        out.push_str(&format!("impl rusteal_core::Inherits<{class_name}> for {name} {{}}\n"));
+
+        out.push_str(&format!(
+            "impl rusteal_core::Inherits<{class_name}> for {name} {{}}\n"
+        ));
+
         ancestor = ancestor_class.super_class.as_deref();
     }
+
     out.push('\n');
 
-    // Collect own functions only (inherited methods are accessed via Deref chain)
     let mut seen_func_names: HashSet<String> = HashSet::new();
     let mut class_funcs: Vec<&FuncEntry> = Vec::new();
+
     for entry in ctx.func_table.iter().filter(|e| e.class_name == *name) {
         if seen_func_names.insert(entry.rust_func_name.clone()) {
             class_funcs.push(entry);
         }
     }
 
-    // Collect own property accessor names, deduplicating
-    let (mut prop_names, deduped_props) = properties::collect_deduped_properties(&class.props, Some(ctx));
+    let (mut prop_names, deduped_props) =
+        properties::collect_deduped_properties(&class.props, Some(ctx));
 
-    // Collect own delegate properties
     let own_delegate_infos = delegates::collect_delegate_props(&class.props, name, ctx);
 
-    // Only generate extension trait if there are own properties, functions, or delegates
-    if deduped_props.is_empty() && class_funcs.is_empty()
-        && own_delegate_infos.is_empty()
-    {
+    if deduped_props.is_empty() && class_funcs.is_empty() && own_delegate_infos.is_empty() {
         return out;
     }
 
-    // Detect setter-function collisions: when a UFUNCTION matches a property setter name,
-    // keep the UFUNCTION and suppress the setter (Option B from TODO_IMPROVEMENTS)
     let func_names: HashSet<String> = class_funcs
         .iter()
         .map(|e| escape_reserved(&e.rust_func_name))
@@ -135,8 +143,6 @@ pub fn generate_class(class: &ClassInfo, ctx: &CodegenContext) -> String {
         .cloned()
         .collect();
 
-    // A private or protected property Blueprint may only read (a component such
-    // as ACharacter's CharacterMovement) gets no setter either.
     suppress_setters.extend(
         deduped_props
             .iter()
@@ -144,18 +150,15 @@ pub fn generate_class(class: &ClassInfo, ctx: &CodegenContext) -> String {
             .map(|p| format!("set_{}", properties::rust_property_name(p))),
     );
 
-    // Remove suppressed setters from prop_names so they don't block UFUNCTIONs
     for setter in &suppress_setters {
         prop_names.remove(setter);
     }
 
-    // Filter out functions whose names still collide with remaining property accessors
     let class_funcs: Vec<&FuncEntry> = class_funcs
         .into_iter()
         .filter(|e| !prop_names.contains(&escape_reserved(&e.rust_func_name)))
         .collect();
 
-    // PropertyContext for class properties
     let pctx = PropertyContext {
         find_prop_fn: "find_property".to_string(),
         handle_expr: format!("{name}::static_class()"),
@@ -164,48 +167,43 @@ pub fn generate_class(class: &ClassInfo, ctx: &CodegenContext) -> String {
         is_class: true,
     };
 
-    // Generate delegate wrapper structs (own only)
     delegates::generate_delegate_structs(&mut out, &own_delegate_infos, name);
 
-    // Extension trait with ValidHandle supertrait — default impls work for both
-    // Checked<T> and Pinned<T> (dispatch via handle()).
     let trait_name = format!("{name}Ext");
+
     out.push_str(&format!(
         "pub trait {trait_name}: rusteal_core::ValidHandle {{\n"
     ));
 
-    // Property getters/setters as default impls
     for prop in &deduped_props {
         properties::generate_property(&mut out, prop, &pctx, ctx, &suppress_setters);
     }
 
-    // Delegate accessor default impls (own only)
     delegates::generate_delegate_impls(&mut out, &own_delegate_infos);
 
-    // Function wrapper default impls (instance functions; the static ones
-    // go in the inherent impl below)
     let (static_funcs, instance_funcs): (Vec<&FuncEntry>, Vec<&FuncEntry>) =
         class_funcs.iter().partition(|e| is_static_fn(e));
+
     for entry in &instance_funcs {
         generate_function(&mut out, entry, &entry.class_name, ctx);
     }
 
     out.push_str("}\n\n");
 
-    // Static functions (function libraries, `UGameplayStatics::...`) are
-    // called on the class, as in C++: `GameplayStatics::get_player_controller(..)`.
     if !static_funcs.is_empty() {
         out.push_str(&format!("impl {name} {{\n"));
+
         for entry in &static_funcs {
             generate_function(&mut out, entry, &entry.class_name, ctx);
         }
+
         out.push_str("}\n\n");
     }
 
-    // Empty impls — Checked and Pinned both satisfy ValidHandle
     out.push_str(&format!(
         "impl {trait_name} for rusteal_core::Checked<{name}> {{}}\n"
     ));
+
     out.push_str(&format!(
         "impl {trait_name} for rusteal_core::Pinned<{name}> {{}}\n"
     ));
@@ -217,16 +215,11 @@ fn is_static_fn(entry: &FuncEntry) -> bool {
     entry.func.is_static || (entry.func.func_flags & FUNC_STATIC != 0)
 }
 
-// ---------------------------------------------------------------------------
-// Container param helpers (delegated to type_map)
-// ---------------------------------------------------------------------------
-
-pub(super) use type_map::is_container_param;
+pub(super) use type_map::container_elem_type_str;
 pub(super) use type_map::container_param_input_type;
 pub(super) use type_map::container_param_output_type;
-pub(super) use type_map::container_elem_type_str;
+pub(super) use type_map::is_container_param;
 
-/// Build the composite return type from all output components.
 fn build_return_type(output_types: &[String]) -> String {
     match output_types.len() {
         0 => "()".to_string(),
@@ -235,47 +228,41 @@ fn build_return_type(output_types: &[String]) -> String {
     }
 }
 
-/// Get the Rust type for a scalar Out/InOut param or ReturnValue in a return tuple.
-/// StructOpaque returns `OwnedStruct<FStructName>` when the struct has UeStruct,
-/// otherwise falls back to the raw pointer type.
-fn scalar_out_rust_type_ctx(mapped: &MappedType, struct_name: Option<&str>, ctx: &CodegenContext) -> String {
+fn scalar_out_rust_type_ctx(
+    mapped: &MappedType,
+    struct_name: Option<&str>,
+    ctx: &CodegenContext,
+) -> String {
     match mapped.ffi_to_rust {
         ConversionKind::StructOpaque => {
             if let Some(sn) = struct_name
                 && let Some(si) = ctx.structs.get(sn)
-                    && si.has_static_struct
+                && si.has_static_struct
             {
-                    return format!("rusteal_core::OwnedStruct<{}>", si.cpp_name);
+                return format!("rusteal_core::OwnedStruct<{}>", si.cpp_name);
             }
-            // Struct not available or no static_struct — use raw pointer
+
             mapped.rust_type.clone()
         }
         _ => mapped.rust_type.clone(),
     }
 }
 
-/// Check if a StructOpaque return/out can use OwnedStruct (has valid UeStruct impl).
 pub(super) fn is_struct_owned(struct_name: Option<&str>, ctx: &CodegenContext) -> bool {
     struct_name.is_some_and(|sn| ctx.structs.get(sn).is_some_and(|si| si.has_static_struct))
 }
 
-/// Check if a scalar Out/InOut param should be included in the return tuple.
-/// InOut StructOpaque params write back through the mutable pointer, so they
-/// are NOT included in the return tuple.
 pub(super) fn is_scalar_output_returnable(dir: ParamDirection, mapped: &MappedType) -> bool {
     if dir == ParamDirection::InOut && mapped.ffi_to_rust == ConversionKind::StructOpaque {
         return false;
     }
+
     dir == ParamDirection::Out || dir == ParamDirection::InOut
 }
 
-// ---------------------------------------------------------------------------
-// Function implementation (dispatch)
-// ---------------------------------------------------------------------------
-
-/// Generate a function wrapper (direct call via func_table).
 fn generate_function(out: &mut String, entry: &FuncEntry, class_name: &str, ctx: &CodegenContext) {
     let has_container = entry.func.params.iter().any(is_container_param);
+
     if has_container {
         generate_container_function(out, entry, class_name, ctx);
     } else {
@@ -283,31 +270,32 @@ fn generate_function(out: &mut String, entry: &FuncEntry, class_name: &str, ctx:
     }
 }
 
-// ---------------------------------------------------------------------------
-// Scalar function implementation (no container params — original path)
-// ---------------------------------------------------------------------------
-
-fn generate_scalar_function(out: &mut String, entry: &FuncEntry, class_name: &str, ctx: &CodegenContext) {
+fn generate_scalar_function(
+    out: &mut String,
+    entry: &FuncEntry,
+    class_name: &str,
+    ctx: &CodegenContext,
+) {
     let func = &entry.func;
     let rust_fn_name = escape_reserved(&entry.rust_func_name);
     let func_id = entry.func_id;
 
-    // Classify params
     let mut return_param: Option<&ParamInfo> = None;
 
     for param in &func.params {
         let dir = type_map::param_direction(param);
+
         if dir == ParamDirection::Return {
             return_param = Some(param);
         }
     }
 
-    // Map types for all params
     let mut all_mapped: Vec<(&ParamInfo, ParamDirection, MappedType)> = Vec::new();
     let mut all_supported = true;
 
     for param in &func.params {
         let dir = type_map::param_direction(param);
+
         let mapped = type_map::map_property_type(
             &param.prop_type,
             param.class_name.as_deref(),
@@ -317,10 +305,12 @@ fn generate_scalar_function(out: &mut String, entry: &FuncEntry, class_name: &st
             param.meta_class_name.as_deref(),
             param.interface_name.as_deref(),
         );
+
         if !mapped.supported {
             all_supported = false;
             break;
         }
+
         all_mapped.push((param, dir, mapped));
     }
 
@@ -329,10 +319,10 @@ fn generate_scalar_function(out: &mut String, entry: &FuncEntry, class_name: &st
             "    // Skipped: {}.{} (unsupported param type)\n\n",
             class_name, func.name
         ));
+
         return;
     }
 
-    // Determine return type
     let ret_mapped = return_param.map(|rp| {
         type_map::map_property_type(
             &rp.prop_type,
@@ -345,7 +335,6 @@ fn generate_scalar_function(out: &mut String, entry: &FuncEntry, class_name: &st
         )
     });
 
-    // Build return type: ReturnValue + all Out/InOut scalar params
     let return_rust_type = {
         let mut output_types = Vec::new();
         if let Some(m) = &ret_mapped {
@@ -354,82 +343,92 @@ fn generate_scalar_function(out: &mut String, entry: &FuncEntry, class_name: &st
         }
         for (param, dir, mapped) in &all_mapped {
             if is_scalar_output_returnable(*dir, mapped) {
-                output_types.push(scalar_out_rust_type_ctx(mapped, param.struct_name.as_deref(), ctx));
+                output_types.push(scalar_out_rust_type_ctx(
+                    mapped,
+                    param.struct_name.as_deref(),
+                    ctx,
+                ));
             }
         }
         build_return_type(&output_types)
     };
 
-    // Build FFI type signature
     let is_static = func.is_static || (func.func_flags & FUNC_STATIC != 0);
 
-    // Build Rust function signature
     let mut sig = String::new();
+
     if is_static {
-        sig.push_str(&format!(
-            "    pub fn {rust_fn_name}("
-        ));
+        sig.push_str(&format!("    pub fn {rust_fn_name}("));
     } else {
-        sig.push_str(&format!(
-            "    fn {rust_fn_name}(&self, "
-        ));
+        sig.push_str(&format!("    fn {rust_fn_name}(&self, "));
     }
 
-    // Input params
     let mut param_names = Vec::new();
-    let mut default_unwraps: Vec<(String, String)> = Vec::new(); // (pname, default_expr)
+    let mut default_unwraps: Vec<(String, String)> = Vec::new();
+
     for (param, dir, mapped) in &all_mapped {
         if *dir == ParamDirection::Return {
             continue;
         }
+
         let pname = escape_reserved(&to_snake_case(&param.name));
+
         let has_default = *dir == ParamDirection::In
             && defaults::parse_default_literal(param, mapped, ctx).is_some();
+
         if has_default {
             let default_expr = defaults::parse_default_literal(param, mapped, ctx)
                 .expect("default literal must be parseable (has_default was true)");
+
             default_unwraps.push((pname.clone(), default_expr));
         }
+
         match dir {
-            ParamDirection::In | ParamDirection::InOut => {
-                match mapped.rust_to_ffi {
-                    ConversionKind::StringUtf8 => {
-                        if has_default {
-                            sig.push_str(&format!("{pname}: Option<&str>, "));
-                        } else {
-                            sig.push_str(&format!("{pname}: &str, "));
-                        }
-                    }
-                    ConversionKind::StructOpaque if *dir == ParamDirection::In
-                        && is_struct_owned(param.struct_name.as_deref(), ctx) =>
-                    {
-                        let si = ctx.structs.get(param.struct_name.as_deref().expect("StructOpaque param must have struct_name"))
-                            .expect("struct must exist in context");
-                        sig.push_str(&format!(
-                            "{pname}: &rusteal_core::OwnedStruct<{}>, ", si.cpp_name
-                        ));
-                    }
-                    ConversionKind::StructOpaque if *dir == ParamDirection::InOut => {
-                        sig.push_str(&format!("{pname}: *mut u8, "));
-                    }
-                    _ => {
-                        if has_default {
-                            sig.push_str(&format!("{pname}: Option<{}>, ", mapped.rust_type));
-                        } else {
-                            sig.push_str(&format!("{pname}: {}, ", mapped.rust_type));
-                        }
+            ParamDirection::In | ParamDirection::InOut => match mapped.rust_to_ffi {
+                ConversionKind::StringUtf8 => {
+                    if has_default {
+                        sig.push_str(&format!("{pname}: Option<&str>, "));
+                    } else {
+                        sig.push_str(&format!("{pname}: &str, "));
                     }
                 }
-            }
-            ParamDirection::Out => {
-                // Output params are returned as additional outputs — skip from signature for now
-            }
+                ConversionKind::StructOpaque
+                    if *dir == ParamDirection::In
+                        && is_struct_owned(param.struct_name.as_deref(), ctx) =>
+                {
+                    let si = ctx
+                        .structs
+                        .get(
+                            param
+                                .struct_name
+                                .as_deref()
+                                .expect("StructOpaque param must have struct_name"),
+                        )
+                        .expect("struct must exist in context");
+
+                    sig.push_str(&format!(
+                        "{pname}: &rusteal_core::OwnedStruct<{}>, ",
+                        si.cpp_name
+                    ));
+                }
+                ConversionKind::StructOpaque if *dir == ParamDirection::InOut => {
+                    sig.push_str(&format!("{pname}: *mut u8, "));
+                }
+                _ => {
+                    if has_default {
+                        sig.push_str(&format!("{pname}: Option<{}>, ", mapped.rust_type));
+                    } else {
+                        sig.push_str(&format!("{pname}: {}, ", mapped.rust_type));
+                    }
+                }
+            },
+            ParamDirection::Out => {}
             ParamDirection::Return => {}
         }
+
         param_names.push((pname, param, *dir, mapped));
     }
 
-    // Remove trailing comma+space
     if sig.ends_with(", ") {
         sig.truncate(sig.len() - 2);
     }
@@ -443,70 +442,67 @@ fn generate_scalar_function(out: &mut String, entry: &FuncEntry, class_name: &st
     out.push_str(&sig);
     out.push_str(" {\n");
 
-    // Unwrap defaulted params before any FFI conversion
     for (pname, default_expr) in &default_unwraps {
-        out.push_str(&format!("        let {pname} = {pname}.unwrap_or({default_expr});\n"));
+        out.push_str(&format!(
+            "        let {pname} = {pname}.unwrap_or({default_expr});\n"
+        ));
     }
 
-    // FFI dispatch: load wrapper pointer from func_table and transmute to typed fn.
     out.push_str("        {\n");
 
-    // Build FFI fn type signature
     let mut ffi_params = String::new();
+
     if !is_static {
         ffi_params.push_str("rusteal_core::UObjectHandle, ");
     }
+
     for (_param, dir, mapped) in &all_mapped {
         match dir {
-            ParamDirection::In | ParamDirection::InOut => {
-                match mapped.rust_to_ffi {
-                    ConversionKind::StringUtf8 => {
-                        ffi_params.push_str("*const u8, u32, ");
-                        // InOut strings also have output buffer params
-                        if *dir == ParamDirection::InOut {
-                            ffi_params.push_str("*mut u8, u32, *mut u32, ");
-                        }
-                    }
-                    ConversionKind::ObjectRef => {
-                        ffi_params.push_str("rusteal_core::UObjectHandle, ");
-                    }
-                    ConversionKind::EnumCast => {
-                        ffi_params.push_str(&format!("{}, ", mapped.rust_ffi_type));
-                    }
-                    ConversionKind::StructOpaque => {
-                        if *dir == ParamDirection::InOut {
-                            ffi_params.push_str("*mut u8, "); // mutable: data flows both ways
-                        } else {
-                            ffi_params.push_str("*const u8, ");
-                        }
-                    }
-                    _ => {
-                        ffi_params.push_str(&format!("{}, ", mapped.rust_ffi_type));
-                    }
-                }
-            }
-            ParamDirection::Out | ParamDirection::Return => {
-                match mapped.ffi_to_rust {
-                    ConversionKind::StringUtf8 => {
+            ParamDirection::In | ParamDirection::InOut => match mapped.rust_to_ffi {
+                ConversionKind::StringUtf8 => {
+                    ffi_params.push_str("*const u8, u32, ");
+
+                    if *dir == ParamDirection::InOut {
                         ffi_params.push_str("*mut u8, u32, *mut u32, ");
                     }
-                    ConversionKind::ObjectRef => {
-                        ffi_params.push_str("*mut rusteal_core::UObjectHandle, ");
-                    }
-                    ConversionKind::StructOpaque => {
+                }
+                ConversionKind::ObjectRef => {
+                    ffi_params.push_str("rusteal_core::UObjectHandle, ");
+                }
+                ConversionKind::EnumCast => {
+                    ffi_params.push_str(&format!("{}, ", mapped.rust_ffi_type));
+                }
+                ConversionKind::StructOpaque => {
+                    if *dir == ParamDirection::InOut {
                         ffi_params.push_str("*mut u8, ");
-                    }
-                    ConversionKind::EnumCast => {
-                        ffi_params.push_str(&format!("*mut {}, ", mapped.rust_ffi_type));
-                    }
-                    _ => {
-                        ffi_params.push_str(&format!("*mut {}, ", mapped.rust_ffi_type));
+                    } else {
+                        ffi_params.push_str("*const u8, ");
                     }
                 }
-            }
+                _ => {
+                    ffi_params.push_str(&format!("{}, ", mapped.rust_ffi_type));
+                }
+            },
+            ParamDirection::Out | ParamDirection::Return => match mapped.ffi_to_rust {
+                ConversionKind::StringUtf8 => {
+                    ffi_params.push_str("*mut u8, u32, *mut u32, ");
+                }
+                ConversionKind::ObjectRef => {
+                    ffi_params.push_str("*mut rusteal_core::UObjectHandle, ");
+                }
+                ConversionKind::StructOpaque => {
+                    ffi_params.push_str("*mut u8, ");
+                }
+                ConversionKind::EnumCast => {
+                    ffi_params.push_str(&format!("*mut {}, ", mapped.rust_ffi_type));
+                }
+                _ => {
+                    ffi_params.push_str(&format!("*mut {}, ", mapped.rust_ffi_type));
+                }
+            },
         }
     }
-    // Remove trailing comma+space
+
     if ffi_params.ends_with(", ") {
         ffi_params.truncate(ffi_params.len() - 2);
     }
@@ -517,14 +513,15 @@ fn generate_scalar_function(out: &mut String, entry: &FuncEntry, class_name: &st
          \x20       let __rusteal_fn: Fn = unsafe {{ std::mem::transmute(*(rusteal_core::api().func_table.add(FN_ID as usize))) }};\n"
     ));
 
-    // Get handle for instance methods (pre-validated via ValidHandle)
     if !is_static {
         out.push_str("        let h = self.handle();\n");
     }
 
-    // Declare output variables
     if let Some(_rp) = return_param {
-        let rm = ret_mapped.as_ref().expect("return param must have mapped type");
+        let rm = ret_mapped
+            .as_ref()
+            .expect("return param must have mapped type");
+
         match rm.ffi_to_rust {
             ConversionKind::ObjectRef => {
                 out.push_str("        let mut _ret = rusteal_core::UObjectHandle::null();\n");
@@ -534,7 +531,10 @@ fn generate_scalar_function(out: &mut String, entry: &FuncEntry, class_name: &st
                 out.push_str("        let mut _ret_len: u32 = 0;\n");
             }
             ConversionKind::EnumCast => {
-                out.push_str(&format!("        let mut _ret: {} = 0;\n", rm.rust_ffi_type));
+                out.push_str(&format!(
+                    "        let mut _ret: {} = 0;\n",
+                    rm.rust_ffi_type
+                ));
             }
             ConversionKind::StructOpaque => {
                 out.push_str("        let mut _ret_struct_buf = vec![0u8; 256];\n");
@@ -550,36 +550,42 @@ fn generate_scalar_function(out: &mut String, entry: &FuncEntry, class_name: &st
         if *dir == ParamDirection::Out {
             param_helpers::emit_out_param_var_decl(out, param, mapped);
         }
+
         if *dir == ParamDirection::InOut {
             param_helpers::emit_inout_string_buf_decl(out, param, mapped);
         }
     }
 
-    // Build the FFI call (infallible after pre-validation)
     out.push_str("        rusteal_core::ffi_infallible(unsafe { __rusteal_fn(");
+
     if !is_static {
         out.push_str("h, ");
     }
+
     for (param, dir, mapped) in &all_mapped {
         let pname = escape_reserved(&to_snake_case(&param.name));
+
         match dir {
             ParamDirection::In | ParamDirection::InOut => {
                 match mapped.rust_to_ffi {
                     ConversionKind::StringUtf8 => {
                         out.push_str(&format!("{pname}.as_ptr(), {pname}.len() as u32, "));
-                        // InOut strings also pass output buffer params
+
                         if *dir == ParamDirection::InOut {
                             out.push_str(&format!("{pname}_buf.as_mut_ptr(), {pname}_buf.len() as u32, &mut {pname}_len, "));
                         }
                     }
                     ConversionKind::ObjectRef => {
-                        out.push_str(&format!("rusteal_core::ObjectPointer::object_handle(&{pname}), "));
+                        out.push_str(&format!(
+                            "rusteal_core::ObjectPointer::object_handle(&{pname}), "
+                        ));
                     }
                     ConversionKind::EnumCast => {
                         out.push_str(&format!("{pname} as {}, ", mapped.rust_ffi_type));
                     }
-                    ConversionKind::StructOpaque if *dir == ParamDirection::In
-                        && is_struct_owned(param.struct_name.as_deref(), ctx) =>
+                    ConversionKind::StructOpaque
+                        if *dir == ParamDirection::In
+                            && is_struct_owned(param.struct_name.as_deref(), ctx) =>
                     {
                         out.push_str(&format!("{pname}.as_bytes().as_ptr(), "));
                     }
@@ -588,24 +594,29 @@ fn generate_scalar_function(out: &mut String, entry: &FuncEntry, class_name: &st
                     }
                 }
             }
-            ParamDirection::Out => {
-                match mapped.ffi_to_rust {
-                    ConversionKind::StructOpaque => {
-                        out.push_str(&format!("{pname}_buf.as_mut_ptr(), "));
-                    }
-                    ConversionKind::StringUtf8 => {
-                        out.push_str(&format!("{pname}_buf.as_mut_ptr(), {pname}_buf.len() as u32, &mut {pname}_len, "));
-                    }
-                    _ => {
-                        out.push_str(&format!("&mut {pname}, "));
-                    }
+            ParamDirection::Out => match mapped.ffi_to_rust {
+                ConversionKind::StructOpaque => {
+                    out.push_str(&format!("{pname}_buf.as_mut_ptr(), "));
                 }
-            }
+                ConversionKind::StringUtf8 => {
+                    out.push_str(&format!(
+                        "{pname}_buf.as_mut_ptr(), {pname}_buf.len() as u32, &mut {pname}_len, "
+                    ));
+                }
+                _ => {
+                    out.push_str(&format!("&mut {pname}, "));
+                }
+            },
             ParamDirection::Return => {
-                let rm = ret_mapped.as_ref().expect("return param must have mapped type");
+                let rm = ret_mapped
+                    .as_ref()
+                    .expect("return param must have mapped type");
+
                 match rm.ffi_to_rust {
                     ConversionKind::StringUtf8 => {
-                        out.push_str("_ret_buf.as_mut_ptr(), _ret_buf.len() as u32, &mut _ret_len, ");
+                        out.push_str(
+                            "_ret_buf.as_mut_ptr(), _ret_buf.len() as u32, &mut _ret_len, ",
+                        );
                     }
                     ConversionKind::ObjectRef => {
                         out.push_str("&mut _ret, ");
@@ -620,34 +631,48 @@ fn generate_scalar_function(out: &mut String, entry: &FuncEntry, class_name: &st
             }
         }
     }
-    // Remove trailing comma+space in the call args
+
     let out_len = out.len();
+
     if out.ends_with(", ") {
         out.truncate(out_len - 2);
     }
+
     out.push_str(") });\n");
 
-    // Return conversion: assemble ReturnValue + Out/InOut params (infallible)
     {
         let mut return_parts = Vec::new();
 
-        // ReturnValue
         if let Some(rp) = return_param {
-            let rm = ret_mapped.as_ref().expect("return param must have mapped type");
+            let rm = ret_mapped
+                .as_ref()
+                .expect("return param must have mapped type");
+
             match rm.ffi_to_rust {
                 ConversionKind::ObjectRef => {
-                    return_parts.push("unsafe { rusteal_core::ObjectPointer::from_object_handle(_ret) }".to_string());
+                    return_parts.push(
+                        "unsafe { rusteal_core::ObjectPointer::from_object_handle(_ret) }"
+                            .to_string(),
+                    );
                 }
                 ConversionKind::StringUtf8 => {
                     out.push_str("        _ret_buf.truncate(_ret_len as usize);\n");
-                    out.push_str("        let _ret_str = String::from_utf8_lossy(&_ret_buf).into_owned();\n");
+
+                    out.push_str(
+                        "        let _ret_str = String::from_utf8_lossy(&_ret_buf).into_owned();\n",
+                    );
+
                     return_parts.push("_ret_str".to_string());
                 }
                 ConversionKind::EnumCast => {
                     let rt = &rm.rust_type;
-                    let actual_repr = rp.enum_name.as_deref()
+
+                    let actual_repr = rp
+                        .enum_name
+                        .as_deref()
                         .and_then(|en| ctx.enum_actual_repr(en))
                         .unwrap_or(&rm.rust_ffi_type);
+
                     out.push_str(&format!("        let _ret_enum = {rt}::from_value(_ret as {actual_repr}).expect(\"unknown enum value\");\n"));
                     return_parts.push("_ret_enum".to_string());
                 }
@@ -667,11 +692,11 @@ fn generate_scalar_function(out: &mut String, entry: &FuncEntry, class_name: &st
             }
         }
 
-        // Out/InOut params (skip InOut StructOpaque — data written back in-place)
         for (param, dir, mapped) in &all_mapped {
             if !is_scalar_output_returnable(*dir, mapped) {
                 continue;
             }
+
             return_parts.push(param_helpers::emit_out_param_conversion(
                 out, param, mapped, ctx,
             ));
@@ -684,29 +709,31 @@ fn generate_scalar_function(out: &mut String, entry: &FuncEntry, class_name: &st
     out.push_str("    }\n\n");
 }
 
-// ---------------------------------------------------------------------------
-// Container function implementation
-// ---------------------------------------------------------------------------
-
-/// Metadata about a container parameter tracked during code generation.
 struct ContainerParamMeta<'a> {
     param: &'a ParamInfo,
     dir: ParamDirection,
-    /// Index in the CPROPS array.
     index: usize,
 }
 
-/// Generate a function wrapper for functions that have container parameters.
-/// Uses alloc_temp/free_temp for temp container lifecycle management.
-fn generate_container_function(out: &mut String, entry: &FuncEntry, class_name: &str, ctx: &CodegenContext) {
+fn generate_container_function(
+    out: &mut String,
+    entry: &FuncEntry,
+    class_name: &str,
+    ctx: &CodegenContext,
+) {
     let func = &entry.func;
     let rust_fn_name = escape_reserved(&entry.rust_func_name);
     let func_id = entry.func_id;
     let is_static = func.is_static || (func.func_flags & FUNC_STATIC != 0);
-    let ue_name = if func.ue_name.is_empty() { &entry.func_name } else { &func.ue_name };
 
-    // Collect container params with their indices
+    let ue_name = if func.ue_name.is_empty() {
+        &entry.func_name
+    } else {
+        &func.ue_name
+    };
+
     let mut container_params: Vec<ContainerParamMeta> = Vec::new();
+
     for param in &func.params {
         if is_container_param(param) {
             let dir = type_map::param_direction(param);
@@ -714,17 +741,19 @@ fn generate_container_function(out: &mut String, entry: &FuncEntry, class_name: 
             container_params.push(ContainerParamMeta { param, dir, index });
         }
     }
+
     let n_containers = container_params.len();
 
-    // Classify all params and check support
     let mut return_param: Option<&ParamInfo> = None;
     let mut all_supported = true;
 
     for param in &func.params {
         let dir = type_map::param_direction(param);
+
         if dir == ParamDirection::Return {
             return_param = Some(param);
         }
+
         if is_container_param(param) {
             if (dir == ParamDirection::In || dir == ParamDirection::InOut)
                 && container_param_input_type(param, ctx).is_none()
@@ -732,7 +761,10 @@ fn generate_container_function(out: &mut String, entry: &FuncEntry, class_name: 
                 all_supported = false;
                 break;
             }
-            if (dir == ParamDirection::Out || dir == ParamDirection::Return || dir == ParamDirection::InOut)
+
+            if (dir == ParamDirection::Out
+                || dir == ParamDirection::Return
+                || dir == ParamDirection::InOut)
                 && container_param_output_type(param, ctx).is_none()
             {
                 all_supported = false;
@@ -740,12 +772,15 @@ fn generate_container_function(out: &mut String, entry: &FuncEntry, class_name: 
             }
         } else {
             let mapped = type_map::map_property_type(
-                &param.prop_type, param.class_name.as_deref(),
-                param.struct_name.as_deref(), param.enum_name.as_deref(),
+                &param.prop_type,
+                param.class_name.as_deref(),
+                param.struct_name.as_deref(),
+                param.enum_name.as_deref(),
                 param.enum_underlying_type.as_deref(),
                 param.meta_class_name.as_deref(),
                 param.interface_name.as_deref(),
             );
+
             if !mapped.supported {
                 all_supported = false;
                 break;
@@ -758,53 +793,75 @@ fn generate_container_function(out: &mut String, entry: &FuncEntry, class_name: 
             "    // Skipped: {}.{} (unsupported container inner type)\n\n",
             class_name, func.name
         ));
+
         return;
     }
 
-    // Build return type
     let mut output_types = Vec::new();
     let mut scalar_return_mapped: Option<MappedType> = None;
 
     if let Some(rp) = return_param {
         if is_container_param(rp) {
-            output_types.push(container_param_output_type(rp, ctx)
-                    .expect("container return type should be resolvable"));
+            output_types.push(
+                container_param_output_type(rp, ctx)
+                    .expect("container return type should be resolvable"),
+            );
         } else {
             let rm = type_map::map_property_type(
-                &rp.prop_type, rp.class_name.as_deref(),
-                rp.struct_name.as_deref(), rp.enum_name.as_deref(),
+                &rp.prop_type,
+                rp.class_name.as_deref(),
+                rp.struct_name.as_deref(),
+                rp.enum_name.as_deref(),
                 rp.enum_underlying_type.as_deref(),
                 rp.meta_class_name.as_deref(),
                 rp.interface_name.as_deref(),
             );
-            output_types.push(scalar_out_rust_type_ctx(&rm, rp.struct_name.as_deref(), ctx));
+
+            output_types.push(scalar_out_rust_type_ctx(
+                &rm,
+                rp.struct_name.as_deref(),
+                ctx,
+            ));
+
             scalar_return_mapped = Some(rm);
         }
     }
+
     for param in &func.params {
         let dir = type_map::param_direction(param);
+
         if dir == ParamDirection::Out || dir == ParamDirection::InOut {
             if is_container_param(param) {
-                output_types.push(container_param_output_type(param, ctx)
-                        .expect("container out-param type should be resolvable"));
+                output_types.push(
+                    container_param_output_type(param, ctx)
+                        .expect("container out-param type should be resolvable"),
+                );
             } else {
                 let rm = type_map::map_property_type(
-                    &param.prop_type, param.class_name.as_deref(),
-                    param.struct_name.as_deref(), param.enum_name.as_deref(),
+                    &param.prop_type,
+                    param.class_name.as_deref(),
+                    param.struct_name.as_deref(),
+                    param.enum_name.as_deref(),
                     param.enum_underlying_type.as_deref(),
                     param.meta_class_name.as_deref(),
                     param.interface_name.as_deref(),
                 );
+
                 if is_scalar_output_returnable(dir, &rm) {
-                    output_types.push(scalar_out_rust_type_ctx(&rm, param.struct_name.as_deref(), ctx));
+                    output_types.push(scalar_out_rust_type_ctx(
+                        &rm,
+                        param.struct_name.as_deref(),
+                        ctx,
+                    ));
                 }
             }
         }
     }
+
     let return_rust_type = build_return_type(&output_types);
 
-    // === Emit Rust function signature ===
     let mut sig = String::new();
+
     if is_static {
         sig.push_str(&format!("    pub fn {rust_fn_name}("));
     } else {
@@ -812,25 +869,34 @@ fn generate_container_function(out: &mut String, entry: &FuncEntry, class_name: 
     }
 
     let mut default_unwraps: Vec<(String, String)> = Vec::new();
+
     for param in &func.params {
         let dir = type_map::param_direction(param);
+
         if dir == ParamDirection::Return || dir == ParamDirection::Out {
             continue;
         }
+
         let pname = escape_reserved(&to_snake_case(&param.name));
+
         if is_container_param(param) {
             let input_type = container_param_input_type(param, ctx)
                 .expect("container input type should be resolvable");
+
             sig.push_str(&format!("{pname}: {input_type}, "));
         } else {
             let mapped = map_param(param);
+
             let has_default = dir == ParamDirection::In
                 && defaults::parse_default_literal(param, &mapped, ctx).is_some();
+
             if has_default {
                 let default_expr = defaults::parse_default_literal(param, &mapped, ctx)
                     .expect("default literal must be parseable (has_default was true)");
+
                 default_unwraps.push((pname.clone(), default_expr));
             }
+
             match mapped.rust_to_ffi {
                 ConversionKind::StringUtf8 => {
                     if has_default {
@@ -839,13 +905,23 @@ fn generate_container_function(out: &mut String, entry: &FuncEntry, class_name: 
                         sig.push_str(&format!("{pname}: &str, "));
                     }
                 }
-                ConversionKind::StructOpaque if dir == ParamDirection::In
-                    && is_struct_owned(param.struct_name.as_deref(), ctx) =>
+                ConversionKind::StructOpaque
+                    if dir == ParamDirection::In
+                        && is_struct_owned(param.struct_name.as_deref(), ctx) =>
                 {
-                    let si = ctx.structs.get(param.struct_name.as_deref().expect("StructOpaque param must have struct_name"))
-                            .expect("struct must exist in context");
+                    let si = ctx
+                        .structs
+                        .get(
+                            param
+                                .struct_name
+                                .as_deref()
+                                .expect("StructOpaque param must have struct_name"),
+                        )
+                        .expect("struct must exist in context");
+
                     sig.push_str(&format!(
-                        "{pname}: &rusteal_core::OwnedStruct<{}>, ", si.cpp_name
+                        "{pname}: &rusteal_core::OwnedStruct<{}>, ",
+                        si.cpp_name
                     ));
                 }
                 ConversionKind::StructOpaque if dir == ParamDirection::InOut => {
@@ -861,25 +937,28 @@ fn generate_container_function(out: &mut String, entry: &FuncEntry, class_name: 
             }
         }
     }
+
     if sig.ends_with(", ") {
         sig.truncate(sig.len() - 2);
     }
+
     if return_rust_type == "()" {
         sig.push(')');
     } else {
         sig.push_str(&format!(") -> {return_rust_type}"));
     }
+
     out.push_str(&sig);
     out.push_str(" {\n");
 
-    // Unwrap defaulted params before any FFI conversion
     for (pname, default_expr) in &default_unwraps {
-        out.push_str(&format!("        let {pname} = {pname}.unwrap_or({default_expr});\n"));
+        out.push_str(&format!(
+            "        let {pname} = {pname}.unwrap_or({default_expr});\n"
+        ));
     }
 
     out.push_str("        {\n");
 
-    // === OnceLock for container FPropertyHandles ===
     let ue_name_len = ue_name.len();
     let ue_name_byte_lit = format!("b\"{}\\0\"", ue_name);
 
@@ -892,64 +971,76 @@ fn generate_container_function(out: &mut String, entry: &FuncEntry, class_name: 
          \x20               {ue_name_byte_lit}.as_ptr(), {ue_name_len});\n\
          \x20           [\n"
     ));
+
     for cp in &container_params {
         let param_name = &cp.param.name;
         let param_name_len = param_name.len();
         let param_byte_lit = format!("b\"{}\\0\"", param_name);
+
         out.push_str(&format!(
             "                ((*rusteal_core::api().reflection).get_function_param)(\n\
              \x20                   __ufunc, {param_byte_lit}.as_ptr(), {param_name_len}),\n"
         ));
     }
+
     out.push_str(
         "            ]\n\
-         \x20       });\n"
+         \x20       });\n",
     );
 
-    // === FFI type signature ===
     let mut ffi_params = String::new();
+
     if !is_static {
         ffi_params.push_str("rusteal_core::UObjectHandle, ");
     }
+
     for param in &func.params {
         let dir = type_map::param_direction(param);
+
         if is_container_param(param) {
-            ffi_params.push_str("*mut u8, *mut u8, "); // base, prop
+            ffi_params.push_str("*mut u8, *mut u8, ");
         } else {
             let mapped = map_param(param);
+
             match dir {
-                ParamDirection::In | ParamDirection::InOut => {
-                    match mapped.rust_to_ffi {
-                        ConversionKind::StringUtf8 => {
-                            ffi_params.push_str("*const u8, u32, ");
-                            if dir == ParamDirection::InOut {
-                                ffi_params.push_str("*mut u8, u32, *mut u32, ");
-                            }
+                ParamDirection::In | ParamDirection::InOut => match mapped.rust_to_ffi {
+                    ConversionKind::StringUtf8 => {
+                        ffi_params.push_str("*const u8, u32, ");
+
+                        if dir == ParamDirection::InOut {
+                            ffi_params.push_str("*mut u8, u32, *mut u32, ");
                         }
-                        ConversionKind::ObjectRef => ffi_params.push_str("rusteal_core::UObjectHandle, "),
-                        ConversionKind::EnumCast => ffi_params.push_str(&format!("{}, ", mapped.rust_ffi_type)),
-                        ConversionKind::StructOpaque => {
-                            if dir == ParamDirection::InOut {
-                                ffi_params.push_str("*mut u8, ");
-                            } else {
-                                ffi_params.push_str("*const u8, ");
-                            }
+                    }
+                    ConversionKind::ObjectRef => {
+                        ffi_params.push_str("rusteal_core::UObjectHandle, ")
+                    }
+                    ConversionKind::EnumCast => {
+                        ffi_params.push_str(&format!("{}, ", mapped.rust_ffi_type))
+                    }
+                    ConversionKind::StructOpaque => {
+                        if dir == ParamDirection::InOut {
+                            ffi_params.push_str("*mut u8, ");
+                        } else {
+                            ffi_params.push_str("*const u8, ");
                         }
-                        _ => ffi_params.push_str(&format!("{}, ", mapped.rust_ffi_type)),
                     }
-                }
-                ParamDirection::Out | ParamDirection::Return => {
-                    match mapped.ffi_to_rust {
-                        ConversionKind::StringUtf8 => ffi_params.push_str("*mut u8, u32, *mut u32, "),
-                        ConversionKind::ObjectRef => ffi_params.push_str("*mut rusteal_core::UObjectHandle, "),
-                        ConversionKind::StructOpaque => ffi_params.push_str("*mut u8, "),
-                        ConversionKind::EnumCast => ffi_params.push_str(&format!("*mut {}, ", mapped.rust_ffi_type)),
-                        _ => ffi_params.push_str(&format!("*mut {}, ", mapped.rust_ffi_type)),
+                    _ => ffi_params.push_str(&format!("{}, ", mapped.rust_ffi_type)),
+                },
+                ParamDirection::Out | ParamDirection::Return => match mapped.ffi_to_rust {
+                    ConversionKind::StringUtf8 => ffi_params.push_str("*mut u8, u32, *mut u32, "),
+                    ConversionKind::ObjectRef => {
+                        ffi_params.push_str("*mut rusteal_core::UObjectHandle, ")
                     }
-                }
+                    ConversionKind::StructOpaque => ffi_params.push_str("*mut u8, "),
+                    ConversionKind::EnumCast => {
+                        ffi_params.push_str(&format!("*mut {}, ", mapped.rust_ffi_type))
+                    }
+                    _ => ffi_params.push_str(&format!("*mut {}, ", mapped.rust_ffi_type)),
+                },
             }
         }
     }
+
     if ffi_params.ends_with(", ") {
         ffi_params.truncate(ffi_params.len() - 2);
     }
@@ -959,42 +1050,46 @@ fn generate_container_function(out: &mut String, entry: &FuncEntry, class_name: 
          \x20       let __rusteal_fn: Fn = unsafe {{ std::mem::transmute(*(rusteal_core::api().func_table.add(FN_ID as usize))) }};\n"
     ));
 
-    // === Get handle (pre-validated via ValidHandle) ===
     if !is_static {
         out.push_str("        let h = self.handle();\n");
     }
 
-    // === Alloc temps for all container params ===
     for cp in &container_params {
         let idx = cp.index;
+
         out.push_str(&format!(
             "        let __temp_{idx} = unsafe {{ ((*rusteal_core::api().container).alloc_temp)(__cprops[{idx}]) }};\n"
         ));
     }
 
-    // === Populate input containers ===
     for cp in &container_params {
         if cp.dir != ParamDirection::In && cp.dir != ParamDirection::InOut {
             continue;
         }
+
         let idx = cp.index;
         let pname = escape_reserved(&to_snake_case(&cp.param.name));
         emit_container_populate(out, cp.param, idx, &pname, ctx);
     }
 
-    // === Declare scalar output variables ===
     let ret_mapped = scalar_return_mapped.as_ref();
+
     if let Some(rm) = ret_mapped {
         match rm.ffi_to_rust {
             ConversionKind::ObjectRef => {
-                out.push_str("        let mut __scalar_ret = rusteal_core::UObjectHandle::null();\n");
+                out.push_str(
+                    "        let mut __scalar_ret = rusteal_core::UObjectHandle::null();\n",
+                );
             }
             ConversionKind::StringUtf8 => {
                 out.push_str("        let mut __scalar_ret_buf = vec![0u8; 512];\n");
                 out.push_str("        let mut __scalar_ret_len: u32 = 0;\n");
             }
             ConversionKind::EnumCast => {
-                out.push_str(&format!("        let mut __scalar_ret: {} = 0;\n", rm.rust_ffi_type));
+                out.push_str(&format!(
+                    "        let mut __scalar_ret: {} = 0;\n",
+                    rm.rust_ffi_type
+                ));
             }
             ConversionKind::StructOpaque => {
                 out.push_str("        let mut __scalar_ret_buf = vec![0u8; 256];\n");
@@ -1006,59 +1101,68 @@ fn generate_container_function(out: &mut String, entry: &FuncEntry, class_name: 
         }
     }
 
-    // Scalar Out params (non-container)
     for param in &func.params {
         let dir = type_map::param_direction(param);
+
         if dir == ParamDirection::Out && !is_container_param(param) {
             let mapped = map_param(param);
             param_helpers::emit_out_param_var_decl(out, param, &mapped);
         }
+
         if dir == ParamDirection::InOut && !is_container_param(param) {
             let mapped = map_param(param);
             param_helpers::emit_inout_string_buf_decl(out, param, &mapped);
         }
     }
 
-    // === FFI call (deferred error check) ===
     out.push_str("        let __result = unsafe { __rusteal_fn(");
+
     if !is_static {
         out.push_str("h, ");
     }
+
     for param in &func.params {
         let dir = type_map::param_direction(param);
+
         if is_container_param(param) {
-            let cp = container_params.iter().find(|c| std::ptr::eq(c.param, param))
+            let cp = container_params
+                .iter()
+                .find(|c| std::ptr::eq(c.param, param))
                 .expect("container param must have matching metadata");
+
             let idx = cp.index;
             out.push_str(&format!("__temp_{idx}, __cprops[{idx}].0 as *mut u8, "));
         } else {
             let pname = escape_reserved(&to_snake_case(&param.name));
             let mapped = map_param(param);
+
             match dir {
-                ParamDirection::In | ParamDirection::InOut => {
-                    match mapped.rust_to_ffi {
-                        ConversionKind::StringUtf8 => {
-                            out.push_str(&format!("{pname}.as_ptr(), {pname}.len() as u32, "));
-                            if dir == ParamDirection::InOut {
-                                out.push_str(&format!("{pname}_buf.as_mut_ptr(), {pname}_buf.len() as u32, &mut {pname}_len, "));
-                            }
-                        }
-                        ConversionKind::ObjectRef => {
-                            out.push_str(&format!("rusteal_core::ObjectPointer::object_handle(&{pname}), "));
-                        }
-                        ConversionKind::EnumCast => {
-                            out.push_str(&format!("{pname} as {}, ", mapped.rust_ffi_type));
-                        }
-                        ConversionKind::StructOpaque if dir == ParamDirection::In
-                            && is_struct_owned(param.struct_name.as_deref(), ctx) =>
-                        {
-                            out.push_str(&format!("{pname}.as_bytes().as_ptr(), "));
-                        }
-                        _ => {
-                            out.push_str(&format!("{pname}, "));
+                ParamDirection::In | ParamDirection::InOut => match mapped.rust_to_ffi {
+                    ConversionKind::StringUtf8 => {
+                        out.push_str(&format!("{pname}.as_ptr(), {pname}.len() as u32, "));
+
+                        if dir == ParamDirection::InOut {
+                            out.push_str(&format!("{pname}_buf.as_mut_ptr(), {pname}_buf.len() as u32, &mut {pname}_len, "));
                         }
                     }
-                }
+                    ConversionKind::ObjectRef => {
+                        out.push_str(&format!(
+                            "rusteal_core::ObjectPointer::object_handle(&{pname}), "
+                        ));
+                    }
+                    ConversionKind::EnumCast => {
+                        out.push_str(&format!("{pname} as {}, ", mapped.rust_ffi_type));
+                    }
+                    ConversionKind::StructOpaque
+                        if dir == ParamDirection::In
+                            && is_struct_owned(param.struct_name.as_deref(), ctx) =>
+                    {
+                        out.push_str(&format!("{pname}.as_bytes().as_ptr(), "));
+                    }
+                    _ => {
+                        out.push_str(&format!("{pname}, "));
+                    }
+                },
                 ParamDirection::Out => {
                     match mapped.ffi_to_rust {
                         ConversionKind::StructOpaque => {
@@ -1074,6 +1178,7 @@ fn generate_container_function(out: &mut String, entry: &FuncEntry, class_name: 
                 }
                 ParamDirection::Return => {
                     let rm = ret_mapped.expect("return param must have mapped type");
+
                     match rm.ffi_to_rust {
                         ConversionKind::StringUtf8 => {
                             out.push_str("__scalar_ret_buf.as_mut_ptr(), __scalar_ret_buf.len() as u32, &mut __scalar_ret_len, ");
@@ -1092,46 +1197,64 @@ fn generate_container_function(out: &mut String, entry: &FuncEntry, class_name: 
             }
         }
     }
-    // Remove trailing comma+space
+
     let out_len = out.len();
+
     if out.ends_with(", ") {
         out.truncate(out_len - 2);
     }
+
     out.push_str(") };\n");
 
-    // === Read output containers (only on success) ===
     for cp in &container_params {
-        if cp.dir != ParamDirection::Out && cp.dir != ParamDirection::Return && cp.dir != ParamDirection::InOut {
+        if cp.dir != ParamDirection::Out
+            && cp.dir != ParamDirection::Return
+            && cp.dir != ParamDirection::InOut
+        {
             continue;
         }
+
         let idx = cp.index;
         emit_container_read(out, cp.param, idx, ctx);
     }
 
-    // === Free ALL temps ===
     out.push_str("        unsafe {\n");
+
     for cp in &container_params {
         let idx = cp.index;
+
         out.push_str(&format!(
             "            ((*rusteal_core::api().container).free_temp)(__cprops[{idx}], __temp_{idx});\n"
         ));
     }
+
     out.push_str("        }\n");
 
-    // === Assert success (infallible after pre-validation) ===
     out.push_str("        rusteal_core::ffi_infallible(__result);\n");
 
-    // === Return ===
-    emit_container_return(out, return_param, ret_mapped, &container_params, &func.params, ctx);
+    emit_container_return(
+        out,
+        return_param,
+        ret_mapped,
+        &container_params,
+        &func.params,
+        ctx,
+    );
 
     out.push_str("        }\n");
     out.push_str("    }\n\n");
 }
 
-/// Emit code to populate an input container from a Rust slice.
-fn emit_container_populate(out: &mut String, param: &ParamInfo, idx: usize, pname: &str, ctx: &CodegenContext) {
-    let elem_type = container_elem_type_str(param, ctx)
-        .expect("container element type must be resolvable");
+fn emit_container_populate(
+    out: &mut String,
+    param: &ParamInfo,
+    idx: usize,
+    pname: &str,
+    ctx: &CodegenContext,
+) {
+    let elem_type =
+        container_elem_type_str(param, ctx).expect("container element type must be resolvable");
+
     match param.prop_type.as_str() {
         "ArrayProperty" => {
             out.push_str(&format!(
@@ -1170,10 +1293,10 @@ fn emit_container_populate(out: &mut String, param: &ParamInfo, idx: usize, pnam
     }
 }
 
-/// Emit code to read an output container into a Vec.
 fn emit_container_read(out: &mut String, param: &ParamInfo, idx: usize, ctx: &CodegenContext) {
-    let elem_type = container_elem_type_str(param, ctx)
-        .expect("container element type must be resolvable");
+    let elem_type =
+        container_elem_type_str(param, ctx).expect("container element type must be resolvable");
+
     match param.prop_type.as_str() {
         "ArrayProperty" => {
             out.push_str(&format!(
@@ -1221,7 +1344,6 @@ fn emit_container_read(out: &mut String, param: &ParamInfo, idx: usize, ctx: &Co
     }
 }
 
-/// Emit the final return expression, assembling scalar returns and container outputs (infallible).
 fn emit_container_return(
     out: &mut String,
     return_param: Option<&ParamInfo>,
@@ -1232,16 +1354,21 @@ fn emit_container_return(
 ) {
     let mut return_parts = Vec::new();
 
-    // Scalar or container return value
     if let Some(rp) = return_param {
         if is_container_param(rp) {
-            let cp = container_params.iter().find(|c| c.dir == ParamDirection::Return)
+            let cp = container_params
+                .iter()
+                .find(|c| c.dir == ParamDirection::Return)
                 .expect("container return param must exist");
+
             return_parts.push(format!("__out_{}", cp.index));
         } else if let Some(rm) = ret_mapped {
             match rm.ffi_to_rust {
                 ConversionKind::ObjectRef => {
-                    return_parts.push("unsafe { rusteal_core::ObjectPointer::from_object_handle(__scalar_ret) }".to_string());
+                    return_parts.push(
+                        "unsafe { rusteal_core::ObjectPointer::from_object_handle(__scalar_ret) }"
+                            .to_string(),
+                    );
                 }
                 ConversionKind::StringUtf8 => {
                     out.push_str("        __scalar_ret_buf.truncate(__scalar_ret_len as usize);\n");
@@ -1250,17 +1377,26 @@ fn emit_container_return(
                 }
                 ConversionKind::EnumCast => {
                     let rt = &rm.rust_type;
-                    let rp_ref = return_param.expect("return_param must be Some in return conversion");
-                    let actual_repr = rp_ref.enum_name.as_deref()
+
+                    let rp_ref =
+                        return_param.expect("return_param must be Some in return conversion");
+
+                    let actual_repr = rp_ref
+                        .enum_name
+                        .as_deref()
                         .and_then(|en| ctx.enum_actual_repr(en))
                         .unwrap_or(&rm.rust_ffi_type);
+
                     out.push_str(&format!(
                         "        let __scalar_enum = {rt}::from_value(__scalar_ret as {actual_repr}).expect(\"unknown enum value\");\n"
                     ));
+
                     return_parts.push("__scalar_enum".to_string());
                 }
                 ConversionKind::StructOpaque => {
-                    let rp_ref = return_param.expect("return_param must be Some in return conversion");
+                    let rp_ref =
+                        return_param.expect("return_param must be Some in return conversion");
+
                     if is_struct_owned(rp_ref.struct_name.as_deref(), ctx) {
                         out.push_str("        let __scalar_owned = rusteal_core::OwnedStruct::from_bytes(__scalar_ret_buf);\n");
                         return_parts.push("__scalar_owned".to_string());
@@ -1277,22 +1413,27 @@ fn emit_container_return(
         }
     }
 
-    // Out/InOut params in original parameter order (must match return type construction)
     for param in func_params {
         let dir = type_map::param_direction(param);
+
         if dir != ParamDirection::Out && dir != ParamDirection::InOut {
             continue;
         }
 
         if is_container_param(param) {
-            let cp = container_params.iter().find(|c| std::ptr::eq(c.param, param))
+            let cp = container_params
+                .iter()
+                .find(|c| std::ptr::eq(c.param, param))
                 .expect("container param must have matching metadata");
+
             return_parts.push(format!("__out_{}", cp.index));
         } else {
             let mapped = map_param(param);
+
             if !is_scalar_output_returnable(dir, &mapped) {
                 continue;
             }
+
             return_parts.push(param_helpers::emit_out_param_conversion(
                 out, param, &mapped, ctx,
             ));
@@ -1302,7 +1443,6 @@ fn emit_container_return(
     param_helpers::emit_return_expr(out, &return_parts);
 }
 
-/// Map a ParamInfo to its MappedType (convenience helper).
 pub(super) fn map_param(param: &ParamInfo) -> MappedType {
     type_map::map_property_type(
         &param.prop_type,

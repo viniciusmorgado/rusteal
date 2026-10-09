@@ -1,5 +1,3 @@
-// rusteal-macros: proc macros for #[uclass], #[ustruct], #[ufunction], #[uproperty].
-
 mod prop_type;
 mod shape;
 mod uclass;
@@ -7,19 +5,6 @@ mod uclass_impl;
 mod udelegate;
 mod ustruct;
 
-/// Attribute macro for defining a Rust struct as a UE class.
-///
-/// # Example
-/// ```ignore
-/// #[uclass(parent = Actor)]
-/// pub struct MyEnemy {
-///     #[uproperty(BlueprintReadWrite, default = 100.0)]
-///     health: f32,
-///
-///     // Rust-private field (no #[uproperty])
-///     chase_timer: f64,
-/// }
-/// ```
 #[proc_macro_attribute]
 pub fn uclass(
     attr: proc_macro::TokenStream,
@@ -31,23 +16,6 @@ pub fn uclass(
     }
 }
 
-/// Attribute macro for an impl block on a `#[uclass]` struct.
-/// Methods marked `#[ufunction(...)]` become UE-callable functions.
-///
-/// # Example
-/// ```ignore
-/// #[uclass_impl]
-/// impl MyEnemy {
-///     #[ufunction(BlueprintCallable)]
-///     fn take_damage(&mut self, amount: f32) -> bool {
-///         let h = self.health() - amount;
-///         self.set_health(h.max(0.0));
-///         h <= 0.0
-///     }
-///
-///     fn helper(&self) -> f32 { self.health() * 2.0 }  // plain Rust method
-/// }
-/// ```
 #[proc_macro_attribute]
 pub fn uclass_impl(
     attr: proc_macro::TokenStream,
@@ -59,21 +27,6 @@ pub fn uclass_impl(
     }
 }
 
-/// Attribute macro for defining a Rust struct as a UE struct: a data table's
-/// row, a property's value. Every field is a `#[uproperty]`; the struct's
-/// memory is UE's, read and written through the generated `<Name>Ext` trait
-/// on `UStructRef<Name>` and `OwnedStruct<Name>`.
-///
-/// # Example
-/// ```ignore
-/// #[ustruct]
-/// pub struct WeaponTableRow {
-///     #[uproperty(EditAnywhere)]
-///     static_mesh: SoftObjectRef<StaticMesh>,
-///     #[uproperty(EditAnywhere)]
-///     weapon_to_spawn: SubclassOf<ShooterWeapon>,
-/// }
-/// ```
 #[proc_macro_attribute]
 pub fn ustruct(
     attr: proc_macro::TokenStream,

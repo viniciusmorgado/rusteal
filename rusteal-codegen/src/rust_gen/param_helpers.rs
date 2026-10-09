@@ -1,8 +1,3 @@
-// Shared parameter handling helpers for native codegen (classes.rs).
-//
-// Extracts duplicated logic for output variable declarations, return value
-// conversion, and return expression formatting.
-
 use crate::context::CodegenContext;
 use crate::naming::{escape_reserved, to_snake_case};
 use crate::schema::*;
@@ -11,13 +6,9 @@ use crate::type_map::{ConversionKind, MappedType};
 use super::classes::is_struct_owned;
 use super::properties;
 
-// ---------------------------------------------------------------------------
-// Output variable declarations
-// ---------------------------------------------------------------------------
-
-/// Emit `let mut` declarations for a scalar Out parameter.
 pub fn emit_out_param_var_decl(out: &mut String, param: &ParamInfo, mapped: &MappedType) {
     let pname = escape_reserved(&to_snake_case(&param.name));
+
     match mapped.ffi_to_rust {
         ConversionKind::StructOpaque => {
             out.push_str(&format!("        let mut {pname}_buf = vec![0u8; 256];\n"));
@@ -32,7 +23,10 @@ pub fn emit_out_param_var_decl(out: &mut String, param: &ParamInfo, mapped: &Map
             ));
         }
         ConversionKind::EnumCast => {
-            out.push_str(&format!("        let mut {pname}: {} = 0;\n", mapped.rust_ffi_type));
+            out.push_str(&format!(
+                "        let mut {pname}: {} = 0;\n",
+                mapped.rust_ffi_type
+            ));
         }
         _ => {
             let default = properties::default_value_for(&mapped.rust_ffi_type);
@@ -41,7 +35,6 @@ pub fn emit_out_param_var_decl(out: &mut String, param: &ParamInfo, mapped: &Map
     }
 }
 
-/// Emit output buffer declarations for InOut string/text parameters.
 pub fn emit_inout_string_buf_decl(out: &mut String, param: &ParamInfo, mapped: &MappedType) {
     if mapped.ffi_to_rust == ConversionKind::StringUtf8 {
         let pname = escape_reserved(&to_snake_case(&param.name));
@@ -50,12 +43,6 @@ pub fn emit_inout_string_buf_decl(out: &mut String, param: &ParamInfo, mapped: &
     }
 }
 
-// ---------------------------------------------------------------------------
-// Return value conversion (Out/InOut parameters)
-// ---------------------------------------------------------------------------
-
-/// Emit return conversion for a scalar Out/InOut parameter.
-/// Returns the expression string to include in the return tuple.
 pub fn emit_out_param_conversion(
     out: &mut String,
     param: &ParamInfo,
@@ -63,25 +50,35 @@ pub fn emit_out_param_conversion(
     ctx: &CodegenContext,
 ) -> String {
     let pname = escape_reserved(&to_snake_case(&param.name));
+
     match mapped.ffi_to_rust {
         ConversionKind::ObjectRef => {
             format!("unsafe {{ rusteal_core::ObjectPointer::from_object_handle({pname}) }}")
         }
         ConversionKind::StringUtf8 => {
-            out.push_str(&format!("        {pname}_buf.truncate({pname}_len as usize);\n"));
+            out.push_str(&format!(
+                "        {pname}_buf.truncate({pname}_len as usize);\n"
+            ));
+
             out.push_str(&format!(
                 "        let {pname}_str = String::from_utf8_lossy(&{pname}_buf).into_owned();\n"
             ));
+
             format!("{pname}_str")
         }
         ConversionKind::EnumCast => {
             let rt = &mapped.rust_type;
-            let actual_repr = param.enum_name.as_deref()
+
+            let actual_repr = param
+                .enum_name
+                .as_deref()
                 .and_then(|en| ctx.enum_actual_repr(en))
                 .unwrap_or(&mapped.rust_ffi_type);
+
             out.push_str(&format!(
                 "        let {pname}_enum = {rt}::from_value({pname} as {actual_repr}).expect(\"unknown enum value\");\n"
             ));
+
             format!("{pname}_enum")
         }
         ConversionKind::StructOpaque => {
@@ -89,30 +86,31 @@ pub fn emit_out_param_conversion(
                 out.push_str(&format!(
                     "        let {pname}_owned = rusteal_core::OwnedStruct::from_bytes({pname}_buf);\n"
                 ));
+
                 format!("{pname}_owned")
             } else {
-                out.push_str(&format!("        let {pname}_ptr = {pname}_buf.as_ptr();\n"));
+                out.push_str(&format!(
+                    "        let {pname}_ptr = {pname}_buf.as_ptr();\n"
+                ));
+
                 out.push_str(&format!("        std::mem::forget({pname}_buf);\n"));
+
                 format!("{pname}_ptr")
             }
         }
         ConversionKind::IntCast => {
             let rt = &mapped.rust_type;
+
             format!("{pname} as {rt}")
         }
-        ConversionKind::FName => {
-            pname.to_string()
-        }
-        _ => {
-            pname.to_string()
-        }
+        ConversionKind::FName => pname.to_string(),
+        _ => pname.to_string(),
     }
 }
 
-/// Emit the final return expression from a list of return parts.
 pub fn emit_return_expr(out: &mut String, return_parts: &[String]) {
     match return_parts.len() {
-        0 => {},
+        0 => {}
         1 => out.push_str(&format!("        {}\n", return_parts[0])),
         _ => out.push_str(&format!("        ({})\n", return_parts.join(", "))),
     }

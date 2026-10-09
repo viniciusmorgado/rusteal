@@ -1,10 +1,7 @@
-// Error types for the Rusteal runtime.
-
 use std::fmt;
 
 use rusteal_ffi::RustealErrorCode;
 
-/// Rich error type for Rusteal operations.
 #[derive(Debug)]
 pub enum RustealError {
     ObjectDestroyed,
@@ -38,11 +35,8 @@ impl fmt::Display for RustealError {
 
 impl std::error::Error for RustealError {}
 
-/// Convenience alias used throughout the runtime and generated code.
 pub type RustealResult<T> = Result<T, RustealError>;
 
-/// Convert an FFI error code to a `RustealResult<()>`.
-/// `Ok` maps to `Ok(())`, all others map to the corresponding `RustealError`.
 pub fn check_ffi(code: RustealErrorCode) -> RustealResult<()> {
     match code {
         RustealErrorCode::Ok => Ok(()),
@@ -50,7 +44,6 @@ pub fn check_ffi(code: RustealErrorCode) -> RustealResult<()> {
     }
 }
 
-/// Like `check_ffi`, but enriches property/function errors with the given name.
 pub fn check_ffi_ctx(code: RustealErrorCode, context: &str) -> RustealResult<()> {
     match code {
         RustealErrorCode::Ok => Ok(()),
@@ -61,9 +54,6 @@ pub fn check_ffi_ctx(code: RustealErrorCode, context: &str) -> RustealResult<()>
     }
 }
 
-/// Assert that an FFI call returned `Ok`. Used for codegen-generated methods
-/// where handle validation has already been performed and the C++ wrapper
-/// is expected to always succeed. Panics in debug builds if the code is not `Ok`.
 #[inline(always)]
 pub fn ffi_infallible(code: RustealErrorCode) {
     debug_assert_eq!(
@@ -74,7 +64,6 @@ pub fn ffi_infallible(code: RustealErrorCode) {
     );
 }
 
-/// Like [`ffi_infallible`], but includes a context string in the panic message.
 #[inline(always)]
 pub fn ffi_infallible_ctx(code: RustealErrorCode, ctx: &str) {
     debug_assert_eq!(
@@ -90,11 +79,7 @@ impl From<RustealErrorCode> for RustealError {
     #[allow(clippy::match_same_arms)]
     fn from(code: RustealErrorCode) -> Self {
         match code {
-            RustealErrorCode::Ok => {
-                // Callers should not convert Ok into an error. If they do,
-                // treat it as an internal logic bug.
-                RustealError::Internal("unexpected Ok error code".into())
-            }
+            RustealErrorCode::Ok => RustealError::Internal("unexpected Ok error code".into()),
             RustealErrorCode::ObjectDestroyed => RustealError::ObjectDestroyed,
             RustealErrorCode::InvalidCast => RustealError::InvalidCast,
             RustealErrorCode::PropertyNotFound => RustealError::PropertyNotFound(String::new()),
@@ -131,9 +116,11 @@ mod tests {
             (RustealErrorCode::InvalidOperation, "InvalidOperation"),
             (RustealErrorCode::InternalError, "Internal"),
         ];
+
         for (code, expected_variant) in cases {
             let err = check_ffi(code).unwrap_err();
             let debug = format!("{err:?}");
+
             assert!(
                 debug.starts_with(expected_variant),
                 "expected {expected_variant}, got {debug}"

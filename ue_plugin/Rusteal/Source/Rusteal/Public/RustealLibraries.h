@@ -2,61 +2,29 @@
 
 #include "CoreMinimal.h"
 
-// The Rust libraries the Rusteal plugin hosts.
-//
-// A project has its game's library, which the Rusteal module loads itself, and
-// one library per Rusteal plugin, which the plugin's own module hands over from
-// its StartupModule. Each library comes with the function table generated for
-// it (its bindings and C++ wrappers), and is loaded, hot reloaded
-// (`Rusteal.Reload [Name]`) and unloaded on its own.
-
-/** Load the Rust library at LibraryPath and initialize it under Name, with the
- * generated function table of the module that registers it; its classes and
- * structs go in the package /Script/<Name>, the module's own. Returns false
- * when the library is missing or refused (another Rusteal version, a failed
- * init); the reason is in the Output Log. */
 RUSTEAL_API bool RustealRegisterLibrary(FName Name, const FString &LibraryPath,
                                         void *const *FuncTable,
                                         uint32 FuncCount);
 
-/** RustealRegisterLibrary for the library of the plugin PluginName, deployed by
- * `rusteal build` as <Plugin>/Binaries/<Platform>/rusteal_<PluginName>
- * (librusteal_<PluginName>.so on Linux, rusteal_<PluginName>.dll on Windows). */
 RUSTEAL_API bool RustealRegisterPluginLibrary(const FString &PluginName,
                                               void *const *FuncTable,
                                               uint32 FuncCount);
 
-/** Shut the library down and unload it. Objects of its classes stay; they lose
- * their Rust data. Called from the registering module's ShutdownModule. */
 RUSTEAL_API void RustealUnregisterLibrary(FName Name);
 
-/** The file name `rusteal build` deploys a library as: Stem with the platform's
- * prefix and extension (librusteal.so, rusteal.dll, librusteal.dylib). */
 RUSTEAL_API FString RustealLibraryFileName(const FString &Stem);
 
-/** Each library registered so far: its name and the file `rusteal build`
- * deploys it to, which a hot reload loads again. */
 RUSTEAL_API void RustealForEachLibrary(
     TFunctionRef<void(FName Name, const FString &DeployedPath)> Callback);
 
-/** Called when a library is registered, with the same arguments: a plugin's
- * module may start after whoever watches the libraries. */
 DECLARE_MULTICAST_DELEGATE_TwoParams(FRustealLibraryRegistered, FName,
                                      const FString &);
 RUSTEAL_API FRustealLibraryRegistered &RustealOnLibraryRegistered();
 
-/** Hot reload the library Name, as `Rusteal.Reload Name` does. False when
- * there is no such library or it failed to load (the Output Log says why). */
 RUSTEAL_API bool RustealReloadLibrary(FName Name);
 
-/** Moves the objects of the classes a hot reload replaced (old, new) to their
- * new class: a Rust class whose properties, functions or parent changed is
- * created again, and its objects, default object and Blueprint children
- * follow it. */
 using FRustealClassReinstancer =
     TFunction<void(const TArray<TPair<UClass *, UClass *>> &Classes)>;
 
-/** The editor module sets the reinstancer (docs/hot-reload.md); without one
- * (a game), a hot reload keeps a changed class as it was and asks for a
- * restart. */
-RUSTEAL_API void RustealSetClassReinstancer(FRustealClassReinstancer Reinstancer);
+RUSTEAL_API void
+RustealSetClassReinstancer(FRustealClassReinstancer Reinstancer);

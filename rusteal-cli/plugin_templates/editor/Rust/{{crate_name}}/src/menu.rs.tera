@@ -1,6 +1,3 @@
-// The plugin's menu entry and its console command: both count the project's
-// assets by type, the counting done off the game thread.
-
 use bindings::tool_menus::{FToolMenuContext, ToolMenuEntryScript};
 use bindings::unreal_ed::{EditorAssetSubsystem, EditorAssetSubsystemExt};
 use rusteal_runtime::runtime::{LOG_DISPLAY, LOG_ERROR, UStructRef, console, task, ulog};
@@ -19,8 +16,6 @@ impl {{ plugin }}MenuEntry {
     }
 }
 
-/// List the assets under `path` (the engine, on the game thread), count them
-/// by type on a thread of its own, and log the result back on the game thread.
 pub fn count_assets(path: &str) {
     let assets = match editor_subsystem::<EditorAssetSubsystem>().and_then(|s| s.checked()) {
         Ok(subsystem) => subsystem.list_assets(path, Some(true), Some(false)),
@@ -29,21 +24,24 @@ pub fn count_assets(path: &str) {
             return;
         }
     };
+
     let path = path.to_string();
+
     task::spawn(
         move || {
-            // "/Game/Maps/Lvl_Main.Lvl_Main": the type is not in the path,
-            // the name's prefix stands for it here (SM_, T_, BP_...).
             let mut by_prefix = std::collections::BTreeMap::<String, usize>::new();
+
             for asset in &assets {
                 let name = asset.rsplit('/').next().unwrap_or(asset);
                 let prefix = name.split_once('_').map_or("(no prefix)", |(p, _)| p);
                 *by_prefix.entry(prefix.to_string()).or_default() += 1;
             }
+
             (assets.len(), by_prefix)
         },
         move |(total, by_prefix)| {
             ulog!(LOG_DISPLAY, "[{{ plugin }}] {total} assets under {path}");
+
             for (prefix, count) in by_prefix {
                 ulog!(LOG_DISPLAY, "[{{ plugin }}]   {prefix}: {count}");
             }
@@ -57,6 +55,7 @@ fn startup() {
         "Count the assets under a path (default /Game) by name prefix",
         |args, _| count_assets(args.first().copied().unwrap_or("/Game")),
     );
+
     if let Err(e) = result {
         ulog!(LOG_ERROR, "[{{ plugin }}] no console command: {e:?}");
     }

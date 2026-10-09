@@ -1,5 +1,3 @@
-// Rotator ↔ OwnedStruct<FRotator> conversions.
-
 use rusteal_core::{OwnedStruct, Rotator};
 
 use crate::core_ue::{FRotator, FRotatorExt};
@@ -11,6 +9,7 @@ pub trait OwnedFRotatorExt {
 impl OwnedFRotatorExt for OwnedStruct<FRotator> {
     fn to_rotator(&self) -> Rotator {
         let r = self.as_ref();
+
         Rotator::new(r.get_pitch(), r.get_yaw(), r.get_roll())
     }
 }
@@ -22,6 +21,7 @@ impl FRotator {
         r.set_pitch(rot.pitch);
         r.set_yaw(rot.yaw);
         r.set_roll(rot.roll);
+
         s
     }
 }

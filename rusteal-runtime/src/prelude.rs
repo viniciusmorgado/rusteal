@@ -1,28 +1,16 @@
-// Prelude: one-import access to the most commonly used runtime types.
-//
-// Usage: `use rusteal_runtime::prelude::*;`. The engine types live in the
-// project's generated `bindings` crate, which has its own `bindings::prelude`.
-
-// Core runtime types
 pub use rusteal_core::{
-    UObjectRef, SubclassOf, SoftObjectRef, Pinned, RustealResult, RustealError, UeClass, UeStruct, UeEnum,
-    OwnedStruct, UStructRef, UeArray, UeMap, UeSet,
-    DynamicCall, DynamicCallResult, DelegateBinding, ConsoleVariable,
-    FName, TWeakObjectPtr,
-    LOG_DISPLAY, LOG_WARNING, LOG_ERROR,
+    ConsoleVariable, DelegateBinding, DynamicCall, DynamicCallResult, FName, LOG_DISPLAY,
+    LOG_ERROR, LOG_WARNING, OwnedStruct, Pinned, RustealError, RustealResult, SoftObjectRef,
+    SubclassOf, TWeakObjectPtr, UObjectRef, UStructRef, UeArray, UeClass, UeEnum, UeMap, UeSet,
+    UeStruct,
 };
 
-// UE math types (rusteal-core)
 pub use rusteal_core::{
-    Rotator, Transform, LinearColor, Color,
-    Plane, Ray, Sphere, UeBox, UeBox2d, BoxSphereBounds,
+    BoxSphereBounds, Color, LinearColor, Plane, Ray, Rotator, Sphere, Transform, UeBox, UeBox2d,
 };
 
-// FFI handles (rarely needed directly, but useful for advanced cases)
-pub use rusteal_core::{UObjectHandle, UClassHandle, FPropertyHandle, UStructHandle, FNameHandle};
+pub use rusteal_core::{FNameHandle, FPropertyHandle, UClassHandle, UObjectHandle, UStructHandle};
 
-// Proc macros
 pub use rusteal_macros::{uclass, uclass_impl, ustruct};
 
-// glam re-exports (common math types users will interact with)
-pub use glam::{DVec2, DVec3, DVec4, DQuat, DMat4, IVec2, IVec3};
+pub use glam::{DMat4, DQuat, DVec2, DVec3, DVec4, IVec2, IVec3};

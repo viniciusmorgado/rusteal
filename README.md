@@ -395,14 +395,18 @@ crate's own `Cargo.toml` they are ignored with a warning):
   must still run well in the editor. Only the game crate, the one that
   changes, is barely optimized; the runtime crates and the generated
   bindings, which compile once, are fully optimized. A change to the game
-  crate rebuilds in about a second.
+  crate rebuilds in about a second. The game crate has full debug info; the
+  dependencies and the bindings keep only file and line, enough for
+  backtraces: with all of theirs, the library would be over a hundred
+  megabytes, which every hot reload loads again.
 - **release** (shipping): the fastest library possible, however long it
   takes to build. The whole program is optimized as one unit (link-time
   optimization, a single codegen unit), which also drops the parts of the
   bindings the game does not use.
 
-The settings follow Bevy's recommendations for game projects
-([Bevy setup](https://bevy.org/learn/quick-start/getting-started/setup/)). The
+The optimization levels follow Bevy's recommendations for game projects
+([Bevy setup](https://bevy.org/learn/quick-start/getting-started/setup/));
+trimming the dependencies' debug info is Rusteal's, for hot reload. The
 Rusteal crates and the `rusteal` binary are not affected: these profiles only
 shape the game's library.
 

@@ -1,5 +1,3 @@
-// DVec2 ↔ OwnedStruct<FVector2D> conversions.
-
 use glam::DVec2;
 use rusteal_core::{OwnedStruct};
 
@@ -12,6 +10,7 @@ pub trait OwnedFVector2DExt {
 impl OwnedFVector2DExt for OwnedStruct<FVector2D> {
     fn to_dvec2(&self) -> DVec2 {
         let r = self.as_ref();
+
         DVec2::new(r.get_x(), r.get_y())
     }
 }
@@ -22,6 +21,7 @@ impl FVector2D {
         let r = s.as_ref();
         r.set_x(v.x);
         r.set_y(v.y);
+
         s
     }
 }

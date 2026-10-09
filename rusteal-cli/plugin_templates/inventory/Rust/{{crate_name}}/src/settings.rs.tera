@@ -1,15 +1,10 @@
-// The inventory's limits, in Project Settings > Game > {{ plugin }}Settings,
-// saved in Config/DefaultGame.ini.
-
 use bindings::developer_settings::DeveloperSettings;
 use rusteal_runtime::uclass;
 
 #[uclass(parent = DeveloperSettings, config = "Game")]
 pub struct {{ plugin }}Settings {
-    /// How many stacks an inventory holds.
     #[uproperty(Config, EditAnywhere, category = "{{ plugin }}", default = 20)]
     max_slots: i32,
-    /// The most an inventory carries, by the items' weight; 0 for no limit.
     #[uproperty(Config, EditAnywhere, category = "{{ plugin }}", default = 0.0)]
     max_weight: f32,
 }

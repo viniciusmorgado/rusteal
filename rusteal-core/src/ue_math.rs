@@ -1,11 +1,4 @@
-// UE math types without direct glam equivalents.
-// These are simple Rust structs with conversions to/from glam types where applicable.
-
 use glam::{DQuat, DVec2, DVec3, Vec4};
-
-// ---------------------------------------------------------------------------
-// Rotator (FRotator equivalent — pitch/yaw/roll in degrees)
-// ---------------------------------------------------------------------------
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Rotator {
@@ -15,15 +8,17 @@ pub struct Rotator {
 }
 
 impl Rotator {
-    pub const ZERO: Rotator = Rotator { pitch: 0.0, yaw: 0.0, roll: 0.0 };
+    pub const ZERO: Rotator = Rotator {
+        pitch: 0.0,
+        yaw: 0.0,
+        roll: 0.0,
+    };
 
     pub fn new(pitch: f64, yaw: f64, roll: f64) -> Self {
         Rotator { pitch, yaw, roll }
     }
 }
 
-// UE uses intrinsic ZYX rotation order (Yaw → Pitch → Roll), angles in degrees.
-// UE axes: Pitch=Y, Yaw=Z, Roll=X.
 impl From<Rotator> for DQuat {
     fn from(r: Rotator) -> DQuat {
         let deg2rad = std::f64::consts::PI / 180.0;
@@ -31,7 +26,6 @@ impl From<Rotator> for DQuat {
         let (sy, cy) = (r.yaw * 0.5 * deg2rad).sin_cos();
         let (sr, cr) = (r.roll * 0.5 * deg2rad).sin_cos();
 
-        // Standard ZYX: Quat = Qz(yaw) * Qy(pitch) * Qx(roll)
         DQuat::from_xyzw(
             cy * cp * sr - sy * sp * cr,
             cy * sp * cr + sy * cp * sr,
@@ -45,12 +39,12 @@ impl From<DQuat> for Rotator {
     fn from(q: DQuat) -> Rotator {
         let rad2deg = 180.0 / std::f64::consts::PI;
 
-        // Extract Euler angles (UE convention: intrinsic ZYX → extrinsic XYZ)
         let sinr_cosp = 2.0 * (q.w * q.x + q.y * q.z);
         let cosr_cosp = 1.0 - 2.0 * (q.x * q.x + q.y * q.y);
         let roll = sinr_cosp.atan2(cosr_cosp);
 
         let sinp = 2.0 * (q.w * q.y - q.z * q.x);
+
         let pitch = if sinp.abs() >= 1.0 {
             std::f64::consts::FRAC_PI_2.copysign(sinp)
         } else {
@@ -69,10 +63,6 @@ impl From<DQuat> for Rotator {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Transform (FTransform equivalent)
-// ---------------------------------------------------------------------------
-
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Transform {
     pub rotation: DQuat,
@@ -88,23 +78,28 @@ impl Transform {
     };
 
     pub fn new(rotation: DQuat, translation: DVec3, scale: DVec3) -> Self {
-        Transform { rotation, translation, scale }
+        Transform {
+            rotation,
+            translation,
+            scale,
+        }
     }
 
     pub fn from_translation(translation: DVec3) -> Self {
-        Transform { translation, ..Self::IDENTITY }
+        Transform {
+            translation,
+            ..Self::IDENTITY
+        }
     }
 
     pub fn from_rotation(rotation: DQuat) -> Self {
-        Transform { rotation, ..Self::IDENTITY }
+        Transform {
+            rotation,
+            ..Self::IDENTITY
+        }
     }
 }
 
-// ---------------------------------------------------------------------------
-// Color types
-// ---------------------------------------------------------------------------
-
-/// Linear color (float RGBA, 0.0–1.0 range). Maps to FLinearColor.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct LinearColor {
     pub r: f32,
@@ -114,11 +109,36 @@ pub struct LinearColor {
 }
 
 impl LinearColor {
-    pub const BLACK: LinearColor = LinearColor { r: 0.0, g: 0.0, b: 0.0, a: 1.0 };
-    pub const WHITE: LinearColor = LinearColor { r: 1.0, g: 1.0, b: 1.0, a: 1.0 };
-    pub const RED: LinearColor = LinearColor { r: 1.0, g: 0.0, b: 0.0, a: 1.0 };
-    pub const GREEN: LinearColor = LinearColor { r: 0.0, g: 1.0, b: 0.0, a: 1.0 };
-    pub const BLUE: LinearColor = LinearColor { r: 0.0, g: 0.0, b: 1.0, a: 1.0 };
+    pub const BLACK: LinearColor = LinearColor {
+        r: 0.0,
+        g: 0.0,
+        b: 0.0,
+        a: 1.0,
+    };
+    pub const WHITE: LinearColor = LinearColor {
+        r: 1.0,
+        g: 1.0,
+        b: 1.0,
+        a: 1.0,
+    };
+    pub const RED: LinearColor = LinearColor {
+        r: 1.0,
+        g: 0.0,
+        b: 0.0,
+        a: 1.0,
+    };
+    pub const GREEN: LinearColor = LinearColor {
+        r: 0.0,
+        g: 1.0,
+        b: 0.0,
+        a: 1.0,
+    };
+    pub const BLUE: LinearColor = LinearColor {
+        r: 0.0,
+        g: 0.0,
+        b: 1.0,
+        a: 1.0,
+    };
 
     pub fn new(r: f32, g: f32, b: f32, a: f32) -> Self {
         LinearColor { r, g, b, a }
@@ -133,12 +153,15 @@ impl From<LinearColor> for Vec4 {
 
 impl From<Vec4> for LinearColor {
     fn from(v: Vec4) -> LinearColor {
-        LinearColor { r: v.x, g: v.y, b: v.z, a: v.w }
+        LinearColor {
+            r: v.x,
+            g: v.y,
+            b: v.z,
+            a: v.w,
+        }
     }
 }
 
-/// 8-bit RGBA color. Maps to FColor (note: UE stores BGRA internally,
-/// conversions handle the reorder).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Color {
     pub r: u8,
@@ -148,22 +171,42 @@ pub struct Color {
 }
 
 impl Color {
-    pub const BLACK: Color = Color { r: 0, g: 0, b: 0, a: 255 };
-    pub const WHITE: Color = Color { r: 255, g: 255, b: 255, a: 255 };
-    pub const RED: Color = Color { r: 255, g: 0, b: 0, a: 255 };
-    pub const GREEN: Color = Color { r: 0, g: 255, b: 0, a: 255 };
-    pub const BLUE: Color = Color { r: 0, g: 0, b: 255, a: 255 };
+    pub const BLACK: Color = Color {
+        r: 0,
+        g: 0,
+        b: 0,
+        a: 255,
+    };
+    pub const WHITE: Color = Color {
+        r: 255,
+        g: 255,
+        b: 255,
+        a: 255,
+    };
+    pub const RED: Color = Color {
+        r: 255,
+        g: 0,
+        b: 0,
+        a: 255,
+    };
+    pub const GREEN: Color = Color {
+        r: 0,
+        g: 255,
+        b: 0,
+        a: 255,
+    };
+    pub const BLUE: Color = Color {
+        r: 0,
+        g: 0,
+        b: 255,
+        a: 255,
+    };
 
     pub fn new(r: u8, g: u8, b: u8, a: u8) -> Self {
         Color { r, g, b, a }
     }
 }
 
-// ---------------------------------------------------------------------------
-// Geometry primitives
-// ---------------------------------------------------------------------------
-
-/// A plane defined by normal + distance from origin. Maps to FPlane.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Plane {
     pub normal: DVec3,
@@ -176,7 +219,6 @@ impl Plane {
     }
 }
 
-/// A ray defined by origin + direction. Maps to FRay.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Ray {
     pub origin: DVec3,
@@ -189,7 +231,6 @@ impl Ray {
     }
 }
 
-/// A sphere defined by center + radius. Maps to FSphere.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Sphere {
     pub center: DVec3,
@@ -202,12 +243,6 @@ impl Sphere {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Bounding volumes
-// ---------------------------------------------------------------------------
-
-/// Axis-aligned bounding box. Named `UeBox` to avoid conflict with Rust's `Box`.
-/// Maps to FBox.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct UeBox {
     pub min: DVec3,
@@ -220,7 +255,6 @@ impl UeBox {
     }
 }
 
-/// 2D axis-aligned bounding box. Maps to FBox2D.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct UeBox2d {
     pub min: DVec2,
@@ -233,7 +267,6 @@ impl UeBox2d {
     }
 }
 
-/// Combined box + sphere bounds. Maps to FBoxSphereBounds.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct BoxSphereBounds {
     pub origin: DVec3,
@@ -243,7 +276,11 @@ pub struct BoxSphereBounds {
 
 impl BoxSphereBounds {
     pub fn new(origin: DVec3, box_extent: DVec3, sphere_radius: f64) -> Self {
-        BoxSphereBounds { origin, box_extent, sphere_radius }
+        BoxSphereBounds {
+            origin,
+            box_extent,
+            sphere_radius,
+        }
     }
 }
 

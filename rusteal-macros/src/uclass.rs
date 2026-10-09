@@ -1,47 +1,31 @@
-// Core uclass macro expansion: parses #[uclass(parent = Type)] struct with
-// #[uproperty(...)] fields and generates the full reification boilerplate.
-
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use syn::ext::IdentExt;
-use syn::{parse2, Expr, Fields, Ident, ItemStruct, Meta, Token};
 use syn::punctuated::Punctuated;
+use syn::{Expr, Fields, Ident, ItemStruct, Meta, Token, parse2};
 
 use crate::prop_type;
 use crate::shape;
 
-// ---------------------------------------------------------------------------
-// Attribute parsing
-// ---------------------------------------------------------------------------
-
-/// Parsed #[uclass(...)] attributes.
 struct UClassArgs {
-    parent_path: syn::Path,  // Full Rust path for compile-time type checking
-    parent_name: String,     // Last segment string for runtime find_class
-    /// UE interfaces the class implements, by class path
-    /// (`/Script/Module.Interface`, `/Game/Path/BPI_Foo.BPI_Foo_C`).
+    parent_path: syn::Path,
+    parent_name: String,
     implements: Vec<String>,
-    /// `config = "Game"`: a config class, its `Config` properties saved in
-    /// that category's ini files (`DefaultGame.ini`), as `UCLASS(Config=Game,
-    /// defaultconfig)`.
     config: Option<String>,
 }
 
 fn parse_uclass_args(attr: TokenStream) -> syn::Result<UClassArgs> {
-    let metas: Punctuated<Meta, Token![,]> =
-        parse2::<syn::parse::Nothing>(attr.clone())
-            .map(|_| Punctuated::new())
-            .unwrap_or_else(|_| {
-                syn::parse::Parser::parse2(
-                    Punctuated::<Meta, Token![,]>::parse_terminated,
-                    attr,
-                )
+    let metas: Punctuated<Meta, Token![,]> = parse2::<syn::parse::Nothing>(attr.clone())
+        .map(|_| Punctuated::new())
+        .unwrap_or_else(|_| {
+            syn::parse::Parser::parse2(Punctuated::<Meta, Token![,]>::parse_terminated, attr)
                 .unwrap_or_default()
-            });
+        });
 
     let mut parent_path: Option<syn::Path> = None;
     let mut implements = Vec::new();
     let mut config = None;
+
     for meta in &metas {
         if let Meta::NameValue(nv) = meta
             && nv.path.is_ident("config")
@@ -49,6 +33,7 @@ fn parse_uclass_args(attr: TokenStream) -> syn::Result<UClassArgs> {
             config = Some(str_value(&nv.value, "config")?);
             continue;
         }
+
         if let Meta::NameValue(nv) = meta
             && nv.path.is_ident("implements")
         {
@@ -56,9 +41,13 @@ fn parse_uclass_args(attr: TokenStream) -> syn::Result<UClassArgs> {
                 Expr::Array(array) => array.elems.iter().collect::<Vec<_>>(),
                 other => vec![other],
             };
+
             for path in paths {
                 match path {
-                    Expr::Lit(syn::ExprLit { lit: syn::Lit::Str(s), .. }) if s.value().starts_with('/') => {
+                    Expr::Lit(syn::ExprLit {
+                        lit: syn::Lit::Str(s),
+                        ..
+                    }) if s.value().starts_with('/') => {
                         implements.push(s.value());
                     }
                     other => {
@@ -70,8 +59,10 @@ fn parse_uclass_args(attr: TokenStream) -> syn::Result<UClassArgs> {
                     }
                 }
             }
+
             continue;
         }
+
         if let Meta::NameValue(nv) = meta
             && nv.path.is_ident("parent")
         {
@@ -86,6 +77,7 @@ fn parse_uclass_args(attr: TokenStream) -> syn::Result<UClassArgs> {
             }
         }
     }
+
     let parent_path = parent_path.ok_or_else(|| {
         syn::Error::new(
             proc_macro2::Span::call_site(),
@@ -97,20 +89,21 @@ fn parse_uclass_args(attr: TokenStream) -> syn::Result<UClassArgs> {
              \x20               GameModeBase, ActorComponent, SceneComponent",
         )
     })?;
+
     let parent_name = parent_path
         .segments
         .last()
         .map(|s| s.ident.to_string())
         .unwrap_or_default();
-    Ok(UClassArgs { parent_path, parent_name, implements, config })
+
+    Ok(UClassArgs {
+        parent_path,
+        parent_name,
+        implements,
+        config,
+    })
 }
 
-/// Specifiers parsed from #[uproperty(...)].
-///
-/// **CDO default note**: The `default = ...` value is written to the CDO during
-/// class registration. Hot-reloading will NOT propagate new defaults to existing
-/// instances. Always initialize critical values in your `receive_begin_play` or
-/// init function instead of relying solely on CDO defaults.
 #[derive(Default)]
 pub(crate) struct UPropertyArgs {
     blueprint_read_write: bool,
@@ -118,38 +111,35 @@ pub(crate) struct UPropertyArgs {
     edit_anywhere: bool,
     edit_defaults_only: bool,
     visible_anywhere: bool,
-    /// `SaveGame`: written by `SaveGameToSlot`, which only serializes
-    /// properties carrying the flag.
     save_game: bool,
-    /// `Config`: read from and saved to the ini files of the class's
-    /// `config` category.
     config: bool,
     pub(crate) default_expr: Option<Expr>,
-    /// The UE name when it is not the field's (`NPC` for `npc`).
     name: Option<String>,
-    /// `Category` metadata: the Details section, and for a StateTree task's
-    /// property its role (`Context`, `Input`, `Output`, `Parameter`).
     category: Option<String>,
 }
 
-/// A string literal attribute value.
 fn str_value(value: &Expr, what: &str) -> syn::Result<String> {
     match value {
-        Expr::Lit(syn::ExprLit { lit: syn::Lit::Str(s), .. }) => Ok(s.value()),
-        other => Err(syn::Error::new_spanned(other, format!("{what} is a string literal"))),
+        Expr::Lit(syn::ExprLit {
+            lit: syn::Lit::Str(s),
+            ..
+        }) => Ok(s.value()),
+        other => Err(syn::Error::new_spanned(
+            other,
+            format!("{what} is a string literal"),
+        )),
     }
 }
 
 pub(crate) fn parse_uproperty_args(attr: &syn::Attribute) -> syn::Result<UPropertyArgs> {
     let mut args = UPropertyArgs::default();
-    // #[uproperty] with no parens: a property only C++ and the GC see, as
-    // `UPROPERTY()` is.
+
     if let Meta::Path(_) = attr.meta {
         return Ok(args);
     }
-    let nested = attr.parse_args_with(
-        Punctuated::<Meta, Token![,]>::parse_terminated,
-    )?;
+
+    let nested = attr.parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated)?;
+
     for meta in &nested {
         match meta {
             Meta::Path(p) => {
@@ -176,10 +166,9 @@ pub(crate) fn parse_uproperty_args(attr: &syn::Attribute) -> syn::Result<UProper
                     ));
                 }
             }
-            Meta::NameValue(nv)
-                if nv.path.is_ident("default") => {
-                    args.default_expr = Some(nv.value.clone());
-                }
+            Meta::NameValue(nv) if nv.path.is_ident("default") => {
+                args.default_expr = Some(nv.value.clone());
+            }
             Meta::NameValue(nv) if nv.path.is_ident("name") => {
                 args.name = Some(str_value(&nv.value, "name")?);
             }
@@ -187,23 +176,21 @@ pub(crate) fn parse_uproperty_args(attr: &syn::Attribute) -> syn::Result<UProper
                 args.category = Some(str_value(&nv.value, "category")?);
             }
             other => {
-                return Err(syn::Error::new_spanned(other, "unknown #[uproperty] argument"));
+                return Err(syn::Error::new_spanned(
+                    other,
+                    "unknown #[uproperty] argument",
+                ));
             }
         }
     }
+
     Ok(args)
 }
 
-// ---------------------------------------------------------------------------
-// Component attribute parsing
-// ---------------------------------------------------------------------------
-
-/// Parsed #[component(...)] attributes.
 struct ComponentArgs {
     is_root: bool,
     attach_to: Option<String>,
     socket: Option<String>,
-    /// The subobject's name when it is not the field's ("Collision Check Box").
     name: Option<String>,
 }
 
@@ -215,10 +202,7 @@ fn parse_component_args(attr: &syn::Attribute) -> syn::Result<ComponentArgs> {
         name: None,
     };
 
-    // #[component] with no parens → defaults
-    let nested = match attr.parse_args_with(
-        Punctuated::<Meta, Token![,]>::parse_terminated,
-    ) {
+    let nested = match attr.parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated) {
         Ok(n) => n,
         Err(_) => return Ok(args),
     };
@@ -230,52 +214,50 @@ fn parse_component_args(attr: &syn::Attribute) -> syn::Result<ComponentArgs> {
                     args.is_root = true;
                 }
             }
-            Meta::NameValue(nv)
-                if nv.path.is_ident("attach") => {
-                    if let Expr::Lit(syn::ExprLit {
-                        lit: syn::Lit::Str(s), ..
-                    }) = &nv.value
-                    {
-                        args.attach_to = Some(s.value());
-                    } else {
-                        return Err(syn::Error::new_spanned(
-                            &nv.value,
-                            "attach must be a string literal, e.g. attach = \"root_scene\"",
-                        ));
-                    }
+            Meta::NameValue(nv) if nv.path.is_ident("attach") => {
+                if let Expr::Lit(syn::ExprLit {
+                    lit: syn::Lit::Str(s),
+                    ..
+                }) = &nv.value
+                {
+                    args.attach_to = Some(s.value());
+                } else {
+                    return Err(syn::Error::new_spanned(
+                        &nv.value,
+                        "attach must be a string literal, e.g. attach = \"root_scene\"",
+                    ));
                 }
-            Meta::NameValue(nv)
-                if nv.path.is_ident("socket") => {
-                    if let Expr::Lit(syn::ExprLit {
-                        lit: syn::Lit::Str(s), ..
-                    }) = &nv.value
-                    {
-                        args.socket = Some(s.value());
-                    } else {
-                        return Err(syn::Error::new_spanned(
-                            &nv.value,
-                            "socket must be a string literal, e.g. socket = \"SpringEndpoint\"",
-                        ));
-                    }
+            }
+            Meta::NameValue(nv) if nv.path.is_ident("socket") => {
+                if let Expr::Lit(syn::ExprLit {
+                    lit: syn::Lit::Str(s),
+                    ..
+                }) = &nv.value
+                {
+                    args.socket = Some(s.value());
+                } else {
+                    return Err(syn::Error::new_spanned(
+                        &nv.value,
+                        "socket must be a string literal, e.g. socket = \"SpringEndpoint\"",
+                    ));
                 }
+            }
             Meta::NameValue(nv) if nv.path.is_ident("name") => {
                 args.name = Some(str_value(&nv.value, "name")?);
             }
             _ => {}
         }
     }
+
     if args.socket.is_some() && args.attach_to.is_none() {
         return Err(syn::Error::new_spanned(
             attr,
             "socket needs attach, e.g. attach = \"camera_boom\", socket = \"SpringEndpoint\"",
         ));
     }
+
     Ok(args)
 }
-
-// ---------------------------------------------------------------------------
-// Field classification
-// ---------------------------------------------------------------------------
 
 pub(crate) struct UPropertyField {
     pub ident: Ident,
@@ -284,7 +266,6 @@ pub(crate) struct UPropertyField {
 }
 
 impl UPropertyField {
-    /// The property's UE name: given, or the field's (`b_foo` is `bFoo`).
     fn ue_name(&self) -> String {
         self.args
             .name
@@ -304,13 +285,8 @@ struct ComponentField {
     is_root: bool,
     attach_to: Option<String>,
     socket: Option<String>,
-    /// The subobject's UE name (the field's, PascalCase, unless given).
     subobject_name: String,
 }
-
-// ---------------------------------------------------------------------------
-// Code generation
-// ---------------------------------------------------------------------------
 
 pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream> {
     let attr_shape = format!("uclass({attr})");
@@ -321,7 +297,6 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
     let struct_vis = &input.vis;
     let struct_name_str = struct_name.to_string();
 
-    // Classify fields
     let mut uprops: Vec<UPropertyField> = Vec::new();
     let mut rust_fields: Vec<RustPrivateField> = Vec::new();
     let mut components: Vec<ComponentField> = Vec::new();
@@ -346,19 +321,13 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
         let field_ident = field.ident.as_ref().unwrap().clone();
         let field_ty = field.ty.clone();
 
-        let comp_attr = field
-            .attrs
-            .iter()
-            .find(|a| a.path().is_ident("component"));
+        let comp_attr = field.attrs.iter().find(|a| a.path().is_ident("component"));
 
-        let uprop_attr = field
-            .attrs
-            .iter()
-            .find(|a| a.path().is_ident("uproperty"));
+        let uprop_attr = field.attrs.iter().find(|a| a.path().is_ident("uproperty"));
 
         if let Some(attr) = comp_attr {
             let cargs = parse_component_args(attr)?;
-            // Extract the type as a path for UeClass trait bound
+
             let component_type = match &field_ty {
                 syn::Type::Path(tp) => tp.path.clone(),
                 _ => {
@@ -368,9 +337,11 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
                     ));
                 }
             };
+
             let subobject_name = cargs
                 .name
                 .unwrap_or_else(|| prop_type::to_pascal_case(&field_ident.unraw().to_string()));
+
             components.push(ComponentField {
                 ident: field_ident,
                 component_type,
@@ -381,7 +352,7 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
             });
         } else if let Some(attr) = uprop_attr {
             let pargs = parse_uproperty_args(attr)?;
-            // Validate type is supported
+
             let Some(info) = prop_type::map_type(&field_ty) else {
                 return Err(syn::Error::new_spanned(
                     &field_ty,
@@ -390,6 +361,7 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
                      OwnedStruct<T>, FName, String and UE enums",
                 ));
             };
+
             if matches!(info.kind, prop_type::PropKind::Struct { .. }) {
                 return Err(syn::Error::new_spanned(
                     &field_ty,
@@ -397,8 +369,12 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
                      #[uproperty] is an OwnedStruct<T>",
                 ));
             }
+
             if pargs.default_expr.is_some()
-                && !matches!(info.kind, prop_type::PropKind::Scalar { .. } | prop_type::PropKind::Enum { .. })
+                && !matches!(
+                    info.kind,
+                    prop_type::PropKind::Scalar { .. } | prop_type::PropKind::Enum { .. }
+                )
             {
                 return Err(syn::Error::new_spanned(
                     &field_ty,
@@ -406,6 +382,7 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
                      the others are set in #[class_defaults] or a Blueprint child",
                 ));
             }
+
             uprops.push(UPropertyField {
                 ident: field_ident,
                 ty: field_ty,
@@ -419,23 +396,32 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
         }
     }
 
-    // Generate names
     let rust_data_name = format_ident!("__{}RustData", struct_name);
-    let class_handle_name = format_ident!("__RUSTEAL_CLASS_HANDLE_{}", to_screaming_snake(&struct_name_str));
+
+    let class_handle_name = format_ident!(
+        "__RUSTEAL_CLASS_HANDLE_{}",
+        to_screaming_snake(&struct_name_str)
+    );
+
     let register_fn_name = format_ident!("__rusteal_register_{}", to_snake_case(&struct_name_str));
     let members_fn_name = format_ident!("__rusteal_members_{}", to_snake_case(&struct_name_str));
     let finalize_fn_name = format_ident!("__rusteal_finalize_{}", to_snake_case(&struct_name_str));
-    let after_defaults_fn_name =
-        format_ident!("__rusteal_after_defaults_{}", to_snake_case(&struct_name_str));
 
-    let type_id_value = prop_type::fnv1a_hash(&struct_name_str);
-    // What its UClass is built from: its arguments and its UE fields.
-    let shape_value = shape::hash(
-        std::iter::once(attr_shape)
-            .chain(fields.iter().filter_map(|f| shape::field(f, &["uproperty", "component"]))),
+    let after_defaults_fn_name = format_ident!(
+        "__rusteal_after_defaults_{}",
+        to_snake_case(&struct_name_str)
     );
 
-    // --- 1. Rewritten user struct (thin handle) ---
+    let type_id_value = prop_type::fnv1a_hash(&struct_name_str);
+
+    let shape_value = shape::hash(
+        std::iter::once(attr_shape).chain(
+            fields
+                .iter()
+                .filter_map(|f| shape::field(f, &["uproperty", "component"])),
+        ),
+    );
+
     let user_struct = quote! {
         #struct_vis struct #struct_name {
             #[doc(hidden)]
@@ -445,7 +431,6 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
         }
     };
 
-    // --- 2. Rust private data struct ---
     let rust_data_fields: Vec<TokenStream> = rust_fields
         .iter()
         .map(|f| {
@@ -478,13 +463,11 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
         }
     };
 
-    // --- 3. Static class handle ---
     let static_handle = quote! {
         #[doc(hidden)]
         pub static #class_handle_name: std::sync::OnceLock<::rusteal_runtime::ffi::UClassHandle> = std::sync::OnceLock::new();
     };
 
-    // --- 4. UeClass trait impl ---
     let ue_class_impl = quote! {
         impl ::rusteal_runtime::runtime::UeClass for #struct_name {
             fn static_class() -> ::rusteal_runtime::ffi::UClassHandle {
@@ -493,13 +476,19 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
         }
     };
 
-    // --- 5. Property getters/setters ---
     let mut accessor_methods: Vec<TokenStream> = Vec::new();
     let container = quote! { self.__obj };
     let owner = quote! { <Self as ::rusteal_runtime::runtime::UeClass>::static_class() };
-    for accessor in property_accessors(&uprops, &container, &format_ident!("reflection_find_property"), &owner) {
+
+    for accessor in property_accessors(
+        &uprops,
+        &container,
+        &format_ident!("reflection_find_property"),
+        &owner,
+    ) {
         let signature = accessor.signature();
         let body = &accessor.body;
+
         accessor_methods.push(quote! {
             pub #signature {
                 #body
@@ -507,9 +496,6 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
         });
     }
 
-
-    // Rust private field accessors: a copy (a clone), a setter, and the
-    // field itself to change in place (a map, a vector).
     for f in &rust_fields {
         let ident = &f.ident;
         let ty = &f.ty;
@@ -531,7 +517,6 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
         });
     }
 
-    // Component accessors (find default subobject by name)
     for comp in &components {
         let field_ident = &comp.ident;
         let comp_type = &comp.component_type;
@@ -547,65 +532,62 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
                         [#(#comp_name_bytes),*].as_ptr(), #comp_name_len,
                     )
                 };
+
                 if h.is_null() {
                     return Err(::rusteal_runtime::runtime::RustealError::InvalidOperation(
                         concat!("subobject '", #comp_name, "' not found").into()
                     ));
                 }
+
                 Ok(unsafe { ::rusteal_runtime::runtime::UObjectRef::from_raw(h) })
             }
         });
     }
 
-    // as_ref: convenience method to get a UObjectRef to the parent type
     let as_ref_parent = &args.parent_path;
+
     accessor_methods.push(quote! {
-        /// Get a `UObjectRef` to the underlying UE object (typed as the parent class).
         pub fn as_ref(&self) -> ::rusteal_runtime::runtime::UObjectRef<#as_ref_parent> {
             unsafe { ::rusteal_runtime::runtime::UObjectRef::from_raw(self.__obj) }
         }
     });
 
-    // from_obj: cast from UObjectRef<impl UeClass> to the reified struct
     accessor_methods.push(quote! {
-        /// Cast a `UObjectRef` to this reified type.
-        ///
-        /// Checks `IsA` and retrieves the Rust-side instance data.
-        /// Fails if the object is not an instance of this class or has no Rust data.
         pub fn from_obj(obj: ::rusteal_runtime::runtime::UObjectRef<impl ::rusteal_runtime::runtime::UeClass>) -> ::rusteal_runtime::runtime::RustealResult<Self> {
             let handle = obj.checked()?.raw();
+
             let is_a = unsafe {
                 ::rusteal_runtime::runtime::ffi_dispatch::core_is_a(handle, <Self as ::rusteal_runtime::runtime::UeClass>::static_class())
             };
+
             if !is_a {
                 return Err(::rusteal_runtime::runtime::RustealError::InvalidCast);
             }
+
             let rust_data = ::rusteal_runtime::runtime::reify_registry::get_instance_data(
                 handle,
                 Self::__RUSTEAL_TYPE_ID,
             ) as *mut #rust_data_name;
+
             if rust_data.is_null() {
                 return Err(::rusteal_runtime::runtime::RustealError::InvalidOperation("no rust data for reified cast".into()));
             }
+
             Ok(Self { __obj: handle, __rust_data: rust_data })
         }
     });
 
-    // get_default: the class default object, which for a settings class
-    // holds the project's settings.
     accessor_methods.push(quote! {
-        /// The class default object: what every instance starts from, and
-        /// for a config class (`config = "..."`) the values its ini files hold.
         pub fn get_default() -> ::rusteal_runtime::runtime::RustealResult<Self> {
             let class = <Self as ::rusteal_runtime::runtime::UeClass>::static_class();
             let cdo = unsafe { ::rusteal_runtime::runtime::ffi_dispatch::reify_get_cdo(class) };
+
             Self::from_obj(unsafe { ::rusteal_runtime::runtime::UObjectRef::<Self>::from_raw(cdo) })
         }
     });
 
     let accessors_impl = quote! {
         impl #struct_name {
-            /// The Rust type ID the class's instance data is registered under.
             #[doc(hidden)]
             pub const __RUSTEAL_TYPE_ID: u64 = #type_id_value;
 
@@ -613,7 +595,6 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
         }
     };
 
-    // --- 6. Registration function ---
     let parent_path = &args.parent_path;
     let parent_name = args.parent_name.as_str();
     let parent_name_bytes = parent_name.as_bytes();
@@ -621,14 +602,15 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
     let struct_name_bytes = struct_name_str.as_bytes();
     let struct_name_byte_len = struct_name_str.len() as u32;
 
-    // Generate add_property calls
     let add_prop_stmts = add_property_statements(&uprops);
+
     let add_interface_stmts: Vec<TokenStream> = args
         .implements
         .iter()
         .map(|path| {
             let bytes = path.as_bytes();
             let len = path.len() as u32;
+
             quote! {
                 unsafe {
                     ::rusteal_runtime::runtime::ffi_dispatch::reify_add_interface(
@@ -641,39 +623,42 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
         })
         .collect();
 
-    // Generate add_default_subobject calls
     let mut add_comp_stmts: Vec<TokenStream> = Vec::new();
+
     for comp in &components {
         let comp_type = &comp.component_type;
         let comp_name_bytes = comp.subobject_name.as_bytes();
         let comp_name_len = comp.subobject_name.len() as u32;
-        // The property referencing it is named after the field.
+
         let property_name = prop_type::to_pascal_case(&comp.ident.unraw().to_string());
         let property_bytes = property_name.as_bytes();
         let property_len = property_name.len() as u32;
 
         let mut flags: u32 = 0;
+
         if comp.is_root {
-            flags |= 1; // RUSTEAL_COMP_ROOT
+            flags |= 1;
         }
 
-        // The parent is named like a field (`root_component`, `camera_boom`)
-        // and registered under its UE name; the socket is a UE name as is.
         let name_arg = |name: Option<String>| match name {
             Some(name) => {
                 let bytes = name.into_bytes();
                 let len = bytes.len() as u32;
+
                 (quote! { [#(#bytes),*].as_ptr() }, quote! { #len })
             }
             None => (quote! { std::ptr::null() }, quote! { 0u32 }),
         };
+
         let (attach_ptr, attach_len) =
             name_arg(comp.attach_to.as_deref().map(prop_type::to_pascal_case));
+
         let (socket_ptr, socket_len) = name_arg(comp.socket.clone());
 
         add_comp_stmts.push(quote! {
             {
                 let comp_class = <#comp_type as ::rusteal_runtime::runtime::UeClass>::static_class();
+
                 unsafe {
                     ::rusteal_runtime::runtime::ffi_dispatch::reify_add_default_subobject(
                         class,
@@ -689,8 +674,8 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
         });
     }
 
-    // Generate CDO default stmts for finalize (re-find properties by name)
     let mut finalize_cdo_stmts: Vec<TokenStream> = Vec::new();
+
     for prop in &uprops {
         if let Some(ref default_expr) = prop.args.default_expr {
             let set_default = match prop_type::map_type(&prop.ty).unwrap().kind {
@@ -705,9 +690,11 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
                 },
                 _ => continue,
             };
+
             let ue_name = prop.ue_name();
             let ue_name_bytes = ue_name.as_bytes();
             let ue_name_len = ue_name.len() as u32;
+
             finalize_cdo_stmts.push(quote! {
                 {
                     let prop = unsafe {
@@ -717,6 +704,7 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
                             #ue_name_len,
                         )
                     };
+
                     if !prop.is_null() {
                         unsafe { #set_default; }
                     }
@@ -730,24 +718,24 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
         pub fn #register_fn_name(last_try: bool, shape: u64) -> bool {
             const TYPE_ID: u64 = #type_id_value;
 
-            // Find parent class; a Rust parent may not be created yet
             let parent = unsafe {
                 ::rusteal_runtime::runtime::ffi_dispatch::reflection_find_class(
                     [#(#parent_name_bytes),*].as_ptr(),
                     #parent_name_len,
                 )
             };
+
             if parent.is_null() {
                 if !last_try {
                     return false;
                 }
+
                 let msg = concat!("[Rusteal] ", stringify!(#struct_name), ": failed to find parent class '", #parent_name, "'");
                 let bytes = msg.as_bytes();
                 unsafe { ::rusteal_runtime::runtime::ffi_dispatch::logging_log(2, bytes.as_ptr(), bytes.len() as u32); }
                 return true;
             }
 
-            // Register Rust type info
             ::rusteal_runtime::runtime::reify_registry::register_type(
                 TYPE_ID,
                 ::rusteal_runtime::runtime::reify_registry::RustTypeInfo {
@@ -763,7 +751,6 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
                 },
             );
 
-            // Create class
             let class = unsafe {
                 ::rusteal_runtime::runtime::ffi_dispatch::reify_create_class(
                     [#(#struct_name_bytes),*].as_ptr(),
@@ -773,13 +760,16 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
                     shape,
                 )
             };
+
             if class.is_null() {
                 let msg = concat!("[Rusteal] ", stringify!(#struct_name), ": create_class failed");
                 let bytes = msg.as_bytes();
                 unsafe { ::rusteal_runtime::runtime::ffi_dispatch::logging_log(2, bytes.as_ptr(), bytes.len() as u32); }
                 return true;
             }
+
             #class_handle_name.set(class).ok();
+
             true
         }
 
@@ -790,13 +780,10 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
                 _ => return,
             };
 
-            // Add properties (finalize deferred to __rusteal_finalize)
             #(#add_prop_stmts)*
 
-            // Interfaces, which the engine adds once they can be loaded
             #(#add_interface_stmts)*
 
-            // Register default subobjects
             #(#add_comp_stmts)*
         }
     };
@@ -809,8 +796,8 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
                 _ => return,
             };
 
-            // Finalize
             let result = unsafe { ::rusteal_runtime::runtime::ffi_dispatch::reify_finalize_class(class) };
+
             if result != ::rusteal_runtime::ffi::RustealErrorCode::Ok {
                 let msg = concat!("[Rusteal] ", stringify!(#struct_name), ": finalize_class failed");
                 let bytes = msg.as_bytes();
@@ -818,8 +805,8 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
                 return;
             }
 
-            // Set CDO defaults
             let cdo = unsafe { ::rusteal_runtime::runtime::ffi_dispatch::reify_get_cdo(class) };
+
             if !cdo.is_null() {
                 #(#finalize_cdo_stmts)*
             }
@@ -830,11 +817,10 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
         }
     };
 
-    // Once the class defaults are written: a config class loads its ini
-    // values over them.
     let config_stmt = args.config.as_ref().map(|config| {
         let config_bytes = config.as_bytes();
         let config_len = config.len() as u32;
+
         quote! {
             let result = unsafe {
                 ::rusteal_runtime::runtime::ffi_dispatch::reify_set_class_config(
@@ -850,20 +836,22 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
             }
         }
     });
+
     let after_defaults_fn = quote! {
         #[doc(hidden)]
         pub fn #after_defaults_fn_name() {
             let Some(&class) = #class_handle_name.get() else {
                 return;
             };
+
             if class.is_null() {
                 return;
             }
+
             #config_stmt
         }
     };
 
-    // --- Compile-time parent type check ---
     let comp_type_checks: Vec<TokenStream> = components
         .iter()
         .map(|c| {
@@ -877,19 +865,18 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
             fn _rusteal_parent_check() {
                 fn _assert_ue_class<T: ::rusteal_runtime::runtime::UeClass>() {}
                 _assert_ue_class::<#parent_path>();
+
                 #(#comp_type_checks)*
             }
         };
     };
 
-    // --- HasParent for the Deref chain on UObjectRef<T>, Checked<T>, Pinned<T> ---
     let has_parent_impl = quote! {
         impl ::rusteal_runtime::runtime::HasParent for #struct_name {
             type Parent = #parent_path;
         }
     };
 
-    // --- Inherits: the class is everything its parent is ---
     let inherits_impl = quote! {
         impl<U: ::rusteal_runtime::runtime::UeClass> ::rusteal_runtime::runtime::Inherits<U> for #struct_name
         where
@@ -898,19 +885,15 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
         }
     };
 
-    // --- Deref to UObjectRef<Parent> for auto-deref to parent Ext trait methods ---
     let deref_impl = quote! {
         impl std::ops::Deref for #struct_name {
             type Target = ::rusteal_runtime::runtime::UObjectRef<#parent_path>;
             fn deref(&self) -> &::rusteal_runtime::runtime::UObjectRef<#parent_path> {
-                // SAFETY: UObjectRef<T> is repr(transparent) over UObjectHandle,
-                // and __obj is the first field of the reified struct.
                 unsafe { &*(&self.__obj as *const ::rusteal_runtime::ffi::UObjectHandle as *const ::rusteal_runtime::runtime::UObjectRef<#parent_path>) }
             }
         }
     };
 
-    // Combine everything
     Ok(quote! {
         #user_struct
         #rust_data_struct
@@ -938,22 +921,21 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
     })
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
 pub(crate) fn to_snake_case(s: &str) -> String {
     let mut result = String::new();
+
     for (i, c) in s.chars().enumerate() {
         if c.is_uppercase() {
             if i > 0 {
                 result.push('_');
             }
+
             result.push(c.to_lowercase().next().unwrap());
         } else {
             result.push(c);
         }
     }
+
     result
 }
 
@@ -961,18 +943,14 @@ pub(crate) fn to_screaming_snake(s: &str) -> String {
     to_snake_case(s).to_uppercase()
 }
 
-/// A property's getter or setter: an inherent method of a `#[uclass]`, a
-/// method of the `Ext` trait of a `#[ustruct]`.
 pub(crate) struct Accessor {
     pub name: Ident,
-    /// `val: T` for a setter.
     pub param: Option<TokenStream>,
     pub ret: Option<TokenStream>,
     pub body: TokenStream,
 }
 
 impl Accessor {
-    /// The method's signature: `fn name(&self, val: T) -> R`.
     pub fn signature(&self) -> TokenStream {
         let name = &self.name;
         let param = self.param.iter();
@@ -981,10 +959,6 @@ impl Accessor {
     }
 }
 
-/// The getters and setters of `uprops`, properties of the memory `container`
-/// points to (a `UObjectHandle`): an object's, or a struct's. Each finds its
-/// property once with `find_fn` (a `ffi_dispatch` function) in `owner`, the
-/// class or struct handle.
 pub(crate) fn property_accessors(
     uprops: &[UPropertyField],
     container: &TokenStream,
@@ -992,6 +966,7 @@ pub(crate) fn property_accessors(
     owner: &TokenStream,
 ) -> Vec<Accessor> {
     let mut accessors = Vec::new();
+
     for prop in uprops {
         let info = prop_type::map_type(&prop.ty).unwrap();
         let field_ident = &prop.ident;
@@ -1000,7 +975,6 @@ pub(crate) fn property_accessors(
         let ue_name_len = ue_name.len() as u32;
         let rust_ty = &info.rust_type;
 
-        // The FProperty, looked up once per accessor.
         let find_prop = quote! {
             static PROP: std::sync::OnceLock<::rusteal_runtime::ffi::FPropertyHandle> = std::sync::OnceLock::new();
             let prop = *PROP.get_or_init(|| unsafe {
@@ -1013,52 +987,61 @@ pub(crate) fn property_accessors(
         };
 
         let (getter_body, setter_body) = match &info.kind {
-            prop_type::PropKind::Scalar { getter_fn, setter_fn, zero_expr } => {
+            prop_type::PropKind::Scalar {
+                getter_fn,
+                setter_fn,
+                zero_expr,
+            } => {
                 let getter_dispatch = format_ident!("property_{}", getter_fn);
                 let setter_dispatch = format_ident!("property_{}", setter_fn);
+
                 (
                     quote! {
                         let mut val: #rust_ty = #zero_expr;
                         unsafe { ::rusteal_runtime::runtime::ffi_dispatch::#getter_dispatch(#container, prop, &mut val); }
                         val
                     },
-                    Some((quote! { #rust_ty }, quote! {
-                        unsafe { ::rusteal_runtime::runtime::ffi_dispatch::#setter_dispatch(#container, prop, val); }
-                    })),
+                    Some((
+                        quote! { #rust_ty },
+                        quote! {
+                            unsafe { ::rusteal_runtime::runtime::ffi_dispatch::#setter_dispatch(#container, prop, val); }
+                        },
+                    )),
                 )
             }
             prop_type::PropKind::Object { .. } => (
                 quote! {
                     let mut h = ::rusteal_runtime::ffi::UObjectHandle::null();
                     unsafe { ::rusteal_runtime::runtime::ffi_dispatch::property_get_object(#container, prop, &mut h); }
-                    // The property only holds objects of its class.
                     unsafe { <#rust_ty>::from_raw(h) }
                 },
-                Some((quote! { #rust_ty }, quote! {
-                    unsafe { ::rusteal_runtime::runtime::ffi_dispatch::property_set_object(#container, prop, val.raw()); }
-                })),
+                Some((
+                    quote! { #rust_ty },
+                    quote! {
+                        unsafe { ::rusteal_runtime::runtime::ffi_dispatch::property_set_object(#container, prop, val.raw()); }
+                    },
+                )),
             ),
             prop_type::PropKind::Class { .. } => (
                 quote! {
                     let mut h = ::rusteal_runtime::ffi::UObjectHandle::null();
                     unsafe { ::rusteal_runtime::runtime::ffi_dispatch::property_get_object(#container, prop, &mut h); }
-                    // The property only holds its meta class and subclasses.
                     unsafe { <#rust_ty>::from_raw(::rusteal_runtime::ffi::UClassHandle(h.0)) }
                 },
-                Some((quote! { #rust_ty }, quote! {
-                    unsafe {
-                        ::rusteal_runtime::runtime::ffi_dispatch::property_set_object(
-                            #container, prop, ::rusteal_runtime::ffi::UObjectHandle(val.raw().0),
-                        );
-                    }
-                })),
+                Some((
+                    quote! { #rust_ty },
+                    quote! {
+                        unsafe {
+                            ::rusteal_runtime::runtime::ffi_dispatch::property_set_object(
+                                #container, prop, ::rusteal_runtime::ffi::UObjectHandle(val.raw().0),
+                            );
+                        }
+                    },
+                )),
             ),
-            // A view of the array inside the object: it is read and changed in place.
-            prop_type::PropKind::Array { .. } => (
-                quote! { <#rust_ty>::new(#container, prop) },
-                None,
-            ),
-            // A copy of the struct; the setter copies one in.
+            prop_type::PropKind::Array { .. } => {
+                (quote! { <#rust_ty>::new(#container, prop) }, None)
+            }
             prop_type::PropKind::OwnedStruct { .. } => (
                 quote! {
                     let size = unsafe { ::rusteal_runtime::runtime::ffi_dispatch::reflection_get_property_size(prop) } as usize;
@@ -1068,14 +1051,16 @@ pub(crate) fn property_accessors(
                     }, #ue_name);
                     ::rusteal_runtime::runtime::OwnedStruct::from_bytes(buf)
                 },
-                Some((quote! { &#rust_ty }, quote! {
-                    let bytes = val.to_bytes();
-                    ::rusteal_runtime::runtime::ffi_infallible_ctx(unsafe {
-                        ::rusteal_runtime::runtime::ffi_dispatch::property_set_struct(#container, prop, bytes.as_ptr(), bytes.len() as u32)
-                    }, #ue_name);
-                })),
+                Some((
+                    quote! { &#rust_ty },
+                    quote! {
+                        let bytes = val.to_bytes();
+                        ::rusteal_runtime::runtime::ffi_infallible_ctx(unsafe {
+                            ::rusteal_runtime::runtime::ffi_dispatch::property_set_struct(#container, prop, bytes.as_ptr(), bytes.len() as u32)
+                        }, #ue_name);
+                    },
+                )),
             ),
-            // The path; `load_synchronous` loads the object.
             prop_type::PropKind::SoftObject { .. } => (
                 quote! {
                     let mut len: u32 = 0;
@@ -1093,14 +1078,17 @@ pub(crate) fn property_accessors(
                     buf.truncate(len as usize);
                     ::rusteal_runtime::runtime::SoftObjectRef::new(String::from_utf8(buf).unwrap_or_default())
                 },
-                Some((quote! { &#rust_ty }, quote! {
-                    let path = val.path();
-                    unsafe {
-                        ::rusteal_runtime::runtime::ffi_dispatch::property_set_soft_object_path(
-                            #container, prop, path.as_ptr(), path.len() as u32,
-                        );
-                    }
-                })),
+                Some((
+                    quote! { &#rust_ty },
+                    quote! {
+                        let path = val.path();
+                        unsafe {
+                            ::rusteal_runtime::runtime::ffi_dispatch::property_set_soft_object_path(
+                                #container, prop, path.as_ptr(), path.len() as u32,
+                            );
+                        }
+                    },
+                )),
             ),
             prop_type::PropKind::Name => (
                 quote! {
@@ -1108,9 +1096,12 @@ pub(crate) fn property_accessors(
                     unsafe { ::rusteal_runtime::runtime::ffi_dispatch::property_get_fname(#container, prop, &mut h); }
                     ::rusteal_runtime::runtime::FName(h)
                 },
-                Some((quote! { #rust_ty }, quote! {
-                    unsafe { ::rusteal_runtime::runtime::ffi_dispatch::property_set_fname(#container, prop, val.handle()); }
-                })),
+                Some((
+                    quote! { #rust_ty },
+                    quote! {
+                        unsafe { ::rusteal_runtime::runtime::ffi_dispatch::property_set_fname(#container, prop, val.handle()); }
+                    },
+                )),
             ),
             prop_type::PropKind::Str => (
                 quote! {
@@ -1129,13 +1120,16 @@ pub(crate) fn property_accessors(
                     buf.truncate(len as usize);
                     String::from_utf8(buf).unwrap_or_default()
                 },
-                Some((quote! { &str }, quote! {
-                    unsafe {
-                        ::rusteal_runtime::runtime::ffi_dispatch::property_set_string(
-                            #container, prop, val.as_ptr(), val.len() as u32,
-                        );
-                    }
-                })),
+                Some((
+                    quote! { &str },
+                    quote! {
+                        unsafe {
+                            ::rusteal_runtime::runtime::ffi_dispatch::property_set_string(
+                                #container, prop, val.as_ptr(), val.len() as u32,
+                            );
+                        }
+                    },
+                )),
             ),
             prop_type::PropKind::Enum { ty } => (
                 quote! {
@@ -1144,18 +1138,22 @@ pub(crate) fn property_accessors(
                     <#ty as ::rusteal_runtime::runtime::UeEnum>::from_i64(raw)
                         .unwrap_or_else(|| panic!("{} holds {}, not a {}", #ue_name, raw, stringify!(#ty)))
                 },
-                Some((quote! { #rust_ty }, quote! {
-                    unsafe {
-                        ::rusteal_runtime::runtime::ffi_dispatch::property_set_enum(
-                            #container, prop, ::rusteal_runtime::runtime::UeEnum::to_i64(val),
-                        );
-                    }
-                })),
+                Some((
+                    quote! { #rust_ty },
+                    quote! {
+                        unsafe {
+                            ::rusteal_runtime::runtime::ffi_dispatch::property_set_enum(
+                                #container, prop, ::rusteal_runtime::runtime::UeEnum::to_i64(val),
+                            );
+                        }
+                    },
+                )),
             ),
-            prop_type::PropKind::Struct { .. } => unreachable!("rejected when the field was parsed"),
+            prop_type::PropKind::Struct { .. } => {
+                unreachable!("rejected when the field was parsed")
+            }
         };
 
-        // Getter (always generated)
         accessors.push(Accessor {
             name: format_ident!("{}", field_ident),
             param: None,
@@ -1166,8 +1164,6 @@ pub(crate) fn property_accessors(
             },
         });
 
-        // Setter: the class's own code writes even what Blueprint only reads,
-        // as C++ does
         if let Some((setter_ty, setter_body)) = setter_body {
             accessors.push(Accessor {
                 name: format_ident!("set_{}", field_ident),
@@ -1180,13 +1176,13 @@ pub(crate) fn property_accessors(
             });
         }
     }
+
     accessors
 }
 
-/// The statements adding `uprops` to the class or struct in the variable
-/// `class` (a `UClassHandle`, which a struct's handle is passed as).
 pub(crate) fn add_property_statements(uprops: &[UPropertyField]) -> Vec<TokenStream> {
     let mut add_prop_stmts: Vec<TokenStream> = Vec::new();
+
     for prop in uprops {
         let info = prop_type::map_type(&prop.ty).unwrap();
         let ue_name = prop.ue_name();
@@ -1195,50 +1191,49 @@ pub(crate) fn add_property_statements(uprops: &[UPropertyField]) -> Vec<TokenStr
         let prop_type_expr = &info.prop_type_expr;
         let prop_var = format_ident!("_prop_{}", prop.ident);
 
-        // Compute flags:
-        //   BlueprintReadWrite → visible + editable in Details and Blueprint
-        //   BlueprintReadOnly  → visible in Blueprint (get only) + visible but greyed in Details
-        //   EditAnywhere       → editable in Details
         let mut flag_parts = Vec::new();
+
         if prop.args.blueprint_read_write || prop.args.blueprint_read_only {
             flag_parts.push(quote! { ::rusteal_runtime::ffi::CPF_BLUEPRINT_VISIBLE });
         }
+
         if prop.args.blueprint_read_only {
             flag_parts.push(quote! { ::rusteal_runtime::ffi::CPF_BLUEPRINT_READ_ONLY });
-            // Alone, also shown read-only in Details (VisibleAnywhere); with
-            // EditAnywhere or EditDefaultsOnly, editable there as they say.
+
             if !prop.args.edit_anywhere && !prop.args.edit_defaults_only {
                 flag_parts.push(quote! { ::rusteal_runtime::ffi::CPF_EDIT });
                 flag_parts.push(quote! { ::rusteal_runtime::ffi::CPF_EDIT_CONST });
             }
         }
+
         if prop.args.edit_anywhere || prop.args.blueprint_read_write {
             flag_parts.push(quote! { ::rusteal_runtime::ffi::CPF_EDIT });
         }
-        // EditDefaultsOnly: editable on the class defaults (a Blueprint
-        // child), not on instances in a level.
+
         if prop.args.edit_defaults_only {
             flag_parts.push(quote! { ::rusteal_runtime::ffi::CPF_EDIT });
             flag_parts.push(quote! { ::rusteal_runtime::ffi::CPF_DISABLE_EDIT_ON_INSTANCE });
         }
-        // VisibleAnywhere: shown in Details, never edited there.
+
         if prop.args.visible_anywhere {
             flag_parts.push(quote! { ::rusteal_runtime::ffi::CPF_EDIT });
             flag_parts.push(quote! { ::rusteal_runtime::ffi::CPF_EDIT_CONST });
         }
+
         if prop.args.save_game {
             flag_parts.push(quote! { ::rusteal_runtime::ffi::CPF_SAVE_GAME });
         }
+
         if prop.args.config {
             flag_parts.push(quote! { ::rusteal_runtime::ffi::CPF_CONFIG });
         }
+
         if flag_parts.is_empty() {
             flag_parts.push(quote! { 0u64 });
         }
+
         let flags_expr = quote! { #(#flag_parts)|* };
 
-        // What the plugin needs beyond the type: the class of an object, the
-        // meta class of a class, the element of an array.
         let extra_expr = match info.extra_fields() {
             Some(fields) => quote! {
                 &::rusteal_runtime::ffi::RustealReifyPropExtra {
@@ -1249,7 +1244,6 @@ pub(crate) fn add_property_statements(uprops: &[UPropertyField]) -> Vec<TokenStr
             None => quote! { std::ptr::null() },
         };
 
-        // Metadata the editor (and StateTree) reads.
         let meta_stmts: Vec<TokenStream> = prop
             .args
             .category
@@ -1257,6 +1251,7 @@ pub(crate) fn add_property_statements(uprops: &[UPropertyField]) -> Vec<TokenStr
             .map(|category| {
                 let value_bytes = category.as_bytes();
                 let value_len = category.len() as u32;
+
                 quote! {
                     unsafe {
                         ::rusteal_runtime::runtime::ffi_dispatch::reify_set_property_metadata(
@@ -1283,8 +1278,8 @@ pub(crate) fn add_property_statements(uprops: &[UPropertyField]) -> Vec<TokenStr
                 #(#meta_stmts)*
             }
         });
-
     }
+
     add_prop_stmts
 }
 
@@ -1295,9 +1290,23 @@ mod tests {
 
     #[test]
     fn implements_takes_interface_paths() {
-        let args = parse_uclass_args(quote::quote!(parent = Actor, implements = ["/Script/Game.Usable", "/Game/BPI_X.BPI_X_C"])).unwrap();
-        assert_eq!(args.implements, ["/Script/Game.Usable", "/Game/BPI_X.BPI_X_C"]);
-        let one = parse_uclass_args(quote::quote!(parent = Actor, implements = "/Script/Game.Usable")).unwrap();
+        let args = parse_uclass_args(quote::quote!(
+            parent = Actor,
+            implements = ["/Script/Game.Usable", "/Game/BPI_X.BPI_X_C"]
+        ))
+        .unwrap();
+
+        assert_eq!(
+            args.implements,
+            ["/Script/Game.Usable", "/Game/BPI_X.BPI_X_C"]
+        );
+
+        let one = parse_uclass_args(quote::quote!(
+            parent = Actor,
+            implements = "/Script/Game.Usable"
+        ))
+        .unwrap();
+
         assert_eq!(one.implements, ["/Script/Game.Usable"]);
         assert!(parse_uclass_args(quote::quote!(parent = Actor, implements = [Usable])).is_err());
         assert!(parse_uclass_args(quote::quote!(parent = Actor, implements = ["Usable"])).is_err());
@@ -1305,9 +1314,18 @@ mod tests {
 
     #[test]
     fn config_names_the_ini_category() {
-        let args = parse_uclass_args(quote::quote!(parent = DeveloperSettings, config = "Game")).unwrap();
+        let args =
+            parse_uclass_args(quote::quote!(parent = DeveloperSettings, config = "Game")).unwrap();
+
         assert_eq!(args.config.as_deref(), Some("Game"));
-        assert!(parse_uclass_args(quote::quote!(parent = Actor)).unwrap().config.is_none());
+
+        assert!(
+            parse_uclass_args(quote::quote!(parent = Actor))
+                .unwrap()
+                .config
+                .is_none()
+        );
+
         assert!(parse_uclass_args(quote::quote!(parent = Actor, config = Game)).is_err());
     }
 
@@ -1318,7 +1336,12 @@ mod tests {
             ty: parse_quote!(i32),
             args: parse_uproperty_args(&parse_quote!(#[uproperty(Config, EditAnywhere)])).unwrap(),
         };
-        assert!(add_property_statements(&[field])[0].to_string().contains("CPF_CONFIG"));
+
+        assert!(
+            add_property_statements(&[field])[0]
+                .to_string()
+                .contains("CPF_CONFIG")
+        );
     }
 
     #[test]
@@ -1335,6 +1358,7 @@ mod tests {
             ty: parse_quote!(f32),
             args: parse_uproperty_args(&attr).unwrap(),
         };
+
         let flagged = add_property_statements(&[field(parse_quote!(#[uproperty(SaveGame)]))]);
         assert!(flagged[0].to_string().contains("CPF_SAVE_GAME"));
         let plain = add_property_statements(&[field(parse_quote!(#[uproperty(EditAnywhere)]))]);

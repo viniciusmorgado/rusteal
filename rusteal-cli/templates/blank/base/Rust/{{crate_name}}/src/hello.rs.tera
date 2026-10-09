@@ -1,5 +1,3 @@
-// A first actor. Drop a HelloActor into a level and press Play.
-
 use bindings::prelude::*;
 use rusteal_runtime::runtime::{LOG_DISPLAY, ulog};
 use rusteal_runtime::{uclass, uclass_impl};

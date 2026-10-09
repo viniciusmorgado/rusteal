@@ -1,10 +1,3 @@
-// #[ustruct]: a UE struct declared in Rust, as UHT's USTRUCT().
-//
-// The struct's memory belongs to UE (a data table's rows, an object's
-// property, an `OwnedStruct`), so the Rust type is a marker, like the
-// bindings' engine structs, and its fields are read and written through an
-// `Ext` trait on `UStructRef<T>` and `OwnedStruct<T>`.
-
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use syn::{Fields, ItemStruct, parse2};
@@ -18,8 +11,12 @@ use crate::uclass::{
 
 pub fn expand_ustruct(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream> {
     if !attr.is_empty() {
-        return Err(syn::Error::new_spanned(attr, "#[ustruct] takes no arguments"));
+        return Err(syn::Error::new_spanned(
+            attr,
+            "#[ustruct] takes no arguments",
+        ));
     }
+
     let input: ItemStruct = parse2(item)?;
     let name = &input.ident;
     let vis = &input.vis;
@@ -35,15 +32,19 @@ pub fn expand_ustruct(attr: TokenStream, item: TokenStream) -> syn::Result<Token
 
     let mut uprops: Vec<UPropertyField> = Vec::new();
     let mut field_docs = Vec::new();
+
     for field in &fields.named {
         let ident = field.ident.clone().unwrap();
+
         let Some(attr) = field.attrs.iter().find(|a| a.path().is_ident("uproperty")) else {
             return Err(syn::Error::new_spanned(
                 field,
                 "every #[ustruct] field is a #[uproperty]: the struct's memory is UE's",
             ));
         };
+
         let args = parse_uproperty_args(attr)?;
+
         let Some(info) = prop_type::map_type(&field.ty) else {
             return Err(syn::Error::new_spanned(
                 &field.ty,
@@ -52,26 +53,44 @@ pub fn expand_ustruct(attr: TokenStream, item: TokenStream) -> syn::Result<Token
                  OwnedStruct<T>, FName, String and UE enums",
             ));
         };
+
         if matches!(info.kind, prop_type::PropKind::Struct { .. }) {
             return Err(syn::Error::new_spanned(
                 &field.ty,
                 "a struct field is an OwnedStruct<T>",
             ));
         }
+
         if args.default_expr.is_some() {
             return Err(syn::Error::new_spanned(
                 attr,
                 "a #[ustruct] field has no `default = ...`: it starts zeroed (null, empty, 0)",
             ));
         }
-        let docs: Vec<_> = field.attrs.iter().filter(|a| a.path().is_ident("doc")).cloned().collect();
+
+        let docs: Vec<_> = field
+            .attrs
+            .iter()
+            .filter(|a| a.path().is_ident("doc"))
+            .cloned()
+            .collect();
+
         field_docs.push((ident.clone(), docs));
-        uprops.push(UPropertyField { ident, ty: field.ty.clone(), args });
+
+        uprops.push(UPropertyField {
+            ident,
+            ty: field.ty.clone(),
+            args,
+        });
     }
 
-    // What its UScriptStruct is built from: its fields.
-    let shape_value =
-        shape::hash(fields.named.iter().filter_map(|f| shape::field(f, &["uproperty"])));
+    let shape_value = shape::hash(
+        fields
+            .named
+            .iter()
+            .filter_map(|f| shape::field(f, &["uproperty"])),
+    );
+
     let handle_name = format_ident!("__RUSTEAL_STRUCT_HANDLE_{}", to_screaming_snake(&name_str));
     let create_fn = format_ident!("__rusteal_create_struct_{}", to_snake_case(&name_str));
     let members_fn = format_ident!("__rusteal_struct_members_{}", to_snake_case(&name_str));
@@ -80,13 +99,13 @@ pub fn expand_ustruct(attr: TokenStream, item: TokenStream) -> syn::Result<Token
     let name_bytes = name_str.as_bytes();
     let name_len = name_str.len() as u32;
 
-    // Accessors, each with its field's docs.
     let accessors = property_accessors(
         &uprops,
         &quote! { self.as_ptr() },
         &format_ident!("reflection_find_struct_property"),
         &quote! { <#name as ::rusteal_runtime::runtime::UeStruct>::static_struct() },
     );
+
     let docs_of = |accessor: &str| {
         field_docs
             .iter()
@@ -94,19 +113,23 @@ pub fn expand_ustruct(attr: TokenStream, item: TokenStream) -> syn::Result<Token
             .map(|(_, docs)| docs.clone())
             .unwrap_or_default()
     };
+
     let mut trait_items = Vec::new();
     let mut ref_impls = Vec::new();
     let mut owned_impls = Vec::new();
+
     for accessor in &accessors {
         let signature = accessor.signature();
         let body = &accessor.body;
         let method = &accessor.name;
         let docs = docs_of(&method.to_string());
+
         let forward = if accessor.param.is_some() {
             quote! { self.as_ref().#method(val) }
         } else {
             quote! { self.as_ref().#method() }
         };
+
         trait_items.push(quote! { #(#docs)* #signature; });
         ref_impls.push(quote! { #signature { #body } });
         owned_impls.push(quote! { #signature { #forward } });
@@ -153,12 +176,14 @@ pub fn expand_ustruct(attr: TokenStream, item: TokenStream) -> syn::Result<Token
                     #shape_value,
                 )
             };
+
             if handle.is_null() {
                 let msg = concat!("[Rusteal] ", stringify!(#name), ": create_struct failed");
                 let bytes = msg.as_bytes();
                 unsafe { ::rusteal_runtime::runtime::ffi_dispatch::logging_log(2, bytes.as_ptr(), bytes.len() as u32); }
                 return;
             }
+
             #handle_name.set(handle).ok();
         }
 
@@ -167,8 +192,9 @@ pub fn expand_ustruct(attr: TokenStream, item: TokenStream) -> syn::Result<Token
             let Some(&handle) = #handle_name.get() else {
                 return;
             };
-            // add_property takes the struct's handle as a class handle.
+
             let class = ::rusteal_runtime::ffi::UClassHandle(handle.0);
+
             #(#add_prop_stmts)*
         }
 
@@ -177,7 +203,9 @@ pub fn expand_ustruct(attr: TokenStream, item: TokenStream) -> syn::Result<Token
             let Some(&handle) = #handle_name.get() else {
                 return;
             };
+
             let result = unsafe { ::rusteal_runtime::runtime::ffi_dispatch::reify_finalize_struct(handle) };
+
             if result != ::rusteal_runtime::ffi::RustealErrorCode::Ok {
                 let msg = concat!("[Rusteal] ", stringify!(#name), ": finalize_struct failed");
                 let bytes = msg.as_bytes();
