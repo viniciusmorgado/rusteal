@@ -825,6 +825,18 @@ fields start over on every reload. A changed `#[ustruct]` still needs an editor
 restart, and so does a changed class outside the editor (`-game`). How it
 works, and why: [docs/hot-reload.md](docs/hot-reload.md).
 
+#### Console commands
+
+Typed in the editor's console: the `` ` `` key in the viewport, or the **Cmd**
+box at the bottom of the **Output Log** tab.
+
+| Command | What it does |
+|---|---|
+| `Rusteal.Reload` | Reloads every Rust library of the project. |
+| `Rusteal.Reload <Name>` | Reloads one library: the game's is named after the project, a plugin's after the plugin. |
+| `Rusteal.AutoReload 0` | Stops reloading a library when `rusteal build` deploys it again; `Rusteal.Reload` still works. |
+| `Rusteal.AutoReload 1` | Reloads a library when it is deployed again, the default. |
+
 ### Packaging a game
 
 ```bash
@@ -1242,8 +1254,9 @@ cargo run -p rusteal -- setup /tmp/Probe
 cargo run -p rusteal -- build /tmp/Probe --all
 ```
 
-In the editor, `Rusteal.Reload` swaps the library in without restarting; adding
-or removing a `uproperty`/`ufunction` still needs a restart.
+In the editor, each `build` reloads the library by itself, changed classes
+included (see [Hot Reload](#hot-reload)); a change to the UE plugins needs an
+editor restart.
 
 A project made with `--runtime-path` follows that checkout: the CLI acts on it
 only when built from the same checkout, so drive it with `cargo run -p rusteal --`
