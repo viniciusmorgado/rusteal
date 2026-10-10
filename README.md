@@ -104,12 +104,6 @@ Rusteal is a hard fork of [**uika**](https://github.com/VioletHelianthus/uika) b
 
 Rusteal does not intend to stay compatible with the original uika, unless its author wants to port the improvements back. From here on it develops the Unreal bindings independently.
 
-## Example
-
-[`examples/gem_collector`](https://github.com/viniciusmorgado/rusteal/tree/main/examples/gem_collector)
-in this repository is a full working demo of the runtime API: copy the
-directory into a project's `Rust/` and add it to the workspace members.
-
 ## Making a game
 
 Everything from here to [Making a plugin](#making-a-plugin) is about using
