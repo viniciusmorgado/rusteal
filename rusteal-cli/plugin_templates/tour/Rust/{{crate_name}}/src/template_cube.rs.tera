@@ -1,0 +1,61 @@
+use bindings::engine::{
+    Actor, MaterialInstanceDynamicExt, MaterialInterface, PrimitiveComponentExt,
+    StaticMeshComponent, Texture,
+};
+use bindings::prelude::*;
+use rusteal_runtime::runtime::{FName, OwnedStruct, UObjectRef};
+use rusteal_runtime::{uclass, uclass_impl};
+
+#[uclass(parent = Actor)]
+pub struct TemplateCube {
+    #[component(root, name = "Cube")]
+    cube: StaticMeshComponent,
+
+    #[component(attach = "cube", name = "Plane")]
+    plane: StaticMeshComponent,
+
+    #[uproperty(
+        EditAnywhere,
+        BlueprintReadWrite,
+        name = "Texture Target",
+        category = "Template"
+    )]
+    texture_target: UObjectRef<Texture>,
+
+    #[uproperty(
+        EditAnywhere,
+        BlueprintReadWrite,
+        name = "Col Target",
+        category = "Template"
+    )]
+    col_target: OwnedStruct<FLinearColor>,
+
+    #[uproperty(EditAnywhere, BlueprintReadWrite, category = "Template")]
+    template_box_material: UObjectRef<MaterialInterface>,
+
+    #[uproperty(EditAnywhere, BlueprintReadWrite, category = "Template")]
+    box_art_material: UObjectRef<MaterialInterface>,
+}
+
+#[uclass_impl]
+impl TemplateCube {
+    #[ufunction(Override)]
+    fn user_construction_script(&mut self) {
+        if let Ok(plane) = self.plane().and_then(|p| p.checked())
+            && let Ok(material) = plane
+                .create_dynamic_material_instance(0, Some(self.template_box_material()), None)
+                .checked()
+        {
+            material
+                .set_texture_parameter_value(FName::new("Diff").handle(), self.texture_target());
+        }
+
+        if let Ok(cube) = self.cube().and_then(|c| c.checked())
+            && let Ok(material) = cube
+                .create_dynamic_material_instance(0, Some(self.box_art_material()), None)
+                .checked()
+        {
+            material.set_vector_parameter_value(FName::new("BoxCol").handle(), &self.col_target());
+        }
+    }
+}

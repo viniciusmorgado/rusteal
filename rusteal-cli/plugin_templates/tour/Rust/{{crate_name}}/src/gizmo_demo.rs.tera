@@ -1,0 +1,265 @@
+use bindings::core_ue::{EAxis, FTransform};
+use bindings::engine::{
+    Actor, ActorExt, EAttachmentRule, GameplayStatics, SceneComponent, SceneComponentExt,
+    StaticMesh, StaticMeshComponent, StaticMeshComponentExt,
+};
+use bindings::prelude::*;
+use bindings::umg::{WidgetComponent, WidgetComponentExt};
+use glam::DVec3;
+use rusteal_runtime::runtime::{FName, Rotator, RustealResult, SubclassOf, Transform, UObjectRef};
+use rusteal_runtime::{uclass, uclass_impl};
+
+use crate::curve::{self, Key};
+use crate::keys::KeyboardKeyWidget;
+
+pub const STEP_DELAY: f64 = 0.5;
+pub const DEMO_LENGTH: f64 = 1.5;
+pub const HIDE_DISTANCE: f64 = 1500.0;
+
+const MOVE: [Key; 3] = [
+    curve::key(0.0, 0.0, 2.854_138, 2.854_137),
+    curve::key(0.746_717, 0.999_299, -0.027_573, -0.027_573),
+    curve::key(1.5, 0.0, -2.865_836, -2.865_836),
+];
+
+const ROTATE: [Key; 3] = [
+    curve::key(0.0, 0.0, 3.509_187, 3.509_184),
+    curve::key(0.750_62, 1.0, 0.082_87, 0.082_87),
+    curve::key(1.5, -0.007_908, -3.144_23, -3.144_224),
+];
+
+const SCALE: [Key; 3] = [
+    curve::key(0.0, 0.997_474, 2.987_759, 2.987_762),
+    curve::key(0.751_94, 1.997_474, 0.082_87, 0.082_87),
+    curve::key(1.5, 0.989_565, -3.028_403, -3.028_397),
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum Step {
+    #[default]
+    Idle,
+    Waiting(f64),
+    Showing(f64),
+    Playing(f64),
+}
+
+impl Step {
+    pub fn advance(self, delta: f64) -> (Step, bool) {
+        match self {
+            Step::Idle => (Step::Idle, false),
+            Step::Waiting(t) if t + delta >= STEP_DELAY => (Step::Showing(0.0), true),
+            Step::Waiting(t) => (Step::Waiting(t + delta), false),
+            Step::Showing(t) if t + delta >= STEP_DELAY => (Step::Playing(0.0), false),
+            Step::Showing(t) => (Step::Showing(t + delta), false),
+            Step::Playing(t) if t + delta >= DEMO_LENGTH => (Step::Waiting(0.0), false),
+            Step::Playing(t) => (Step::Playing(t + delta), false),
+        }
+    }
+}
+
+pub fn demo_transform(axis: EAxis, time: f64) -> Option<(DVec3, Rotator, DVec3)> {
+    match axis {
+        EAxis::X => Some((
+            DVec3::new(0.0, 0.0, curve::eval(&MOVE, time) * 50.0),
+            Rotator::new(0.0, 0.0, 0.0),
+            DVec3::ONE,
+        )),
+        EAxis::Y => Some((
+            DVec3::ZERO,
+            Rotator::new(curve::eval(&ROTATE, time) * 90.0, 0.0, 0.0),
+            DVec3::ONE,
+        )),
+        EAxis::Z => Some((
+            DVec3::ZERO,
+            Rotator::new(0.0, 0.0, 0.0),
+            DVec3::new(1.0, 1.0, curve::eval(&SCALE, time)),
+        )),
+        _ => None,
+    }
+}
+
+pub fn demo_key(axis: EAxis) -> &'static str {
+    match axis {
+        EAxis::X => "W",
+        EAxis::Y => "E",
+        EAxis::Z => "R",
+        _ => "",
+    }
+}
+
+#[uclass(parent = Actor)]
+pub struct GizmoDemo {
+    #[component(root, name = "DefaultSceneRoot")]
+    default_scene_root: SceneComponent,
+
+    #[component(attach = "default_scene_root", name = "Cube")]
+    cube: StaticMeshComponent,
+
+    #[component(attach = "default_scene_root", name = "Widget")]
+    widget: WidgetComponent,
+
+    #[uproperty(
+        EditAnywhere,
+        BlueprintReadWrite,
+        name = "Selection",
+        category = "Gizmo"
+    )]
+    selection: EAxis,
+
+    #[uproperty(EditAnywhere, BlueprintReadWrite, category = "Gizmo")]
+    location_gizmo: UObjectRef<StaticMesh>,
+
+    #[uproperty(EditAnywhere, BlueprintReadWrite, category = "Gizmo")]
+    rotate_gizmo: UObjectRef<StaticMesh>,
+
+    #[uproperty(EditAnywhere, BlueprintReadWrite, category = "Gizmo")]
+    scale_gizmo: UObjectRef<StaticMesh>,
+
+    #[uproperty(BlueprintReadOnly, name = "Gizmo", category = "Gizmo")]
+    gizmo: UObjectRef<StaticMeshComponent>,
+
+    step: Step,
+}
+
+#[uclass_impl]
+impl GizmoDemo {
+    #[ufunction(Override)]
+    fn receive_begin_play(&mut self) {
+        if let Ok(widget) = self.widget().and_then(|w| w.checked()) {
+            widget.set_visibility(true, Some(false));
+        }
+
+        if self.add_gizmo().is_ok() && demo_transform(self.selection(), 0.0).is_some() {
+            self.set_step(Step::Waiting(0.0));
+        }
+    }
+
+    #[ufunction(Override)]
+    fn receive_tick(&mut self, delta_seconds: f32) {
+        let (step, show) = self.step().advance(f64::from(delta_seconds));
+        self.set_step(step);
+
+        if show {
+            self.show_selection();
+        }
+
+        if let Step::Playing(time) = step {
+            self.play_demo(time);
+        }
+
+        self.hide_when_far();
+    }
+}
+
+impl GizmoDemo {
+    fn add_gizmo(&mut self) -> RustealResult<()> {
+        let actor = self.as_ref().checked()?;
+        let identity = FTransform::from_transform(Transform::IDENTITY);
+        let gizmo = actor
+            .add_component_by_class(
+                SubclassOf::<StaticMeshComponent>::base().upcast_to(),
+                false,
+                &identity,
+                false,
+            )
+            .cast::<StaticMeshComponent>()?;
+
+        gizmo.checked()?.k2_attach_to_component(
+            self.cube()?.upcast_to(),
+            FName::new("None").handle(),
+            EAttachmentRule::SnapToTarget,
+            EAttachmentRule::SnapToTarget,
+            EAttachmentRule::KeepRelative,
+            true,
+        );
+        self.set_gizmo(gizmo);
+        Ok(())
+    }
+
+    fn show_selection(&mut self) {
+        let mesh = match self.selection() {
+            EAxis::X => self.location_gizmo(),
+            EAxis::Y => self.rotate_gizmo(),
+            EAxis::Z => self.scale_gizmo(),
+            _ => return,
+        };
+
+        if let Ok(gizmo) = self.gizmo().checked() {
+            gizmo.set_static_mesh(mesh);
+        }
+
+        if let Ok(widget) = self.widget().and_then(|w| w.checked())
+            && let Ok(mut key) = KeyboardKeyWidget::from_obj(widget.get_widget())
+        {
+            key.set_key_text(demo_key(self.selection()));
+        }
+    }
+
+    fn play_demo(&self, time: f64) {
+        let Some((location, rotation, scale)) = demo_transform(self.selection(), time) else {
+            return;
+        };
+
+        let Ok(cube) = self.cube().and_then(|c| c.checked()) else {
+            return;
+        };
+
+        match self.selection() {
+            EAxis::X => {
+                cube.k2_set_relative_location(&FVector::from_dvec3(location), false, false);
+            }
+            EAxis::Y => {
+                cube.k2_set_relative_rotation(&FRotator::from_rotator(rotation), false, false);
+            }
+            _ => cube.set_relative_scale3_d(&FVector::from_dvec3(scale)),
+        }
+    }
+
+    fn hide_when_far(&self) {
+        let me = self.as_ref();
+        let Ok(player) = GameplayStatics::get_player_pawn(me.upcast_to(), 0).checked() else {
+            return;
+        };
+
+        let (Ok(actor), Ok(gizmo)) = (me.checked(), self.gizmo().checked()) else {
+            return;
+        };
+
+        let distance = player
+            .k2_get_actor_location()
+            .to_dvec3()
+            .distance(actor.k2_get_actor_location().to_dvec3());
+
+        gizmo.set_hidden_in_game(distance > HIDE_DISTANCE, Some(false));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_demo_waits_shows_and_plays_in_a_loop() {
+        let (step, show) = Step::Waiting(0.0).advance(0.6);
+        assert_eq!((step, show), (Step::Showing(0.0), true));
+        let (step, _) = step.advance(0.6);
+        assert_eq!(step, Step::Playing(0.0));
+        let (step, _) = step.advance(1.0);
+        assert_eq!(step, Step::Playing(1.0));
+        let (step, _) = step.advance(0.6);
+        assert_eq!(step, Step::Waiting(0.0));
+        assert_eq!(Step::Idle.advance(10.0), (Step::Idle, false));
+    }
+
+    #[test]
+    fn each_axis_demonstrates_its_tool() {
+        let (location, _, _) = demo_transform(EAxis::X, 0.75).unwrap();
+        assert!((location.z - 50.0).abs() < 0.1, "{location}");
+        let (_, rotation, _) = demo_transform(EAxis::Y, 0.75).unwrap();
+        assert!((rotation.pitch - 90.0).abs() < 0.1, "{rotation:?}");
+        let (_, _, scale) = demo_transform(EAxis::Z, 0.75).unwrap();
+        assert!((scale.z - 2.0).abs() < 0.01, "{scale}");
+        assert!(demo_transform(EAxis::None, 0.5).is_none());
+        assert_eq!(demo_key(EAxis::Y), "E");
+    }
+}

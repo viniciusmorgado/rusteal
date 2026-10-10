@@ -1,0 +1,86 @@
+use bindings::engine::{Actor, SceneComponent, TextRenderComponent, TextRenderComponentExt};
+use rusteal_runtime::{uclass, uclass_impl};
+
+pub const STATIONS: i32 = 16;
+
+#[uclass(parent = Actor)]
+pub struct TextSwitcher {
+    #[component(root, name = "TextRender")]
+    text_render: TextRenderComponent,
+
+    #[uproperty(
+        EditAnywhere,
+        BlueprintReadWrite,
+        name = "In Game Text",
+        category = "Text"
+    )]
+    in_game_text: String,
+
+    #[uproperty(
+        EditAnywhere,
+        BlueprintReadWrite,
+        name = "AltText In Game",
+        category = "Text",
+        default = false
+    )]
+    alt_text_in_game: bool,
+}
+
+#[uclass_impl]
+impl TextSwitcher {
+    #[ufunction(Override)]
+    fn receive_begin_play(&mut self) {
+        if !self.alt_text_in_game() {
+            return;
+        }
+
+        if let Ok(text) = self.text_render().and_then(|t| t.checked()) {
+            text.set_text(&self.in_game_text());
+        }
+    }
+}
+
+#[uclass(parent = Actor)]
+pub struct StationTitle {
+    #[component(root, name = "DefaultSceneRoot")]
+    default_scene_root: SceneComponent,
+
+    #[component(attach = "default_scene_root", name = "TextRender")]
+    text_render: TextRenderComponent,
+
+    #[component(attach = "default_scene_root", name = "IndexText")]
+    index_text: TextRenderComponent,
+
+    #[uproperty(
+        EditAnywhere,
+        BlueprintReadWrite,
+        name = "Index",
+        category = "Title",
+        default = 0
+    )]
+    index: i32,
+}
+
+#[uclass_impl]
+impl StationTitle {
+    #[ufunction(Override)]
+    fn user_construction_script(&mut self) {
+        if let Ok(text) = self.index_text().and_then(|t| t.checked()) {
+            text.set_text(&station_label(self.index()));
+        }
+    }
+}
+
+pub fn station_label(index: i32) -> String {
+    format!("{index}/{STATIONS}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_station_shows_its_index_out_of_all() {
+        assert_eq!(station_label(3), "3/16");
+    }
+}

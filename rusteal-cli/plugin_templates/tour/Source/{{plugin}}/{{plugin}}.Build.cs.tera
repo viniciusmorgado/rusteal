@@ -1,0 +1,50 @@
+using System.IO;
+using UnrealBuildTool;
+
+public class {{ plugin }} : ModuleRules
+{
+    public {{ plugin }}(ReadOnlyTargetRules Target) : base(Target)
+    {
+        PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
+
+        PrivateDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "Rusteal" });
+
+        string Library = Path.Combine(PluginDirectory, "Binaries", Target.Platform.ToString(),
+            LibraryFileName(Target, "rusteal_{{ plugin }}"));
+
+        if (File.Exists(Library))
+        {
+            RuntimeDependencies.Add(Library);
+        }
+
+        string DepsFile = Path.Combine(ModuleDirectory, "Generated", "module_deps.txt");
+
+        if (File.Exists(DepsFile))
+        {
+            foreach (string Module in File.ReadAllLines(DepsFile))
+            {
+                string Trimmed = Module.Trim();
+
+                if (Trimmed.Length > 0 && !PrivateDependencyModuleNames.Contains(Trimmed))
+                {
+                    PrivateDependencyModuleNames.Add(Trimmed);
+                }
+            }
+        }
+    }
+
+    private static string LibraryFileName(ReadOnlyTargetRules Target, string Stem)
+    {
+        if (Target.Platform == UnrealTargetPlatform.Win64)
+        {
+            return Stem + ".dll";
+        }
+
+        if (Target.Platform == UnrealTargetPlatform.Mac)
+        {
+            return "lib" + Stem + ".dylib";
+        }
+
+        return "lib" + Stem + ".so";
+    }
+}

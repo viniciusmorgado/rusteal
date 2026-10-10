@@ -1,0 +1,152 @@
+use bindings::core_ue::FTransform;
+use bindings::engine::{
+    Actor, ActorExt, DecalComponent, DecalComponentExt, ESplineCoordinateSpace,
+    KismetMaterialLibrary, MaterialInstanceDynamicExt, MaterialInterface, SplineComponent,
+    SplineComponentExt,
+};
+use bindings::prelude::*;
+use glam::DVec3;
+use rusteal_runtime::runtime::{
+    FName, LOG_WARNING, Rotator, RustealResult, SubclassOf, Transform, UObjectRef, ulog,
+};
+use rusteal_runtime::{uclass, uclass_impl};
+
+pub const ARROW_LENGTH: f64 = 200.0;
+const CORNER_SIZE: f64 = 50.0;
+const DIRECTION_SIZE: f64 = 100.0;
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Arrow {
+    pub location: DVec3,
+    pub yaw: f64,
+    pub scale: DVec3,
+    pub size: f64,
+}
+
+pub fn arrow_between(from: DVec3, to: DVec3) -> Arrow {
+    let span = to - from;
+    let length = span.length();
+    let stretch = (length - ARROW_LENGTH) / ARROW_LENGTH;
+
+    Arrow {
+        location: from.lerp(to, 0.5),
+        yaw: span.y.atan2(span.x).to_degrees() - 90.0,
+        scale: DVec3::new(span.z.abs() / ARROW_LENGTH + 0.5, stretch, 0.1),
+        size: stretch,
+    }
+}
+
+#[uclass(parent = Actor)]
+pub struct SplinePath {
+    #[component(root, name = "Spline")]
+    spline: SplineComponent,
+
+    #[uproperty(EditAnywhere, BlueprintReadWrite, category = "Path")]
+    corner_material: UObjectRef<MaterialInterface>,
+
+    #[uproperty(EditAnywhere, BlueprintReadWrite, category = "Path")]
+    direction_material: UObjectRef<MaterialInterface>,
+}
+
+#[uclass_impl]
+impl SplinePath {
+    #[ufunction(Override)]
+    fn user_construction_script(&mut self) {
+        if let Err(e) = self.build() {
+            ulog!(LOG_WARNING, "[Tour] spline path: {e}");
+        }
+    }
+}
+
+impl SplinePath {
+    fn build(&self) -> RustealResult<()> {
+        let spline = self.spline()?.checked()?;
+        let count = spline.get_number_of_spline_points();
+        let points: Vec<DVec3> = (0..count)
+            .map(|i| {
+                spline
+                    .get_location_at_spline_point(i, ESplineCoordinateSpace::Local)
+                    .to_dvec3()
+            })
+            .collect();
+
+        for (i, point) in points.iter().enumerate() {
+            self.add_decal(
+                Transform::new(Rotator::new(90.0, 0.0, 0.0).into(), *point, DVec3::ONE),
+                self.corner_material(),
+                CORNER_SIZE,
+            )?;
+
+            let Some(next) = points.get(i + 1) else {
+                continue;
+            };
+
+            let arrow = arrow_between(*point, *next);
+            let material = KismetMaterialLibrary::create_dynamic_material_instance(
+                self.as_ref().upcast_to(),
+                self.direction_material(),
+                None,
+                None,
+            );
+
+            if let Ok(material) = material.checked() {
+                material.set_scalar_parameter_value(FName::new("Size").handle(), arrow.size as f32);
+            }
+
+            self.add_decal(
+                Transform::new(
+                    Rotator::new(90.0, arrow.yaw, 0.0).into(),
+                    arrow.location,
+                    arrow.scale,
+                ),
+                material.upcast_to(),
+                DIRECTION_SIZE,
+            )?;
+        }
+
+        Ok(())
+    }
+
+    fn add_decal(
+        &self,
+        transform: Transform,
+        material: UObjectRef<MaterialInterface>,
+        size: f64,
+    ) -> RustealResult<()> {
+        let actor = self.as_ref().checked()?;
+        let decal = actor
+            .add_component_by_class(
+                SubclassOf::<DecalComponent>::base().upcast_to(),
+                false,
+                &FTransform::from_transform(transform),
+                false,
+            )
+            .cast::<DecalComponent>()?
+            .checked()?;
+
+        decal.set_decal_size(&FVector::from_dvec3(DVec3::splat(size)));
+        decal.set_decal_material(material);
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_arrow_sits_halfway_and_stretches_with_the_distance() {
+        let arrow = arrow_between(DVec3::ZERO, DVec3::new(600.0, 0.0, 0.0));
+        assert_eq!(arrow.location, DVec3::new(300.0, 0.0, 0.0));
+        assert_eq!(arrow.size, 2.0);
+        assert_eq!(arrow.scale, DVec3::new(0.5, 2.0, 0.1));
+        assert_eq!(arrow.yaw, -90.0);
+    }
+
+    #[test]
+    fn an_arrow_turns_toward_the_next_point_and_widens_with_the_slope() {
+        let arrow = arrow_between(DVec3::ZERO, DVec3::new(0.0, 400.0, 100.0));
+        assert!(arrow.yaw.abs() < 1e-9, "{}", arrow.yaw);
+        assert_eq!(arrow.scale.x, 1.0);
+    }
+}

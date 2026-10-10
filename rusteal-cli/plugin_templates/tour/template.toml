@@ -1,0 +1,12 @@
+# `rusteal new <Name> --template <template> --feature tour`, or
+# `rusteal plugin new Tour --template tour` in an existing project.
+description = "The guided tour pieces of the Intro To Unreal template: text that changes in game, station titles, animated keys and mouse, a transform gizmo demo, template cubes, decal paths along a spline and editor hints, in a Tour plugin."
+
+# Printed when the plugin is ready (Tera, same context as the files).
+next_step = "place a BP_KeyboardKey (Plugins > Tour Content), set its Key, and a BP_GizmoDemo with a Selection, then press Play"
+
+[feature]
+# The plugin's name in the project; its assets live under /Tour/.
+plugin = "Tour"
+# The chamfered cube the gizmo demo and the template cubes use.
+shared_packs = ["High/LevelPrototyping"]
