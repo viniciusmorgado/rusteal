@@ -47,7 +47,8 @@ their Blueprints, as [below](#blueprint-only-templates).
 
 ## Blueprint-only templates
 
-Virtual Reality has no C++: its gameplay is in Blueprint graphs. `rusteal new`
+Virtual Reality and Handheld AR have no C++: their gameplay is in Blueprint
+graphs. `rusteal new`
 gives such a project the game module Rusteal builds with (`Source/<Project>`,
 its targets, and the `.uproject` entry), and the port works on the Blueprints
 themselves:
@@ -73,6 +74,18 @@ themselves:
   spectator's `EVRSpectatorMode` keeps its name), Blueprint Interfaces stay
   assets that the Rust class implements (`BPI_PawnAnim`), and a widget's named
   buttons are `#[uproperty(BindWidget)]` properties.
+- **Blueprint structs become `#[ustruct]`s, and their data tables follow.**
+  Handheld AR's styles are rows of `Struct_Style` in `DT_Styles`; the Rust
+  `StructStyle` takes the struct's field names (`BGColor` with `name = ...`),
+  and the table is filled again from its JSON export with the Rust struct as
+  its row struct.
+- **Values set on nested widgets are set again.** A widget placed in another
+  widget's layout keeps the values set on it (each AR toggle button's icon
+  type, icons and id, each capsule button's text), stored under the
+  Blueprint variable that the reparent removes. The rebase sets them on the
+  layout's widgets by name once the reparented class has the Rust property:
+  an enum read under the old variable comes back as the enum's last value,
+  and the capsule's `FText` is a Rust `String`.
 - **Timelines become state in Rust.** A timeline's curve is read from the
   asset and played by the class's tick (`model::Timeline`): the menu opens
   over 0.2 s, the spectator fades over 2 s with a circular ease.
@@ -84,8 +97,13 @@ renamed variables and deletes them (the Python API sees the reparented class's
 new properties only in a new session).
 
 A VR or AR template cannot be played without its device on Linux: they are
-validated in Play In Editor without a headset, calling the pawn's functions
-the input would call (teleport, snap turn, grab, menu, spectator).
+validated in Play In Editor without a headset or an AR session, calling the
+pawn's functions the input would call (VR: teleport, snap turn, grab, menu,
+spectator; AR: a tap on a plane placed by the test selects it, a second tap
+places the object, then moves, twists and pinches with and without
+snapping, the options, the styles, the reset). The AR pawn reads the touches
+as the template does, polling `GetInputTouchState` for the first two fingers
+every tick, and the pinch from the `Gesture_Pinch` key.
 
 ## C++ virtuals and their events
 
@@ -139,6 +157,8 @@ the input would call (teleport, snap turn, grab, menu, spectator).
 - **The VR menu's Restart button** opens a level named `VRTemplateMap`, which
   the template does not have; the Rust menu opens the level it is on, or the
   one its `RestartLevelName` names.
+- **The AR capsule button's text** is a `String` property set on each
+  capsule in the layouts (the Blueprint's was an `FText`).
 - **The VR hand Anim Blueprint** keeps its AnimGraph; its event graph, which
   read the mirroring from the hand component and eased the point and thumb
   poses, is the Rust `HandAnimInstance` it is now a child of.
@@ -170,6 +190,10 @@ These show in the engine's own C++ projects too; they are not the ports'.
   a `Character`; the VR pawn is a `Pawn`, so they ignore it.
 - The VR template's `IA_Menu_Interact_Right_Released` uses a Pressed trigger,
   and no Blueprint uses it.
+- The Handheld AR game mode keeps the engine's `PlayerController`: its
+  `BP_ARPlayerController` is left unused, and the Rust port keeps it so.
+- The Handheld AR plane picks its scan material by platform name (`Android`,
+  `IOS`) and has none on other platforms.
 - The TwinStick NPC's StateTree component starts its tree before the AI
   controller possesses the NPC, so each NPC logs that the StateTree could not
   find its context actor, then runs once possessed.

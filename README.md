@@ -218,7 +218,7 @@ rusteal new MyGame --template third-person --variant combat
 A template is one of the engine's templates with its gameplay written in
 Rust: the C++ classes are gone, the Rust crate in `Rust/` takes their place,
 and their Blueprint children, with the same names, have Rust parents. The
-engine's Blueprint-only templates (`vr`) keep their Blueprints too, reparented
+engine's Blueprint-only templates (`vr`, `ar`) keep their Blueprints too, reparented
 to Rust classes and holding only data: meshes, materials, effects, input
 assets, widget layouts and Anim Blueprint graphs.
 
@@ -244,6 +244,7 @@ templates make it, and opens and plays the variant's level.
 | `vehicle` | | The engine's Vehicle template: its sports car and offroad car on Chaos Vehicles, game mode, player controller and speed and gear HUD in Rust, playable as it comes (keyboard, gamepad, steering wheel, touch). |
 | `vehicle` | `offroad` | The offroad car on an offroad level, its game mode ready for local split screen players. |
 | `vehicle` | `time-trial` | A race track with a start countdown, gates to pass in order, laps and the best lap time. |
+| `ar` | | The engine's Handheld AR template on ARCore and ARKit: its pawn (touch gestures to pick a detected plane, place the object on it, then move, rotate and scale it; light estimation), plane and placeable actors and its styled menus in Rust. It runs in the editor; Rusteal does not build for Android or iOS yet. |
 | `vr` | | The engine's Virtual Reality template on OpenXR: its pawn (teleport along the navigation mesh, snap turn, hand poses), grabbable objects, pistol and projectiles, 3D menu, passthrough and spectator camera in Rust. |
 
 Names are matched loosely (`side-scrolling`, `SideScrolling`), and `rusteal
@@ -499,7 +500,7 @@ impl MyActor {
 
 A `#[uproperty]` is `bool`, `i32`, `i64`, `u8`, `f32`, `f64`, an object
 (`UObjectRef<T>`), a class (`SubclassOf<T>`, UE's `TSubclassOf<T>`), a
-`UeArray` of any of those or of `FName`s, a struct (`OwnedStruct<FVector>`), an `FName`, a
+`UeArray` of any of those, of `FName`s or of structs (`UeArray<OwnedStruct<FLinearColor>>`), a struct (`OwnedStruct<FVector>`), an `FName`, a
 `String` (`FString`) or an engine enum (`ECollisionChannel`). Each gets a
 getter named after the field and a `set_` setter (`BlueprintReadOnly` is
 about Blueprints; the class's own code writes it, as C++ does); an array's
@@ -723,7 +724,10 @@ Engine enums from the bindings are ufunction parameters and return values too.
 A Rust `UserWidget` reaches the widgets its Widget Blueprint's layout names as
 C++'s `UPROPERTY(meta = (BindWidget))` does: a property with the widget's name
 and `BindWidget` (`BindWidgetOptional` when the layout may leave it out) is
-set when the widget is created.
+set when the widget is created. A widget animation of the Widget Blueprint is
+reached the same way with `BindWidgetAnim` (`BindWidgetAnimOptional`), which
+makes the property `Transient`, as the engine requires; `Transient` keeps any
+property out of what is saved.
 
 ```rust
 #[uclass(parent = UserWidget)]
@@ -849,7 +853,7 @@ impl PlayerCharacter {
 character.on_health_changed_add(|health, armor| { /* ... */ })?.detach();
 ```
 
-Its parameters are the scalar types, objects, classes and structs (as
+Its parameters are the scalar types, `#[uenum]`s, objects, classes and structs (as
 `&OwnedStruct<T>`; a closure receives an `OwnedStruct<T>`). `#[udelegate(name =
 "...")]` gives the UE name when the method's PascalCase is not it.
 
