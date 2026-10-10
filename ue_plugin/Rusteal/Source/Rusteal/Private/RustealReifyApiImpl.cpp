@@ -33,6 +33,7 @@ static FProperty *CreatePropertyByType(FFieldVariant Owner, FName PropName,
   switch (PropType) {
   case ERustealReifyPropType::Bool: {
     FBoolProperty *BoolProp = new FBoolProperty(Owner, PropName, RF_Public);
+    BoolProp->SetBoolSize(sizeof(bool), true);
     Prop = BoolProp;
     break;
   }
