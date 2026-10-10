@@ -149,7 +149,10 @@ pub fn listing() -> String {
 
     if !features.is_empty() {
         out.push_str("\n  features, added to any template with --feature:\n");
-        out.push_str(&features);
+
+        for line in features.lines() {
+            out.push_str(&format!("  {line}\n"));
+        }
     }
 
     out
