@@ -47,8 +47,8 @@ their Blueprints, as [below](#blueprint-only-templates).
 
 ## Blueprint-only templates
 
-Virtual Reality and Handheld AR have no C++: their gameplay is in Blueprint
-graphs. `rusteal new`
+Virtual Reality, Handheld AR and Intro To Unreal have no C++: their gameplay
+is in Blueprint graphs. `rusteal new`
 gives such a project the game module Rusteal builds with (`Source/<Project>`,
 its targets, and the `.uproject` entry), and the port works on the Blueprints
 themselves:
@@ -86,6 +86,20 @@ themselves:
   layout's widgets by name once the reparented class has the Rust property:
   an enum read under the old variable comes back as the enum's last value,
   and the capsule's `FText` is a Rust `String`.
+- **Placed Blueprints keep their components.** A level saves each placed
+  actor's own component values under the components' names; if the Rust
+  parent declares a component of the same name, the level gives it those
+  values, marks it as made by the construction script, and the construction
+  script then destroys it. The Intro To Unreal level places 102 such actors
+  (texts, titles, keys, spline paths, doors), so its Blueprints keep their
+  components and the features' Rust classes find them by name; the
+  unlockable door gets back, as its own, the `Box` its old Blueprint parent
+  gave it. VR and AR, whose levels place few of their Blueprints, moved the
+  components to Rust.
+- **Anim Blueprints keep their whole AnimGraph.** Only the event graph is
+  removed: a state machine's states and transitions are graphs of their own,
+  and removing them leaves the AnimGraph pointing at nothing, which crashes
+  the editor when it compiles the Animation Blueprint.
 - **Timelines become state in Rust.** A timeline's curve is read from the
   asset and played by the class's tick (`model::Timeline`): the menu opens
   over 0.2 s, the spectator fades over 2 s with a circular ease.
@@ -157,6 +171,16 @@ every tick, and the pinch from the `Gesture_Pinch` key.
 - **The VR menu's Restart button** opens a level named `VRTemplateMap`, which
   the template does not have; the Rust menu opens the level it is on, or the
   one its `RestartLevelName` names.
+- **The Intro's stations are features.** Its Blueprints are children of the
+  `mannequin`, `checkpoints`, `interactables` and `tour` plugins' Rust classes,
+  which the template adds as plugins. `BP_GM_Template`'s save slot and the
+  in game editor panels became world subsystems (`CheckpointSubsystem`,
+  `TourSubsystem`), so the game mode keeps only its defaults and
+  `BP_SaveData` is left out. Its first person Blueprints are the engine's
+  older First Person ones (`FirstPersonMesh` and `FirstPersonCamera`, input
+  in the character's graph, `BPI_TouchInterface` for the touch controls):
+  the intro's own `FirstPersonCharacter` keeps those names and implements
+  the touch interface.
 - **The AR capsule button's text** is a `String` property set on each
   capsule in the layouts (the Blueprint's was an `FText`).
 - **The VR hand Anim Blueprint** keeps its AnimGraph; its event graph, which
@@ -190,6 +214,12 @@ These show in the engine's own C++ projects too; they are not the ports'.
   a `Character`; the VR pawn is a `Pawn`, so they ignore it.
 - The VR template's `IA_Menu_Interact_Right_Released` uses a Pressed trigger,
   and no Blueprint uses it.
+- The Intro To Unreal template ships the external actors and objects of
+  the First Person template's horror and shooter variants, without their
+  levels; `rusteal new` leaves them out.
+- The Intro To Unreal confetti and the other GPU Niagara systems do not run
+  in an editor started with `-nullrhi`: headless tests count the confetti
+  trigger's bursts instead.
 - The Handheld AR game mode keeps the engine's `PlayerController`: its
   `BP_ARPlayerController` is left unused, and the Rust port keeps it so.
 - The Handheld AR plane picks its scan material by platform name (`Android`,

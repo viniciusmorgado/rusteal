@@ -218,7 +218,7 @@ rusteal new MyGame --template third-person --variant combat
 A template is one of the engine's templates with its gameplay written in
 Rust: the C++ classes are gone, the Rust crate in `Rust/` takes their place,
 and their Blueprint children, with the same names, have Rust parents. The
-engine's Blueprint-only templates (`vr`, `ar`) keep their Blueprints too, reparented
+engine's Blueprint-only templates (`vr`, `ar`, `intro`) keep their Blueprints too, reparented
 to Rust classes and holding only data: meshes, materials, effects, input
 assets, widget layouts and Anim Blueprint graphs.
 
@@ -237,6 +237,7 @@ templates make it, and opens and plays the variant's level.
 | `top-down` | | The engine's Top Down template: its character, game mode and point and click player controller in Rust (the engine's Blueprint-only base Blueprints made their children), playable as it comes (mouse, touch). |
 | `top-down` | `strategy` | A real-time strategy start: units selected with clicks, boxes and touches, sent along the navigation mesh by EnvQueries, and interacting with the units they reach. |
 | `top-down` | `twin-stick` | A twin stick shooter: projectiles, dashes and area attacks against waves of enemies run by a StateTree, pickups and a combo score. |
+| `intro` | | The engine's Intro To Unreal template: its guided tour level, whose stations are the four [features](#features) below (copycat mannequins, checkpoints, triggers and doors, effects, animated keys, gizmos, editor hints), and its first person character, in Rust. |
 | `third-person` | | The engine's Third Person template: its character, game mode and player controller in Rust, playable as it comes (keyboard, mouse, gamepad, touch). |
 | `third-person` | `combat` | Melee combat: combo and charged attacks, enemies run by a StateTree, spawners, checkpoints, damageable props. |
 | `third-person` | `platforming` | Double jump, wall jump, coyote time, a dash, local multiplayer and respawn. |
@@ -265,6 +266,10 @@ rusteal new MyGame --template third-person --feature mannequin
 | `checkpoints` | `Checkpoints` | `BP_SpawnPoint`s that save the player's progress when walked past (`CheckpointSaveData`), and a world subsystem (`CheckpointSubsystem`) that brings the player back to the last one when the level starts or on `RespawnPlayer`. |
 | `interactables` | `Interactables` | `BP_DoorTrigger`, a switch broadcasting its `Trigger` event; `BP_Light`s and a `BP_DoorFrame_Unlockable` that it toggles and unlocks; `BP_ConfettiTrigger`, a Niagara burst; `BP_SequenceTrigger`, which plays a level sequence; `BP_Metasound`, a MetaSound with a seed parameter; `BP_DangleBlocks`, cubes hanging on physics constraints. |
 | `tour` | `Tour` | The tour pieces: `BP_TextSwitcher` (text that changes in game), `BP_Titles` (station numbers), animated `BP_KeyboardKey`s and `BP_MouseKey`s, `BP_GizmoDemo` (the move, rotate and scale gizmos at work), `BP_TemplateCube`, `BP_SplinePath` (decal arrows along a spline) and `BP_UI_Update` (editor panels shown in game). |
+
+The `intro` template is made of all four: `rusteal new MyTour --template intro`
+adds them by itself, and its level's Blueprints are children of their Rust
+classes.
 
 Each feature is written into `Plugins/<Plugin>/`, enabled in the `.uproject`,
 built with the project, and brings the engine content it needs when the
