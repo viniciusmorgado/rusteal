@@ -1,33 +1,19 @@
-// UObjectRef<T>: lightweight 8-byte Copy handle to a UObject.
-//
-// Does NOT prevent garbage collection — the referenced object may become
-// invalid at any time between GC sweeps. Use `Pinned<T>` when you need
-// to guarantee liveness.
-
 use std::marker::PhantomData;
 use std::ops::Deref;
 
 use rusteal_ffi::{UClassHandle, UObjectHandle};
 
-use crate::error::{check_ffi, RustealError, RustealResult};
+use crate::error::{RustealError, RustealResult, check_ffi};
 use crate::ffi_dispatch;
 use crate::pinned::Pinned;
 use crate::traits::{HasParent, UeClass, UeHandle, ValidHandle};
 
-/// A typed, non-owning reference to a UObject.
-///
-/// - `Copy` + `Send` — can be freely cloned and sent across threads.
-/// - `!Sync` — must only be *used* on the game thread.
-/// - Does not prevent garbage collection; call [`is_valid`](Self::is_valid)
-///   before use, or upgrade to [`Pinned<T>`] via [`pin`](Self::pin).
 #[repr(transparent)]
 pub struct UObjectRef<T: UeClass> {
     handle: UObjectHandle,
-    _marker: PhantomData<*const T>, // *const T makes it !Sync
+    _marker: PhantomData<*const T>,
 }
 
-// By hand: derives would require the same traits of `T`, which classes lack,
-// and leave `UObjectRef<Actor>` neither Copy nor comparable.
 impl<T: UeClass> Clone for UObjectRef<T> {
     fn clone(&self) -> Self {
         *self
@@ -50,19 +36,15 @@ impl<T: UeClass> std::hash::Hash for UObjectRef<T> {
     }
 }
 
-// Send: handles are raw identifiers safe to move between threads.
-// !Sync: enforced by PhantomData<*const T> — no shared references across threads.
 unsafe impl<T: UeClass> Send for UObjectRef<T> {}
 
 impl<T: UeClass> Default for UObjectRef<T> {
-    /// No object: `nullptr`.
     fn default() -> Self {
         Self::null()
     }
 }
 
 impl<T: UeClass> UObjectRef<T> {
-    /// No object: what C++ returns as `nullptr`. Never valid.
     #[inline]
     pub fn null() -> Self {
         UObjectRef {
@@ -71,11 +53,6 @@ impl<T: UeClass> UObjectRef<T> {
         }
     }
 
-    /// Create from a raw FFI handle.
-    ///
-    /// # Safety
-    /// The caller must ensure the handle points to an object whose UClass
-    /// is `T` or a subclass of `T`.
     #[inline]
     pub unsafe fn from_raw(handle: UObjectHandle) -> Self {
         UObjectRef {
@@ -84,20 +61,16 @@ impl<T: UeClass> UObjectRef<T> {
         }
     }
 
-    /// Get the underlying raw handle.
     #[inline]
     pub fn raw(&self) -> UObjectHandle {
         self.handle
     }
 
-    /// Check whether the underlying UObject is still alive.
     #[inline]
     pub fn is_valid(&self) -> bool {
         unsafe { ffi_dispatch::core_is_valid(self.handle) }
     }
 
-    /// Validate that the object is still alive, returning a `Checked<T>`
-    /// handle that provides infallible access to extension trait methods.
     #[inline]
     pub fn checked(&self) -> RustealResult<Checked<T>> {
         if self.is_valid() {
@@ -110,8 +83,6 @@ impl<T: UeClass> UObjectRef<T> {
         }
     }
 
-    /// Cast to a different UClass type. Fails if the object is destroyed
-    /// or is not an instance of `U`.
     pub fn cast<U: UeClass>(self) -> RustealResult<UObjectRef<U>> {
         let h = self.checked()?.raw();
         let target = U::static_class();
@@ -125,41 +96,39 @@ impl<T: UeClass> UObjectRef<T> {
         }
     }
 
-    /// Upgrade to a `Pinned<T>`, adding a GC root to keep the object alive.
     pub fn pin(self) -> RustealResult<Pinned<T>> {
         Pinned::new(self)
     }
 
-    /// Get the object's FName as a String.
     pub fn get_name(&self) -> RustealResult<String> {
         let h = self.checked()?.raw();
-        // Stack buffer — 256 bytes is enough for virtually all UObject names.
+
         let mut buf = [0u8; 256];
         let mut out_len: u32 = 0;
+
         let code = unsafe {
             ffi_dispatch::core_get_name(h, buf.as_mut_ptr(), buf.len() as u32, &mut out_len)
         };
+
         check_ffi(code)?;
-        // C++ writes valid UTF-8 (converted from TCHAR).
+
         std::str::from_utf8(&buf[..out_len as usize])
             .map(|s| s.to_owned())
             .map_err(|_| RustealError::Internal("name is not valid UTF-8".into()))
     }
 
-    /// Get the object's UClass handle.
     pub fn get_class(&self) -> RustealResult<UClassHandle> {
         let h = self.checked()?.raw();
+
         Ok(unsafe { ffi_dispatch::core_get_class(h) })
     }
 
-    /// Get the object's Outer.
     pub fn get_outer(&self) -> RustealResult<UObjectHandle> {
         let h = self.checked()?.raw();
+
         Ok(unsafe { ffi_dispatch::core_get_outer(h) })
     }
 
-    /// Check whether this object is an instance of `U` (or a subclass of `U`).
-    /// Returns `false` if the object has been destroyed.
     #[inline]
     pub fn is_a<U: UeClass>(&self) -> bool {
         self.is_valid() && unsafe { ffi_dispatch::core_is_a(self.handle, U::static_class()) }
@@ -167,7 +136,6 @@ impl<T: UeClass> UObjectRef<T> {
 }
 
 impl<T: HasParent> UObjectRef<T> {
-    /// Infallible upcast to the parent class. Zero-cost (same handle).
     #[inline]
     pub fn upcast(self) -> UObjectRef<T::Parent> {
         unsafe { UObjectRef::from_raw(self.handle) }
@@ -175,8 +143,6 @@ impl<T: HasParent> UObjectRef<T> {
 }
 
 impl<T: UeClass> UObjectRef<T> {
-    /// Infallible upcast to any ancestor class, checked at compile time
-    /// (`character.upcast_to::<Object>()` for a world context). Zero-cost.
     #[inline]
     pub fn upcast_to<U: UeClass>(self) -> UObjectRef<U>
     where
@@ -186,18 +152,9 @@ impl<T: UeClass> UObjectRef<T> {
     }
 }
 
-/// A typed reference the engine passes as a `UObject*`: an object
-/// (`UObjectRef<T>`) or a class (`SubclassOf<T>`, a `UClass*`). The generated
-/// bindings convert through it, so the declared type decides which one.
 pub trait ObjectPointer: Sized {
-    /// Wrap a pointer the engine returned.
-    ///
-    /// # Safety
-    /// The handle must be null or an object the type admits: an instance of
-    /// `T` for `UObjectRef<T>`, `T`'s class or a subclass for `SubclassOf<T>`.
     unsafe fn from_object_handle(handle: UObjectHandle) -> Self;
 
-    /// The pointer to hand to the engine.
     fn object_handle(&self) -> UObjectHandle;
 }
 
@@ -213,8 +170,6 @@ impl<T: UeClass> ObjectPointer for UObjectRef<T> {
     }
 }
 
-/// Blanket Deref: `UObjectRef<Child>` auto-derefs to `UObjectRef<Parent>`.
-/// Safe because `UObjectRef<T>` is `#[repr(transparent)]` over `UObjectHandle`.
 impl<T: HasParent> Deref for UObjectRef<T> {
     type Target = UObjectRef<T::Parent>;
     #[inline]
@@ -244,15 +199,6 @@ impl<T: UeClass> std::fmt::Debug for UObjectRef<T> {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Checked<T>
-// ---------------------------------------------------------------------------
-
-/// A pre-validated handle to a UObject. Proves that the object was alive
-/// at the time of validation. Used as the receiver for codegen extension
-/// trait methods, which can then skip per-call validity checks.
-///
-/// Obtain via [`UObjectRef::checked()`] or [`Pinned::as_checked()`].
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct Checked<T: UeClass> {
@@ -263,8 +209,6 @@ pub struct Checked<T: UeClass> {
 unsafe impl<T: UeClass> Send for Checked<T> {}
 
 impl<T: UeClass> Checked<T> {
-    /// Create a `Checked` handle without validation.
-    /// Used internally by `Pinned::as_checked()`.
     #[inline]
     pub(crate) fn new_unchecked(handle: UObjectHandle) -> Self {
         Checked {
@@ -273,26 +217,21 @@ impl<T: UeClass> Checked<T> {
         }
     }
 
-    /// Get the underlying raw handle.
     #[inline]
     pub fn raw(&self) -> UObjectHandle {
         self.handle
     }
 
-    /// Downgrade back to a `UObjectRef<T>`.
     #[inline]
     pub fn as_ref(&self) -> UObjectRef<T> {
         unsafe { UObjectRef::from_raw(self.handle) }
     }
 
-    /// Check whether this object is an instance of `U` (or a subclass of `U`).
-    /// No validity check needed — already validated at `Checked` construction.
     #[inline]
     pub fn is_a<U: UeClass>(&self) -> bool {
         unsafe { ffi_dispatch::core_is_a(self.handle, U::static_class()) }
     }
 
-    /// Cast to a different UClass type. Fails if not an instance of `U`.
     pub fn cast<U: UeClass>(self) -> RustealResult<Checked<U>> {
         if self.is_a::<U>() {
             Ok(Checked::new_unchecked(self.handle))
@@ -303,15 +242,12 @@ impl<T: UeClass> Checked<T> {
 }
 
 impl<T: HasParent> Checked<T> {
-    /// Infallible upcast to the parent class. Zero-cost (same handle).
     #[inline]
     pub fn upcast(self) -> Checked<T::Parent> {
         Checked::new_unchecked(self.handle)
     }
 }
 
-/// Blanket Deref: `Checked<Child>` auto-derefs to `Checked<Parent>`.
-/// Safe because `Checked<T>` is `#[repr(transparent)]` over `UObjectHandle`.
 impl<T: HasParent> Deref for Checked<T> {
     type Target = Checked<T::Parent>;
     #[inline]

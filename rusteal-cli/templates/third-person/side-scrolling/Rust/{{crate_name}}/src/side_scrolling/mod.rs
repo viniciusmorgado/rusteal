@@ -1,9 +1,3 @@
-// The Third Person template's SideScrolling variant in Rust: a side view
-// character with double jump, wall jump, soft platforms to drop through and
-// physics objects to push; a camera that scrolls along the level; pickups,
-// jump pads, moving platforms and NPCs run by a StateTree. Its Blueprint
-// children are in `Content/Variant_SideScrolling/`.
-
 mod ai_controller;
 mod camera_manager;
 mod character;

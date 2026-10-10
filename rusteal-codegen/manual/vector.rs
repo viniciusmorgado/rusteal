@@ -1,5 +1,3 @@
-// DVec3 ↔ OwnedStruct<FVector> conversions.
-
 use glam::DVec3;
 use rusteal_core::{OwnedStruct};
 
@@ -12,6 +10,7 @@ pub trait OwnedFVectorExt {
 impl OwnedFVectorExt for OwnedStruct<FVector> {
     fn to_dvec3(&self) -> DVec3 {
         let r = self.as_ref();
+
         DVec3::new(r.get_x(), r.get_y(), r.get_z())
     }
 }
@@ -23,6 +22,7 @@ impl FVector {
         r.set_x(v.x);
         r.set_y(v.y);
         r.set_z(v.z);
+
         s
     }
 }

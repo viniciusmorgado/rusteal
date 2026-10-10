@@ -1,13 +1,8 @@
-// An asset validator: the editor runs it when assets are saved, and on
-// Validate Assets. This one wants names with a type prefix: capitals and an
-// underscore (SM_Rock, T_Grass, BP_Door).
-
 use bindings::core_ue::Object;
 use bindings::data_validation::{EditorValidatorBase, EditorValidatorBaseExt};
 use rusteal_runtime::runtime::UObjectRef;
 use rusteal_runtime::{uclass, uclass_impl};
 
-/// EDataValidationResult
 const INVALID: u8 = 0;
 const VALID: u8 = 1;
 
@@ -26,20 +21,26 @@ impl {{ plugin }}NameValidator {
         let Ok(name) = asset.get_name() else {
             return VALID;
         };
+
         let Ok(me) = self.as_ref().checked() else {
             return VALID;
         };
+
         if !has_type_prefix(&name) {
-            me.asset_fails(asset, &format!("'{name}' has no type prefix (SM_, T_, BP_...)"));
+            me.asset_fails(
+                asset,
+                &format!("'{name}' has no type prefix (SM_, T_, BP_...)"),
+            );
+
             INVALID
         } else {
             me.asset_passes(asset);
+
             VALID
         }
     }
 }
 
-/// `SM_Rock`: capitals, then an underscore, then the rest.
 fn has_type_prefix(name: &str) -> bool {
     match name.split_once('_') {
         Some((prefix, rest)) => {

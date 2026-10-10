@@ -1,7 +1,7 @@
 {
     "FileVersion": 3,
-    "Version": 5000,
-    "VersionName": "0.5.0",
+    "Version": 6000,
+    "VersionName": "0.6.0",
     "FriendlyName": "Rusteal",
     "Description": "Rust binding runtime for Unreal Engine",
     "Category": "Scripting",

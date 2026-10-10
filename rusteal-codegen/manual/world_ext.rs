@@ -1,28 +1,24 @@
-// Type-safe gameplay wrappers on top of rusteal_core::world raw functions.
-
 use rusteal_core::{OwnedStruct, RustealError, RustealResult, SubclassOf, UObjectRef, UeClass};
 
 use crate::core_ue::FTransform;
 use crate::engine::{Actor, ActorExt, World};
 
-/// Emit a warning if the spawned actor has no root component.
-///
-/// Skips base engine classes (AActor, APawn) where lacking a RootComponent
-/// is by design. Only warns for user subclasses that likely should have one.
 fn warn_no_root_component(handle: rusteal_ffi::UObjectHandle) {
     use crate::engine::Pawn;
 
     let actor_ref: UObjectRef<Actor> = unsafe { UObjectRef::from_raw(handle) };
+
     if let Ok(actual_class) = actor_ref.get_class() {
-        // Base engine classes intentionally have no RootComponent
         if actual_class == Actor::static_class()
             || actual_class == Pawn::static_class()
         {
             return;
         }
     }
+
     if let Ok(checked) = actor_ref.checked() {
         let root = checked.k2_get_root_component();
+
         if !root.is_valid() {
             rusteal_core::ulog!(rusteal_core::LOG_WARNING,
                 "[Rusteal] spawn_actor: spawned actor has no RootComponent — \
@@ -33,8 +29,6 @@ fn warn_no_root_component(handle: rusteal_ffi::UObjectHandle) {
     }
 }
 
-/// Collision handling method for spawn operations.
-/// Maps to UE's `ESpawnActorCollisionHandlingMethod`.
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, Default)]
 pub enum SpawnCollisionMethod {
@@ -46,8 +40,6 @@ pub enum SpawnCollisionMethod {
     DontSpawnIfColliding = 4,
 }
 
-/// `UObject::GetWorld()` on any object reference: the world an actor, a
-/// component or a widget is in.
 pub trait ObjectWorldExt {
     fn get_world(&self) -> RustealResult<UObjectRef<World>>;
 }
@@ -55,11 +47,11 @@ pub trait ObjectWorldExt {
 impl<T: UeClass> ObjectWorldExt for UObjectRef<T> {
     fn get_world(&self) -> RustealResult<UObjectRef<World>> {
         let handle = rusteal_core::world::get_world_raw(self.checked()?.raw())?;
+
         Ok(unsafe { UObjectRef::from_raw(handle) })
     }
 }
 
-/// Extension trait for spawning and querying actors in a UWorld.
 pub trait WorldSpawnExt {
     fn spawn_actor<T: UeClass>(
         &self,
@@ -72,8 +64,6 @@ pub trait WorldSpawnExt {
         owner: &UObjectRef<Actor>,
     ) -> RustealResult<UObjectRef<T>>;
 
-    /// Spawn an actor of `class`, `T` or a subclass of it (a Blueprint child
-    /// a property names), as C++'s `SpawnActor<T>(Class, Transform)`.
     fn spawn_actor_of_class<T: UeClass>(
         &self,
         class: SubclassOf<T>,
@@ -110,13 +100,16 @@ impl WorldSpawnExt for UObjectRef<World> {
         let world = self.checked()?.raw();
         let class = T::static_class();
         let null_owner = rusteal_ffi::UObjectHandle::null();
+
         let handle = rusteal_core::world::spawn_actor_raw(
             world,
             class,
             &transform.to_bytes(),
             null_owner,
         )?;
+
         warn_no_root_component(handle);
+
         Ok(unsafe { UObjectRef::from_raw(handle) })
     }
 
@@ -128,13 +121,16 @@ impl WorldSpawnExt for UObjectRef<World> {
         let world = self.checked()?.raw();
         let class = T::static_class();
         let owner_handle = owner.checked()?.raw();
+
         let handle = rusteal_core::world::spawn_actor_raw(
             world,
             class,
             &transform.to_bytes(),
             owner_handle,
         )?;
+
         warn_no_root_component(handle);
+
         Ok(unsafe { UObjectRef::from_raw(handle) })
     }
 
@@ -144,16 +140,20 @@ impl WorldSpawnExt for UObjectRef<World> {
         transform: &OwnedStruct<FTransform>,
     ) -> RustealResult<UObjectRef<T>> {
         let world = self.checked()?.raw();
+
         if class.is_null() {
             return Err(RustealError::NullArgument);
         }
+
         let handle = rusteal_core::world::spawn_actor_raw(
             world,
             class.raw(),
             &transform.to_bytes(),
             rusteal_ffi::UObjectHandle::null(),
         )?;
+
         warn_no_root_component(handle);
+
         Ok(unsafe { UObjectRef::from_raw(handle) })
     }
 
@@ -164,10 +164,13 @@ impl WorldSpawnExt for UObjectRef<World> {
         let world = self.checked()?.raw();
         let class = T::static_class();
         let null = rusteal_ffi::UObjectHandle::null();
+
         let handle = rusteal_core::world::spawn_actor_deferred_raw(
             world, class, &transform.to_bytes(), null, null, 0,
         )?;
+
         warn_no_root_component(handle);
+
         Ok(unsafe { UObjectRef::from_raw(handle) })
     }
 
@@ -180,10 +183,13 @@ impl WorldSpawnExt for UObjectRef<World> {
     ) -> RustealResult<UObjectRef<T>> {
         let world = self.checked()?.raw();
         let class = T::static_class();
+
         let handle = rusteal_core::world::spawn_actor_deferred_raw(
             world, class, &transform.to_bytes(), owner, instigator, collision_method as u8,
         )?;
+
         warn_no_root_component(handle);
+
         Ok(unsafe { UObjectRef::from_raw(handle) })
     }
 
@@ -193,6 +199,7 @@ impl WorldSpawnExt for UObjectRef<World> {
         transform: &OwnedStruct<FTransform>,
     ) -> RustealResult<()> {
         let actor_handle = actor.checked()?.raw();
+
         rusteal_core::world::finish_spawning_raw(actor_handle, &transform.to_bytes())
     }
 
@@ -200,6 +207,7 @@ impl WorldSpawnExt for UObjectRef<World> {
         let world = self.checked()?.raw();
         let class = T::static_class();
         let handles = rusteal_core::world::get_all_actors_of_class_raw(world, class)?;
+
         Ok(handles
             .into_iter()
             .map(|h| unsafe { UObjectRef::from_raw(h) })
@@ -207,21 +215,18 @@ impl WorldSpawnExt for UObjectRef<World> {
     }
 }
 
-/// Find an already-loaded object by class and path.
 pub fn find_object<T: UeClass>(path: &str) -> RustealResult<UObjectRef<T>> {
     let class = T::static_class();
     let handle = rusteal_core::world::find_object_raw(class, path)?;
     Ok(unsafe { UObjectRef::from_raw(handle) })
 }
 
-/// Load an object by class and path (triggers load if not already loaded).
 pub fn load_object<T: UeClass>(path: &str) -> RustealResult<UObjectRef<T>> {
     let class = T::static_class();
     let handle = rusteal_core::world::load_object_raw(class, path)?;
     Ok(unsafe { UObjectRef::from_raw(handle) })
 }
 
-/// Create a new UObject of the given class, parented to `outer`.
 pub fn new_object<T: UeClass>(outer: &UObjectRef<impl UeClass>) -> RustealResult<UObjectRef<T>> {
     let outer_handle = outer.checked()?.raw();
     let class = T::static_class();
@@ -229,7 +234,6 @@ pub fn new_object<T: UeClass>(outer: &UObjectRef<impl UeClass>) -> RustealResult
     Ok(unsafe { UObjectRef::from_raw(handle) })
 }
 
-/// Create a new UObject of the given class in the transient package.
 pub fn new_object_transient<T: UeClass>() -> RustealResult<UObjectRef<T>> {
     let class = T::static_class();
     let null_outer = rusteal_ffi::UObjectHandle::null();
@@ -237,9 +241,6 @@ pub fn new_object_transient<T: UeClass>() -> RustealResult<UObjectRef<T>> {
     Ok(unsafe { UObjectRef::from_raw(handle) })
 }
 
-/// Spawn an actor using a runtime `UClassHandle` (e.g. from TSubclassOf).
-///
-/// Returns an untyped `UObjectHandle` — caller casts via `UObjectRef::from_raw`.
 pub fn spawn_actor_dynamic(
     world: &UObjectRef<World>,
     class: rusteal_ffi::UClassHandle,
@@ -250,9 +251,6 @@ pub fn spawn_actor_dynamic(
     rusteal_core::world::spawn_actor_raw(world_handle, class, &transform.to_bytes(), null_owner)
 }
 
-/// Create a new UObject using a runtime `UClassHandle` (e.g. from TSubclassOf).
-///
-/// Returns an untyped `UObjectHandle` — caller casts via `UObjectRef::from_raw`.
 pub fn new_object_dynamic(
     outer: rusteal_ffi::UObjectHandle,
     class: rusteal_ffi::UClassHandle,

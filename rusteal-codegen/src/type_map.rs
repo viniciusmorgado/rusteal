@@ -1,70 +1,41 @@
-// UE property type → Rust type / C++ FFI type mapping.
-
 use crate::schema::ParamInfo;
 
-/// Classification of a function parameter.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ParamDirection {
-    /// Input parameter.
     In,
-    /// Output parameter (non-const out).
     Out,
-    /// Input + output (reference param).
     InOut,
-    /// Return value.
     Return,
 }
 
-/// Mapped type information for code generation.
 #[derive(Debug, Clone)]
 pub struct MappedType {
-    /// Rust type in function signatures (e.g., "bool", "i32", "UObjectRef<AActor>").
     pub rust_type: String,
-    /// Rust type for the FFI boundary (e.g., "bool", "i32", "UObjectHandle").
     pub rust_ffi_type: String,
-    /// C++ type for the wrapper function (e.g., "bool", "int32", "UObject*").
     pub cpp_type: String,
-    /// PropertyApi method name for getters (e.g., "get_bool", "get_i32").
     pub property_getter: String,
-    /// PropertyApi method name for setters.
     pub property_setter: String,
-    /// How to convert from Rust safe type to FFI type in function call.
     pub rust_to_ffi: ConversionKind,
-    /// How to convert from FFI type to Rust safe type in return.
     pub ffi_to_rust: ConversionKind,
-    /// Whether this is a supported type for Phase 3.
     pub supported: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConversionKind {
-    /// No conversion needed (primitives).
     Identity,
-    /// Integer type cast (e.g., u32 ↔ i32).
     IntCast,
-    /// Wrap in UObjectRef::from_raw / extract with .raw().
     ObjectRef,
-    /// String: UTF-8 ptr+len on FFI, String on Rust side.
     StringUtf8,
-    /// Enum: i64 on FFI, enum type on Rust side.
     EnumCast,
-    /// Struct: opaque pointer on FFI.
     StructOpaque,
-    /// FName: FNameHandle on FFI.
     FName,
-    /// TArray container property — returns UeArray<T> handle.
     ContainerArray,
-    /// TMap container property — returns UeMap<K, V> handle.
     ContainerMap,
-    /// TSet container property — returns UeSet<T> handle.
     ContainerSet,
-    /// Unicast delegate property.
     Delegate,
-    /// Multicast delegate property (inline or sparse).
     MulticastDelegate,
 }
 
-/// Supported UE property types.
 const SUPPORTED_TYPES: &[&str] = &[
     "BoolProperty",
     "Int8Property",
@@ -95,12 +66,10 @@ const SUPPORTED_TYPES: &[&str] = &[
     "MulticastSparseDelegateProperty",
 ];
 
-/// Check if a property type is supported in Phase 3.
 pub fn is_supported_type(prop_type: &str) -> bool {
     SUPPORTED_TYPES.contains(&prop_type)
 }
 
-/// Map a UE property type string to its Rust/C++ type information.
 pub fn map_property_type(
     prop_type: &str,
     class_name: Option<&str>,
@@ -123,7 +92,6 @@ pub fn map_property_type(
         },
         "Int8Property" => int_type("i8", "int8"),
         "ByteProperty" => {
-            // ByteProperty can be a plain uint8 or an enum
             if let Some(en) = enum_name {
                 enum_type(en, enum_underlying_type.unwrap_or("uint8"))
             } else {
@@ -206,7 +174,6 @@ pub fn map_property_type(
                     supported: true,
                 }
             } else {
-                // Untyped object reference — use UObject
                 MappedType {
                     rust_type: "rusteal_core::UObjectHandle".into(),
                     rust_ffi_type: "rusteal_core::UObjectHandle".into(),
@@ -220,8 +187,6 @@ pub fn map_property_type(
             }
         }
         "SoftObjectProperty" | "WeakObjectProperty" => {
-            // TSoftObjectPtr<T> / TWeakObjectPtr<T> resolve to UObject* via
-            // FObjectPropertyBase — use the same ObjectRef mapping as ObjectProperty.
             if let Some(cls) = class_name {
                 MappedType {
                     rust_type: format!("rusteal_core::UObjectRef<{cls}>"),
@@ -248,9 +213,9 @@ pub fn map_property_type(
         }
         "ClassProperty" => {
             let effective_class = meta_class_name.or(class_name);
+
             if let Some(cls) = effective_class {
                 MappedType {
-                    // A class (`TSubclassOf<T>`), not an object of it.
                     rust_type: format!("rusteal_core::SubclassOf<{cls}>"),
                     rust_ffi_type: "rusteal_core::UObjectHandle".into(),
                     cpp_type: format!("{cls}*"),
@@ -359,19 +324,18 @@ pub fn map_property_type(
     }
 }
 
-/// Map a param to its direction based on prop_flags.
 pub fn param_direction(param: &ParamInfo) -> ParamDirection {
     use crate::schema::*;
 
     if param.prop_flags & CPF_RETURN_PARM != 0 {
         return ParamDirection::Return;
     }
+
     let is_out = param.prop_flags & CPF_OUT_PARM != 0;
     let is_const = param.prop_flags & CPF_CONST_PARM != 0;
     let is_ref = param.prop_flags & CPF_REFERENCE_PARM != 0;
 
     if is_out && is_const {
-        // const& pseudo-output → actually input
         ParamDirection::In
     } else if is_out && is_ref {
         ParamDirection::InOut
@@ -383,19 +347,18 @@ pub fn param_direction(param: &ParamInfo) -> ParamDirection {
 }
 
 fn int_type(rust: &str, _cpp: &str) -> MappedType {
-    // Map to the FFI type that matches the available PropertyApi methods.
-    // Available: get_u8/set_u8, get_i32/set_i32, get_i64/set_i64
     let (getter, setter, ffi_type) = match rust {
-        "i8" => ("get_u8", "set_u8", "u8"),    // cast u8 ↔ i8
+        "i8" => ("get_u8", "set_u8", "u8"),
         "u8" => ("get_u8", "set_u8", "u8"),
-        "i16" => ("get_i32", "set_i32", "i32"), // cast i32 ↔ i16
-        "u16" => ("get_i32", "set_i32", "i32"), // cast i32 ↔ u16
+        "i16" => ("get_i32", "set_i32", "i32"),
+        "u16" => ("get_i32", "set_i32", "i32"),
         "i32" => ("get_i32", "set_i32", "i32"),
-        "u32" => ("get_i32", "set_i32", "i32"), // cast i32 ↔ u32
+        "u32" => ("get_i32", "set_i32", "i32"),
         "i64" => ("get_i64", "set_i64", "i64"),
-        "u64" => ("get_i64", "set_i64", "i64"), // cast i64 ↔ u64
+        "u64" => ("get_i64", "set_i64", "i64"),
         _ => ("get_i32", "set_i32", "i32"),
     };
+
     let cpp = match rust {
         "i8" => "int8",
         "u8" => "uint8",
@@ -407,15 +370,25 @@ fn int_type(rust: &str, _cpp: &str) -> MappedType {
         "u64" => "uint64",
         _ => "int32",
     };
+
     let needs_cast = rust != ffi_type;
+
     MappedType {
         rust_type: rust.into(),
         rust_ffi_type: ffi_type.into(),
         cpp_type: cpp.into(),
         property_getter: getter.into(),
         property_setter: setter.into(),
-        rust_to_ffi: if needs_cast { ConversionKind::IntCast } else { ConversionKind::Identity },
-        ffi_to_rust: if needs_cast { ConversionKind::IntCast } else { ConversionKind::Identity },
+        rust_to_ffi: if needs_cast {
+            ConversionKind::IntCast
+        } else {
+            ConversionKind::Identity
+        },
+        ffi_to_rust: if needs_cast {
+            ConversionKind::IntCast
+        } else {
+            ConversionKind::Identity
+        },
         supported: true,
     }
 }
@@ -432,6 +405,7 @@ fn enum_type(enum_name: &str, underlying: &str) -> MappedType {
         "int64" => "i64",
         _ => "u8",
     };
+
     MappedType {
         rust_type: enum_name.to_string(),
         rust_ffi_type: repr.into(),
@@ -457,17 +431,9 @@ fn unsupported(reason: &str) -> MappedType {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Container inner-type resolution
-// ---------------------------------------------------------------------------
-
 use crate::context::CodegenContext;
 use crate::schema::PropertyInfo;
 
-/// Map an inner property (inside a container) to its Rust `ContainerElement` type.
-/// When `ctx` is provided, validates that referenced types are in enabled modules
-/// and returns the actual typed names (e.g., `UObjectRef<Actor>` instead of `UObjectHandle`).
-/// Returns `None` if the inner type is unsupported for container elements.
 pub fn container_element_rust_type(
     inner: &PropertyInfo,
     ctx: Option<&CodegenContext>,
@@ -482,6 +448,7 @@ pub fn container_element_rust_type(
                 {
                     return None;
                 }
+
                 Some(en.clone())
             } else {
                 Some("u8".into())
@@ -504,19 +471,25 @@ pub fn container_element_rust_type(
                 {
                     return None;
                 }
+
                 Some(format!("rusteal_core::UObjectRef<{cls}>"))
             } else {
                 Some("rusteal_core::UObjectHandle".into())
             }
         }
         "ClassProperty" => {
-            let effective_class = inner.meta_class_name.as_deref().or(inner.class_name.as_deref());
+            let effective_class = inner
+                .meta_class_name
+                .as_deref()
+                .or(inner.class_name.as_deref());
+
             if let Some(cls) = effective_class {
                 if let Some(ctx) = ctx
                     && !ctx.classes.contains_key(cls)
                 {
                     return None;
                 }
+
                 Some(format!("rusteal_core::SubclassOf<{cls}>"))
             } else {
                 Some("rusteal_core::UObjectHandle".into())
@@ -529,6 +502,7 @@ pub fn container_element_rust_type(
                 {
                     return None;
                 }
+
                 Some(format!("rusteal_core::UObjectRef<{iface}>"))
             } else {
                 None
@@ -541,6 +515,7 @@ pub fn container_element_rust_type(
                 {
                     return None;
                 }
+
                 Some(en.clone())
             } else {
                 None
@@ -553,10 +528,10 @@ pub fn container_element_rust_type(
                         if si.has_static_struct {
                             Some(format!("rusteal_core::OwnedStruct<{}>", si.cpp_name))
                         } else {
-                            None // No static_struct → no UeStruct impl
+                            None
                         }
                     } else {
-                        None // Not in enabled modules
+                        None
                     }
                 } else {
                     Some(format!("rusteal_core::OwnedStruct<F{sn}>"))
@@ -565,12 +540,10 @@ pub fn container_element_rust_type(
                 None
             }
         }
-        _ => None, // Nested containers etc. — unsupported
+        _ => None,
     }
 }
 
-/// Resolve the full Rust type for a container property.
-/// Returns `None` if any inner type is unsupported.
 pub fn resolve_container_rust_type(
     prop: &PropertyInfo,
     ctx: Option<&CodegenContext>,
@@ -579,6 +552,7 @@ pub fn resolve_container_rust_type(
         "ArrayProperty" => {
             let inner = prop.inner_prop.as_ref()?;
             let elem_type = container_element_rust_type(inner, ctx)?;
+
             Some(format!("rusteal_core::UeArray<{elem_type}>"))
         }
         "MapProperty" => {
@@ -586,22 +560,19 @@ pub fn resolve_container_rust_type(
             let val = prop.value_prop.as_ref()?;
             let key_type = container_element_rust_type(key, ctx)?;
             let val_type = container_element_rust_type(val, ctx)?;
+
             Some(format!("rusteal_core::UeMap<{key_type}, {val_type}>"))
         }
         "SetProperty" => {
             let elem = prop.element_prop.as_ref()?;
             let elem_type = container_element_rust_type(elem, ctx)?;
+
             Some(format!("rusteal_core::UeSet<{elem_type}>"))
         }
         _ => None,
     }
 }
 
-// ---------------------------------------------------------------------------
-// Container parameter helpers (for function codegen)
-// ---------------------------------------------------------------------------
-
-/// Check if a function parameter is a container type (Array, Map, Set).
 pub fn is_container_param(param: &ParamInfo) -> bool {
     matches!(
         param.prop_type.as_str(),
@@ -609,17 +580,18 @@ pub fn is_container_param(param: &ParamInfo) -> bool {
     )
 }
 
-/// Resolve the Rust input type for a container parameter (e.g., `&[Actor]`).
 pub fn container_param_input_type(param: &ParamInfo, ctx: &CodegenContext) -> Option<String> {
     match param.prop_type.as_str() {
         "ArrayProperty" => {
             let inner = param.inner_prop.as_ref()?;
             let elem = container_element_rust_type(inner, Some(ctx))?;
+
             Some(format!("&[{elem}]"))
         }
         "SetProperty" => {
             let elem = param.element_prop.as_ref()?;
             let etype = container_element_rust_type(elem, Some(ctx))?;
+
             Some(format!("&[{etype}]"))
         }
         "MapProperty" => {
@@ -627,23 +599,25 @@ pub fn container_param_input_type(param: &ParamInfo, ctx: &CodegenContext) -> Op
             let val = param.value_prop.as_ref()?;
             let kt = container_element_rust_type(key, Some(ctx))?;
             let vt = container_element_rust_type(val, Some(ctx))?;
+
             Some(format!("&[({kt}, {vt})]"))
         }
         _ => None,
     }
 }
 
-/// Resolve the Rust output type for a container parameter (e.g., `Vec<Actor>`).
 pub fn container_param_output_type(param: &ParamInfo, ctx: &CodegenContext) -> Option<String> {
     match param.prop_type.as_str() {
         "ArrayProperty" => {
             let inner = param.inner_prop.as_ref()?;
             let elem = container_element_rust_type(inner, Some(ctx))?;
+
             Some(format!("Vec<{elem}>"))
         }
         "SetProperty" => {
             let elem = param.element_prop.as_ref()?;
             let etype = container_element_rust_type(elem, Some(ctx))?;
+
             Some(format!("Vec<{etype}>"))
         }
         "MapProperty" => {
@@ -651,22 +625,23 @@ pub fn container_param_output_type(param: &ParamInfo, ctx: &CodegenContext) -> O
             let val = param.value_prop.as_ref()?;
             let kt = container_element_rust_type(key, Some(ctx))?;
             let vt = container_element_rust_type(val, Some(ctx))?;
+
             Some(format!("Vec<({kt}, {vt})>"))
         }
         _ => None,
     }
 }
 
-/// Resolve the element type string for use in container type construction
-/// (e.g., `UObjectRef<Actor>` for UeArray, or `K, V` for UeMap).
 pub fn container_elem_type_str(param: &ParamInfo, ctx: &CodegenContext) -> Option<String> {
     match param.prop_type.as_str() {
         "ArrayProperty" => {
             let inner = param.inner_prop.as_ref()?;
+
             container_element_rust_type(inner, Some(ctx))
         }
         "SetProperty" => {
             let elem = param.element_prop.as_ref()?;
+
             container_element_rust_type(elem, Some(ctx))
         }
         "MapProperty" => {
@@ -674,6 +649,7 @@ pub fn container_elem_type_str(param: &ParamInfo, ctx: &CodegenContext) -> Optio
             let val = param.value_prop.as_ref()?;
             let kt = container_element_rust_type(key, Some(ctx))?;
             let vt = container_element_rust_type(val, Some(ctx))?;
+
             Some(format!("{kt}, {vt}"))
         }
         _ => None,

@@ -1,11 +1,7 @@
-// Default parameter value parsing: UHT JSON default strings → Rust literal expressions.
-
 use crate::context::CodegenContext;
 use crate::schema::ParamInfo;
 use crate::type_map::{ConversionKind, MappedType};
 
-/// Try to parse a JSON default value string into a Rust literal expression.
-/// Returns None if the type's default value is not parseable (param stays required).
 pub fn parse_default_literal(
     param: &ParamInfo,
     mapped: &MappedType,
@@ -13,7 +9,6 @@ pub fn parse_default_literal(
 ) -> Option<String> {
     let default_str = param.default.as_deref()?;
 
-    // StructOpaque: Tier 3, not supported
     if mapped.rust_to_ffi == ConversionKind::StructOpaque {
         return None;
     }
@@ -37,11 +32,8 @@ pub fn parse_default_literal(
         "UInt32Property" => parse_int_default(default_str, "u32"),
         "UInt64Property" => parse_int_default(default_str, "u64"),
         "EnumProperty" => parse_enum_default(default_str, param, ctx),
-        "ObjectProperty" | "ClassProperty"
-        | "SoftObjectProperty" | "WeakObjectProperty"
-        | "InterfaceProperty" => {
-            parse_object_default(default_str, mapped)
-        }
+        "ObjectProperty" | "ClassProperty" | "SoftObjectProperty" | "WeakObjectProperty"
+        | "InterfaceProperty" => parse_object_default(default_str, mapped),
         "StrProperty" | "TextProperty" => parse_string_default(default_str),
         "NameProperty" => parse_fname_default(default_str),
         _ => None,
@@ -58,6 +50,7 @@ fn parse_bool_default(s: &str) -> Option<String> {
 
 fn parse_float_default(s: &str, suffix: &str) -> Option<String> {
     let _: f64 = s.parse().ok()?;
+
     if s.contains('.') {
         Some(format!("{s}{suffix}"))
     } else {
@@ -72,11 +65,9 @@ fn parse_int_default(s: &str, suffix: &str) -> Option<String> {
 
 fn parse_object_default(s: &str, mapped: &MappedType) -> Option<String> {
     if s == "None" {
-        // Check if this is a typed UObjectRef or an untyped UObjectHandle
         if mapped.rust_to_ffi == ConversionKind::ObjectRef {
             Some("unsafe { rusteal_core::ObjectPointer::from_object_handle(rusteal_core::UObjectHandle::null()) }".into())
         } else {
-            // Untyped UObjectHandle (Identity conversion)
             Some("rusteal_core::UObjectHandle::null()".into())
         }
     } else {
@@ -97,25 +88,19 @@ fn parse_fname_default(s: &str) -> Option<String> {
     }
 }
 
-fn parse_enum_default(
-    s: &str,
-    param: &ParamInfo,
-    ctx: &CodegenContext,
-) -> Option<String> {
+fn parse_enum_default(s: &str, param: &ParamInfo, ctx: &CodegenContext) -> Option<String> {
     let enum_name = param.enum_name.as_deref()?;
     let enum_info = ctx.enums.get(enum_name)?;
 
-    // Look up the actual repr type used in generated from_value
     let actual_repr = ctx.enum_actual_repr(enum_name).unwrap_or("u8");
 
-    // Search pairs for a matching variant
     for (variant_name, value) in &enum_info.pairs {
-        // variant_name may be full "EFoo::Bar" or short "Bar"
         if variant_name == s || variant_name.ends_with(&format!("::{s}")) {
             return Some(format!(
                 "{enum_name}::from_value({value} as {actual_repr}).expect(\"invalid enum default for {enum_name}\")"
             ));
         }
     }
+
     None
 }
