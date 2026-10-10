@@ -215,9 +215,12 @@ rusteal new MyGame --template third-person
 rusteal new MyGame --template third-person --variant combat
 ```
 
-A template is one of the engine's C++ templates with its gameplay written in
+A template is one of the engine's templates with its gameplay written in
 Rust: the C++ classes are gone, the Rust crate in `Rust/` takes their place,
-and their Blueprint children, with the same names, have Rust parents.
+and their Blueprint children, with the same names, have Rust parents. The
+engine's Blueprint-only templates (`vr`) keep their Blueprints too, reparented
+to Rust classes and holding only data: meshes, materials, effects, input
+assets, widget layouts and Anim Blueprint graphs.
 
 The engine's templates come with variants, genre starting points the C++
 version puts all in one project. Here each is its own project: `--variant`
@@ -241,6 +244,7 @@ templates make it, and opens and plays the variant's level.
 | `vehicle` | | The engine's Vehicle template: its sports car and offroad car on Chaos Vehicles, game mode, player controller and speed and gear HUD in Rust, playable as it comes (keyboard, gamepad, steering wheel, touch). |
 | `vehicle` | `offroad` | The offroad car on an offroad level, its game mode ready for local split screen players. |
 | `vehicle` | `time-trial` | A race track with a start countdown, gates to pass in order, laps and the best lap time. |
+| `vr` | | The engine's Virtual Reality template on OpenXR: its pawn (teleport along the navigation mesh, snap turn, hand poses), grabbable objects, pistol and projectiles, 3D menu, passthrough and spectator camera in Rust. |
 
 Names are matched loosely (`side-scrolling`, `SideScrolling`), and `rusteal
 new` with an unknown template or variant lists them all.
@@ -687,6 +691,64 @@ self.set_weapon_class(row.weapon_to_spawn());
 
 `SoftObjectRef<T>` is UE's `TSoftObjectPtr<T>`: an object by path, loaded on
 demand (`load_synchronous`), or `get` if it already is.
+
+### Defining UE Enums
+
+An enum a Rust class's properties or functions use, and a Blueprint can pick
+from a dropdown, is declared in Rust too, as UHT's `UENUM(BlueprintType)`:
+
+```rust
+#[uenum]
+pub enum EGrabType {
+    None,
+    Snap,
+    Custom = 3,
+    Free,
+}
+
+#[uclass(parent = SceneComponent)]
+pub struct GrabComponent {
+    #[uproperty(EditAnywhere, default = EGrabType::Free)]
+    grab_type: EGrabType,
+}
+```
+
+A `#[uenum]` has unit variants with values up to 254, as a Blueprint enum's
+`uint8`; the macro sets the representation. It is a property type, a
+`#[ufunction]` parameter or return value, and a `match` like any Rust enum.
+Engine enums from the bindings are ufunction parameters and return values too.
+
+### Widgets
+
+A Rust `UserWidget` reaches the widgets its Widget Blueprint's layout names as
+C++'s `UPROPERTY(meta = (BindWidget))` does: a property with the widget's name
+and `BindWidget` (`BindWidgetOptional` when the layout may leave it out) is
+set when the widget is created.
+
+```rust
+#[uclass(parent = UserWidget)]
+pub struct MenuWidget {
+    #[uproperty(BindWidget, BlueprintReadOnly)]
+    restart_button: UObjectRef<Button>,
+}
+
+#[uclass_impl]
+impl MenuWidget {
+    #[ufunction(Override)]
+    fn construct(&mut self) {
+        let me = self.as_ref().upcast_to::<UserWidget>();
+
+        if let Ok(button) = self.restart_button().checked() {
+            let _ = button.on_clicked().add_ufunction(&me, "Restart");
+        }
+    }
+
+    #[ufunction(BlueprintCallable)]
+    fn restart(&mut self) {
+        // ...
+    }
+}
+```
 
 ### Input
 

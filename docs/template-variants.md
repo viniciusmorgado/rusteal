@@ -9,7 +9,8 @@ closed since, are in [`third-person-gaps.md`](third-person-gaps.md).
 Every variant was ported in a project the editor created from the UE 5.8.2 C++
 template, played headless after each step, and copied into
 `rusteal-cli/templates/<template>/<variant>/` once it had no gameplay C++
-left.
+left. The engine's Blueprint-only templates (Virtual Reality) were ported from
+their Blueprints, as [below](#blueprint-only-templates).
 
 ## How a variant is ported
 
@@ -43,6 +44,48 @@ left.
   their graphs implement the controls and the C++ classes go unused. The
   template makes them children of the Rust classes and removes their graphs,
   so the game runs what the C++ classes do.
+
+## Blueprint-only templates
+
+Virtual Reality has no C++: its gameplay is in Blueprint graphs. `rusteal new`
+gives such a project the game module Rusteal builds with (`Source/<Project>`,
+its targets, and the `.uproject` entry), and the port works on the Blueprints
+themselves:
+
+- **The logic moves to Rust, the data stays.** Each Blueprint's graphs
+  (functions, macros, event graphs, timelines, event dispatchers) become a
+  Rust class with the same functions, events and properties, and the Blueprint
+  is reparented to it with its graphs removed. What it held as data stays in
+  it: meshes, materials, Niagara systems, widget classes, haptic effects,
+  input actions and mapping contexts, a Widget Blueprint's layout, an Anim
+  Blueprint's AnimGraph.
+- **Components move to the Rust class.** A Blueprint's components are
+  declared by the Rust class under the same names (`#[component(name = ...)]`
+  when snake case does not give it), the Blueprint's own are removed, and
+  their values are copied onto the inherited ones, so the levels' placed
+  actors keep their component overrides.
+- **Variables keep their names.** A Rust property takes the Blueprint
+  variable's name and type (`real` is `f64`, `float` is `f32`), so the graphs
+  left (AnimGraphs, levels) find it. Reparenting renames a Blueprint variable
+  that clashes with an inherited property (`PoseAlphaGrasp_0`); its references
+  are then moved to the inherited one and the variable deleted.
+- **Enums become `#[uenum]`s** (`E_GrabType` is `EGrabType`, the
+  spectator's `EVRSpectatorMode` keeps its name), Blueprint Interfaces stay
+  assets that the Rust class implements (`BPI_PawnAnim`), and a widget's named
+  buttons are `#[uproperty(BindWidget)]` properties.
+- **Timelines become state in Rust.** A timeline's curve is read from the
+  asset and played by the class's tick (`model::Timeline`): the menu opens
+  over 0.2 s, the spectator fades over 2 s with a circular ease.
+
+The Blueprints are rebased in a headless editor in two passes: the first
+removes graphs, dispatchers and components, reparents, compiles and copies the
+data back; the second, in a new editor session, moves the references of the
+renamed variables and deletes them (the Python API sees the reparented class's
+new properties only in a new session).
+
+A VR or AR template cannot be played without its device on Linux: they are
+validated in Play In Editor without a headset, calling the pawn's functions
+the input would call (teleport, snap turn, grab, menu, spectator).
 
 ## C++ virtuals and their events
 
@@ -93,6 +136,12 @@ left.
 - **C++ quirks are kept.** The Strategy unit's constructor calls
   `SetFixedBrakingDistance(200.0f)` and then `SetFixedBrakingDistance(true)`,
   which sets the distance to 1; the Rust unit sets 1.
+- **The VR menu's Restart button** opens a level named `VRTemplateMap`, which
+  the template does not have; the Rust menu opens the level it is on, or the
+  one its `RestartLevelName` names.
+- **The VR hand Anim Blueprint** keeps its AnimGraph; its event graph, which
+  read the mirroring from the hand component and eased the point and thumb
+  poses, is the Rust `HandAnimInstance` it is now a child of.
 
 ## Gaps
 
@@ -117,6 +166,10 @@ These show in the engine's own C++ projects too; they are not the ports'.
 - The Combat and Horror levels place a door frame whose mesh,
   `/Game/LevelPrototyping/Interactable/Door/Assets/Meshes/SM_DoorFrame_Edge`,
   the engine does not ship: loading the level logs a missing package.
+- The VR template's door frame and jump pad (LevelPrototyping) only react to
+  a `Character`; the VR pawn is a `Pawn`, so they ignore it.
+- The VR template's `IA_Menu_Interact_Right_Released` uses a Pressed trigger,
+  and no Blueprint uses it.
 - The TwinStick NPC's StateTree component starts its tree before the AI
   controller possesses the NPC, so each NPC logs that the StateTree could not
   find its context actor, then runs once possessed.
