@@ -17,8 +17,10 @@ pub struct DynamicCall {
 
 impl DynamicCall {
     pub fn new(obj: &UObjectRef<impl UeClass>, func_name: &str) -> RustealResult<Self> {
-        let h = obj.checked()?.raw();
+        Self::on_object(obj.checked()?.raw(), func_name)
+    }
 
+    pub(crate) fn on_object(h: UObjectHandle, func_name: &str) -> RustealResult<Self> {
         let func = unsafe {
             ffi_dispatch::reflection_find_function(h, func_name.as_ptr(), func_name.len() as u32)
         };
@@ -91,6 +93,22 @@ impl DynamicCall {
                 T::static_struct(),
                 self.params.add(offset as usize),
                 value.as_bytes().as_ptr(),
+            )
+        })
+    }
+
+    pub fn set_struct_ref<T: crate::traits::UeStruct>(
+        &mut self,
+        name: &str,
+        value: &crate::struct_ref::UStructRef<T>,
+    ) -> RustealResult<()> {
+        let (_, offset) = self.find_param(name)?;
+
+        check_ffi(unsafe {
+            ffi_dispatch::reflection_copy_struct(
+                T::static_struct(),
+                self.params.add(offset as usize),
+                value.as_ptr().0 as *const u8,
             )
         })
     }

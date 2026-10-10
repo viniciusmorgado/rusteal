@@ -6,7 +6,8 @@ use rusteal_ffi::{UClassHandle, UObjectHandle};
 use crate::error::{RustealError, RustealResult, check_ffi};
 use crate::ffi_dispatch;
 use crate::pinned::Pinned;
-use crate::traits::{HasParent, UeClass, UeHandle, ValidHandle};
+use crate::script_interface::ScriptInterface;
+use crate::traits::{HasParent, UeClass, UeHandle, UeInterface, ValidHandle};
 
 #[repr(transparent)]
 pub struct UObjectRef<T: UeClass> {
@@ -132,6 +133,15 @@ impl<T: UeClass> UObjectRef<T> {
     #[inline]
     pub fn is_a<U: UeClass>(&self) -> bool {
         self.is_valid() && unsafe { ffi_dispatch::core_is_a(self.handle, U::static_class()) }
+    }
+
+    #[inline]
+    pub fn implements<I: UeInterface + ?Sized>(&self) -> bool {
+        self.is_valid() && unsafe { ffi_dispatch::core_is_a(self.handle, I::static_class()) }
+    }
+
+    pub fn interface<I: UeInterface + ?Sized>(self) -> RustealResult<ScriptInterface<I>> {
+        ScriptInterface::new(self.checked()?.raw())
     }
 }
 

@@ -11,6 +11,7 @@ struct UClassArgs {
     parent_path: syn::Path,
     parent_name: String,
     implements: Vec<String>,
+    rust_interfaces: Vec<syn::Path>,
     config: Option<String>,
 }
 
@@ -24,6 +25,7 @@ fn parse_uclass_args(attr: TokenStream) -> syn::Result<UClassArgs> {
 
     let mut parent_path: Option<syn::Path> = None;
     let mut implements = Vec::new();
+    let mut rust_interfaces = Vec::new();
     let mut config = None;
 
     for meta in &metas {
@@ -50,11 +52,14 @@ fn parse_uclass_args(attr: TokenStream) -> syn::Result<UClassArgs> {
                     }) if s.value().starts_with('/') => {
                         implements.push(s.value());
                     }
+                    Expr::Path(expr_path) if expr_path.qself.is_none() => {
+                        rust_interfaces.push(expr_path.path.clone());
+                    }
                     other => {
                         return Err(syn::Error::new_spanned(
                             other,
-                            "`implements` lists UE interface class paths: \
-                             implements = [\"/Script/Module.Interface\", \"/Game/Path/BPI_Foo.BPI_Foo_C\"]",
+                            "`implements` lists #[uinterface] traits and UE interface class paths: \
+                             implements = [Interactable, \"/Script/Module.Interface\", \"/Game/Path/BPI_Foo.BPI_Foo_C\"]",
                         ));
                     }
                 }
@@ -100,6 +105,7 @@ fn parse_uclass_args(attr: TokenStream) -> syn::Result<UClassArgs> {
         parent_path,
         parent_name,
         implements,
+        rust_interfaces,
         config,
     })
 }
@@ -646,6 +652,24 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
         })
         .collect();
 
+    let add_rust_interface_stmts: Vec<TokenStream> = args
+        .rust_interfaces
+        .iter()
+        .map(|path| {
+            quote! {
+                {
+                    let interface = <dyn #path>::__rusteal_interface_handle();
+
+                    if !interface.is_null() {
+                        unsafe {
+                            ::rusteal_runtime::runtime::ffi_dispatch::reify_add_interface_class(class, interface);
+                        }
+                    }
+                }
+            }
+        })
+        .collect();
+
     let mut add_comp_stmts: Vec<TokenStream> = Vec::new();
 
     for comp in &components {
@@ -806,6 +830,8 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
             #(#add_prop_stmts)*
 
             #(#add_interface_stmts)*
+
+            #(#add_rust_interface_stmts)*
 
             #(#add_comp_stmts)*
         }
@@ -1342,8 +1368,32 @@ mod tests {
         .unwrap();
 
         assert_eq!(one.implements, ["/Script/Game.Usable"]);
-        assert!(parse_uclass_args(quote::quote!(parent = Actor, implements = [Usable])).is_err());
         assert!(parse_uclass_args(quote::quote!(parent = Actor, implements = ["Usable"])).is_err());
+        assert!(parse_uclass_args(quote::quote!(parent = Actor, implements = [1])).is_err());
+    }
+
+    #[test]
+    fn implements_takes_rust_interfaces() {
+        let args = parse_uclass_args(quote::quote!(
+            parent = Actor,
+            implements = [Usable, crate::doors::Lockable, "/Game/BPI_X.BPI_X_C"]
+        ))
+        .unwrap();
+
+        assert_eq!(args.implements, ["/Game/BPI_X.BPI_X_C"]);
+        assert_eq!(args.rust_interfaces.len(), 2);
+
+        let out = expand_uclass(
+            quote::quote!(parent = Actor, implements = [Usable]),
+            quote::quote!(
+                pub struct Door {}
+            ),
+        )
+        .unwrap()
+        .to_string();
+
+        assert!(out.contains("< dyn Usable > :: __rusteal_interface_handle"));
+        assert!(out.contains("reify_add_interface_class"));
     }
 
     #[test]

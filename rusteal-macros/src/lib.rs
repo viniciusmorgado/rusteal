@@ -4,6 +4,7 @@ mod uclass;
 mod uclass_impl;
 mod udelegate;
 mod uenum;
+mod uinterface;
 mod ustruct;
 
 #[proc_macro_attribute]
@@ -45,6 +46,17 @@ pub fn uenum(
     item: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
     match uenum::expand_uenum(attr.into(), item.into()) {
+        Ok(tokens) => tokens.into(),
+        Err(err) => err.to_compile_error().into(),
+    }
+}
+
+#[proc_macro_attribute]
+pub fn uinterface(
+    attr: proc_macro::TokenStream,
+    item: proc_macro::TokenStream,
+) -> proc_macro::TokenStream {
+    match uinterface::expand_uinterface(attr.into(), item.into()) {
         Ok(tokens) => tokens.into(),
         Err(err) => err.to_compile_error().into(),
     }

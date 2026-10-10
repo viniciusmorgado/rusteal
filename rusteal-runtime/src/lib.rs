@@ -2,7 +2,7 @@
 
 pub use rusteal_core as runtime;
 pub use rusteal_ffi as ffi;
-pub use rusteal_macros::{uclass, uclass_impl, uenum, ustruct};
+pub use rusteal_macros::{uclass, uclass_impl, uenum, uinterface, ustruct};
 pub use rusteal_ue_flags as ue_flags;
 
 #[doc(hidden)]

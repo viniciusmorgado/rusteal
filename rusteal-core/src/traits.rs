@@ -6,6 +6,10 @@ pub trait UeClass: 'static {
     fn static_class() -> UClassHandle;
 }
 
+pub trait UeInterface: 'static {
+    fn static_class() -> UClassHandle;
+}
+
 pub trait UeStruct: 'static {
     fn static_struct() -> UStructHandle;
 }
