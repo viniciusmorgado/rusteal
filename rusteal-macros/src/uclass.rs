@@ -113,6 +113,7 @@ pub(crate) struct UPropertyArgs {
     visible_anywhere: bool,
     save_game: bool,
     config: bool,
+    transient: bool,
     pub(crate) default_expr: Option<Expr>,
     name: Option<String>,
     category: Option<String>,
@@ -158,16 +159,25 @@ pub(crate) fn parse_uproperty_args(attr: &syn::Attribute) -> syn::Result<UProper
                     args.save_game = true;
                 } else if p.is_ident("Config") {
                     args.config = true;
+                } else if p.is_ident("Transient") {
+                    args.transient = true;
                 } else if p.is_ident("BindWidget") {
                     args.bind_widget = Some("BindWidget");
                 } else if p.is_ident("BindWidgetOptional") {
                     args.bind_widget = Some("BindWidgetOptional");
+                } else if p.is_ident("BindWidgetAnim") {
+                    args.bind_widget = Some("BindWidgetAnim");
+                    args.transient = true;
+                } else if p.is_ident("BindWidgetAnimOptional") {
+                    args.bind_widget = Some("BindWidgetAnimOptional");
+                    args.transient = true;
                 } else {
                     return Err(syn::Error::new_spanned(
                         p,
                         "unknown #[uproperty] argument: expected BlueprintReadWrite, \
                          BlueprintReadOnly, EditAnywhere, EditDefaultsOnly, VisibleAnywhere, \
-                         SaveGame, Config, BindWidget, BindWidgetOptional, default = ..., \
+                         SaveGame, Config, Transient, BindWidget, BindWidgetOptional, \
+                         BindWidgetAnim, BindWidgetAnimOptional, default = ..., \
                          name = \"...\" or category = \"...\"",
                     ));
                 }
@@ -1242,6 +1252,10 @@ pub(crate) fn add_property_statements(uprops: &[UPropertyField]) -> Vec<TokenStr
             flag_parts.push(quote! { ::rusteal_runtime::ffi::CPF_CONFIG });
         }
 
+        if prop.args.transient {
+            flag_parts.push(quote! { ::rusteal_runtime::ffi::CPF_TRANSIENT });
+        }
+
         if flag_parts.is_empty() {
             flag_parts.push(quote! { 0u64 });
         }
@@ -1392,6 +1406,10 @@ mod tests {
             parse_uproperty_args(&attr).unwrap().bind_widget,
             Some("BindWidget")
         );
+        let attr: syn::Attribute = parse_quote!(#[uproperty(BindWidgetAnim)]);
+        let args = parse_uproperty_args(&attr).unwrap();
+        assert_eq!(args.bind_widget, Some("BindWidgetAnim"));
+        assert!(args.transient);
         let attr: syn::Attribute = parse_quote!(#[uproperty(BindWidgetOptional)]);
         assert_eq!(
             parse_uproperty_args(&attr).unwrap().bind_widget,
