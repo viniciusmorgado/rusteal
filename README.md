@@ -250,6 +250,24 @@ templates make it, and opens and plays the variant's level.
 Names are matched loosely (`side-scrolling`, `SideScrolling`), and `rusteal
 new` with an unknown template or variant lists them all.
 
+#### Features
+
+A feature is gameplay any template can take: a Rusteal plugin with its Rust
+classes, which `--feature` adds to the new project (as many as wanted).
+
+```bash
+rusteal new MyGame --template third-person --feature mannequin
+```
+
+| Feature | Plugin | What it is |
+|---|---|---|
+| `mannequin` | `Mannequin` | `CopycatAnimInstance`, an Animation Blueprint parent that copies a character's movement (ground speed, direction, moving, falling), the player's unless told which, as the Intro To Unreal template's copycat mannequin. |
+
+Each feature is written into `Plugins/<Plugin>/`, enabled in the `.uproject`,
+built with the project, and brings the engine content it needs when the
+project lacks it (`mannequin` copies the `Characters` pack). An existing
+project takes one with `rusteal plugin new <Plugin> --template <feature>`.
+
 ### Screenshots
 
 #### `first-person`
@@ -962,6 +980,7 @@ C++ module's: letters and digits, not the project's own name.
 | `blank` (default) | A runtime plugin with a `HelloComponent` in Rust. |
 | `editor` | An editor plugin: an editor subsystem, a *Tools* menu entry counting the project's assets on a background thread, a console command doing the same, and an asset validator. |
 | `inventory` | A runtime gameplay plugin: items as data assets (`<Name>Item`), an inventory component stacking them and broadcasting its changes (`<Name>Component`), a world subsystem (`<Name>Subsystem`), project settings for its limits (`<Name>Settings`) and console commands giving, taking and listing the player's items. |
+| `mannequin` | The `mannequin` feature (see [Features](#features)). |
 
 ### Plugin layout
 
@@ -1397,6 +1416,14 @@ are rendered the same way, with `plugin`, `crate_name`, `version`,
 `glam_version` and `runtime_path` as context. The plugin's module, its
 `Build.cs` and `<Name>Module.cpp`, come with the template: copy them from
 `blank` (a runtime module) or `editor` (an editor module).
+
+A plugin template with a `[feature]` table in its `template.toml` is a
+feature: `plugin` is the plugin's name in the project (its assets live under
+`/<plugin>/`, so a feature with `Content/` keeps that name), and
+`shared_packs` lists the engine template packs it needs
+(`High/Characters` is `Templates/TemplateResources/High/Characters`), copied
+into the project's `Content/` without replacing what is there. A template's
+`template.toml` bundles features with `features = [...]`.
 
 Engine APIs Rusteal uses that Unreal has deprecated are tracked in
 [`docs/ue-deprecations.md`](https://github.com/viniciusmorgado/rusteal/blob/main/docs/ue-deprecations.md): what, since which UE
