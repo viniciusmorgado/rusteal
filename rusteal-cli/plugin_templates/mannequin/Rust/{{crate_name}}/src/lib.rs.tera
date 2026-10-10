@@ -1,0 +1,3 @@
+rusteal_runtime::entry!();
+
+mod copycat;

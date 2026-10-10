@@ -1,0 +1,13 @@
+# `rusteal new <Name> --template <template> --feature mannequin`, or
+# `rusteal plugin new Mannequin --template mannequin` in an existing project.
+description = "Mannequins that copy the player's movement, as the Intro To Unreal template's, in a Mannequin plugin."
+
+# Printed when the plugin is ready (Tera, same context as the files).
+next_step = "make an Animation Blueprint for SK_Mannequin whose parent class is CopycatAnimInstance, give it to a Skeletal Mesh in the level and press Play"
+
+[feature]
+# The plugin's name in the project; its assets live under /Mannequin/.
+plugin = "Mannequin"
+# Engine template packs (Templates/TemplateResources/<Level>/<Pack>) copied into
+# the project's Content/<Pack> when it does not have them.
+shared_packs = ["High/Characters"]
