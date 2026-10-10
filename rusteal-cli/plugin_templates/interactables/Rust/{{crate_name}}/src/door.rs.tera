@@ -1,0 +1,432 @@
+use bindings::core_ue::FTransform;
+use bindings::engine::{
+    Actor, ActorExt, BoxComponent, BoxComponentExt, Character, ECollisionEnabled,
+    EComponentMobility, MaterialInterface, PrimitiveComponentExt, SceneComponent,
+    SceneComponentExt, StaticMesh, StaticMeshComponent, StaticMeshComponentExt,
+};
+use bindings::prelude::*;
+use glam::{DQuat, DVec3};
+use rusteal_runtime::runtime::{
+    LOG_WARNING, OwnedStruct, Rotator, RustealResult, SubclassOf, Transform, UObjectRef, ulog,
+};
+use rusteal_runtime::{uclass, uclass_impl};
+
+use crate::curve::{self, Key, Timeline};
+use crate::trigger::TriggerSwitch;
+
+const DOOR_CONTROL_LENGTH: f64 = 0.3;
+const CORNER_MESH: &str =
+    "/Game/LevelPrototyping/Interactable/Door/Meshes/SM_DoorFrame_Corner.SM_DoorFrame_Corner";
+const EDGE_MESH: &str =
+    "/Game/LevelPrototyping/Interactable/Door/Meshes/SM_DoorFrame_Edge.SM_DoorFrame_Edge";
+const DOOR_MESH: &str = "/Game/LevelPrototyping/Interactable/Door/Meshes/SM_Door.SM_Door";
+const DOOR_CONTROL: [Key; 2] = [
+    curve::key(0.0, 0.0, 0.0, 7.314_739),
+    curve::key(0.3, 1.0, 0.0, 0.0),
+];
+
+#[uclass(parent = Actor)]
+pub struct UnlockableDoor {
+    #[component(root, name = "DefaultSceneRoot")]
+    default_scene_root: SceneComponent,
+
+    #[component(attach = "default_scene_root", name = "Box")]
+    detection: BoxComponent,
+
+    #[uproperty(
+        EditAnywhere,
+        BlueprintReadWrite,
+        name = "Door Size",
+        category = "Door"
+    )]
+    door_size: OwnedStruct<FVector>,
+
+    #[uproperty(
+        EditAnywhere,
+        BlueprintReadWrite,
+        name = "Door Frame",
+        category = "Door",
+        default = true
+    )]
+    door_frame: bool,
+
+    #[uproperty(
+        EditAnywhere,
+        BlueprintReadWrite,
+        name = "Door Frame Scale",
+        category = "Door",
+        default = 1.0
+    )]
+    door_frame_scale: f64,
+
+    #[uproperty(
+        EditAnywhere,
+        BlueprintReadWrite,
+        name = "Door Detection Adjust",
+        category = "Door"
+    )]
+    door_detection_adjust: OwnedStruct<FVector>,
+
+    #[uproperty(
+        EditAnywhere,
+        BlueprintReadWrite,
+        name = "Door Thickness",
+        category = "Door",
+        default = 0.2
+    )]
+    door_thickness: f64,
+
+    #[uproperty(
+        EditAnywhere,
+        BlueprintReadWrite,
+        name = "Split Door",
+        category = "Door",
+        default = false
+    )]
+    split_door: bool,
+
+    #[uproperty(
+        EditAnywhere,
+        BlueprintReadWrite,
+        name = "Door Frame Overide Material",
+        category = "Door"
+    )]
+    door_frame_overide_material: UObjectRef<MaterialInterface>,
+
+    #[uproperty(
+        EditAnywhere,
+        BlueprintReadWrite,
+        name = "Add Door",
+        category = "Door",
+        default = true
+    )]
+    add_door: bool,
+
+    #[uproperty(EditAnywhere, BlueprintReadWrite, category = "Door")]
+    corner_mesh: UObjectRef<StaticMesh>,
+
+    #[uproperty(EditAnywhere, BlueprintReadWrite, category = "Door")]
+    edge_mesh: UObjectRef<StaticMesh>,
+
+    #[uproperty(EditAnywhere, BlueprintReadWrite, category = "Door")]
+    door_mesh: UObjectRef<StaticMesh>,
+
+    #[uproperty(EditAnywhere, BlueprintReadWrite, name = "Trigger", category = "Door")]
+    trigger: UObjectRef<TriggerSwitch>,
+
+    #[uproperty(
+        EditAnywhere,
+        BlueprintReadWrite,
+        name = "Detect Offset",
+        category = "Door"
+    )]
+    detect_offset: OwnedStruct<FVector>,
+
+    #[uproperty(BlueprintReadOnly, name = "Door", category = "Door")]
+    door: UObjectRef<StaticMeshComponent>,
+
+    #[uproperty(BlueprintReadOnly, name = "Door2", category = "Door")]
+    door2: UObjectRef<StaticMeshComponent>,
+
+    #[uproperty(BlueprintReadOnly, name = "Closed Position", category = "Door")]
+    closed_position: OwnedStruct<FVector>,
+
+    #[uproperty(BlueprintReadOnly, name = "Closed Position_0", category = "Door")]
+    closed_position_0: OwnedStruct<FVector>,
+
+    #[uproperty(BlueprintReadOnly, category = "Door", default = false)]
+    unlocked: bool,
+
+    timeline: Timeline,
+}
+
+#[uclass_impl]
+impl UnlockableDoor {
+    #[class_defaults]
+    fn class_defaults(&mut self) -> RustealResult<()> {
+        self.set_door_size(&FVector::from_dvec3(DVec3::new(400.0, 100.0, 400.0)));
+        self.set_door_detection_adjust(&FVector::from_dvec3(DVec3::new(100.0, 400.0, 0.0)));
+
+        let detection = self.detection()?.checked()?;
+        detection.set_box_extent(&FVector::from_dvec3(DVec3::splat(64.0)), Some(false));
+        Ok(())
+    }
+
+    #[ufunction(Override)]
+    fn user_construction_script(&mut self) {
+        if let Err(e) = self.build() {
+            ulog!(LOG_WARNING, "[Interactables] door: {e}");
+        }
+    }
+
+    #[ufunction(Override)]
+    fn receive_begin_play(&mut self) {
+        if let Ok(door) = self.door().checked() {
+            self.set_closed_position(&door.get_relative_location());
+        }
+
+        if let Ok(door) = self.door2().checked() {
+            self.set_closed_position_0(&door.get_relative_location());
+        }
+
+        let me = self.as_ref();
+
+        if let Ok(trigger) = TriggerSwitch::from_obj(self.trigger())
+            && let Err(e) = trigger.trigger_add_ufunction(&me, "Unlock")
+        {
+            ulog!(LOG_WARNING, "[Interactables] door: {e}");
+        }
+    }
+
+    #[ufunction(Override)]
+    fn receive_tick(&mut self, delta_seconds: f32) {
+        let mut timeline = self.timeline();
+
+        if !timeline.is_playing() {
+            return;
+        }
+
+        let position = timeline.advance(f64::from(delta_seconds), DOOR_CONTROL_LENGTH);
+        self.set_timeline(timeline);
+        self.move_doors(curve::eval(&DOOR_CONTROL, position));
+    }
+
+    #[ufunction(Override)]
+    fn receive_actor_begin_overlap(&mut self, _other_actor: UObjectRef<Actor>) {
+        self.open_door();
+    }
+
+    #[ufunction(Override)]
+    fn receive_actor_end_overlap(&mut self, _other_actor: UObjectRef<Actor>) {
+        let characters = self
+            .detection()
+            .and_then(|b| b.checked())
+            .map(|b| {
+                b.get_overlapping_actors(Some(SubclassOf::<Character>::base().upcast_to()))
+                    .len()
+            })
+            .unwrap_or(0);
+
+        if characters == 0 {
+            self.close_door();
+        }
+    }
+
+    #[ufunction(BlueprintCallable)]
+    pub fn open_door(&mut self) {
+        let mut timeline = self.timeline();
+        timeline.play();
+        self.set_timeline(timeline);
+    }
+
+    #[ufunction(BlueprintCallable)]
+    pub fn close_door(&mut self) {
+        let mut timeline = self.timeline();
+        timeline.reverse();
+        self.set_timeline(timeline);
+    }
+
+    #[ufunction]
+    fn unlock(&mut self) {
+        self.set_unlocked(!self.unlocked());
+
+        if self.unlocked() {
+            self.open_door();
+        } else {
+            self.close_door();
+        }
+    }
+}
+
+impl UnlockableDoor {
+    fn build(&mut self) -> RustealResult<()> {
+        self.assign_default_meshes();
+        let size = self.door_size().to_dvec3();
+        let scale = self.door_frame_scale();
+        let abs = size.abs();
+        let detection = self.detection()?.checked()?;
+
+        if self.door_frame() {
+            let depth = size.y / 100.0;
+            let corner = DVec3::new(scale, depth, scale);
+            let side = (abs.z - scale * 100.0) / 2.0;
+            let side_scale = DVec3::new((abs.z - scale * 100.0) / 200.0, depth, scale);
+            let corner_mesh = self.corner_mesh();
+            let edge_mesh = self.edge_mesh();
+
+            self.add_frame_mesh(
+                corner_mesh,
+                DVec3::new(size.x, 0.0, size.z),
+                Rotator::new(0.0, 180.0, 0.0),
+                corner,
+            )?;
+            self.add_frame_mesh(
+                corner_mesh,
+                DVec3::new(-size.x, 0.0, size.z),
+                Rotator::new(0.0, 0.0, 0.0),
+                corner,
+            )?;
+            self.add_frame_mesh(
+                edge_mesh,
+                DVec3::new(0.0, 0.0, size.z),
+                Rotator::new(0.0, 0.0, 0.0),
+                DVec3::new((abs.x - scale * 100.0) / 100.0, depth, scale),
+            )?;
+            self.add_frame_mesh(
+                edge_mesh,
+                DVec3::new(size.x, 0.0, side),
+                Rotator::new(-90.0, 0.0, 0.0),
+                side_scale,
+            )?;
+            self.add_frame_mesh(
+                edge_mesh,
+                DVec3::new(-size.x, 0.0, side),
+                Rotator::new(90.0, 0.0, 0.0),
+                side_scale,
+            )?;
+        }
+
+        if !self.add_door() {
+            detection.set_collision_enabled(ECollisionEnabled::NoCollision);
+            return Ok(());
+        }
+
+        let extent =
+            DVec3::new(abs.x, abs.y, abs.z / 2.0) + self.door_detection_adjust().to_dvec3();
+        detection.set_box_extent(&FVector::from_dvec3(extent), Some(true));
+        detection.k2_set_relative_location(
+            &FVector::from_dvec3(
+                DVec3::new(0.0, 0.0, abs.z / 2.0) + self.detect_offset().to_dvec3(),
+            ),
+            false,
+            false,
+        );
+
+        let thickness = self.door_thickness();
+
+        if self.split_door() {
+            let leaf = DVec3::new(abs.x / 200.0, thickness, abs.z / 200.0);
+            let left = self.add_door_mesh(DVec3::new(abs.x / 2.0, 0.0, abs.z / 2.0), leaf)?;
+            let right = self.add_door_mesh(DVec3::new(-abs.x / 2.0, 0.0, abs.z / 2.0), leaf)?;
+            self.set_door(left);
+            self.set_door2(right);
+        } else {
+            let door = self.add_door_mesh(
+                DVec3::new(0.0, 0.0, abs.z / 2.0),
+                DVec3::new(abs.x / 100.0, thickness, abs.z / 200.0),
+            )?;
+            self.set_door(door);
+            self.set_door2(UObjectRef::null());
+        }
+
+        Ok(())
+    }
+
+    fn assign_default_meshes(&mut self) {
+        if !self.corner_mesh().is_valid()
+            && let Ok(mesh) = load_object::<StaticMesh>(CORNER_MESH)
+        {
+            self.set_corner_mesh(mesh);
+        }
+
+        if !self.edge_mesh().is_valid()
+            && let Ok(mesh) = load_object::<StaticMesh>(EDGE_MESH)
+        {
+            self.set_edge_mesh(mesh);
+        }
+
+        if !self.door_mesh().is_valid()
+            && let Ok(mesh) = load_object::<StaticMesh>(DOOR_MESH)
+        {
+            self.set_door_mesh(mesh);
+        }
+    }
+
+    fn add_mesh(
+        &self,
+        mesh: UObjectRef<StaticMesh>,
+        location: DVec3,
+        rotation: DQuat,
+        scale: DVec3,
+        mobility: EComponentMobility,
+    ) -> RustealResult<UObjectRef<StaticMeshComponent>> {
+        let actor = self.as_ref().checked()?;
+        let transform = FTransform::from_transform(Transform::new(rotation, location, scale));
+        let component = actor
+            .add_component_by_class(
+                SubclassOf::<StaticMeshComponent>::base().upcast_to(),
+                false,
+                &transform,
+                false,
+            )
+            .cast::<StaticMeshComponent>()?;
+
+        let checked = component.checked()?;
+        checked.set_static_mesh(mesh);
+        checked.set_mobility(mobility);
+        Ok(component)
+    }
+
+    fn add_frame_mesh(
+        &self,
+        mesh: UObjectRef<StaticMesh>,
+        location: DVec3,
+        rotation: Rotator,
+        scale: DVec3,
+    ) -> RustealResult<()> {
+        let component = self.add_mesh(
+            mesh,
+            location,
+            rotation.into(),
+            scale,
+            EComponentMobility::Static,
+        )?;
+        let material = self.door_frame_overide_material();
+
+        if material.is_valid() {
+            component.checked()?.set_material(0, material);
+        }
+
+        Ok(())
+    }
+
+    fn add_door_mesh(
+        &self,
+        location: DVec3,
+        scale: DVec3,
+    ) -> RustealResult<UObjectRef<StaticMeshComponent>> {
+        self.add_mesh(
+            self.door_mesh(),
+            location,
+            DQuat::IDENTITY,
+            scale,
+            EComponentMobility::Movable,
+        )
+    }
+
+    fn move_doors(&self, alpha: f64) {
+        let size = self.door_size().to_dvec3();
+        let closed = self.closed_position().to_dvec3();
+        let open_x = size.x * 1.5 - 10.0;
+
+        let location = if self.split_door() {
+            DVec3::new(lerp(closed.x, open_x, alpha), closed.y, closed.z)
+        } else {
+            DVec3::new(0.0, closed.y, lerp(closed.z, size.z * -0.5 + 5.0, alpha))
+        };
+
+        if let Ok(door) = self.door().checked() {
+            door.k2_set_relative_location(&FVector::from_dvec3(location), false, false);
+        }
+
+        if let Ok(door) = self.door2().checked() {
+            let closed_0 = self.closed_position_0().to_dvec3();
+            let location = DVec3::new(lerp(closed_0.x, -open_x, alpha), closed.y, closed.z);
+            door.k2_set_relative_location(&FVector::from_dvec3(location), false, false);
+        }
+    }
+}
+
+fn lerp(a: f64, b: f64, alpha: f64) -> f64 {
+    a + (b - a) * alpha
+}

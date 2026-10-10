@@ -1,0 +1,40 @@
+use bindings::engine::{
+    Actor, AudioComponent, AudioComponentExt, SceneComponent, StaticMeshComponent,
+};
+use bindings::niagara::NiagaraComponent;
+use rusteal_runtime::runtime::FName;
+use rusteal_runtime::{uclass, uclass_impl};
+
+#[uclass(parent = Actor)]
+pub struct SeededSound {
+    #[component(root, name = "DefaultSceneRoot")]
+    default_scene_root: SceneComponent,
+
+    #[component(attach = "default_scene_root", name = "Cube")]
+    cube: StaticMeshComponent,
+
+    #[component(attach = "cube", name = "Audio")]
+    audio: AudioComponent,
+
+    #[component(attach = "default_scene_root", name = "NS_Sound")]
+    ns_sound: NiagaraComponent,
+
+    #[uproperty(
+        EditAnywhere,
+        BlueprintReadWrite,
+        name = "Random Seed",
+        category = "Sound",
+        default = 0
+    )]
+    random_seed: i32,
+}
+
+#[uclass_impl]
+impl SeededSound {
+    #[ufunction(Override)]
+    fn receive_tick(&mut self, _delta_seconds: f32) {
+        if let Ok(audio) = self.audio().and_then(|a| a.checked()) {
+            audio.set_int_parameter(FName::new("Seed").handle(), self.random_seed());
+        }
+    }
+}

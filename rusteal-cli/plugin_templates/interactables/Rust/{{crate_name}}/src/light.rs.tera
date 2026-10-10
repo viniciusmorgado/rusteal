@@ -1,0 +1,99 @@
+use bindings::engine::{
+    Actor, KismetMaterialLibrary, MaterialInstanceDynamic, MaterialInstanceDynamicExt,
+    MaterialInterface, PrimitiveComponentExt, SceneComponent, StaticMeshComponent,
+};
+use bindings::prelude::*;
+use rusteal_runtime::runtime::{FName, LOG_WARNING, LinearColor, RustealResult, UObjectRef, ulog};
+use rusteal_runtime::{uclass, uclass_impl};
+
+use crate::trigger::TriggerSwitch;
+
+const ON_COLOR: LinearColor = LinearColor {
+    r: 0.155_339,
+    g: 0.630_208,
+    b: 0.029_457,
+    a: 2.0,
+};
+
+const OFF_COLOR: LinearColor = LinearColor {
+    r: 0.713_542,
+    g: 0.020_312,
+    b: 0.035_173,
+    a: 0.4,
+};
+
+#[uclass(parent = Actor)]
+pub struct TriggerLight {
+    #[component(root, name = "DefaultSceneRoot")]
+    default_scene_root: SceneComponent,
+
+    #[component(attach = "default_scene_root", name = "Sphere")]
+    sphere: StaticMeshComponent,
+
+    #[component(attach = "default_scene_root", name = "Sphere1")]
+    sphere1: StaticMeshComponent,
+
+    #[component(attach = "default_scene_root", name = "Cylinder")]
+    cylinder: StaticMeshComponent,
+
+    #[uproperty(EditAnywhere, BlueprintReadWrite, name = "Trigger", category = "Light")]
+    trigger: UObjectRef<TriggerSwitch>,
+
+    #[uproperty(EditAnywhere, BlueprintReadWrite, category = "Light")]
+    light_material: UObjectRef<MaterialInterface>,
+
+    #[uproperty(BlueprintReadOnly, name = "MID_LIght", category = "Light")]
+    mid_light: UObjectRef<MaterialInstanceDynamic>,
+
+    #[uproperty(BlueprintReadOnly, category = "Light", default = false)]
+    is_on: bool,
+}
+
+#[uclass_impl]
+impl TriggerLight {
+    #[ufunction(Override)]
+    fn receive_begin_play(&mut self) {
+        if let Err(e) = self.begin_play() {
+            ulog!(LOG_WARNING, "[Interactables] light: {e}");
+        }
+    }
+
+    #[ufunction]
+    fn toggle(&mut self) {
+        self.set_is_on(!self.is_on());
+        let color = if self.is_on() { ON_COLOR } else { OFF_COLOR };
+
+        if let Ok(light) = self.mid_light().checked() {
+            light.set_vector_parameter_value(
+                FName::new("Col").handle(),
+                &FLinearColor::from_linear_color(color),
+            );
+        }
+    }
+}
+
+impl TriggerLight {
+    fn begin_play(&mut self) -> RustealResult<()> {
+        let me = self.as_ref();
+
+        if let Ok(trigger) = TriggerSwitch::from_obj(self.trigger()) {
+            trigger.trigger_add_ufunction(&me, "Toggle")?;
+        }
+
+        let material = KismetMaterialLibrary::create_dynamic_material_instance(
+            me.upcast_to(),
+            self.light_material(),
+            None,
+            None,
+        );
+        self.set_mid_light(material);
+
+        for mesh in [self.cylinder(), self.sphere(), self.sphere1()] {
+            if let Ok(mesh) = mesh.and_then(|m| m.checked()) {
+                mesh.set_material(0, material.upcast_to());
+            }
+        }
+
+        Ok(())
+    }
+}

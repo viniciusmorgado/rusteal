@@ -1,0 +1,94 @@
+use bindings::engine::{
+    Actor, CapsuleComponent, MaterialInstanceDynamic, MaterialInstanceDynamicExt,
+    PrimitiveComponentExt, SceneComponent, StaticMeshComponent,
+};
+use bindings::prelude::*;
+use rusteal_runtime::runtime::{FName, LinearColor, OwnedStruct, UObjectRef};
+use rusteal_runtime::{uclass, uclass_impl};
+
+#[uclass(parent = Actor)]
+pub struct TriggerSwitch {
+    #[component(root, name = "DefaultSceneRoot")]
+    default_scene_root: SceneComponent,
+
+    #[component(attach = "default_scene_root", name = "StaticMesh")]
+    static_mesh: StaticMeshComponent,
+
+    #[component(attach = "default_scene_root", name = "Capsule")]
+    capsule: CapsuleComponent,
+
+    #[component(attach = "default_scene_root", name = "SM_CircularGlow")]
+    sm_circular_glow: StaticMeshComponent,
+
+    #[uproperty(
+        EditAnywhere,
+        BlueprintReadWrite,
+        name = "True Col",
+        category = "Trigger"
+    )]
+    true_col: OwnedStruct<FLinearColor>,
+
+    #[uproperty(
+        EditAnywhere,
+        BlueprintReadWrite,
+        name = "False Col",
+        category = "Trigger"
+    )]
+    false_col: OwnedStruct<FLinearColor>,
+
+    #[uproperty(BlueprintReadOnly, name = "MID_LIght", category = "Trigger")]
+    mid_light: UObjectRef<MaterialInstanceDynamic>,
+
+    #[uproperty(BlueprintReadOnly, category = "Trigger", default = false)]
+    is_on: bool,
+}
+
+#[uclass_impl]
+impl TriggerSwitch {
+    #[udelegate(name = "Trigger")]
+    pub fn trigger(&self) {}
+
+    #[class_defaults]
+    fn class_defaults(&mut self) -> rusteal_runtime::runtime::RustealResult<()> {
+        self.set_true_col(&FLinearColor::from_linear_color(TRUE_COLOR));
+        self.set_false_col(&FLinearColor::from_linear_color(FALSE_COLOR));
+        Ok(())
+    }
+
+    #[ufunction(Override)]
+    fn receive_begin_play(&mut self) {
+        if let Ok(glow) = self.sm_circular_glow().and_then(|g| g.checked()) {
+            self.set_mid_light(glow.create_dynamic_material_instance(0, None, None));
+        }
+    }
+
+    #[ufunction(Override)]
+    fn receive_actor_begin_overlap(&mut self, _other_actor: UObjectRef<Actor>) {
+        self.trigger();
+        self.set_is_on(!self.is_on());
+
+        let color = if self.is_on() {
+            self.true_col()
+        } else {
+            self.false_col()
+        };
+
+        if let Ok(light) = self.mid_light().checked() {
+            light.set_vector_parameter_value(FName::new("Col").handle(), &color);
+        }
+    }
+}
+
+pub const TRUE_COLOR: LinearColor = LinearColor {
+    r: 0.155_339,
+    g: 0.630_208,
+    b: 0.029_457,
+    a: 1.0,
+};
+
+pub const FALSE_COLOR: LinearColor = LinearColor {
+    r: 0.713_542,
+    g: 0.020_312,
+    b: 0.035_173,
+    a: 1.0,
+};

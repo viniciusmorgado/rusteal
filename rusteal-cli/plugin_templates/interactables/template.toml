@@ -1,0 +1,12 @@
+# `rusteal new <Name> --template <template> --feature interactables`, or
+# `rusteal plugin new Interactables --template interactables` in an existing project.
+description = "Triggers, lights, a door they unlock, confetti, a level sequence trigger, a MetaSound with a seed and dangling physics blocks, as the Intro To Unreal template's, in an Interactables plugin."
+
+# Printed when the plugin is ready (Tera, same context as the files).
+next_step = "place a BP_DoorTrigger and a BP_DoorFrame_Unlockable (Plugins > Interactables Content), set the door's Trigger to the trigger, press Play and step on it"
+
+[feature]
+# The plugin's name in the project; its assets live under /Interactables/.
+plugin = "Interactables"
+# The door frame and cube meshes.
+shared_packs = ["High/LevelPrototyping"]
