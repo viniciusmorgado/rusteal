@@ -7,6 +7,6 @@ pub fn named<T: UeClass>(actor: UObjectRef<Actor>, name: &str) -> RustealResult<
         .k2_get_components_by_class(SubclassOf::<ActorComponent>::base())
         .into_iter()
         .find(|component| component.get_name().is_ok_and(|n| n == name))
-        .ok_or_else(|| RustealError::InvalidOperation(format!("no component {name}")))?
+        .ok_or_else(|| RustealError::invalid_operation(format!("no component {name}")))?
         .cast::<T>()
 }

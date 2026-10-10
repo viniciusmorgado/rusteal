@@ -879,7 +879,7 @@ fn implementable_event_body(uf: &UFunctionInfo) -> syn::Block {
             Err(e) => {
                 ::rusteal_runtime::runtime::ulog!(
                     ::rusteal_runtime::runtime::LOG_WARNING,
-                    "[Rusteal] {} failed: {}", #ue_name, e
+                    "[Rusteal] {} failed: {:#}", #ue_name, e
                 );
 
                 #fallback

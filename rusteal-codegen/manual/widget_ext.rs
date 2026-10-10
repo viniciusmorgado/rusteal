@@ -16,7 +16,7 @@ pub fn create_widget_of_class<T: UeClass>(
     let owner_handle = owner.checked()?.raw();
 
     if class.is_null() {
-        return Err(RustealError::NullArgument);
+        return Err(RustealError::null_argument());
     }
 
     let handle = rusteal_core::widget::create_widget_raw(owner_handle, class.raw())?;

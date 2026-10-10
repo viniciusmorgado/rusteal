@@ -142,7 +142,7 @@ impl WorldSpawnExt for UObjectRef<World> {
         let world = self.checked()?.raw();
 
         if class.is_null() {
-            return Err(RustealError::NullArgument);
+            return Err(RustealError::null_argument());
         }
 
         let handle = rusteal_core::world::spawn_actor_raw(

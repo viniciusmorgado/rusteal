@@ -9,8 +9,8 @@ use bindings::manual::{
 };
 use glam::{DQuat, DVec3};
 use rusteal_runtime::runtime::{
-    DynamicCall, FName, LOG_DISPLAY, LOG_ERROR, OwnedStruct, Pinned, RustealError, RustealResult,
-    TWeakObjectPtr, Transform, UObjectRef, UeClass, ulog,
+    DynamicCall, ErrorKind, FName, LOG_DISPLAY, LOG_ERROR, OwnedStruct, Pinned, RustealError,
+    RustealResult, TWeakObjectPtr, Transform, UObjectRef, UeClass, ulog,
 };
 use rusteal_runtime::{uclass, uclass_impl};
 
@@ -64,7 +64,7 @@ fn transform_at(x: f64, y: f64, z: f64) -> OwnedStruct<FTransform> {
 
 fn assert_near(a: f64, b: f64, eps: f64) -> RustealResult<()> {
     if (a - b).abs() > eps {
-        Err(RustealError::InvalidOperation(format!(
+        Err(RustealError::invalid_operation(format!(
             "assert_near failed: {a} vs {b} (eps={eps})"
         )))
     } else {
@@ -76,7 +76,7 @@ fn assert_true(cond: bool, msg: &str) -> RustealResult<()> {
     if cond {
         Ok(())
     } else {
-        Err(RustealError::InvalidOperation(msg.into()))
+        Err(RustealError::invalid_operation(msg.to_owned()))
     }
 }
 
@@ -84,7 +84,7 @@ fn assert_false(cond: bool, msg: &str) -> RustealResult<()> {
     if !cond {
         Ok(())
     } else {
-        Err(RustealError::InvalidOperation(msg.into()))
+        Err(RustealError::invalid_operation(msg.to_owned()))
     }
 }
 
@@ -201,13 +201,13 @@ impl RustealTestRunner {
             let copy = unsafe { UObjectRef::<Actor>::from_raw(self_ref.raw()) };
             let result: RustealResult<UObjectRef<World>> = copy.cast();
             match result {
-                Err(RustealError::InvalidCast) => Ok(()),
-                Err(e) => Err(RustealError::InvalidOperation(format!(
+                Err(e) if e.is(ErrorKind::InvalidCast) => Ok(()),
+                Err(e) => Err(RustealError::invalid_operation(format!(
                     "expected InvalidCast, got: {:?}",
                     e
                 ))),
-                Ok(_) => Err(RustealError::InvalidOperation(
-                    "expected cast to fail, but it succeeded".into(),
+                Ok(_) => Err(RustealError::invalid_operation(
+                    "expected cast to fail, but it succeeded",
                 )),
             }
         });
@@ -505,12 +505,12 @@ impl RustealTestRunner {
                     if destroying {
                         Ok(())
                     } else {
-                        Err(RustealError::InvalidOperation(
-                            "actor should be destroyed or pending-destroy".into(),
+                        Err(RustealError::invalid_operation(
+                            "actor should be destroyed or pending-destroy",
                         ))
                     }
                 }
-                Err(RustealError::ObjectDestroyed) => Ok(()),
+                Err(e) if e.is(ErrorKind::ObjectDestroyed) => Ok(()),
                 Err(e) => Err(e),
             }
         });
@@ -546,8 +546,8 @@ impl RustealTestRunner {
             let result = bindings::manual::world_ext::find_object::<Object>("/Game/DoesNotExist");
             match result {
                 Err(_) => Ok(()),
-                Ok(_) => Err(RustealError::InvalidOperation(
-                    "expected error for nonexistent path".into(),
+                Ok(_) => Err(RustealError::invalid_operation(
+                    "expected error for nonexistent path",
                 )),
             }
         });
@@ -565,13 +565,13 @@ impl RustealTestRunner {
         run_test!(self, "H2: dynamic_call_nonexistent_function", {
             let result = DynamicCall::new(self_ref, "NoSuchFunction");
             match result {
-                Err(RustealError::FunctionNotFound(_)) => Ok(()),
-                Err(e) => Err(RustealError::InvalidOperation(format!(
+                Err(e) if e.is(ErrorKind::FunctionNotFound) => Ok(()),
+                Err(e) => Err(RustealError::invalid_operation(format!(
                     "expected FunctionNotFound, got: {:?}",
                     e
                 ))),
-                Ok(_) => Err(RustealError::InvalidOperation(
-                    "expected error for nonexistent function".into(),
+                Ok(_) => Err(RustealError::invalid_operation(
+                    "expected error for nonexistent function",
                 )),
             }
         });
@@ -730,8 +730,8 @@ impl RustealTestRunner {
             let null_ref: UObjectRef<Actor> =
                 unsafe { UObjectRef::from_raw(rusteal_runtime::runtime::UObjectHandle::null()) };
             match null_ref.checked() {
-                Err(RustealError::ObjectDestroyed) => Ok(()),
-                other => Err(RustealError::InvalidOperation(format!(
+                Err(e) if e.is(ErrorKind::ObjectDestroyed) => Ok(()),
+                other => Err(RustealError::invalid_operation(format!(
                     "expected ObjectDestroyed, got: {:?}",
                     other
                 ))),
@@ -742,8 +742,8 @@ impl RustealTestRunner {
             let null_ref: UObjectRef<Actor> =
                 unsafe { UObjectRef::from_raw(rusteal_runtime::runtime::UObjectHandle::null()) };
             match null_ref.cast::<World>() {
-                Err(RustealError::ObjectDestroyed) => Ok(()),
-                other => Err(RustealError::InvalidOperation(format!(
+                Err(e) if e.is(ErrorKind::ObjectDestroyed) => Ok(()),
+                other => Err(RustealError::invalid_operation(format!(
                     "expected ObjectDestroyed, got: {:?}",
                     other
                 ))),
@@ -754,8 +754,8 @@ impl RustealTestRunner {
             let null_ref: UObjectRef<Actor> =
                 unsafe { UObjectRef::from_raw(rusteal_runtime::runtime::UObjectHandle::null()) };
             match null_ref.pin() {
-                Err(RustealError::ObjectDestroyed) => Ok(()),
-                other => Err(RustealError::InvalidOperation(format!(
+                Err(e) if e.is(ErrorKind::ObjectDestroyed) => Ok(()),
+                other => Err(RustealError::invalid_operation(format!(
                     "expected ObjectDestroyed, got: {:?}",
                     other
                 ))),
@@ -769,7 +769,7 @@ impl RustealTestRunner {
             spawned.checked()?.k2_destroy_actor();
             let result = DynamicCall::new(&spawned, "K2_GetActorLocation");
             match result {
-                Err(RustealError::ObjectDestroyed) => Ok(()),
+                Err(e) if e.is(ErrorKind::ObjectDestroyed) => Ok(()),
                 Err(e) => {
                     ulog!(
                         LOG_DISPLAY,

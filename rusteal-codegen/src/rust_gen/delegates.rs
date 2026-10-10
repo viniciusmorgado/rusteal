@@ -324,6 +324,7 @@ pub fn generate_delegate_structs(out: &mut String, delegates: &[DelegateInfo], c
         out.push_str(&format!(
             "    /// Bind `target`'s UFunction named `function` (a `#[ufunction]` of a Rust\n\
              \x20   /// class, say), as C++'s `{}` does{}.\n\
+             \x20   #[track_caller]\n\
              \x20   pub fn {ufunction_method}(&self, target: &rusteal_core::UObjectRef<impl rusteal_core::UeClass>, function: &str) -> rusteal_core::RustealResult<()> {{\n\
              \x20       let target = target.checked()?.raw();\n\
              \x20       rusteal_core::check_ffi(unsafe {{\n\
@@ -335,7 +336,7 @@ pub fn generate_delegate_structs(out: &mut String, delegates: &[DelegateInfo], c
         ));
 
         out.push_str(&format!(
-            "    pub fn {method_name}(&self, mut callback: impl FnMut({callback_sig}) + Send + 'static) -> rusteal_core::RustealResult<rusteal_core::DelegateBinding> {{\n"
+            "    #[track_caller]\n    pub fn {method_name}(&self, mut callback: impl FnMut({callback_sig}) + Send + 'static) -> rusteal_core::RustealResult<rusteal_core::DelegateBinding> {{\n"
         ));
 
         if !d.params.is_empty() {

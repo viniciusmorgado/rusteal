@@ -42,9 +42,10 @@ pub struct Pinned<T: UeClass> {
 unsafe impl<T: UeClass> Send for Pinned<T> {}
 
 impl<T: UeClass> Pinned<T> {
+    #[track_caller]
     pub fn new(obj: UObjectRef<T>) -> RustealResult<Self> {
         if !obj.is_valid() {
-            return Err(RustealError::ObjectDestroyed);
+            return Err(RustealError::object_destroyed());
         }
 
         let alive = Arc::new(AtomicBool::new(true));
@@ -112,7 +113,7 @@ impl<T: UeClass> UeHandle for Pinned<T> {
         if self.alive.load(Ordering::Relaxed) {
             Ok(self.handle)
         } else {
-            Err(RustealError::ObjectDestroyed)
+            Err(RustealError::object_destroyed())
         }
     }
 

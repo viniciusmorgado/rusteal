@@ -45,7 +45,7 @@ impl ClassDefaultsOutcome for () {
 impl ClassDefaultsOutcome for crate::error::RustealResult<()> {
     fn report(self, class: &str) {
         if let Err(e) = self {
-            let msg = format!("[Rusteal] {class}: class defaults failed: {e}");
+            let msg = format!("[Rusteal] {class}: class defaults failed: {e:#}");
             let bytes = msg.as_bytes();
 
             unsafe {

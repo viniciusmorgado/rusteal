@@ -192,7 +192,7 @@ pub(crate) fn broadcast_body(struct_name: &Ident, d: &DelegateInfo) -> syn::Bloc
         if let Err(e) = __broadcast() {
             ::rusteal_runtime::runtime::ulog!(
                 ::rusteal_runtime::runtime::LOG_WARNING,
-                "[Rusteal] broadcasting {} failed: {}", #ue_name, e
+                "[Rusteal] broadcasting {} failed: {:#}", #ue_name, e
             );
         }
     }}

@@ -3,6 +3,7 @@ use rusteal_ffi::{RustealConsoleArgs, UObjectHandle};
 use crate::error::{RustealError, RustealResult, check_ffi_ctx};
 use crate::{delegate_registry, ffi_dispatch};
 
+#[track_caller]
 pub fn register_command(
     name: &str,
     help: &str,
@@ -116,6 +117,7 @@ impl<T: ConsoleValue> ConsoleVariable<T> {
         }
     }
 
+    #[track_caller]
     pub fn register(&self, help: &str, default: T) -> RustealResult<()> {
         let default = default.to_text();
 
@@ -138,19 +140,22 @@ impl<T: ConsoleValue> ConsoleVariable<T> {
         self.name
     }
 
+    #[track_caller]
     pub fn get(&self) -> RustealResult<T> {
         let text = get_variable_text(self.name)?;
 
         T::from_text(&text).ok_or_else(|| {
-            RustealError::Internal(format!("console variable {} holds '{text}'", self.name))
+            RustealError::internal(format!("console variable {} holds '{text}'", self.name))
         })
     }
 
+    #[track_caller]
     pub fn set(&self, value: T) -> RustealResult<()> {
         set_variable_text(self.name, &value.to_text())
     }
 }
 
+#[track_caller]
 pub fn unregister(name: &str) -> RustealResult<()> {
     check_ffi_ctx(
         unsafe { ffi_dispatch::console_unregister(name.as_ptr(), name.len() as u32) },
@@ -158,6 +163,7 @@ pub fn unregister(name: &str) -> RustealResult<()> {
     )
 }
 
+#[track_caller]
 pub fn get_variable_text(name: &str) -> RustealResult<String> {
     let mut buf = vec![0u8; 256];
 
@@ -180,13 +186,14 @@ pub fn get_variable_text(name: &str) -> RustealResult<String> {
             buf.truncate(len as usize);
 
             return String::from_utf8(buf)
-                .map_err(|_| RustealError::Internal("console value is not UTF-8".into()));
+                .map_err(|_| RustealError::internal("console value is not UTF-8"));
         }
 
         buf.resize(len as usize, 0);
     }
 }
 
+#[track_caller]
 pub fn set_variable_text(name: &str, value: &str) -> RustealResult<()> {
     check_ffi_ctx(
         unsafe {
