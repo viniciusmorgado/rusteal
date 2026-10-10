@@ -1,8 +1,8 @@
 use bindings::core_ue::FTransform;
 use bindings::engine::{
     Actor, ActorExt, BoxComponent, BoxComponentExt, Character, ECollisionEnabled,
-    EComponentMobility, MaterialInterface, PrimitiveComponentExt, SceneComponent,
-    SceneComponentExt, StaticMesh, StaticMeshComponent, StaticMeshComponentExt,
+    EComponentMobility, MaterialInterface, PrimitiveComponentExt, SceneComponentExt, StaticMesh,
+    StaticMeshComponent, StaticMeshComponentExt,
 };
 use bindings::prelude::*;
 use glam::{DQuat, DVec3};
@@ -10,6 +10,8 @@ use rusteal_runtime::runtime::{
     LOG_WARNING, OwnedStruct, Rotator, RustealResult, SubclassOf, Transform, UObjectRef, ulog,
 };
 use rusteal_runtime::{uclass, uclass_impl};
+
+use crate::components;
 
 use crate::curve::{self, Key, Timeline};
 use crate::trigger::TriggerSwitch;
@@ -27,12 +29,6 @@ const DOOR_CONTROL: [Key; 2] = [
 
 #[uclass(parent = Actor)]
 pub struct UnlockableDoor {
-    #[component(root, name = "DefaultSceneRoot")]
-    default_scene_root: SceneComponent,
-
-    #[component(attach = "default_scene_root", name = "Box")]
-    detection: BoxComponent,
-
     #[uproperty(
         EditAnywhere,
         BlueprintReadWrite,
@@ -140,15 +136,18 @@ pub struct UnlockableDoor {
     timeline: Timeline,
 }
 
+impl UnlockableDoor {
+    fn detection(&self) -> RustealResult<UObjectRef<BoxComponent>> {
+        components::named(self.as_ref().upcast_to(), "Box")
+    }
+}
+
 #[uclass_impl]
 impl UnlockableDoor {
     #[class_defaults]
     fn class_defaults(&mut self) -> RustealResult<()> {
         self.set_door_size(&FVector::from_dvec3(DVec3::new(400.0, 100.0, 400.0)));
         self.set_door_detection_adjust(&FVector::from_dvec3(DVec3::new(100.0, 400.0, 0.0)));
-
-        let detection = self.detection()?.checked()?;
-        detection.set_box_extent(&FVector::from_dvec3(DVec3::splat(64.0)), Some(false));
         Ok(())
     }
 

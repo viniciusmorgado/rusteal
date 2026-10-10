@@ -1,13 +1,15 @@
 use bindings::core_ue::{EAxis, FTransform};
 use bindings::engine::{
-    Actor, ActorExt, EAttachmentRule, GameplayStatics, SceneComponent, SceneComponentExt,
-    StaticMesh, StaticMeshComponent, StaticMeshComponentExt,
+    Actor, ActorExt, EAttachmentRule, GameplayStatics, SceneComponentExt, StaticMesh,
+    StaticMeshComponent, StaticMeshComponentExt,
 };
 use bindings::prelude::*;
 use bindings::umg::{WidgetComponent, WidgetComponentExt};
 use glam::DVec3;
 use rusteal_runtime::runtime::{FName, Rotator, RustealResult, SubclassOf, Transform, UObjectRef};
 use rusteal_runtime::{uclass, uclass_impl};
+
+use crate::components;
 
 use crate::curve::{self, Key};
 use crate::keys::KeyboardKeyWidget;
@@ -89,15 +91,6 @@ pub fn demo_key(axis: EAxis) -> &'static str {
 
 #[uclass(parent = Actor)]
 pub struct GizmoDemo {
-    #[component(root, name = "DefaultSceneRoot")]
-    default_scene_root: SceneComponent,
-
-    #[component(attach = "default_scene_root", name = "Cube")]
-    cube: StaticMeshComponent,
-
-    #[component(attach = "default_scene_root", name = "Widget")]
-    widget: WidgetComponent,
-
     #[uproperty(
         EditAnywhere,
         BlueprintReadWrite,
@@ -119,6 +112,16 @@ pub struct GizmoDemo {
     gizmo: UObjectRef<StaticMeshComponent>,
 
     step: Step,
+}
+
+impl GizmoDemo {
+    fn cube(&self) -> RustealResult<UObjectRef<StaticMeshComponent>> {
+        components::named(self.as_ref().upcast_to(), "Cube")
+    }
+
+    fn widget(&self) -> RustealResult<UObjectRef<WidgetComponent>> {
+        components::named(self.as_ref().upcast_to(), "Widget")
+    }
 }
 
 #[uclass_impl]

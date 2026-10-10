@@ -1,25 +1,15 @@
 use bindings::engine::{
-    Actor, CapsuleComponent, MaterialInstanceDynamic, MaterialInstanceDynamicExt,
-    PrimitiveComponentExt, SceneComponent, StaticMeshComponent,
+    Actor, MaterialInstanceDynamic, MaterialInstanceDynamicExt, PrimitiveComponentExt,
+    StaticMeshComponent,
 };
 use bindings::prelude::*;
-use rusteal_runtime::runtime::{FName, LinearColor, OwnedStruct, UObjectRef};
+use rusteal_runtime::runtime::{FName, LinearColor, OwnedStruct, RustealResult, UObjectRef};
 use rusteal_runtime::{uclass, uclass_impl};
+
+use crate::components;
 
 #[uclass(parent = Actor)]
 pub struct TriggerSwitch {
-    #[component(root, name = "DefaultSceneRoot")]
-    default_scene_root: SceneComponent,
-
-    #[component(attach = "default_scene_root", name = "StaticMesh")]
-    static_mesh: StaticMeshComponent,
-
-    #[component(attach = "default_scene_root", name = "Capsule")]
-    capsule: CapsuleComponent,
-
-    #[component(attach = "default_scene_root", name = "SM_CircularGlow")]
-    sm_circular_glow: StaticMeshComponent,
-
     #[uproperty(
         EditAnywhere,
         BlueprintReadWrite,
@@ -41,6 +31,12 @@ pub struct TriggerSwitch {
 
     #[uproperty(BlueprintReadOnly, category = "Trigger", default = false)]
     is_on: bool,
+}
+
+impl TriggerSwitch {
+    fn sm_circular_glow(&self) -> RustealResult<UObjectRef<StaticMeshComponent>> {
+        components::named(self.as_ref().upcast_to(), "SM_CircularGlow")
+    }
 }
 
 #[uclass_impl]

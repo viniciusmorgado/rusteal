@@ -3,17 +3,13 @@ use bindings::engine::{
     StaticMeshComponent, Texture,
 };
 use bindings::prelude::*;
-use rusteal_runtime::runtime::{FName, OwnedStruct, UObjectRef};
+use rusteal_runtime::runtime::{FName, OwnedStruct, RustealResult, UObjectRef};
 use rusteal_runtime::{uclass, uclass_impl};
+
+use crate::components;
 
 #[uclass(parent = Actor)]
 pub struct TemplateCube {
-    #[component(root, name = "Cube")]
-    cube: StaticMeshComponent,
-
-    #[component(attach = "cube", name = "Plane")]
-    plane: StaticMeshComponent,
-
     #[uproperty(
         EditAnywhere,
         BlueprintReadWrite,
@@ -35,6 +31,16 @@ pub struct TemplateCube {
 
     #[uproperty(EditAnywhere, BlueprintReadWrite, category = "Template")]
     box_art_material: UObjectRef<MaterialInterface>,
+}
+
+impl TemplateCube {
+    fn cube(&self) -> RustealResult<UObjectRef<StaticMeshComponent>> {
+        components::named(self.as_ref().upcast_to(), "Cube")
+    }
+
+    fn plane(&self) -> RustealResult<UObjectRef<StaticMeshComponent>> {
+        components::named(self.as_ref().upcast_to(), "Plane")
+    }
 }
 
 #[uclass_impl]

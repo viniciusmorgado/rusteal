@@ -11,6 +11,8 @@ use rusteal_runtime::runtime::{
 };
 use rusteal_runtime::{uclass, uclass_impl};
 
+use crate::components;
+
 pub const ARROW_LENGTH: f64 = 200.0;
 const CORNER_SIZE: f64 = 50.0;
 const DIRECTION_SIZE: f64 = 100.0;
@@ -38,14 +40,17 @@ pub fn arrow_between(from: DVec3, to: DVec3) -> Arrow {
 
 #[uclass(parent = Actor)]
 pub struct SplinePath {
-    #[component(root, name = "Spline")]
-    spline: SplineComponent,
-
     #[uproperty(EditAnywhere, BlueprintReadWrite, category = "Path")]
     corner_material: UObjectRef<MaterialInterface>,
 
     #[uproperty(EditAnywhere, BlueprintReadWrite, category = "Path")]
     direction_material: UObjectRef<MaterialInterface>,
+}
+
+impl SplinePath {
+    fn spline(&self) -> RustealResult<UObjectRef<SplineComponent>> {
+        components::named(self.as_ref().upcast_to(), "Spline")
+    }
 }
 
 #[uclass_impl]

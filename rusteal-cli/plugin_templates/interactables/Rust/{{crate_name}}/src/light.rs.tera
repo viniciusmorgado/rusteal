@@ -1,10 +1,12 @@
 use bindings::engine::{
     Actor, KismetMaterialLibrary, MaterialInstanceDynamic, MaterialInstanceDynamicExt,
-    MaterialInterface, PrimitiveComponentExt, SceneComponent, StaticMeshComponent,
+    MaterialInterface, PrimitiveComponentExt, StaticMeshComponent,
 };
 use bindings::prelude::*;
 use rusteal_runtime::runtime::{FName, LOG_WARNING, LinearColor, RustealResult, UObjectRef, ulog};
 use rusteal_runtime::{uclass, uclass_impl};
+
+use crate::components;
 
 use crate::trigger::TriggerSwitch;
 
@@ -24,18 +26,6 @@ const OFF_COLOR: LinearColor = LinearColor {
 
 #[uclass(parent = Actor)]
 pub struct TriggerLight {
-    #[component(root, name = "DefaultSceneRoot")]
-    default_scene_root: SceneComponent,
-
-    #[component(attach = "default_scene_root", name = "Sphere")]
-    sphere: StaticMeshComponent,
-
-    #[component(attach = "default_scene_root", name = "Sphere1")]
-    sphere1: StaticMeshComponent,
-
-    #[component(attach = "default_scene_root", name = "Cylinder")]
-    cylinder: StaticMeshComponent,
-
     #[uproperty(EditAnywhere, BlueprintReadWrite, name = "Trigger", category = "Light")]
     trigger: UObjectRef<TriggerSwitch>,
 
@@ -47,6 +37,20 @@ pub struct TriggerLight {
 
     #[uproperty(BlueprintReadOnly, category = "Light", default = false)]
     is_on: bool,
+}
+
+impl TriggerLight {
+    fn sphere(&self) -> RustealResult<UObjectRef<StaticMeshComponent>> {
+        components::named(self.as_ref().upcast_to(), "Sphere")
+    }
+
+    fn sphere1(&self) -> RustealResult<UObjectRef<StaticMeshComponent>> {
+        components::named(self.as_ref().upcast_to(), "Sphere1")
+    }
+
+    fn cylinder(&self) -> RustealResult<UObjectRef<StaticMeshComponent>> {
+        components::named(self.as_ref().upcast_to(), "Cylinder")
+    }
 }
 
 #[uclass_impl]

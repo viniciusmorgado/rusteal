@@ -1,5 +1,6 @@
 rusteal_runtime::entry!();
 
+mod components;
 mod curve;
 mod editor_hint;
 mod gizmo_demo;

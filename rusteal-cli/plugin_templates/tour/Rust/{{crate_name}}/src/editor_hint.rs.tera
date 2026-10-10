@@ -1,7 +1,5 @@
 use bindings::core_ue::Object;
-use bindings::engine::{
-    Actor, GameplayStatics, SphereComponent, SubsystemBlueprintLibrary, WorldSubsystem,
-};
+use bindings::engine::{Actor, GameplayStatics, SubsystemBlueprintLibrary, WorldSubsystem};
 use bindings::prelude::*;
 use bindings::rusteal::RustealWorldSubsystem;
 use bindings::umg::{
@@ -139,9 +137,6 @@ impl TourSubsystem {
 
 #[uclass(parent = Actor)]
 pub struct EditorHintTrigger {
-    #[component(root, name = "Sphere")]
-    sphere: SphereComponent,
-
     #[uproperty(
         EditAnywhere,
         BlueprintReadWrite,
@@ -192,6 +187,13 @@ impl EditorHintTrigger {
     #[ufunction(Override)]
     fn receive_actor_end_overlap(&mut self, _other_actor: UObjectRef<Actor>) {
         self.show(false);
+    }
+
+    #[ufunction(BlueprintPure)]
+    pub fn hint_widget(&self) -> UObjectRef<EditorHintWidget> {
+        TourSubsystem::get(self.as_ref().upcast_to())
+            .map(|tour| tour.hint_widget())
+            .unwrap_or_default()
     }
 }
 

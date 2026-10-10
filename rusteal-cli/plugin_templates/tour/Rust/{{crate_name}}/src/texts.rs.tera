@@ -1,13 +1,13 @@
-use bindings::engine::{Actor, SceneComponent, TextRenderComponent, TextRenderComponentExt};
+use bindings::engine::{Actor, TextRenderComponent, TextRenderComponentExt};
+use rusteal_runtime::runtime::{RustealResult, UObjectRef};
 use rusteal_runtime::{uclass, uclass_impl};
+
+use crate::components;
 
 pub const STATIONS: i32 = 16;
 
 #[uclass(parent = Actor)]
 pub struct TextSwitcher {
-    #[component(root, name = "TextRender")]
-    text_render: TextRenderComponent,
-
     #[uproperty(
         EditAnywhere,
         BlueprintReadWrite,
@@ -26,6 +26,12 @@ pub struct TextSwitcher {
     alt_text_in_game: bool,
 }
 
+impl TextSwitcher {
+    fn text_render(&self) -> RustealResult<UObjectRef<TextRenderComponent>> {
+        components::named(self.as_ref().upcast_to(), "TextRender")
+    }
+}
+
 #[uclass_impl]
 impl TextSwitcher {
     #[ufunction(Override)]
@@ -42,15 +48,6 @@ impl TextSwitcher {
 
 #[uclass(parent = Actor)]
 pub struct StationTitle {
-    #[component(root, name = "DefaultSceneRoot")]
-    default_scene_root: SceneComponent,
-
-    #[component(attach = "default_scene_root", name = "TextRender")]
-    text_render: TextRenderComponent,
-
-    #[component(attach = "default_scene_root", name = "IndexText")]
-    index_text: TextRenderComponent,
-
     #[uproperty(
         EditAnywhere,
         BlueprintReadWrite,
@@ -59,6 +56,12 @@ pub struct StationTitle {
         default = 0
     )]
     index: i32,
+}
+
+impl StationTitle {
+    fn index_text(&self) -> RustealResult<UObjectRef<TextRenderComponent>> {
+        components::named(self.as_ref().upcast_to(), "IndexText")
+    }
 }
 
 #[uclass_impl]

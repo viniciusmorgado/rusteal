@@ -1,12 +1,14 @@
-use bindings::engine::{Actor, SceneComponent, SceneComponentExt};
+use bindings::engine::{Actor, SceneComponentExt};
 use bindings::prelude::*;
 use bindings::umg::{
     EUMGSequencePlayMode, Image, ImageExt, TextBlock, TextBlockExt, UserWidget, UserWidgetExt,
     WidgetAnimation, WidgetComponent, WidgetComponentExt,
 };
 use glam::DVec3;
-use rusteal_runtime::runtime::{LinearColor, UObjectRef};
+use rusteal_runtime::runtime::{LinearColor, RustealResult, UObjectRef};
 use rusteal_runtime::{uclass, uclass_impl};
+
+use crate::components;
 
 use crate::curve::{self, Key};
 
@@ -124,11 +126,14 @@ impl MouseWidget {
 
 #[uclass(parent = Actor)]
 pub struct KeyboardKey {
-    #[component(root, name = "Widget")]
-    widget: WidgetComponent,
-
     #[uproperty(EditAnywhere, BlueprintReadWrite, name = "Key", category = "Key")]
     key: String,
+}
+
+impl KeyboardKey {
+    fn widget(&self) -> RustealResult<UObjectRef<WidgetComponent>> {
+        components::named(self.as_ref().upcast_to(), "Widget")
+    }
 }
 
 #[uclass_impl]
@@ -162,12 +167,6 @@ impl KeyboardKey {
 
 #[uclass(parent = Actor)]
 pub struct MouseKey {
-    #[component(root, name = "Scene")]
-    scene: SceneComponent,
-
-    #[component(attach = "scene", name = "Widget")]
-    widget: WidgetComponent,
-
     #[uproperty(EditAnywhere, BlueprintReadWrite, name = "Key", category = "Mouse")]
     key: String,
 
@@ -209,6 +208,12 @@ pub struct MouseKey {
 
     #[uproperty(BlueprintReadOnly, category = "Mouse", default = 0.0)]
     path_time: f64,
+}
+
+impl MouseKey {
+    fn widget(&self) -> RustealResult<UObjectRef<WidgetComponent>> {
+        components::named(self.as_ref().upcast_to(), "Widget")
+    }
 }
 
 #[uclass_impl]

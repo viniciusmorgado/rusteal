@@ -1,16 +1,11 @@
-use bindings::engine::{Actor, SphereComponent, SphereComponentExt};
+use bindings::engine::Actor;
 use bindings::level_sequence::{LevelSequenceActor, LevelSequenceActorExt};
 use bindings::movie_scene::MovieSceneSequencePlayerExt;
-use rusteal_runtime::runtime::{RustealResult, UObjectRef};
+use rusteal_runtime::runtime::UObjectRef;
 use rusteal_runtime::{uclass, uclass_impl};
-
-const TRIGGER_RADIUS: f32 = 400.0;
 
 #[uclass(parent = Actor)]
 pub struct SequenceTrigger {
-    #[component(root, name = "Sphere")]
-    sphere: SphereComponent,
-
     #[uproperty(
         EditAnywhere,
         BlueprintReadWrite,
@@ -22,14 +17,6 @@ pub struct SequenceTrigger {
 
 #[uclass_impl]
 impl SequenceTrigger {
-    #[class_defaults]
-    fn class_defaults(&mut self) -> RustealResult<()> {
-        self.sphere()?
-            .checked()?
-            .set_sphere_radius(TRIGGER_RADIUS, Some(false));
-        Ok(())
-    }
-
     #[ufunction(Override)]
     fn receive_actor_begin_overlap(&mut self, _other_actor: UObjectRef<Actor>) {
         if let Ok(sequence) = self.seq_ref().checked()

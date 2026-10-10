@@ -1,49 +1,14 @@
-use bindings::engine::{
-    Actor, ArrowComponent, CapsuleComponent, CapsuleComponentExt, ECollisionChannel,
-    ECollisionEnabled, ECollisionResponse, GameplayStatics, PrimitiveComponentExt,
-    SceneComponentExt, SphereComponent, SphereComponentExt,
-};
-use rusteal_runtime::runtime::{RustealResult, UObjectRef};
+use bindings::engine::{Actor, GameplayStatics};
+use rusteal_runtime::runtime::UObjectRef;
 use rusteal_runtime::{uclass, uclass_impl};
 
 use crate::subsystem::CheckpointSubsystem;
 
-const CAPSULE_RADIUS: f32 = 44.0;
-const CAPSULE_HALF_HEIGHT: f32 = 88.0;
-const DETECTION_RADIUS: f32 = 589.479_3;
-
 #[uclass(parent = Actor)]
-pub struct SpawnPoint {
-    #[component(root)]
-    capsule: CapsuleComponent,
-
-    #[component(attach = "capsule")]
-    arrow: ArrowComponent,
-
-    #[component(attach = "capsule")]
-    sphere: SphereComponent,
-}
+pub struct SpawnPoint {}
 
 #[uclass_impl]
 impl SpawnPoint {
-    #[class_defaults]
-    fn class_defaults(&mut self) -> RustealResult<()> {
-        let capsule = self.capsule()?.checked()?;
-        capsule.set_capsule_size(CAPSULE_RADIUS, CAPSULE_HALF_HEIGHT, Some(false));
-        capsule.set_collision_enabled(ECollisionEnabled::NoCollision);
-        capsule.set_visibility(false, Some(false));
-
-        let sphere = self.sphere()?.checked()?;
-        sphere.set_sphere_radius(DETECTION_RADIUS, Some(false));
-        sphere.set_collision_enabled(ECollisionEnabled::QueryOnly);
-        sphere.set_collision_response_to_all_channels(ECollisionResponse::ECR_Ignore);
-        sphere.set_collision_response_to_channel(
-            ECollisionChannel::ECC_Pawn,
-            ECollisionResponse::ECR_Overlap,
-        );
-        Ok(())
-    }
-
     #[ufunction(Override)]
     fn receive_actor_begin_overlap(&mut self, other_actor: UObjectRef<Actor>) {
         let me = self.as_ref();

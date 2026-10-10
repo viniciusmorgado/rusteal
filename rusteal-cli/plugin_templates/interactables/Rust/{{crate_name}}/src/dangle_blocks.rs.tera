@@ -1,35 +1,8 @@
-use bindings::engine::{Actor, PhysicsConstraintComponent, SceneComponent, StaticMeshComponent};
+use bindings::engine::Actor;
 use rusteal_runtime::{uclass, uclass_impl};
 
 #[uclass(parent = Actor)]
-pub struct DangleBlocks {
-    #[component(root, name = "Scene")]
-    scene: SceneComponent,
-
-    #[component(attach = "scene", name = "Cube")]
-    cube: StaticMeshComponent,
-
-    #[component(attach = "scene", name = "Cube1")]
-    cube1: StaticMeshComponent,
-
-    #[component(attach = "scene", name = "Cube2")]
-    cube2: StaticMeshComponent,
-
-    #[component(attach = "scene", name = "Cube3")]
-    cube3: StaticMeshComponent,
-
-    #[component(attach = "scene", name = "PhysicsConstraint")]
-    physics_constraint: PhysicsConstraintComponent,
-
-    #[component(attach = "scene", name = "PhysicsConstraint1")]
-    physics_constraint1: PhysicsConstraintComponent,
-
-    #[component(attach = "scene", name = "PhysicsConstraint2")]
-    physics_constraint2: PhysicsConstraintComponent,
-
-    #[component(attach = "scene", name = "PhysicsConstraint3")]
-    physics_constraint3: PhysicsConstraintComponent,
-}
+pub struct DangleBlocks {}
 
 #[uclass_impl]
 impl DangleBlocks {}
