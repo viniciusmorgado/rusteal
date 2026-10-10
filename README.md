@@ -896,6 +896,29 @@ call.set("NewMobility", 2u8)?;
 call.call()?;
 ```
 
+### Errors
+
+What fails in the engine (a destroyed object, a wrong cast, a missing
+function) is a `RustealResult<T>`, whose `RustealError` says what went wrong,
+on which object, and where in your code:
+
+```text
+invalid cast: expected Pawn (object StaticMeshActor_0 of class StaticMeshActor)
+    at my-game/src/turret.rs:42:23
+while aiming at the target
+    at my-game/src/turret.rs:30:14
+```
+
+`{e}` is one line, `{e:#}` adds the causes and the location, `{e:?}` is the
+report above, and `e.log(LOG_WARNING)` writes it to the Output Log. The location
+is the line of your call, since the functions returning a `RustealResult` pass
+their caller's along. `.context("aiming at the target")` adds what the code was
+doing, on any `Result` (another crate's error becomes the cause) and on an
+`Option`; `?` converts the standard library's errors by itself. `kind()` is an
+`ErrorKind` to match on (`e.is(ErrorKind::InvalidCast)`), and `bail!` and
+`ensure!` return errors of your own. `RustealError` implements
+`std::error::Error`, so it also goes into `anyhow` or an error type of yours.
+
 ### Hot Reload
 
 During development, rebuild your Rust library and reload without restarting the editor:
