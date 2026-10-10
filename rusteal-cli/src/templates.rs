@@ -311,7 +311,8 @@ mod tests {
                 "first-person",
                 "third-person",
                 "top-down",
-                "vehicle"
+                "vehicle",
+                "vr"
             ]
         );
         assert!(manifest(SETUP_TEMPLATE).is_some());
