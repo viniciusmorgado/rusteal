@@ -261,11 +261,17 @@ rusteal new MyGame --template third-person --feature mannequin
 
 | Feature | Plugin | What it is |
 |---|---|---|
-| `mannequin` | `Mannequin` | `CopycatAnimInstance`, an Animation Blueprint parent that copies a character's movement (ground speed, direction, moving, falling), the player's unless told which, as the Intro To Unreal template's copycat mannequin. |
+| `mannequin` | `Mannequin` | `CopycatAnimInstance`, an Animation Blueprint parent that copies a character's movement (ground speed, direction, moving, falling), the player's unless told which, and `BP_CopycatMannequin`, the Intro To Unreal template's copycat mannequin; `ReachingMannequin`, whose right hand reaches for a `ReachTarget` placed in the level (two-bone IK solved in Rust). |
+| `checkpoints` | `Checkpoints` | `BP_SpawnPoint`s that save the player's progress when walked past (`CheckpointSaveData`), and a world subsystem (`CheckpointSubsystem`) that brings the player back to the last one when the level starts or on `RespawnPlayer`. |
+| `interactables` | `Interactables` | `BP_DoorTrigger`, a switch broadcasting its `Trigger` event; `BP_Light`s and a `BP_DoorFrame_Unlockable` that it toggles and unlocks; `BP_ConfettiTrigger`, a Niagara burst; `BP_SequenceTrigger`, which plays a level sequence; `BP_Metasound`, a MetaSound with a seed parameter; `BP_DangleBlocks`, cubes hanging on physics constraints. |
+| `tour` | `Tour` | The tour pieces: `BP_TextSwitcher` (text that changes in game), `BP_Titles` (station numbers), animated `BP_KeyboardKey`s and `BP_MouseKey`s, `BP_GizmoDemo` (the move, rotate and scale gizmos at work), `BP_TemplateCube`, `BP_SplinePath` (decal arrows along a spline) and `BP_UI_Update` (editor panels shown in game). |
 
 Each feature is written into `Plugins/<Plugin>/`, enabled in the `.uproject`,
 built with the project, and brings the engine content it needs when the
-project lacks it (`mannequin` copies the `Characters` pack). An existing
+project lacks it (`mannequin` copies the `Characters` pack, `interactables`
+and `tour` the `LevelPrototyping` one). Its Blueprints are in the plugin's
+content (**Plugins > <Plugin> Content** in the Content Browser), children of
+its Rust classes holding the meshes, materials and widget layouts. An existing
 project takes one with `rusteal plugin new <Plugin> --template <feature>`.
 
 ### Screenshots
