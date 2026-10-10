@@ -1,4 +1,5 @@
 #include "Blueprint/UserWidget.h"
+#include "RustealErrors.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Widget.h"
 #include "Engine/GameInstance.h"
@@ -51,15 +52,15 @@ SetRootWidgetImpl(RustealUObjectHandle UserWidgetHandle,
       Cast<UWidget>(static_cast<UObject *>(RootWidgetHandle.ptr));
 
   if (!UserWidget)
-    return ERustealErrorCode::NullArgument;
+    return RustealFail(ERustealErrorCode::NullArgument);
 
   if (!RootWidget)
-    return ERustealErrorCode::NullArgument;
+    return RustealFail(ERustealErrorCode::NullArgument);
 
   UWidgetTree *Tree = UserWidget->WidgetTree;
 
   if (!Tree)
-    return ERustealErrorCode::InvalidOperation;
+    return RustealFail(ERustealErrorCode::InvalidOperation);
 
   Tree->RootWidget = RootWidget;
   return ERustealErrorCode::Ok;

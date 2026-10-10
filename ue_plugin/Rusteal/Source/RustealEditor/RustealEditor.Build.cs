@@ -20,6 +20,7 @@ public class RustealEditor : ModuleRules
             "UnrealEd",
             "BlueprintGraph",
             "DirectoryWatcher",
+            "MessageLog",
             "Slate",
             "SlateCore",
         ]);

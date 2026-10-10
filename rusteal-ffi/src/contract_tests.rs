@@ -20,3 +20,8 @@ const _: () = assert!(offset_of!(RustealReifyPropExtra, inner_prop_type) == 36);
 const _: () = assert!(size_of::<crate::api_table::RustealConsoleArgs>() == 24);
 const _: () = assert!(offset_of!(crate::api_table::RustealConsoleArgs, args_len) == 8);
 const _: () = assert!(offset_of!(crate::api_table::RustealConsoleArgs, world) == 16);
+
+const _: () = assert!(size_of::<crate::api_table::RustealErrorReport>() == 72);
+const _: () = assert!(offset_of!(crate::api_table::RustealErrorReport, object) == 36);
+const _: () = assert!(offset_of!(crate::api_table::RustealErrorReport, file) == 48);
+const _: () = assert!(offset_of!(crate::api_table::RustealErrorReport, column) == 64);

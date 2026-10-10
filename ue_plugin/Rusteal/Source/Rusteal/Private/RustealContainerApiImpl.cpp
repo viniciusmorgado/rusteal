@@ -1,4 +1,5 @@
 #include "RustealApiTable.h"
+#include "RustealErrors.h"
 #include "RustealFNameHelper.h"
 #include "UObject/UObjectGlobals.h"
 #include "UObject/UnrealType.h"
@@ -6,7 +7,7 @@
 #define RUSTEAL_CHECK_VALID(ObjHandle)                                         \
   void *Object = (ObjHandle).ptr;                                              \
   if (!Object) {                                                               \
-    return ERustealErrorCode::ObjectDestroyed;                                 \
+    return RustealFail(ERustealErrorCode::ObjectDestroyed);                    \
   }
 
 #define RUSTEAL_CHECK_VALID_I32(ObjHandle)                                     \
@@ -151,13 +152,16 @@ static ERustealErrorCode ArrayGetImpl(RustealUObjectHandle Obj,
       CastField<FArrayProperty>(static_cast<FProperty *>(Prop.ptr));
 
   if (!ArrayProp)
-    return ERustealErrorCode::TypeMismatch;
+    return RustealFailType(Prop.ptr, TEXT("FArrayProperty"));
 
   FScriptArrayHelper Helper(ArrayProp,
                             ArrayProp->ContainerPtrToValuePtr<void>(Object));
 
   if (Index < 0 || Index >= Helper.Num()) {
-    return ERustealErrorCode::IndexOutOfRange;
+    return RustealFail(
+        ERustealErrorCode::IndexOutOfRange,
+        FString::Printf(TEXT("index %d past the %d elements of %s"), Index,
+                        Helper.Num(), *RustealDescribe(ArrayProp)));
   }
 
   const void *ElemPtr = Helper.GetRawPtr(Index);
@@ -174,13 +178,16 @@ static ERustealErrorCode ArraySetImpl(RustealUObjectHandle Obj,
       CastField<FArrayProperty>(static_cast<FProperty *>(Prop.ptr));
 
   if (!ArrayProp)
-    return ERustealErrorCode::TypeMismatch;
+    return RustealFailType(Prop.ptr, TEXT("FArrayProperty"));
 
   FScriptArrayHelper Helper(ArrayProp,
                             ArrayProp->ContainerPtrToValuePtr<void>(Object));
 
   if (Index < 0 || Index >= Helper.Num()) {
-    return ERustealErrorCode::IndexOutOfRange;
+    return RustealFail(
+        ERustealErrorCode::IndexOutOfRange,
+        FString::Printf(TEXT("index %d past the %d elements of %s"), Index,
+                        Helper.Num(), *RustealDescribe(ArrayProp)));
   }
 
   void *ElemPtr = Helper.GetRawPtr(Index);
@@ -197,7 +204,7 @@ static ERustealErrorCode ArrayAddImpl(RustealUObjectHandle Obj,
       CastField<FArrayProperty>(static_cast<FProperty *>(Prop.ptr));
 
   if (!ArrayProp)
-    return ERustealErrorCode::TypeMismatch;
+    return RustealFailType(Prop.ptr, TEXT("FArrayProperty"));
 
   FScriptArrayHelper Helper(ArrayProp,
                             ArrayProp->ContainerPtrToValuePtr<void>(Object));
@@ -217,13 +224,16 @@ static ERustealErrorCode ArrayRemoveImpl(RustealUObjectHandle Obj,
       CastField<FArrayProperty>(static_cast<FProperty *>(Prop.ptr));
 
   if (!ArrayProp)
-    return ERustealErrorCode::TypeMismatch;
+    return RustealFailType(Prop.ptr, TEXT("FArrayProperty"));
 
   FScriptArrayHelper Helper(ArrayProp,
                             ArrayProp->ContainerPtrToValuePtr<void>(Object));
 
   if (Index < 0 || Index >= Helper.Num()) {
-    return ERustealErrorCode::IndexOutOfRange;
+    return RustealFail(
+        ERustealErrorCode::IndexOutOfRange,
+        FString::Printf(TEXT("index %d past the %d elements of %s"), Index,
+                        Helper.Num(), *RustealDescribe(ArrayProp)));
   }
 
   Helper.RemoveValues(Index, 1);
@@ -238,7 +248,7 @@ static ERustealErrorCode ArrayClearImpl(RustealUObjectHandle Obj,
       CastField<FArrayProperty>(static_cast<FProperty *>(Prop.ptr));
 
   if (!ArrayProp)
-    return ERustealErrorCode::TypeMismatch;
+    return RustealFailType(Prop.ptr, TEXT("FArrayProperty"));
 
   FScriptArrayHelper Helper(ArrayProp,
                             ArrayProp->ContainerPtrToValuePtr<void>(Object));
@@ -283,7 +293,7 @@ static ERustealErrorCode MapFindImpl(RustealUObjectHandle Obj,
       CastField<FMapProperty>(static_cast<FProperty *>(Prop.ptr));
 
   if (!MapProp)
-    return ERustealErrorCode::TypeMismatch;
+    return RustealFailType(Prop.ptr, TEXT("FMapProperty"));
 
   FScriptMapHelper Helper(MapProp,
                           MapProp->ContainerPtrToValuePtr<void>(Object));
@@ -301,7 +311,7 @@ static ERustealErrorCode MapFindImpl(RustealUObjectHandle Obj,
   if (!FoundValuePtr) {
     KeyProp->DestroyValue(TempKey);
     FMemory::Free(TempKey);
-    return ERustealErrorCode::PropertyNotFound;
+    return RustealFail(ERustealErrorCode::PropertyNotFound);
   }
 
   ReadElement(MapProp->ValueProp, FoundValuePtr, OutValBuf, ValSize,
@@ -322,7 +332,7 @@ static ERustealErrorCode MapAddImpl(RustealUObjectHandle Obj,
       CastField<FMapProperty>(static_cast<FProperty *>(Prop.ptr));
 
   if (!MapProp)
-    return ERustealErrorCode::TypeMismatch;
+    return RustealFailType(Prop.ptr, TEXT("FMapProperty"));
 
   FScriptMapHelper Helper(MapProp,
                           MapProp->ContainerPtrToValuePtr<void>(Object));
@@ -360,7 +370,7 @@ static ERustealErrorCode MapRemoveImpl(RustealUObjectHandle Obj,
       CastField<FMapProperty>(static_cast<FProperty *>(Prop.ptr));
 
   if (!MapProp)
-    return ERustealErrorCode::TypeMismatch;
+    return RustealFailType(Prop.ptr, TEXT("FMapProperty"));
 
   FScriptMapHelper Helper(MapProp,
                           MapProp->ContainerPtrToValuePtr<void>(Object));
@@ -389,7 +399,7 @@ static ERustealErrorCode MapClearImpl(RustealUObjectHandle Obj,
       CastField<FMapProperty>(static_cast<FProperty *>(Prop.ptr));
 
   if (!MapProp)
-    return ERustealErrorCode::TypeMismatch;
+    return RustealFailType(Prop.ptr, TEXT("FMapProperty"));
 
   FScriptMapHelper Helper(MapProp,
                           MapProp->ContainerPtrToValuePtr<void>(Object));
@@ -409,13 +419,15 @@ MapGetPairImpl(RustealUObjectHandle Obj, RustealFPropertyHandle Prop,
       CastField<FMapProperty>(static_cast<FProperty *>(Prop.ptr));
 
   if (!MapProp)
-    return ERustealErrorCode::TypeMismatch;
+    return RustealFailType(Prop.ptr, TEXT("FMapProperty"));
 
   FScriptMapHelper Helper(MapProp,
                           MapProp->ContainerPtrToValuePtr<void>(Object));
 
   if (LogicalIndex < 0 || LogicalIndex >= Helper.Num()) {
-    return ERustealErrorCode::IndexOutOfRange;
+    return RustealFail(ERustealErrorCode::IndexOutOfRange,
+                       FString::Printf(TEXT("index %d past the %d elements"),
+                                       LogicalIndex, Helper.Num()));
   }
 
   int32 Found = 0;
@@ -437,7 +449,7 @@ MapGetPairImpl(RustealUObjectHandle Obj, RustealFPropertyHandle Prop,
     }
   }
 
-  return ERustealErrorCode::IndexOutOfRange;
+  return RustealFail(ERustealErrorCode::IndexOutOfRange);
 }
 
 static int32 SetLenImpl(RustealUObjectHandle Obj, RustealFPropertyHandle Prop) {
@@ -497,7 +509,7 @@ static ERustealErrorCode SetAddImpl(RustealUObjectHandle Obj,
       CastField<FSetProperty>(static_cast<FProperty *>(Prop.ptr));
 
   if (!SetProp)
-    return ERustealErrorCode::TypeMismatch;
+    return RustealFailType(Prop.ptr, TEXT("FSetProperty"));
 
   FScriptSetHelper Helper(SetProp,
                           SetProp->ContainerPtrToValuePtr<void>(Object));
@@ -526,7 +538,7 @@ static ERustealErrorCode SetRemoveImpl(RustealUObjectHandle Obj,
       CastField<FSetProperty>(static_cast<FProperty *>(Prop.ptr));
 
   if (!SetProp)
-    return ERustealErrorCode::TypeMismatch;
+    return RustealFailType(Prop.ptr, TEXT("FSetProperty"));
 
   FScriptSetHelper Helper(SetProp,
                           SetProp->ContainerPtrToValuePtr<void>(Object));
@@ -560,7 +572,7 @@ static ERustealErrorCode SetClearImpl(RustealUObjectHandle Obj,
       CastField<FSetProperty>(static_cast<FProperty *>(Prop.ptr));
 
   if (!SetProp)
-    return ERustealErrorCode::TypeMismatch;
+    return RustealFailType(Prop.ptr, TEXT("FSetProperty"));
 
   FScriptSetHelper Helper(SetProp,
                           SetProp->ContainerPtrToValuePtr<void>(Object));
@@ -579,13 +591,15 @@ static ERustealErrorCode SetGetElementImpl(RustealUObjectHandle Obj,
       CastField<FSetProperty>(static_cast<FProperty *>(Prop.ptr));
 
   if (!SetProp)
-    return ERustealErrorCode::TypeMismatch;
+    return RustealFailType(Prop.ptr, TEXT("FSetProperty"));
 
   FScriptSetHelper Helper(SetProp,
                           SetProp->ContainerPtrToValuePtr<void>(Object));
 
   if (LogicalIndex < 0 || LogicalIndex >= Helper.Num()) {
-    return ERustealErrorCode::IndexOutOfRange;
+    return RustealFail(ERustealErrorCode::IndexOutOfRange,
+                       FString::Printf(TEXT("index %d past the %d elements"),
+                                       LogicalIndex, Helper.Num()));
   }
 
   int32 Found = 0;
@@ -604,7 +618,7 @@ static ERustealErrorCode SetGetElementImpl(RustealUObjectHandle Obj,
     }
   }
 
-  return ERustealErrorCode::IndexOutOfRange;
+  return RustealFail(ERustealErrorCode::IndexOutOfRange);
 }
 
 static ERustealErrorCode ArrayCopyAllImpl(RustealUObjectHandle Obj,
@@ -618,7 +632,7 @@ static ERustealErrorCode ArrayCopyAllImpl(RustealUObjectHandle Obj,
       CastField<FArrayProperty>(static_cast<FProperty *>(Prop.ptr));
 
   if (!ArrayProp)
-    return ERustealErrorCode::TypeMismatch;
+    return RustealFailType(Prop.ptr, TEXT("FArrayProperty"));
 
   FScriptArrayHelper Helper(ArrayProp,
                             ArrayProp->ContainerPtrToValuePtr<void>(Object));
@@ -638,7 +652,7 @@ static ERustealErrorCode ArrayCopyAllImpl(RustealUObjectHandle Obj,
       if (OutTotalWritten)
         *OutTotalWritten = TotalSize;
 
-      return ERustealErrorCode::BufferTooSmall;
+      return RustealFail(ERustealErrorCode::BufferTooSmall);
     }
 
     if (Count > 0) {
@@ -663,7 +677,7 @@ static ERustealErrorCode ArrayCopyAllImpl(RustealUObjectHandle Obj,
         *OutTotalWritten = AvgPerElem * Count + sizeof(uint32) * Count;
       }
 
-      return ERustealErrorCode::BufferTooSmall;
+      return RustealFail(ERustealErrorCode::BufferTooSmall);
     }
 
     uint32 ElemWritten = 0;
@@ -680,7 +694,7 @@ static ERustealErrorCode ArrayCopyAllImpl(RustealUObjectHandle Obj,
         *OutTotalWritten = (sizeof(uint32) + ElemWritten) * Count;
       }
 
-      return ERustealErrorCode::BufferTooSmall;
+      return RustealFail(ERustealErrorCode::BufferTooSmall);
     }
 
     FMemory::Memcpy(OutBuf + Offset, &ElemWritten, sizeof(uint32));
@@ -703,7 +717,7 @@ static ERustealErrorCode ArraySetAllImpl(RustealUObjectHandle Obj,
       CastField<FArrayProperty>(static_cast<FProperty *>(Prop.ptr));
 
   if (!ArrayProp)
-    return ERustealErrorCode::TypeMismatch;
+    return RustealFailType(Prop.ptr, TEXT("FArrayProperty"));
 
   FScriptArrayHelper Helper(ArrayProp,
                             ArrayProp->ContainerPtrToValuePtr<void>(Object));
@@ -716,7 +730,7 @@ static ERustealErrorCode ArraySetAllImpl(RustealUObjectHandle Obj,
     uint32 TotalSize = ActualCount * ElemSize;
 
     if (TotalSize > BufSize)
-      return ERustealErrorCode::BufferTooSmall;
+      return RustealFail(ERustealErrorCode::BufferTooSmall);
 
     Helper.EmptyValues();
     Helper.Resize(ActualCount);
@@ -735,7 +749,7 @@ static ERustealErrorCode ArraySetAllImpl(RustealUObjectHandle Obj,
 
   for (int32 i = 0; i < Count; i++) {
     if (Offset + sizeof(uint32) > BufSize) {
-      return ERustealErrorCode::BufferTooSmall;
+      return RustealFail(ERustealErrorCode::BufferTooSmall);
     }
 
     uint32 ElemSize = 0;
@@ -743,7 +757,7 @@ static ERustealErrorCode ArraySetAllImpl(RustealUObjectHandle Obj,
     Offset += sizeof(uint32);
 
     if (Offset + ElemSize > BufSize) {
-      return ERustealErrorCode::BufferTooSmall;
+      return RustealFail(ERustealErrorCode::BufferTooSmall);
     }
 
     WriteElement(Inner, Helper.GetRawPtr(i), InBuf + Offset, ElemSize);
@@ -764,7 +778,7 @@ static ERustealErrorCode MapCopyAllImpl(RustealUObjectHandle Obj,
       CastField<FMapProperty>(static_cast<FProperty *>(Prop.ptr));
 
   if (!MapProp)
-    return ERustealErrorCode::TypeMismatch;
+    return RustealFailType(Prop.ptr, TEXT("FMapProperty"));
 
   FScriptMapHelper Helper(MapProp,
                           MapProp->ContainerPtrToValuePtr<void>(Object));
@@ -787,7 +801,7 @@ static ERustealErrorCode MapCopyAllImpl(RustealUObjectHandle Obj,
       if (OutTotalWritten)
         *OutTotalWritten = BufSize * 2;
 
-      return ERustealErrorCode::BufferTooSmall;
+      return RustealFail(ERustealErrorCode::BufferTooSmall);
     }
 
     uint32 KeyWritten = 0;
@@ -800,7 +814,7 @@ static ERustealErrorCode MapCopyAllImpl(RustealUObjectHandle Obj,
       if (OutTotalWritten)
         *OutTotalWritten = BufSize * 2;
 
-      return ERustealErrorCode::BufferTooSmall;
+      return RustealFail(ERustealErrorCode::BufferTooSmall);
     }
 
     FMemory::Memcpy(OutBuf + Offset, &KeyWritten, sizeof(uint32));
@@ -810,7 +824,7 @@ static ERustealErrorCode MapCopyAllImpl(RustealUObjectHandle Obj,
       if (OutTotalWritten)
         *OutTotalWritten = BufSize * 2;
 
-      return ERustealErrorCode::BufferTooSmall;
+      return RustealFail(ERustealErrorCode::BufferTooSmall);
     }
 
     uint32 ValWritten = 0;
@@ -823,7 +837,7 @@ static ERustealErrorCode MapCopyAllImpl(RustealUObjectHandle Obj,
       if (OutTotalWritten)
         *OutTotalWritten = BufSize * 2;
 
-      return ERustealErrorCode::BufferTooSmall;
+      return RustealFail(ERustealErrorCode::BufferTooSmall);
     }
 
     FMemory::Memcpy(OutBuf + Offset, &ValWritten, sizeof(uint32));
@@ -847,7 +861,7 @@ static ERustealErrorCode SetCopyAllImpl(RustealUObjectHandle Obj,
       CastField<FSetProperty>(static_cast<FProperty *>(Prop.ptr));
 
   if (!SetProp)
-    return ERustealErrorCode::TypeMismatch;
+    return RustealFailType(Prop.ptr, TEXT("FSetProperty"));
 
   FScriptSetHelper Helper(SetProp,
                           SetProp->ContainerPtrToValuePtr<void>(Object));
@@ -869,7 +883,7 @@ static ERustealErrorCode SetCopyAllImpl(RustealUObjectHandle Obj,
       if (OutTotalWritten)
         *OutTotalWritten = BufSize * 2;
 
-      return ERustealErrorCode::BufferTooSmall;
+      return RustealFail(ERustealErrorCode::BufferTooSmall);
     }
 
     uint32 ElemWritten = 0;
@@ -882,7 +896,7 @@ static ERustealErrorCode SetCopyAllImpl(RustealUObjectHandle Obj,
       if (OutTotalWritten)
         *OutTotalWritten = BufSize * 2;
 
-      return ERustealErrorCode::BufferTooSmall;
+      return RustealFail(ERustealErrorCode::BufferTooSmall);
     }
 
     FMemory::Memcpy(OutBuf + Offset, &ElemWritten, sizeof(uint32));

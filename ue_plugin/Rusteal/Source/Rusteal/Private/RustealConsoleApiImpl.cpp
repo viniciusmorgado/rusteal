@@ -1,4 +1,5 @@
 #include "Engine/World.h"
+#include "RustealErrors.h"
 #include "HAL/IConsoleManager.h"
 #include "RustealApiTable.h"
 #include "RustealLibrary.h"
@@ -22,7 +23,7 @@ static ERustealErrorCode RegisterCommandImpl(const uint8 *Name, uint32 NameLen,
   const FString CommandName = ConsoleUtf8(Name, NameLen);
 
   if (CommandName.IsEmpty()) {
-    return ERustealErrorCode::NullArgument;
+    return RustealFail(ERustealErrorCode::NullArgument);
   }
 
   if (IConsoleManager::Get().FindConsoleObject(*CommandName)) {
@@ -30,7 +31,10 @@ static ERustealErrorCode RegisterCommandImpl(const uint8 *Name, uint32 NameLen,
            TEXT("[Rusteal] Console: %s is already a command or variable"),
            *CommandName);
 
-    return ERustealErrorCode::InvalidOperation;
+    return RustealFail(
+        ERustealErrorCode::InvalidOperation,
+        FString::Printf(TEXT("Console: %s is already a command or variable"),
+                        *CommandName));
   }
 
   FRustealLibrary *Library = RustealCurrentLibrary();
@@ -64,7 +68,7 @@ static ERustealErrorCode RegisterVariableImpl(const uint8 *Name, uint32 NameLen,
   const FString VariableName = ConsoleUtf8(Name, NameLen);
 
   if (VariableName.IsEmpty()) {
-    return ERustealErrorCode::NullArgument;
+    return RustealFail(ERustealErrorCode::NullArgument);
   }
 
   IConsoleManager &Manager = IConsoleManager::Get();
@@ -74,7 +78,10 @@ static ERustealErrorCode RegisterVariableImpl(const uint8 *Name, uint32 NameLen,
            TEXT("[Rusteal] Console: %s is already a command or variable"),
            *VariableName);
 
-    return ERustealErrorCode::InvalidOperation;
+    return RustealFail(
+        ERustealErrorCode::InvalidOperation,
+        FString::Printf(TEXT("Console: %s is already a command or variable"),
+                        *VariableName));
   }
 
   const FString HelpText = ConsoleUtf8(Help, HelpLen);
@@ -99,11 +106,11 @@ static ERustealErrorCode RegisterVariableImpl(const uint8 *Name, uint32 NameLen,
                                                *HelpText, ECVF_Default);
     break;
   default:
-    return ERustealErrorCode::TypeMismatch;
+    return RustealFail(ERustealErrorCode::TypeMismatch);
   }
 
   if (!Variable) {
-    return ERustealErrorCode::InternalError;
+    return RustealFail(ERustealErrorCode::InternalError);
   }
 
   Remember(VariableName);
@@ -115,7 +122,7 @@ static ERustealErrorCode UnregisterImpl(const uint8 *Name, uint32 NameLen) {
   TArray<FString> *Names = GConsoleNames.Find(RustealCurrentLibrary());
 
   if (!Names || Names->Remove(ObjectName) == 0) {
-    return ERustealErrorCode::InvalidOperation;
+    return RustealFail(ERustealErrorCode::InvalidOperation);
   }
 
   if (IConsoleObject *Object =
@@ -133,7 +140,7 @@ static ERustealErrorCode GetVariableImpl(const uint8 *Name, uint32 NameLen,
       IConsoleManager::Get().FindConsoleVariable(*ConsoleUtf8(Name, NameLen));
 
   if (!Variable) {
-    return ERustealErrorCode::PropertyNotFound;
+    return RustealFail(ERustealErrorCode::PropertyNotFound);
   }
 
   const FTCHARToUTF8 Utf8(*Variable->GetString());
@@ -156,7 +163,7 @@ static ERustealErrorCode SetVariableImpl(const uint8 *Name, uint32 NameLen,
       IConsoleManager::Get().FindConsoleVariable(*ConsoleUtf8(Name, NameLen));
 
   if (!Variable) {
-    return ERustealErrorCode::PropertyNotFound;
+    return RustealFail(ERustealErrorCode::PropertyNotFound);
   }
 
   Variable->Set(*ConsoleUtf8(Value, ValueLen), ECVF_SetByCode);
