@@ -35,7 +35,7 @@ pub fn collect_deduped_properties<'a>(
     let mut deduped = Vec::new();
 
     for prop in props {
-        if prop.getter.is_some() || prop.setter.is_some() {
+        if prop.getter.is_some() {
             continue;
         }
 
@@ -894,6 +894,22 @@ mod tests {
             "prop_flags": flags,
         }))
         .unwrap()
+    }
+
+    #[test]
+    fn a_blueprint_setter_alone_keeps_the_property_getter() {
+        let mut setter_only = prop("MotionSource", "NameProperty", CPF_BLUEPRINT_VISIBLE);
+        setter_only.setter = Some("SetTrackingMotionSource".to_string());
+
+        let mut with_getter = prop("Hand", "NameProperty", CPF_BLUEPRINT_VISIBLE);
+        with_getter.getter = Some("GetHand".to_string());
+
+        let props = [setter_only, with_getter];
+        let (names, kept) = collect_deduped_properties(&props, None);
+
+        assert_eq!(kept.len(), 1);
+        assert_eq!(kept[0].name, "MotionSource");
+        assert!(names.contains("get_motion_source"));
     }
 
     #[test]

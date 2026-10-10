@@ -146,7 +146,7 @@ pub fn generate_class(class: &ClassInfo, ctx: &CodegenContext) -> String {
     suppress_setters.extend(
         deduped_props
             .iter()
-            .filter(|p| properties::is_read_only_non_public(p))
+            .filter(|p| properties::is_read_only_non_public(p) || p.setter.is_some())
             .map(|p| format!("set_{}", properties::rust_property_name(p))),
     );
 
