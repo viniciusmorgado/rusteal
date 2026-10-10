@@ -1,24 +1,15 @@
-// Build script: embeds the UE plugin sources and the project templates into
-// the binary, so `rusteal setup` and `rusteal new` carry everything they write.
-//
-// Dual-path resolution:
-// - Workspace build: reads from ../../ue_plugin/ (always up-to-date)
-// - crates.io build: falls back to ./ue_plugin_embed/ (committed snapshot)
-
 use std::env;
-use std::fs;
 use std::fmt::Write as FmtWrite;
+use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-/// Directories to skip when walking plugin sources.
 const EXCLUDED_DIRS: &[&str] = &["Generated", "Binaries", "Intermediate", "obj"];
 
 fn main() {
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
 
-    // Dual-path: prefer workspace ue_plugin/, fall back to ue_plugin_embed/
     let workspace_path = manifest_dir.join("..").join("ue_plugin");
     let embed_path = manifest_dir.join("ue_plugin_embed");
 
@@ -38,25 +29,24 @@ fn main() {
     let source_root = fs::canonicalize(&source_root)
         .unwrap_or_else(|e| panic!("Failed to canonicalize {}: {e}", source_root.display()));
 
-    // Tell Cargo to rerun if plugin sources change
     println!("cargo:rerun-if-changed={}", source_root.display());
 
-    // Collect all eligible files
     let mut files: Vec<(String, PathBuf)> = Vec::new();
     collect_files(&source_root, &source_root, &mut files);
     files.sort_by(|a, b| a.0.cmp(&b.0));
 
-    // Generate plugin_files.rs
     let out_file = out_dir.join("plugin_files.rs");
+
     let mut f = fs::File::create(&out_file)
         .unwrap_or_else(|e| panic!("Failed to create {}: {e}", out_file.display()));
 
     writeln!(f, "pub const PLUGIN_FILES: &[(&str, &[u8])] = &[").unwrap();
+
     for (rel_path, abs_path) in &files {
-        // Use forward slashes for the include_bytes! path (works on all platforms)
         let abs_str = abs_path.to_str().expect("non-UTF8 path").replace('\\', "/");
         writeln!(f, "    ({rel_path:?}, include_bytes!({abs_str:?})),").unwrap();
     }
+
     writeln!(f, "];").unwrap();
 
     eprintln!(
@@ -65,7 +55,14 @@ fn main() {
         source_root.display()
     );
 
-    embed_templates(&manifest_dir, &out_dir, "templates", "TEMPLATE_FILES", "template_files.rs");
+    embed_templates(
+        &manifest_dir,
+        &out_dir,
+        "templates",
+        "TEMPLATE_FILES",
+        "template_files.rs",
+    );
+
     embed_templates(
         &manifest_dir,
         &out_dir,
@@ -75,12 +72,13 @@ fn main() {
     );
 }
 
-/// Embed `dir` as `const_name: &[(&str, &[u8])]` in `out_name`, every file by
-/// its path under `dir`. In `templates/`, `<name>/<variant>/` is what `rusteal
-/// new --template <name> --variant <variant>` adds on top; in
-/// `plugin_templates/`, `<name>/` is what `rusteal plugin new --template
-/// <name>` writes into the plugin (see src/templates.rs).
-fn embed_templates(manifest_dir: &Path, out_dir: &Path, dir: &str, const_name: &str, out_name: &str) {
+fn embed_templates(
+    manifest_dir: &Path,
+    out_dir: &Path,
+    dir: &str,
+    const_name: &str,
+    out_name: &str,
+) {
     let templates_dir = manifest_dir.join(dir);
     println!("cargo:rerun-if-changed={}", templates_dir.display());
 
@@ -89,22 +87,28 @@ fn embed_templates(manifest_dir: &Path, out_dir: &Path, dir: &str, const_name: &
     files.sort_by(|a, b| a.0.cmp(&b.0));
 
     let mut out = format!("pub const {const_name}: &[(&str, &[u8])] = &[\n");
+
     for (rel_path, path) in &files {
         let abs = path.to_str().expect("non-UTF8 path").replace('\\', "/");
         writeln!(out, "    ({rel_path:?}, include_bytes!({abs:?})),").unwrap();
     }
+
     out.push_str("];\n");
 
     let out_file = out_dir.join(out_name);
+
     fs::write(&out_file, out)
         .unwrap_or_else(|e| panic!("Failed to write {}: {e}", out_file.display()));
 
-    eprintln!("rusteal build.rs: embedded {} files from {dir}", files.len());
+    eprintln!(
+        "rusteal build.rs: embedded {} files from {dir}",
+        files.len()
+    );
 }
 
 fn collect_files(root: &Path, dir: &Path, out: &mut Vec<(String, PathBuf)>) {
-    let entries = fs::read_dir(dir)
-        .unwrap_or_else(|e| panic!("Failed to read {}: {e}", dir.display()));
+    let entries =
+        fs::read_dir(dir).unwrap_or_else(|e| panic!("Failed to read {}: {e}", dir.display()));
 
     for entry in entries {
         let entry = entry.unwrap();
@@ -116,15 +120,15 @@ fn collect_files(root: &Path, dir: &Path, out: &mut Vec<(String, PathBuf)>) {
             if EXCLUDED_DIRS.contains(&name.as_ref()) {
                 continue;
             }
+
             collect_files(root, &path, out);
         } else {
-            // Skip .csproj.props (machine-specific)
             if name.ends_with(".csproj.props") {
                 continue;
             }
 
             let rel = path.strip_prefix(root).unwrap();
-            // Use forward slashes in relative paths
+
             let rel_str = rel.to_str().expect("non-UTF8 path").replace('\\', "/");
             out.push((rel_str, path.clone()));
         }

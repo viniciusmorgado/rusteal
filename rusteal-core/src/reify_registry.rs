@@ -1,63 +1,33 @@
-// Reify registry: manages Rust-side type info, function callbacks, and instance data
-// for runtime-created UE classes.
-//
-// Three registries:
-// 1. Type registry: maps type_id -> RustTypeInfo (constructor, destructor, name)
-// 2. Function registry: maps callback_id -> Rust function closure
-// 3. Instance data: maps UObject pointer -> the allocated Rust data of each
-//    Rust class it is (a Rust class whose parent is a Rust class has both)
-
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock, RwLock};
 
 use crate::{lock_or_recover, read_or_recover, write_or_recover};
 
-// ---------------------------------------------------------------------------
-// Inventory-based auto-registration
-// ---------------------------------------------------------------------------
-
-/// Submitted by `#[uclass]` — holds register + finalize fn pointers.
 pub struct ClassRegistration {
-    /// The class's Rust type ID.
     pub type_id: u64,
-    /// Create the UClass (type info, parent, class handle). `false` while its
-    /// parent, a Rust class not created yet, is missing; on the last try the
-    /// missing parent is logged and it returns `true`.
-    pub create: fn(last_try: bool) -> bool,
-    /// Add its properties and components, which may name other Rust classes
-    /// (`SubclassOf<MyCharacter>`): every class exists by then.
+    pub shape: u64,
+    pub create: fn(last_try: bool, shape: u64) -> bool,
     pub register: fn(),
     pub finalize: fn(),
-    /// Once its class defaults are written: a config class loads its ini
-    /// values over them.
     pub after_defaults: fn(),
 }
 inventory::collect!(ClassRegistration);
 
-/// Submitted by `#[ustruct]`.
 pub struct StructRegistration {
-    /// Create the UScriptStruct (its handle).
     pub create: fn(),
-    /// Add its properties, which may name Rust classes and structs: every
-    /// class and struct exists by then.
     pub register: fn(),
-    /// Link it, after the Rust structs it holds.
     pub finalize: fn(),
 }
 inventory::collect!(StructRegistration);
 
-/// Submitted by `#[uclass_impl]` — holds register_functions fn pointer, and the
-/// `#[class_defaults]` method's caller when the block has one.
 pub struct ClassFunctionRegistration {
-    /// The Rust type ID of the class the block implements.
     pub type_id: u64,
+    pub shape: u64,
     pub register_functions: fn(),
     pub class_defaults: Option<fn()>,
 }
 inventory::collect!(ClassFunctionRegistration);
 
-/// What a `#[class_defaults]` method may return: nothing, or a result whose
-/// error is logged.
 pub trait ClassDefaultsOutcome {
     fn report(self, class: &str);
 }
@@ -71,6 +41,7 @@ impl ClassDefaultsOutcome for crate::error::RustealResult<()> {
         if let Err(e) = self {
             let msg = format!("[Rusteal] {class}: class defaults failed: {e}");
             let bytes = msg.as_bytes();
+
             unsafe {
                 crate::ffi_dispatch::logging_log(1, bytes.as_ptr(), bytes.len() as u32);
             }
@@ -78,43 +49,43 @@ impl ClassDefaultsOutcome for crate::error::RustealResult<()> {
     }
 }
 
-/// Registration in phases, parents before children: create every class →
-/// create, fill and link every struct → add every class's properties and
-/// components → register every function →
-/// finalize each class and write its class defaults. A Rust class whose parent
-/// is a Rust class is created after it and finalized after the parent's class
-/// defaults, so its class default object starts from them.
 pub fn register_all_from_inventory() {
-    let mut pending: Vec<&ClassRegistration> = inventory::iter::<ClassRegistration>.into_iter().collect();
+    let mut pending: Vec<&ClassRegistration> =
+        inventory::iter::<ClassRegistration>.into_iter().collect();
+
     let class_count = pending.len() as u32;
     let mut ordered: Vec<&ClassRegistration> = Vec::with_capacity(pending.len());
+
     loop {
         let before = pending.len();
+
         pending.retain(|reg| {
-            if (reg.create)(false) {
+            if (reg.create)(false, class_shape(reg)) {
                 ordered.push(reg);
+
                 false
             } else {
                 true
             }
         });
+
         if pending.is_empty() || pending.len() == before {
             break;
         }
     }
-    // Parents never created: log them.
+
     for reg in pending {
-        (reg.create)(true);
+        (reg.create)(true, class_shape(reg));
     }
 
-    // Structs, which classes' properties and functions may hold, and whose
-    // properties may name classes.
     for sreg in inventory::iter::<StructRegistration> {
         (sreg.create)();
     }
+
     for sreg in inventory::iter::<StructRegistration> {
         (sreg.register)();
     }
+
     for sreg in inventory::iter::<StructRegistration> {
         (sreg.finalize)();
     }
@@ -122,13 +93,17 @@ pub fn register_all_from_inventory() {
     for reg in &ordered {
         (reg.register)();
     }
+
     let mut func_reg_count = 0u32;
+
     for freg in inventory::iter::<ClassFunctionRegistration> {
         (freg.register_functions)();
         func_reg_count += 1;
     }
+
     for reg in &ordered {
         (reg.finalize)();
+
         for freg in inventory::iter::<ClassFunctionRegistration> {
             if freg.type_id == reg.type_id
                 && let Some(class_defaults) = freg.class_defaults
@@ -136,52 +111,63 @@ pub fn register_all_from_inventory() {
                 class_defaults();
             }
         }
+
         (reg.after_defaults)();
     }
 
-    // Log registration summary (helps diagnose hot-reload issues).
     let total_funcs = read_or_recover(func_registry()).len();
+
     let msg = format!(
-        "[Rusteal] register_all_from_inventory: {} classes, {} impl blocks, {} function callbacks",
-        class_count, func_reg_count, total_funcs,
+        "[Rusteal] register_all_from_inventory: {class_count} classes, {func_reg_count} impl blocks, {total_funcs} function callbacks",
     );
+
     let bytes = msg.as_bytes();
+
     unsafe {
         crate::ffi_dispatch::logging_log(0, bytes.as_ptr(), bytes.len() as u32);
     }
 }
 
+fn class_shape(class: &ClassRegistration) -> u64 {
+    let mut blocks: Vec<u64> = inventory::iter::<ClassFunctionRegistration>
+        .into_iter()
+        .filter(|block| block.type_id == class.type_id)
+        .map(|block| block.shape)
+        .collect();
+
+    blocks.sort_unstable();
+    combine_shapes(class.shape, &blocks)
+}
+
+fn combine_shapes(class: u64, blocks: &[u64]) -> u64 {
+    let mut hash: u64 = 0xcbf29ce484222325;
+
+    for part in std::iter::once(class).chain(blocks.iter().copied()) {
+        for byte in part.to_le_bytes() {
+            hash ^= byte as u64;
+            hash = hash.wrapping_mul(0x100000001b3);
+        }
+    }
+
+    hash
+}
+
 use rusteal_ffi::UObjectHandle;
 
-/// Information about a Rust type registered for reification.
 pub struct RustTypeInfo {
-    /// Human-readable type name (for debugging).
     pub name: &'static str,
-    /// Allocate and return a default-initialized instance. The returned pointer
-    /// must be freeable by `drop_fn`.
     pub construct_fn: fn() -> *mut u8,
-    /// Drop and deallocate an instance previously created by `construct_fn`.
     pub drop_fn: unsafe fn(*mut u8),
 }
 
 use crate::ffi_dispatch::NativePtr;
 
-// Type for reify function callbacks: (obj, rust_data, params)
-// Uses Arc so we can clone the reference out of the registry and release
-// the lock before invoking the callback (prevents deadlock if the callback
-// makes FFI calls that re-enter Rust).
-// `params` is an opaque FFI buffer pointer (`NativePtr` = `*mut u8`).
 type ReifyFunctionCallback = Arc<dyn Fn(UObjectHandle, *mut u8, NativePtr) + Send + Sync>;
 
-/// A registered function and the Rust type whose data it is called with.
 struct FunctionEntry {
     callback: ReifyFunctionCallback,
     type_id: u64,
 }
-
-// ---------------------------------------------------------------------------
-// Statics
-// ---------------------------------------------------------------------------
 
 static TYPE_REGISTRY: OnceLock<Mutex<HashMap<u64, RustTypeInfo>>> = OnceLock::new();
 static FUNC_REGISTRY: OnceLock<RwLock<Vec<FunctionEntry>>> = OnceLock::new();
@@ -192,7 +178,6 @@ struct InstanceEntry {
     type_id: u64,
 }
 
-// SAFETY: The raw pointer in InstanceEntry is only accessed on the game thread.
 unsafe impl Send for InstanceEntry {}
 unsafe impl Sync for InstanceEntry {}
 
@@ -208,56 +193,46 @@ fn instance_data() -> &'static RwLock<HashMap<u64, Vec<InstanceEntry>>> {
     INSTANCE_DATA.get_or_init(|| RwLock::new(HashMap::new()))
 }
 
-// ---------------------------------------------------------------------------
-// Type registry
-// ---------------------------------------------------------------------------
-
-/// Register a Rust type for reification. Must be called before `create_class`.
 pub fn register_type(type_id: u64, info: RustTypeInfo) {
-    lock_or_recover(type_registry())
-        .insert(type_id, info);
+    lock_or_recover(type_registry()).insert(type_id, info);
 }
 
-// ---------------------------------------------------------------------------
-// Function registry
-// ---------------------------------------------------------------------------
-
-/// Register a Rust function callback of the Rust type `type_id`, which it is
-/// called with the data of, and return its unique callback ID.
 pub fn register_function<F>(type_id: u64, f: F) -> u64
 where
     F: Fn(UObjectHandle, *mut u8, NativePtr) + Send + Sync + 'static,
 {
     let mut vec = write_or_recover(func_registry());
     let id = vec.len() as u64;
-    vec.push(FunctionEntry { callback: Arc::new(f), type_id });
+
+    vec.push(FunctionEntry {
+        callback: Arc::new(f),
+        type_id,
+    });
+
     id
 }
 
-// ---------------------------------------------------------------------------
-// Instance lifecycle
-// ---------------------------------------------------------------------------
-
-/// Construct the Rust instance of the type `type_id` for a newly created
-/// UObject, once per Rust class the object is. Called from the C++ class
-/// constructor via `construct_rust_instance` callback.
 pub fn construct_instance(obj: UObjectHandle, type_id: u64) {
     let types = lock_or_recover(type_registry());
+
     let Some(info) = types.get(&type_id) else {
-        // Log warning — type not registered (might be a CDO before registration completes)
         if crate::api::is_api_initialized() {
             let msg = format!("[Rusteal] construct_instance: unknown type_id {type_id}");
             let bytes = msg.as_bytes();
+
             unsafe {
                 crate::ffi_dispatch::logging_log(1, bytes.as_ptr(), bytes.len() as u32);
             }
         }
+
         return;
     };
+
     let data = (info.construct_fn)();
-    drop(types); // Release lock before acquiring instance_data lock
+    drop(types);
 
     let key = obj.to_addr();
+
     let old = {
         let mut map = write_or_recover(instance_data());
         let entries = map.entry(key).or_default();
@@ -265,11 +240,12 @@ pub fn construct_instance(obj: UObjectHandle, type_id: u64) {
             Some(entry) => Some(std::mem::replace(&mut entry.data, data)),
             None => {
                 entries.push(InstanceEntry { data, type_id });
+
                 None
             }
         }
     };
-    // A new object at the address of one whose deletion went unnoticed.
+
     if let Some(old) = old {
         drop_data(type_id, old);
     }
@@ -277,6 +253,7 @@ pub fn construct_instance(obj: UObjectHandle, type_id: u64) {
 
 fn drop_data(type_id: u64, data: *mut u8) {
     let types = lock_or_recover(type_registry());
+
     if let Some(info) = types.get(&type_id) {
         unsafe {
             (info.drop_fn)(data);
@@ -284,23 +261,16 @@ fn drop_data(type_id: u64, data: *mut u8) {
     }
 }
 
-/// Drop and remove the Rust instances of a destroyed UObject, every Rust
-/// class's it is. Called from the C++ delete listener via
-/// `drop_rust_instance` callback.
 pub fn drop_instance(obj: UObjectHandle, _type_id: u64) {
     let key = obj.to_addr();
     let entries = write_or_recover(instance_data()).remove(&key);
+
     for entry in entries.into_iter().flatten() {
         drop_data(entry.type_id, entry.data);
     }
 }
 
-/// Invoke a registered Rust function callback.
-/// Called from the C++ thunk via `invoke_rust_function` callback.
 pub fn invoke_function(callback_id: u64, obj: UObjectHandle, params: NativePtr) {
-    // Clone the callback Arc out of the registry and release the read lock
-    // BEFORE invoking the callback. This prevents deadlocks if the callback
-    // makes FFI calls that re-enter Rust.
     let func = {
         let vec = read_or_recover(func_registry());
         vec.get(callback_id as usize)
@@ -308,29 +278,28 @@ pub fn invoke_function(callback_id: u64, obj: UObjectHandle, params: NativePtr) 
     };
 
     if let Some((func, type_id)) = func {
-        // The data of the Rust class the function belongs to.
         let rust_data = get_instance_data(obj, type_id);
         func(obj, rust_data, params);
     } else if crate::api::is_api_initialized() {
         let vec_len = read_or_recover(func_registry()).len();
+
         let msg = format!(
-            "[Rusteal] invoke_function: callback_id {} not found (registry size = {})",
-            callback_id, vec_len,
+            "[Rusteal] invoke_function: callback_id {callback_id} not found (registry size = {vec_len})",
         );
+
         let bytes = msg.as_bytes();
+
         unsafe {
             crate::ffi_dispatch::logging_log(1, bytes.as_ptr(), bytes.len() as u32);
         }
     }
 }
 
-/// Clear all registries and drop all instance data.
-/// Called during shutdown before DLL unload (enables hot reload).
 pub fn clear_all() {
-    // 1. Drop all instance data, using the type's drop_fn.
     if let Some(instances) = INSTANCE_DATA.get() {
         let mut map = write_or_recover(instances);
         let types = lock_or_recover(type_registry());
+
         for entry in map.drain().flat_map(|(_, entries)| entries) {
             if let Some(info) = types.get(&entry.type_id) {
                 unsafe {
@@ -338,25 +307,39 @@ pub fn clear_all() {
                 }
             }
         }
+
         drop(types);
     }
-    // 2. Clear function registry.
+
     if let Some(funcs) = FUNC_REGISTRY.get() {
         write_or_recover(funcs).clear();
     }
-    // 3. Clear type registry.
+
     if let Some(types) = TYPE_REGISTRY.get() {
         lock_or_recover(types).clear();
     }
 }
 
-/// Get the Rust instance data pointer of the type `type_id` for a UObject.
-/// Returns null if no instance data is registered.
 pub fn get_instance_data(obj: UObjectHandle, type_id: u64) -> *mut u8 {
     let key = obj.to_addr();
+
     read_or_recover(instance_data())
         .get(&key)
         .and_then(|entries| entries.iter().find(|e| e.type_id == type_id))
         .map(|e| e.data)
         .unwrap_or(std::ptr::null_mut())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::combine_shapes;
+
+    #[test]
+    fn every_part_of_a_class_makes_its_shape() {
+        let shape = combine_shapes(1, &[2, 3]);
+        assert_eq!(shape, combine_shapes(1, &[2, 3]));
+        assert_ne!(shape, combine_shapes(9, &[2, 3]));
+        assert_ne!(shape, combine_shapes(1, &[2, 4]));
+        assert_ne!(shape, combine_shapes(1, &[2]));
+    }
 }

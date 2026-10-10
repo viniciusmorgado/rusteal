@@ -1,0 +1,10 @@
+# The toolchain this checkout builds with, whatever the local default is: the
+# MSRV the README states, so the code cannot use newer Rust by accident.
+#
+# No host triple, so the file works on every platform: rustup completes the
+# channel with its default host (`rustup show` prints it). On Windows that must
+# be x86_64-pc-windows-msvc, the toolchain Unreal Engine's libraries link with;
+# see the README's Windows requirements.
+[toolchain]
+channel = "1.88.0"
+components = ["clippy", "rustfmt"]

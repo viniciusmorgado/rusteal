@@ -1,21 +1,5 @@
-// Comprehensive integration test suite for Rusteal.
-// This module defines a RustealTestRunner reified actor with a RunAllTests()
-// BlueprintCallable function. Place it in a level and wire BeginPlay to
-// RunAllTests to validate all major APIs in a live UE environment.
-
-use rusteal_runtime::{uclass, uclass_impl};
-use rusteal_runtime::runtime::{
-    ulog, DynamicCall, FName, OwnedStruct, Pinned, TWeakObjectPtr,
-    Transform, UeClass, UObjectRef, RustealError, RustealResult,
-    LOG_DISPLAY, LOG_ERROR,
-};
-use bindings::core_ue::{
-    FQuat, FRotator, FTransform, FVector,
-};
-use bindings::engine::{
-    Actor, ActorExt, Pawn, PawnExt, World,
-    EAttachmentRule,
-};
+use bindings::core_ue::{FQuat, FRotator, FTransform, FVector};
+use bindings::engine::{Actor, ActorExt, EAttachmentRule, Pawn, PawnExt, World};
 use bindings::manual::{
     quat::OwnedFQuatExt,
     rotator::OwnedFRotatorExt,
@@ -24,10 +8,11 @@ use bindings::manual::{
     world_ext::{self, SpawnCollisionMethod, WorldSpawnExt},
 };
 use glam::{DQuat, DVec3};
-
-// ---------------------------------------------------------------------------
-// RustealTestRunner — reified actor
-// ---------------------------------------------------------------------------
+use rusteal_runtime::runtime::{
+    DynamicCall, FName, LOG_DISPLAY, LOG_ERROR, OwnedStruct, Pinned, RustealError, RustealResult,
+    TWeakObjectPtr, Transform, UObjectRef, UeClass, ulog,
+};
+use rusteal_runtime::{uclass, uclass_impl};
 
 #[uclass(parent = Actor)]
 pub struct RustealTestRunner {
@@ -41,14 +26,11 @@ pub struct RustealTestRunner {
     total_failed: i32,
 }
 
-// ---------------------------------------------------------------------------
-// Test harness macro
-// ---------------------------------------------------------------------------
-
 macro_rules! run_test {
     ($self:expr, $name:expr, $body:expr) => {{
         $self.set_total_run($self.total_run() + 1);
         let result: RustealResult<()> = (|| $body)();
+
         match result {
             Ok(()) => {
                 $self.set_total_passed($self.total_passed() + 1);
@@ -62,10 +44,6 @@ macro_rules! run_test {
     }};
 }
 
-// ---------------------------------------------------------------------------
-// Helper functions
-// ---------------------------------------------------------------------------
-
 fn get_world(actor: &UObjectRef<Actor>) -> RustealResult<UObjectRef<World>> {
     let h = actor.checked()?.raw();
     let world_h = rusteal_runtime::runtime::world::get_world_raw(h)?;
@@ -77,9 +55,12 @@ fn identity_transform() -> OwnedStruct<FTransform> {
 }
 
 fn transform_at(x: f64, y: f64, z: f64) -> OwnedStruct<FTransform> {
-    FTransform::from_transform(Transform::new(DQuat::IDENTITY, DVec3::new(x, y, z), DVec3::ONE))
+    FTransform::from_transform(Transform::new(
+        DQuat::IDENTITY,
+        DVec3::new(x, y, z),
+        DVec3::ONE,
+    ))
 }
-
 
 fn assert_near(a: f64, b: f64, eps: f64) -> RustealResult<()> {
     if (a - b).abs() > eps {
@@ -107,85 +88,71 @@ fn assert_false(cond: bool, msg: &str) -> RustealResult<()> {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Implementation
-// ---------------------------------------------------------------------------
-
 #[uclass_impl]
 impl RustealTestRunner {
     #[ufunction(BlueprintCallable)]
     fn run_all_tests(&mut self) {
-        ulog!(LOG_DISPLAY, "[RustealTest] ========================================");
+        ulog!(
+            LOG_DISPLAY,
+            "[RustealTest] ========================================"
+        );
+
         ulog!(LOG_DISPLAY, "[RustealTest] Starting integration tests...");
-        ulog!(LOG_DISPLAY, "[RustealTest] ========================================");
+
+        ulog!(
+            LOG_DISPLAY,
+            "[RustealTest] ========================================"
+        );
 
         self.set_total_run(0);
         self.set_total_passed(0);
         self.set_total_failed(0);
 
-        // Get self_ref and world for tests that need them.
-        let self_ref: UObjectRef<Actor> = unsafe {
-            UObjectRef::from_raw(self.__obj)
-        };
+        let self_ref: UObjectRef<Actor> = unsafe { UObjectRef::from_raw(self.__obj) };
 
-        // A. Core References
         self.test_core_references(&self_ref);
 
-        // B. FName
         self.test_fname();
 
-        // C. Math Conversions
         self.test_math_conversions();
 
-        // D. Actor Properties
         self.test_actor_properties(&self_ref);
 
-        // E. Actor Movement
         self.test_actor_movement(&self_ref);
 
-        // F. Actor Lifecycle
         self.test_actor_lifecycle(&self_ref);
 
-        // G. World Operations
         self.test_world_operations(&self_ref);
 
-        // H. DynamicCall
         self.test_dynamic_call(&self_ref);
 
-        // I. Containers
         self.test_containers(&self_ref);
 
-        // J. Delegates
         self.test_delegates(&self_ref);
 
-        // K. Weak Pointers
         self.test_weak_pointers(&self_ref);
 
-        // L. Error Handling
         self.test_error_handling(&self_ref);
 
-        // M. Realistic Game Patterns
         self.test_game_patterns(&self_ref);
 
-        // N. Inheritance Flattening
         self.test_inheritance_flattening(&self_ref);
 
-        // P. OwnedStruct Init/Destroy (P0-3)
         self.test_owned_struct_init();
 
-        // Q. NewObject (P0-2)
         self.test_new_object(&self_ref);
 
-        // R. Runtime Type Instantiation (P1-1)
         self.test_runtime_instantiation(&self_ref);
 
-        // S. Deferred Spawn (P1-2)
         self.test_deferred_spawn(&self_ref);
 
-        // O. Hot Reload Validation
         self.test_hot_reload();
 
-        ulog!(LOG_DISPLAY, "[RustealTest] ========================================");
+        ulog!(
+            LOG_DISPLAY,
+            "[RustealTest] ========================================"
+        );
+
         ulog!(
             LOG_DISPLAY,
             "[RustealTest] Results: {} run, {} passed, {} failed",
@@ -193,12 +160,12 @@ impl RustealTestRunner {
             self.total_passed(),
             self.total_failed()
         );
-        ulog!(LOG_DISPLAY, "[RustealTest] ========================================");
-    }
 
-    // -----------------------------------------------------------------------
-    // A. Core References (7 tests)
-    // -----------------------------------------------------------------------
+        ulog!(
+            LOG_DISPLAY,
+            "[RustealTest] ========================================"
+        );
+    }
 
     fn test_core_references(&mut self, self_ref: &UObjectRef<Actor>) {
         run_test!(self, "A1: self_ref_is_valid", {
@@ -217,7 +184,10 @@ impl RustealTestRunner {
 
         run_test!(self, "A4: get_outer_returns_nonnull", {
             let outer = self_ref.get_outer()?;
-            assert_true(!outer.is_null(), "outer should not be null (actors have Level outer)")
+            assert_true(
+                !outer.is_null(),
+                "outer should not be null (actors have Level outer)",
+            )
         });
 
         run_test!(self, "A5: cast_to_object_succeeds", {
@@ -232,9 +202,10 @@ impl RustealTestRunner {
             let result: RustealResult<UObjectRef<World>> = copy.cast();
             match result {
                 Err(RustealError::InvalidCast) => Ok(()),
-                Err(e) => Err(RustealError::InvalidOperation(
-                    format!("expected InvalidCast, got: {:?}", e),
-                )),
+                Err(e) => Err(RustealError::InvalidOperation(format!(
+                    "expected InvalidCast, got: {:?}",
+                    e
+                ))),
                 Ok(_) => Err(RustealError::InvalidOperation(
                     "expected cast to fail, but it succeeded".into(),
                 )),
@@ -248,7 +219,6 @@ impl RustealTestRunner {
         });
 
         run_test!(self, "A8: pinned_direct_method_call", {
-            // Phase A: Pinned<T> can call Ext trait methods directly (no as_ref())
             let copy = unsafe { UObjectRef::<Actor>::from_raw(self_ref.raw()) };
             let pinned: Pinned<Actor> = copy.pin()?;
             let tag = FName::new("NonexistentTag12345");
@@ -257,16 +227,11 @@ impl RustealTestRunner {
         });
 
         run_test!(self, "A9: pinned_is_alive", {
-            // Phase B: is_alive() returns true for a live pinned object
             let copy = unsafe { UObjectRef::<Actor>::from_raw(self_ref.raw()) };
             let pinned: Pinned<Actor> = copy.pin()?;
             assert_true(pinned.is_alive(), "pinned object should be alive")
         });
     }
-
-    // -----------------------------------------------------------------------
-    // B. FName (4 tests)
-    // -----------------------------------------------------------------------
 
     fn test_fname(&mut self) {
         run_test!(self, "B1: fname_roundtrip", {
@@ -288,13 +253,12 @@ impl RustealTestRunner {
         run_test!(self, "B4: fname_display", {
             let name = FName::new("DisplayTest");
             let s = format!("{}", name);
-            assert_true(s == "DisplayTest", &format!("expected 'DisplayTest', got '{s}'"))
+            assert_true(
+                s == "DisplayTest",
+                &format!("expected 'DisplayTest', got '{s}'"),
+            )
         });
     }
-
-    // -----------------------------------------------------------------------
-    // C. Math Conversions (6 tests)
-    // -----------------------------------------------------------------------
 
     fn test_math_conversions(&mut self) {
         run_test!(self, "C1: fvector_dvec3_roundtrip", {
@@ -353,10 +317,6 @@ impl RustealTestRunner {
         });
     }
 
-    // -----------------------------------------------------------------------
-    // D. Actor Properties (6 tests)
-    // -----------------------------------------------------------------------
-
     fn test_actor_properties(&mut self, self_ref: &UObjectRef<Actor>) {
         run_test!(self, "D1: get_set_custom_time_dilation", {
             let c = self_ref.checked()?;
@@ -381,7 +341,6 @@ impl RustealTestRunner {
         run_test!(self, "D3: get_set_hidden_in_game", {
             let c = self_ref.checked()?;
             c.set_actor_hidden_in_game(true);
-            // Read back via DynamicCall since there's no direct getter for bHidden
             c.set_actor_hidden_in_game(false);
             Ok(())
         });
@@ -412,16 +371,11 @@ impl RustealTestRunner {
             assert_near(back.x, 2.0, 0.01)?;
             assert_near(back.y, 2.0, 0.01)?;
             assert_near(back.z, 2.0, 0.01)?;
-            // Restore
             let one = FVector::from_dvec3(DVec3::ONE);
             c.set_actor_scale3_d(&one);
             Ok(())
         });
     }
-
-    // -----------------------------------------------------------------------
-    // E. Actor Movement (6 tests)
-    // -----------------------------------------------------------------------
 
     fn test_actor_movement(&mut self, self_ref: &UObjectRef<Actor>) {
         run_test!(self, "E1: set_and_get_location", {
@@ -436,7 +390,8 @@ impl RustealTestRunner {
 
         run_test!(self, "E2: set_and_get_rotation", {
             let c = self_ref.checked()?;
-            let rot = FRotator::from_rotator(rusteal_runtime::runtime::Rotator::new(0.0, 90.0, 0.0));
+            let rot =
+                FRotator::from_rotator(rusteal_runtime::runtime::Rotator::new(0.0, 90.0, 0.0));
             c.k2_set_actor_rotation(&rot, true);
             let back = c.k2_get_actor_rotation().to_rotator();
             assert_near(back.yaw, 90.0, 1.0)
@@ -483,15 +438,16 @@ impl RustealTestRunner {
         });
     }
 
-    // -----------------------------------------------------------------------
-    // F. Actor Lifecycle (5 tests)
-    // -----------------------------------------------------------------------
-
     fn test_actor_lifecycle(&mut self, self_ref: &UObjectRef<Actor>) {
         let world = match get_world(self_ref) {
             Ok(w) => w,
             Err(e) => {
-                ulog!(LOG_ERROR, "[RustealTest] SKIP lifecycle tests: cannot get world: {:?}", e);
+                ulog!(
+                    LOG_ERROR,
+                    "[RustealTest] SKIP lifecycle tests: cannot get world: {:?}",
+                    e
+                );
+
                 return;
             }
         };
@@ -501,8 +457,6 @@ impl RustealTestRunner {
             let spawned: UObjectRef<Actor> = world.spawn_actor(&t)?;
             assert_true(spawned.is_valid(), "spawned actor should be valid")?;
             spawned.checked()?.k2_destroy_actor();
-            // After destroy, is_actor_being_destroyed or is_valid may change
-            // (destruction may be deferred to end of frame in UE)
             Ok(())
         });
 
@@ -515,7 +469,7 @@ impl RustealTestRunner {
             assert_true(owner.is_valid(), "owner should be valid")?;
             assert_true(
                 owner.raw() == self_ref.raw(),
-                "owner should be the test runner"
+                "owner should be the test runner",
             )?;
             sc.k2_destroy_actor();
             Ok(())
@@ -529,10 +483,10 @@ impl RustealTestRunner {
             let a2: UObjectRef<Actor> = world.spawn_actor(&t2)?;
             let a3: UObjectRef<Actor> = world.spawn_actor(&t3)?;
             let actors: Vec<UObjectRef<Actor>> = world.get_all_actors_of_class()?;
-            // We spawned 3 + self + possibly others, so at least 4
-            assert_true(actors.len() >= 4, &format!(
-                "expected >= 4 actors, got {}", actors.len()
-            ))?;
+            assert_true(
+                actors.len() >= 4,
+                &format!("expected >= 4 actors, got {}", actors.len()),
+            )?;
             a1.checked()?.k2_destroy_actor();
             a2.checked()?.k2_destroy_actor();
             a3.checked()?.k2_destroy_actor();
@@ -544,14 +498,15 @@ impl RustealTestRunner {
             let spawned: UObjectRef<Actor> = world.spawn_actor(&t)?;
             assert_true(spawned.is_valid(), "should be valid before destroy")?;
             spawned.checked()?.k2_destroy_actor();
-            // After K2_DestroyActor, the actor may be pending-destroy (deferred)
-            // or fully destroyed immediately. Both are valid outcomes.
             match spawned.checked() {
                 Ok(c) => {
                     let destroying = c.is_actor_being_destroyed();
-                    if destroying { Ok(()) } else {
+
+                    if destroying {
+                        Ok(())
+                    } else {
                         Err(RustealError::InvalidOperation(
-                            "actor should be destroyed or pending-destroy".into()
+                            "actor should be destroyed or pending-destroy".into(),
                         ))
                     }
                 }
@@ -572,10 +527,6 @@ impl RustealTestRunner {
         });
     }
 
-    // -----------------------------------------------------------------------
-    // G. World Operations (3 tests)
-    // -----------------------------------------------------------------------
-
     fn test_world_operations(&mut self, self_ref: &UObjectRef<Actor>) {
         run_test!(self, "G1: get_world_returns_valid", {
             let world = get_world(self_ref)?;
@@ -584,7 +535,6 @@ impl RustealTestRunner {
 
         run_test!(self, "G2: world_settings_accessible", {
             let world = get_world(self_ref)?;
-            // Use DynamicCall to call K2_GetWorldSettings on the world
             let call = DynamicCall::new(&world, "K2_GetWorldSettings")?;
             let result = call.call()?;
             let settings_h: rusteal_runtime::runtime::UObjectHandle = result.get("ReturnValue")?;
@@ -593,21 +543,15 @@ impl RustealTestRunner {
 
         run_test!(self, "G3: find_object_nonexistent_returns_err", {
             use bindings::core_ue::Object;
-            let result = bindings::manual::world_ext::find_object::<Object>(
-                "/Game/DoesNotExist"
-            );
+            let result = bindings::manual::world_ext::find_object::<Object>("/Game/DoesNotExist");
             match result {
                 Err(_) => Ok(()),
                 Ok(_) => Err(RustealError::InvalidOperation(
-                    "expected error for nonexistent path".into()
+                    "expected error for nonexistent path".into(),
                 )),
             }
         });
     }
-
-    // -----------------------------------------------------------------------
-    // H. DynamicCall (3 tests)
-    // -----------------------------------------------------------------------
 
     fn test_dynamic_call(&mut self, self_ref: &UObjectRef<Actor>) {
         run_test!(self, "H1: dynamic_call_actor_has_tag", {
@@ -622,34 +566,28 @@ impl RustealTestRunner {
             let result = DynamicCall::new(self_ref, "NoSuchFunction");
             match result {
                 Err(RustealError::FunctionNotFound(_)) => Ok(()),
-                Err(e) => Err(RustealError::InvalidOperation(
-                    format!("expected FunctionNotFound, got: {:?}", e)
-                )),
+                Err(e) => Err(RustealError::InvalidOperation(format!(
+                    "expected FunctionNotFound, got: {:?}",
+                    e
+                ))),
                 Ok(_) => Err(RustealError::InvalidOperation(
-                    "expected error for nonexistent function".into()
+                    "expected error for nonexistent function".into(),
                 )),
             }
         });
 
         run_test!(self, "H3: dynamic_call_get_location", {
-            // First set a known location
             let loc = FVector::from_dvec3(DVec3::new(42.0, 84.0, 126.0));
             self_ref.checked()?.k2_set_actor_location(&loc, false, true);
 
             let call = DynamicCall::new(self_ref, "K2_GetActorLocation")?;
             let result = call.call()?;
-            // Return value is a struct — read raw bytes
-            // FVector is 3 doubles = 24 bytes in UE 5.7 (FVector uses double)
             let ret: [f64; 3] = result.get("ReturnValue")?;
             assert_near(ret[0], 42.0, 1.0)?;
             assert_near(ret[1], 84.0, 1.0)?;
             assert_near(ret[2], 126.0, 1.0)
         });
     }
-
-    // -----------------------------------------------------------------------
-    // I. Containers (6 tests)
-    // -----------------------------------------------------------------------
 
     fn test_containers(&mut self, self_ref: &UObjectRef<Actor>) {
         run_test!(self, "I1: tags_add_and_read", {
@@ -661,7 +599,7 @@ impl RustealTestRunner {
             let read_back = FName::from(tags.get(0)?);
             assert_true(
                 read_back == tag,
-                &format!("expected TestTag1, got {}", read_back)
+                &format!("expected TestTag1, got {}", read_back),
             )
         });
 
@@ -702,7 +640,6 @@ impl RustealTestRunner {
         run_test!(self, "I5: children_array_accessible", {
             let c = self_ref.checked()?;
             let children = c.children();
-            // Just verify we can call len without error
             let _len = children.len()?;
             Ok(())
         });
@@ -714,10 +651,6 @@ impl RustealTestRunner {
             assert_true(tags.is_empty()?, "tags should be empty after clear")
         });
     }
-
-    // -----------------------------------------------------------------------
-    // J. Delegates (4 tests)
-    // -----------------------------------------------------------------------
 
     fn test_delegates(&mut self, self_ref: &UObjectRef<Actor>) {
         let world = match get_world(self_ref) {
@@ -732,9 +665,7 @@ impl RustealTestRunner {
             let t = identity_transform();
             let spawned: UObjectRef<Actor> = world.spawn_actor(&t)?;
             let sc = spawned.checked()?;
-            let _binding = sc.on_destroyed().add(|_actor| {
-                // Callback body — just verify binding works
-            })?;
+            let _binding = sc.on_destroyed().add(|_actor| {})?;
             sc.k2_destroy_actor();
             Ok(())
         });
@@ -743,9 +674,7 @@ impl RustealTestRunner {
             let t = identity_transform();
             let spawned: UObjectRef<Actor> = world.spawn_actor(&t)?;
             let sc = spawned.checked()?;
-            let _binding = sc.on_end_play().add(|_actor, _reason| {
-                // Callback body
-            })?;
+            let _binding = sc.on_end_play().add(|_actor, _reason| {})?;
             sc.k2_destroy_actor();
             Ok(())
         });
@@ -758,24 +687,16 @@ impl RustealTestRunner {
                 let binding = sc.on_destroyed().add(|_actor| {})?;
                 drop(binding);
             }
-            // If we get here without crash, the unbind worked
             sc.k2_destroy_actor();
             Ok(())
         });
 
         run_test!(self, "J4: on_overlap_binds", {
             let c = self_ref.checked()?;
-            let _binding = c.on_actor_begin_overlap().add(|_overlapped, _other| {
-                // Just verify binding
-            })?;
-            // Drop the binding to clean up
+            let _binding = c.on_actor_begin_overlap().add(|_overlapped, _other| {})?;
             Ok(())
         });
     }
-
-    // -----------------------------------------------------------------------
-    // K. Weak Pointers (3 tests)
-    // -----------------------------------------------------------------------
 
     fn test_weak_pointers(&mut self, self_ref: &UObjectRef<Actor>) {
         run_test!(self, "K1: weak_from_valid_ref", {
@@ -799,86 +720,73 @@ impl RustealTestRunner {
             let weak = TWeakObjectPtr::from_ref(&spawned);
             assert_true(weak.is_valid(), "weak should be valid before destroy")?;
             spawned.checked()?.k2_destroy_actor();
-            // Note: weak may still resolve until GC runs or frame ends.
-            // We just verify the API doesn't crash.
             let _resolved = weak.get();
             Ok(())
         });
     }
 
-    // -----------------------------------------------------------------------
-    // L. Error Handling (4 tests)
-    // -----------------------------------------------------------------------
-
     fn test_error_handling(&mut self, self_ref: &UObjectRef<Actor>) {
         run_test!(self, "L1: checked_null_handle", {
-            let null_ref: UObjectRef<Actor> = unsafe {
-                UObjectRef::from_raw(rusteal_runtime::runtime::UObjectHandle::null())
-            };
+            let null_ref: UObjectRef<Actor> =
+                unsafe { UObjectRef::from_raw(rusteal_runtime::runtime::UObjectHandle::null()) };
             match null_ref.checked() {
                 Err(RustealError::ObjectDestroyed) => Ok(()),
-                other => Err(RustealError::InvalidOperation(
-                    format!("expected ObjectDestroyed, got: {:?}", other)
-                )),
+                other => Err(RustealError::InvalidOperation(format!(
+                    "expected ObjectDestroyed, got: {:?}",
+                    other
+                ))),
             }
         });
 
         run_test!(self, "L2: cast_null_fails", {
-            let null_ref: UObjectRef<Actor> = unsafe {
-                UObjectRef::from_raw(rusteal_runtime::runtime::UObjectHandle::null())
-            };
+            let null_ref: UObjectRef<Actor> =
+                unsafe { UObjectRef::from_raw(rusteal_runtime::runtime::UObjectHandle::null()) };
             match null_ref.cast::<World>() {
                 Err(RustealError::ObjectDestroyed) => Ok(()),
-                other => Err(RustealError::InvalidOperation(
-                    format!("expected ObjectDestroyed, got: {:?}", other)
-                )),
+                other => Err(RustealError::InvalidOperation(format!(
+                    "expected ObjectDestroyed, got: {:?}",
+                    other
+                ))),
             }
         });
 
         run_test!(self, "L3: pin_null_fails", {
-            let null_ref: UObjectRef<Actor> = unsafe {
-                UObjectRef::from_raw(rusteal_runtime::runtime::UObjectHandle::null())
-            };
+            let null_ref: UObjectRef<Actor> =
+                unsafe { UObjectRef::from_raw(rusteal_runtime::runtime::UObjectHandle::null()) };
             match null_ref.pin() {
                 Err(RustealError::ObjectDestroyed) => Ok(()),
-                other => Err(RustealError::InvalidOperation(
-                    format!("expected ObjectDestroyed, got: {:?}", other)
-                )),
+                other => Err(RustealError::InvalidOperation(format!(
+                    "expected ObjectDestroyed, got: {:?}",
+                    other
+                ))),
             }
         });
-
-        // L5 skipped: Cannot test alive flag via K2_DestroyActor because UE 5.7
-        // asserts !IsRooted() during actor destruction, and Pinned<T> roots the object.
-        // The alive flag is exercised by engine-initiated destruction (level unload, PIE end).
 
         run_test!(self, "L4: dynamic_call_on_destroyed", {
             let world = get_world(self_ref)?;
             let t = identity_transform();
             let spawned: UObjectRef<Actor> = world.spawn_actor(&t)?;
             spawned.checked()?.k2_destroy_actor();
-            // Try to DynamicCall on the destroyed actor
             let result = DynamicCall::new(&spawned, "K2_GetActorLocation");
             match result {
                 Err(RustealError::ObjectDestroyed) => Ok(()),
                 Err(e) => {
-                    // Might get a different error since actor is pending destroy
-                    // but not yet GC'd — that's acceptable too
-                    ulog!(LOG_DISPLAY, "[RustealTest] L4: got {:?} instead of ObjectDestroyed (acceptable)", e);
+                    ulog!(
+                        LOG_DISPLAY,
+                        "[RustealTest] L4: got {:?} instead of ObjectDestroyed (acceptable)",
+                        e
+                    );
+
                     Ok(())
                 }
                 Ok(call) => {
-                    // Actor may still be "valid" until end of frame.
-                    // Calling on a pending-destroy actor is acceptable.
                     let _result = call.call();
+
                     Ok(())
                 }
             }
         });
     }
-
-    // -----------------------------------------------------------------------
-    // M. Realistic Game Patterns (5 tests)
-    // -----------------------------------------------------------------------
 
     fn test_game_patterns(&mut self, self_ref: &UObjectRef<Actor>) {
         let world = match get_world(self_ref) {
@@ -891,14 +799,11 @@ impl RustealTestRunner {
 
         run_test!(self, "M1: patrol_points", {
             let c = self_ref.checked()?;
-            // Plain AActor has no root component, so use self_ref (which has one)
-            // to test path distance calculation between waypoints.
             let points = [
                 DVec3::new(0.0, 0.0, 0.0),
                 DVec3::new(100.0, 0.0, 0.0),
                 DVec3::new(100.0, 100.0, 0.0),
             ];
-            // Set self to each waypoint and read back to verify, then compute distance.
             let mut positions = Vec::new();
             for pt in &points {
                 let loc = FVector::from_dvec3(*pt);
@@ -906,22 +811,18 @@ impl RustealTestRunner {
                 let back = c.k2_get_actor_location().to_dvec3();
                 positions.push(back);
             }
-            let dist = (positions[1] - positions[0]).length()
-                     + (positions[2] - positions[1]).length();
+            let dist =
+                (positions[1] - positions[0]).length() + (positions[2] - positions[1]).length();
             assert_near(dist, 200.0, 5.0)
         });
 
         run_test!(self, "M2: actor_hierarchy", {
-            // Plain AActor has no root component, so attachment APIs are no-ops.
-            // Just verify the API calls don't error, and that get_attach_parent_actor
-            // returns a valid (possibly null) result.
             let t = identity_transform();
             let parent: UObjectRef<Actor> = world.spawn_actor(&t)?;
             let child: UObjectRef<Actor> = world.spawn_actor(&t)?;
 
             let parent_copy = unsafe { UObjectRef::<Actor>::from_raw(parent.raw()) };
             let cc = child.checked()?;
-            // This may silently fail without root components, but should not error.
             cc.k2_attach_to_actor(
                 parent_copy,
                 FName::NONE.handle(),
@@ -931,7 +832,6 @@ impl RustealTestRunner {
                 false,
             );
 
-            // get_attach_parent_actor should work regardless
             let _attached = cc.get_attach_parent_actor();
 
             parent.checked()?.k2_destroy_actor();
@@ -955,18 +855,11 @@ impl RustealTestRunner {
 
         run_test!(self, "M4: distance_calculation", {
             let c = self_ref.checked()?;
-            // Use self_ref (which has a root component) for distance measurement.
-            // Set self to origin, spawn a second actor, set its loc via self.
-            // Since plain AActor has no root component, we test distance from self
-            // to a known position by moving self and using GetDistanceTo on a
-            // spawned actor at origin.
             let origin = FVector::from_dvec3(DVec3::new(300.0, 400.0, 0.0));
             c.k2_set_actor_location(&origin, false, true);
 
             let t = identity_transform();
             let other: UObjectRef<Actor> = world.spawn_actor(&t)?;
-            // other is at origin (0,0,0) since plain AActor has no root component
-            // Distance from (300,400,0) to (0,0,0) = 500
             let other_copy = unsafe { UObjectRef::<Actor>::from_raw(other.raw()) };
             let dist = c.get_distance_to(other_copy);
             assert_near(dist as f64, 500.0, 5.0)?;
@@ -991,10 +884,6 @@ impl RustealTestRunner {
         });
     }
 
-    // -----------------------------------------------------------------------
-    // N. Inheritance Flattening (8 tests)
-    // -----------------------------------------------------------------------
-
     fn test_inheritance_flattening(&mut self, self_ref: &UObjectRef<Actor>) {
         let world = match get_world(self_ref) {
             Ok(w) => w,
@@ -1004,24 +893,20 @@ impl RustealTestRunner {
             }
         };
 
-        // N1: Pawn can call inherited Actor function (actor_has_tag)
         run_test!(self, "N1: pawn_calls_actor_has_tag", {
             let t = identity_transform();
             let pawn: UObjectRef<Pawn> = world.spawn_actor(&t)?;
             let pc = pawn.checked()?;
-            // actor_has_tag is defined on Actor, called here on Pawn directly
             let has = pc.actor_has_tag(FName::new("NonexistentTag").handle());
             assert_false(has, "pawn should not have unknown tag")?;
             pc.k2_destroy_actor();
             Ok(())
         });
 
-        // N2: Pawn can call inherited Actor property getter/setter
         run_test!(self, "N2: pawn_get_set_custom_time_dilation", {
             let t = identity_transform();
             let pawn: UObjectRef<Pawn> = world.spawn_actor(&t)?;
             let pc = pawn.checked()?;
-            // custom_time_dilation is an Actor property, accessed on Pawn
             let orig = pc.get_custom_time_dilation();
             pc.set_custom_time_dilation(3.0);
             let val = pc.get_custom_time_dilation();
@@ -1031,12 +916,10 @@ impl RustealTestRunner {
             Ok(())
         });
 
-        // N3: Pawn can call inherited Actor function (set/get_life_span)
         run_test!(self, "N3: pawn_set_get_life_span", {
             let t = identity_transform();
             let pawn: UObjectRef<Pawn> = world.spawn_actor(&t)?;
             let pc = pawn.checked()?;
-            // set_life_span / get_life_span are Actor functions
             pc.set_life_span(45.0);
             let ls = pc.get_life_span();
             assert_near(ls as f64, 45.0, 1.0)?;
@@ -1044,12 +927,10 @@ impl RustealTestRunner {
             Ok(())
         });
 
-        // N4: Pawn-specific property still works (own property, not inherited)
         run_test!(self, "N4: pawn_own_property_base_eye_height", {
             let t = identity_transform();
             let pawn: UObjectRef<Pawn> = world.spawn_actor(&t)?;
             let pc = pawn.checked()?;
-            // base_eye_height is Pawn's own property
             let orig = pc.get_base_eye_height();
             pc.set_base_eye_height(100.0);
             let val = pc.get_base_eye_height();
@@ -1059,14 +940,10 @@ impl RustealTestRunner {
             Ok(())
         });
 
-        // N5: Pawn can call inherited Actor functions (set/get custom_time_dilation)
-        // Note: base APawn has no root component, so location-based tests don't work.
-        // Use custom_time_dilation (a plain float property) to verify inheritance.
         run_test!(self, "N5: pawn_get_set_inherited_function", {
             let t = identity_transform();
             let pawn: UObjectRef<Pawn> = world.spawn_actor(&t)?;
             let pc = pawn.checked()?;
-            // set_actor_time_dilation / get_actor_time_dilation are Actor functions
             pc.set_custom_time_dilation(2.5);
             let val = pc.get_custom_time_dilation();
             assert_near(val as f64, 2.5, 0.01)?;
@@ -1074,12 +951,10 @@ impl RustealTestRunner {
             Ok(())
         });
 
-        // N6: Pawn can access inherited Actor container property (tags)
         run_test!(self, "N6: pawn_inherited_container_tags", {
             let t = identity_transform();
             let pawn: UObjectRef<Pawn> = world.spawn_actor(&t)?;
             let pc = pawn.checked()?;
-            // tags is an Actor container property
             let tags = pc.tags();
             tags.clear()?;
             tags.push(&FName::new("PawnTag").handle())?;
@@ -1091,26 +966,19 @@ impl RustealTestRunner {
             Ok(())
         });
 
-        // N7: Pawn can access inherited Actor delegate (on_destroyed)
         run_test!(self, "N7: pawn_inherited_delegate_on_destroyed", {
             let t = identity_transform();
             let pawn: UObjectRef<Pawn> = world.spawn_actor(&t)?;
             let pc = pawn.checked()?;
-            // on_destroyed is an Actor delegate
-            let _binding = pc.on_destroyed().add(|_actor| {
-                // Callback fires on destroy
-            })?;
+            let _binding = pc.on_destroyed().add(|_actor| {})?;
             pc.k2_destroy_actor();
             Ok(())
         });
 
-        // N8: Pawn tick control via inherited Actor functions
         run_test!(self, "N8: pawn_inherited_tick_control", {
             let t = identity_transform();
             let pawn: UObjectRef<Pawn> = world.spawn_actor(&t)?;
             let pc = pawn.checked()?;
-            // set_actor_tick_enabled / is_actor_tick_enabled / get_actor_tick_interval
-            // are Actor functions, called on Pawn
             pc.set_actor_tick_enabled(false);
             let enabled = pc.is_actor_tick_enabled();
             assert_false(enabled, "pawn tick should be disabled")?;
@@ -1122,34 +990,25 @@ impl RustealTestRunner {
         });
     }
 
-    // -----------------------------------------------------------------------
-    // P. OwnedStruct Init/Destroy (4 tests)
-    // -----------------------------------------------------------------------
-
     fn test_owned_struct_init(&mut self) {
-        // P1: FTransform::new() produces identity via InitializeStruct.
-        // Zero-fill would give quat=(0,0,0,0) and scale=(0,0,0), but
-        // InitializeStruct sets identity quat=(0,0,0,1) and scale=(1,1,1).
         run_test!(self, "P1: owned_struct_new_initializes_correctly", {
             let ft = OwnedStruct::<FTransform>::new();
             let t = ft.to_transform();
-            // Scale should be (1,1,1), not (0,0,0)
             assert_near(t.scale.x, 1.0, 0.001)?;
             assert_near(t.scale.y, 1.0, 0.001)?;
             assert_near(t.scale.z, 1.0, 0.001)?;
-            // Translation should be (0,0,0)
             assert_near(t.translation.x, 0.0, 0.001)?;
             assert_near(t.translation.y, 0.0, 0.001)?;
             assert_near(t.translation.z, 0.0, 0.001)?;
-            // Quaternion should be identity (0,0,0,1)
             assert_near(t.rotation.w, 1.0, 0.001)
         });
 
-        // P2: Clone produces identical data
         run_test!(self, "P2: owned_struct_clone_matches", {
-            let ft = FTransform::from_transform(
-                Transform::new(DQuat::IDENTITY, DVec3::new(10.0, 20.0, 30.0), DVec3::ONE)
-            );
+            let ft = FTransform::from_transform(Transform::new(
+                DQuat::IDENTITY,
+                DVec3::new(10.0, 20.0, 30.0),
+                DVec3::ONE,
+            ));
             let cloned = ft.clone();
             let orig_t = ft.to_transform();
             let clone_t = cloned.to_transform();
@@ -1158,7 +1017,6 @@ impl RustealTestRunner {
             assert_near(orig_t.translation.z, clone_t.translation.z, 0.001)
         });
 
-        // P3: FVector new() also initializes properly (should be zero)
         run_test!(self, "P3: owned_struct_fvector_new", {
             let fv = OwnedStruct::<FVector>::new();
             let v = fv.to_dvec3();
@@ -1167,23 +1025,16 @@ impl RustealTestRunner {
             assert_near(v.z, 0.0, 0.001)
         });
 
-        // P4: Drop runs without crash (implicit — if we get here, P1-P3 drops worked)
         run_test!(self, "P4: owned_struct_drop_no_crash", {
             {
                 let _ft = OwnedStruct::<FTransform>::new();
                 let _fv = OwnedStruct::<FVector>::new();
-                // Both drop here
             }
             Ok(())
         });
     }
 
-    // -----------------------------------------------------------------------
-    // Q. NewObject (3 tests)
-    // -----------------------------------------------------------------------
-
     fn test_new_object(&mut self, self_ref: &UObjectRef<Actor>) {
-        // Q1: new_object_transient creates a valid object (use Actor, not UObject which is abstract)
         run_test!(self, "Q1: new_object_transient_creates_valid", {
             let obj: UObjectRef<Actor> = world_ext::new_object_transient()?;
             assert_true(obj.is_valid(), "transient object should be valid")?;
@@ -1191,53 +1042,52 @@ impl RustealTestRunner {
             assert_true(!name.is_empty(), "transient object should have a name")
         });
 
-        // Q2: new_object with outer sets correct outer
         run_test!(self, "Q2: new_object_with_outer", {
             let obj: UObjectRef<Actor> = world_ext::new_object(self_ref)?;
             assert_true(obj.is_valid(), "object should be valid")?;
             let outer = obj.get_outer()?;
             assert_true(
                 outer == self_ref.raw(),
-                "outer should be the test runner actor"
+                "outer should be the test runner actor",
             )
         });
 
-        // Q3: new_object of Actor subclass (Pawn) via typed API
         run_test!(self, "Q3: new_object_typed_pawn", {
             let pawn: UObjectRef<Pawn> = world_ext::new_object_transient()?;
             assert_true(pawn.is_valid(), "pawn should be valid")?;
-            // Verify it's actually a Pawn via IsA
             let cls = pawn.get_class()?;
             assert_true(!cls.is_null(), "pawn class should not be null")
         });
     }
 
-    // -----------------------------------------------------------------------
-    // R. Runtime Type Instantiation (3 tests)
-    // -----------------------------------------------------------------------
-
     fn test_runtime_instantiation(&mut self, self_ref: &UObjectRef<Actor>) {
         let world = match get_world(self_ref) {
             Ok(w) => w,
             Err(e) => {
-                ulog!(LOG_ERROR, "[RustealTest] SKIP runtime instantiation tests: {:?}", e);
+                ulog!(
+                    LOG_ERROR,
+                    "[RustealTest] SKIP runtime instantiation tests: {:?}",
+                    e
+                );
+
                 return;
             }
         };
 
-        // R1: spawn_actor_dynamic with runtime class handle
         run_test!(self, "R1: spawn_actor_dynamic", {
             let class = Actor::static_class();
             let t = identity_transform();
             let handle = world_ext::spawn_actor_dynamic(&world, class, &t)?;
-            assert_true(!handle.is_null(), "dynamic spawned actor should not be null")?;
+            assert_true(
+                !handle.is_null(),
+                "dynamic spawned actor should not be null",
+            )?;
             let actor: UObjectRef<Actor> = unsafe { UObjectRef::from_raw(handle) };
             assert_true(actor.is_valid(), "dynamic spawned actor should be valid")?;
             actor.checked()?.k2_destroy_actor();
             Ok(())
         });
 
-        // R2: new_object_dynamic with runtime class handle (use Actor, not UObject which is abstract)
         run_test!(self, "R2: new_object_dynamic", {
             let class = Actor::static_class();
             let null_outer = rusteal_runtime::ffi::UObjectHandle::null();
@@ -1247,14 +1097,12 @@ impl RustealTestRunner {
             assert_true(obj.is_valid(), "dynamic new_object should be valid")
         });
 
-        // R3: spawn_actor_dynamic with Pawn class (verify polymorphism)
         run_test!(self, "R3: spawn_actor_dynamic_pawn", {
             let class = Pawn::static_class();
             let t = identity_transform();
             let handle = world_ext::spawn_actor_dynamic(&world, class, &t)?;
             let actor: UObjectRef<Actor> = unsafe { UObjectRef::from_raw(handle) };
             assert_true(actor.is_valid(), "dynamic pawn should be valid")?;
-            // Verify it's actually a Pawn via cast
             let pawn: UObjectRef<Pawn> = actor.cast()?;
             assert_true(pawn.is_valid(), "cast to Pawn should succeed")?;
             pawn.checked()?.k2_destroy_actor();
@@ -1262,41 +1110,36 @@ impl RustealTestRunner {
         });
     }
 
-    // -----------------------------------------------------------------------
-    // S. Deferred Spawn (4 tests)
-    // -----------------------------------------------------------------------
-
     fn test_deferred_spawn(&mut self, self_ref: &UObjectRef<Actor>) {
         let world = match get_world(self_ref) {
             Ok(w) => w,
             Err(e) => {
-                ulog!(LOG_ERROR, "[RustealTest] SKIP deferred spawn tests: {:?}", e);
+                ulog!(
+                    LOG_ERROR,
+                    "[RustealTest] SKIP deferred spawn tests: {:?}",
+                    e
+                );
+
                 return;
             }
         };
 
-        // S1: spawn_actor_deferred creates a valid (not yet begun) actor
         run_test!(self, "S1: spawn_actor_deferred_creates_valid", {
             let t = identity_transform();
             let actor: UObjectRef<Actor> = world.spawn_actor_deferred(&t)?;
             assert_true(actor.is_valid(), "deferred actor should be valid")?;
-            // finish_spawning triggers BeginPlay
             world.finish_spawning(&actor, &t)?;
             actor.checked()?.k2_destroy_actor();
             Ok(())
         });
 
-        // S2: deferred actor can have properties set before finish_spawning
         run_test!(self, "S2: deferred_set_properties_before_finish", {
             let t = identity_transform();
             let actor: UObjectRef<Actor> = world.spawn_actor_deferred(&t)?;
             let c = actor.checked()?;
-            // Set properties before BeginPlay
             c.set_custom_time_dilation(5.0);
             c.set_initial_life_span(120.0);
-            // Finish spawning
             world.finish_spawning(&actor, &t)?;
-            // Verify properties persisted through finish_spawning
             let dilation = c.get_custom_time_dilation();
             assert_near(dilation as f64, 5.0, 0.001)?;
             let life_span = c.get_initial_life_span();
@@ -1305,12 +1148,14 @@ impl RustealTestRunner {
             Ok(())
         });
 
-        // S3: spawn_actor_deferred_full with collision method
         run_test!(self, "S3: deferred_full_with_collision_method", {
             let t = identity_transform();
             let null = rusteal_runtime::ffi::UObjectHandle::null();
             let actor: UObjectRef<Actor> = world.spawn_actor_deferred_full(
-                &t, null, null, SpawnCollisionMethod::AlwaysSpawn,
+                &t,
+                null,
+                null,
+                SpawnCollisionMethod::AlwaysSpawn,
             )?;
             assert_true(actor.is_valid(), "deferred_full actor should be valid")?;
             world.finish_spawning(&actor, &t)?;
@@ -1318,9 +1163,6 @@ impl RustealTestRunner {
             Ok(())
         });
 
-        // S4: deferred spawn, set property before finish, verify it persists
-        // Note: base AActor has no root component, so location tests don't apply.
-        // Instead verify that a property set before FinishSpawning persists after.
         run_test!(self, "S4: deferred_spawn_property_persists", {
             let t = identity_transform();
             let actor: UObjectRef<Actor> = world.spawn_actor_deferred(&t)?;
@@ -1334,24 +1176,29 @@ impl RustealTestRunner {
         });
     }
 
-    // -----------------------------------------------------------------------
-    // O. Hot Reload Validation (2 tests)
-    // -----------------------------------------------------------------------
-
     fn test_hot_reload(&mut self) {
         run_test!(self, "O1: hot_reload_smoke", {
             ulog!(LOG_DISPLAY, "[RustealTest] Hot reload test instructions:");
-            ulog!(LOG_DISPLAY, "[RustealTest]   1. Modify a test in test_integration.rs (e.g., change a log message)");
-            ulog!(LOG_DISPLAY, "[RustealTest]   2. cargo build -p rusteal-runtime --release");
-            ulog!(LOG_DISPLAY, "[RustealTest]   3. In UE console: Rusteal.Reload");
-            ulog!(LOG_DISPLAY, "[RustealTest]   4. Call RunAllTests again and verify the change");
+            ulog!(
+                LOG_DISPLAY,
+                "[RustealTest]   1. Modify a test in test_integration.rs (e.g., change a log message)"
+            );
+            ulog!(
+                LOG_DISPLAY,
+                "[RustealTest]   2. cargo build -p rusteal-runtime --release"
+            );
+            ulog!(
+                LOG_DISPLAY,
+                "[RustealTest]   3. In UE console: Rusteal.Reload"
+            );
+            ulog!(
+                LOG_DISPLAY,
+                "[RustealTest]   4. Call RunAllTests again and verify the change"
+            );
             Ok(())
         });
 
         run_test!(self, "O2: state_survives_concept", {
-            // This test verifies the test runner is functional.
-            // After a hot reload, if this test passes, the runner was
-            // successfully reconstructed.
             assert_true(self.total_run() > 0, "test runner should have run tests")
         });
     }

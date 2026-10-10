@@ -1,7 +1,3 @@
-// SubclassOf<T>: a class reference restricted to `T` and its subclasses, as
-// UE's `TSubclassOf<T>`. The property that holds it only accepts such classes,
-// so a value read from it is `T` or a subclass (or null).
-
 use std::marker::PhantomData;
 
 use rusteal_ffi::{UClassHandle, UObjectHandle};
@@ -10,14 +6,12 @@ use crate::containers::ContainerElement;
 use crate::object_ref::ObjectPointer;
 use crate::traits::{HasParent, UeClass};
 
-/// A reference to `T`'s class or one of its subclasses; null when unset.
 #[repr(transparent)]
 pub struct SubclassOf<T: UeClass> {
     handle: UClassHandle,
     _marker: PhantomData<*const T>,
 }
 
-// By hand: derives would require the same traits of `T`, which classes lack.
 impl<T: UeClass> Clone for SubclassOf<T> {
     fn clone(&self) -> Self {
         *self
@@ -40,11 +34,9 @@ impl<T: UeClass> std::hash::Hash for SubclassOf<T> {
     }
 }
 
-// Send: a class handle is a raw identifier; !Sync as UObjectRef.
 unsafe impl<T: UeClass> Send for SubclassOf<T> {}
 
 impl<T: UeClass> SubclassOf<T> {
-    /// No class.
     pub fn null() -> Self {
         Self {
             handle: UClassHandle::null(),
@@ -52,7 +44,6 @@ impl<T: UeClass> SubclassOf<T> {
         }
     }
 
-    /// `T`'s own class.
     pub fn base() -> Self {
         Self {
             handle: T::static_class(),
@@ -60,10 +51,6 @@ impl<T: UeClass> SubclassOf<T> {
         }
     }
 
-    /// Wrap a raw class handle.
-    ///
-    /// # Safety
-    /// The handle must be null or a UClass that is `T` or a subclass of `T`.
     pub unsafe fn from_raw(handle: UClassHandle) -> Self {
         Self {
             handle,
@@ -71,7 +58,6 @@ impl<T: UeClass> SubclassOf<T> {
         }
     }
 
-    /// The underlying class handle.
     pub fn raw(&self) -> UClassHandle {
         self.handle
     }
@@ -82,7 +68,6 @@ impl<T: UeClass> SubclassOf<T> {
 }
 
 impl<T: HasParent> SubclassOf<T> {
-    /// The same class as a subclass of `T`'s parent. Zero-cost.
     #[inline]
     pub fn upcast(self) -> SubclassOf<T::Parent> {
         unsafe { SubclassOf::from_raw(self.handle) }
@@ -90,8 +75,6 @@ impl<T: HasParent> SubclassOf<T> {
 }
 
 impl<T: UeClass> SubclassOf<T> {
-    /// The same class as a subclass of any ancestor of `T`, checked at
-    /// compile time (`SubclassOf::<PlayerStart>::base().upcast_to::<Actor>()`).
     #[inline]
     pub fn upcast_to<U: UeClass>(self) -> SubclassOf<U>
     where
@@ -125,7 +108,6 @@ impl<T: UeClass> std::fmt::Debug for SubclassOf<T> {
     }
 }
 
-// A class is a UObject: in a container it travels as an 8-byte object pointer.
 unsafe impl<T: UeClass> ContainerElement for SubclassOf<T> {
     const BUF_SIZE: u32 = std::mem::size_of::<UObjectHandle>() as u32;
 
@@ -133,6 +115,7 @@ unsafe impl<T: UeClass> ContainerElement for SubclassOf<T> {
     unsafe fn read_from_buf(buf: *const u8, _written: u32) -> Self {
         unsafe {
             let handle = (buf as *const UObjectHandle).read_unaligned();
+
             Self::from_raw(UClassHandle(handle.0))
         }
     }
@@ -141,6 +124,7 @@ unsafe impl<T: UeClass> ContainerElement for SubclassOf<T> {
     unsafe fn write_to_buf(&self, buf: *mut u8) -> u32 {
         unsafe {
             (buf as *mut UObjectHandle).write_unaligned(UObjectHandle(self.handle.0));
+
             std::mem::size_of::<UObjectHandle>() as u32
         }
     }
@@ -181,7 +165,12 @@ mod tests {
         let child = SubclassOf::<Child>::base();
         let handle = child.object_handle();
         assert_eq!(handle.to_addr(), 0x2000);
-        assert_eq!(unsafe { SubclassOf::<Child>::from_object_handle(handle) }, child);
+
+        assert_eq!(
+            unsafe { SubclassOf::<Child>::from_object_handle(handle) },
+            child
+        );
+
         let as_parent: SubclassOf<Probe> = child.upcast();
         assert_eq!(as_parent.raw(), Child::static_class());
     }
@@ -190,6 +179,7 @@ mod tests {
     fn round_trips_through_a_container_buffer() {
         let base = SubclassOf::<Probe>::base();
         let mut buf = [0u8; 8];
+
         unsafe {
             assert_eq!(base.write_to_buf(buf.as_mut_ptr()), 8);
             assert_eq!(SubclassOf::<Probe>::read_from_buf(buf.as_ptr(), 8), base);

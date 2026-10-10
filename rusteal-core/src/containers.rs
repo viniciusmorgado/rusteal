@@ -1,63 +1,26 @@
-// Container wrappers for UE TArray/TMap/TSet.
-// These are lightweight handles that operate on container data living
-// inside UObject memory. All element access goes through the ContainerApi
-// FFI sub-table, which inspects FProperty to dispatch type-correct operations.
-
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 use std::marker::PhantomData;
 
-use rusteal_ffi::{FPropertyHandle, UObjectHandle, RustealErrorCode};
+use rusteal_ffi::{FPropertyHandle, RustealErrorCode, UObjectHandle};
 
-/// Maximum buffer size across all ContainerElement implementations.
-/// Primitives use 1–8 bytes; String and OwnedStruct use 4096.
-/// Used for stack-allocated FFI transport buffers to avoid heap allocation.
 const MAX_ELEM_BUF: usize = 4096;
 
-use crate::error::{check_ffi, ffi_infallible, RustealError, RustealResult};
+use crate::error::{RustealError, RustealResult, check_ffi, ffi_infallible};
 use crate::ffi_dispatch;
 use crate::object_ref::UObjectRef;
 use crate::struct_ref::UStructRef;
 use crate::traits::{UeClass, UeStruct};
 
-// ---------------------------------------------------------------------------
-// ContainerElement trait
-// ---------------------------------------------------------------------------
-
-/// Trait for types that can be stored in UE containers.
-///
-/// # Safety
-/// `BUF_SIZE` must match what the C++ side expects for this element type.
-/// `read_from_buf` must correctly interpret the bytes written by C++'s
-/// `ReadElement`, and `write_to_buf` must produce bytes that C++'s
-/// `WriteElement` can interpret.
 pub unsafe trait ContainerElement: Sized {
-    /// Buffer size for FFI transport. Must be large enough for the C++ side
-    /// to write the element value.
     const BUF_SIZE: u32;
 
-    /// Whether this type can be bulk-copied as raw bytes (no per-element framing).
-    /// True for fixed-size primitives (bool, integers, floats) and FName.
     const RAW_COPYABLE: bool = false;
 
-    /// Interpret bytes from the C++ side into a Rust value.
-    ///
-    /// # Safety
-    /// `buf` must point to at least `written` valid bytes produced by C++
-    /// `ReadElement`.
     unsafe fn read_from_buf(buf: *const u8, written: u32) -> Self;
 
-    /// Write this value into a buffer for C++ `WriteElement` to consume.
-    /// Returns the number of bytes written.
-    ///
-    /// # Safety
-    /// `buf` must point to at least `BUF_SIZE` writable bytes.
     unsafe fn write_to_buf(&self, buf: *mut u8) -> u32;
 }
-
-// ---------------------------------------------------------------------------
-// ContainerElement impls for primitives
-// ---------------------------------------------------------------------------
 
 macro_rules! impl_container_element_primitive {
     ($ty:ty) => {
@@ -66,15 +29,18 @@ macro_rules! impl_container_element_primitive {
             const RAW_COPYABLE: bool = true;
 
             #[inline]
-            unsafe fn read_from_buf(buf: *const u8, _written: u32) -> Self { unsafe {
-                (buf as *const $ty).read_unaligned()
-            }}
+            unsafe fn read_from_buf(buf: *const u8, _written: u32) -> Self {
+                unsafe { (buf as *const $ty).read_unaligned() }
+            }
 
             #[inline]
-            unsafe fn write_to_buf(&self, buf: *mut u8) -> u32 { unsafe {
-                (buf as *mut $ty).write_unaligned(*self);
-                std::mem::size_of::<$ty>() as u32
-            }}
+            unsafe fn write_to_buf(&self, buf: *mut u8) -> u32 {
+                unsafe {
+                    (buf as *mut $ty).write_unaligned(*self);
+
+                    std::mem::size_of::<$ty>() as u32
+                }
+            }
         }
     };
 }
@@ -91,40 +57,43 @@ impl_container_element_primitive!(u64);
 impl_container_element_primitive!(f32);
 impl_container_element_primitive!(f64);
 
-// UObjectHandle: 8-byte pointer, raw memcpy in C++
 unsafe impl ContainerElement for UObjectHandle {
     const BUF_SIZE: u32 = std::mem::size_of::<UObjectHandle>() as u32;
 
     #[inline]
-    unsafe fn read_from_buf(buf: *const u8, _written: u32) -> Self { unsafe {
-        (buf as *const UObjectHandle).read_unaligned()
-    }}
+    unsafe fn read_from_buf(buf: *const u8, _written: u32) -> Self {
+        unsafe { (buf as *const UObjectHandle).read_unaligned() }
+    }
 
     #[inline]
-    unsafe fn write_to_buf(&self, buf: *mut u8) -> u32 { unsafe {
-        (buf as *mut UObjectHandle).write_unaligned(*self);
-        std::mem::size_of::<UObjectHandle>() as u32
-    }}
+    unsafe fn write_to_buf(&self, buf: *mut u8) -> u32 {
+        unsafe {
+            (buf as *mut UObjectHandle).write_unaligned(*self);
+
+            std::mem::size_of::<UObjectHandle>() as u32
+        }
+    }
 }
 
-// FNameHandle: 8-byte uint64, raw memcpy in C++
 unsafe impl ContainerElement for rusteal_ffi::FNameHandle {
     const BUF_SIZE: u32 = 8;
     const RAW_COPYABLE: bool = true;
 
     #[inline]
-    unsafe fn read_from_buf(buf: *const u8, _written: u32) -> Self { unsafe {
-        (buf as *const rusteal_ffi::FNameHandle).read_unaligned()
-    }}
+    unsafe fn read_from_buf(buf: *const u8, _written: u32) -> Self {
+        unsafe { (buf as *const rusteal_ffi::FNameHandle).read_unaligned() }
+    }
 
     #[inline]
-    unsafe fn write_to_buf(&self, buf: *mut u8) -> u32 { unsafe {
-        (buf as *mut rusteal_ffi::FNameHandle).write_unaligned(*self);
-        8
-    }}
+    unsafe fn write_to_buf(&self, buf: *mut u8) -> u32 {
+        unsafe {
+            (buf as *mut rusteal_ffi::FNameHandle).write_unaligned(*self);
+
+            8
+        }
+    }
 }
 
-// FName: its handle
 unsafe impl ContainerElement for crate::fname::FName {
     const BUF_SIZE: u32 = 8;
     const RAW_COPYABLE: bool = true;
@@ -140,55 +109,57 @@ unsafe impl ContainerElement for crate::fname::FName {
     }
 }
 
-// UObjectRef<T>: delegates to UObjectHandle (8-byte pointer)
 unsafe impl<T: UeClass> ContainerElement for UObjectRef<T> {
     const BUF_SIZE: u32 = std::mem::size_of::<UObjectHandle>() as u32;
 
     #[inline]
-    unsafe fn read_from_buf(buf: *const u8, _written: u32) -> Self { unsafe {
-        let handle = (buf as *const UObjectHandle).read_unaligned();
-        UObjectRef::from_raw(handle)
-    }}
+    unsafe fn read_from_buf(buf: *const u8, _written: u32) -> Self {
+        unsafe {
+            let handle = (buf as *const UObjectHandle).read_unaligned();
+
+            UObjectRef::from_raw(handle)
+        }
+    }
 
     #[inline]
-    unsafe fn write_to_buf(&self, buf: *mut u8) -> u32 { unsafe {
-        (buf as *mut UObjectHandle).write_unaligned(self.raw());
-        std::mem::size_of::<UObjectHandle>() as u32
-    }}
+    unsafe fn write_to_buf(&self, buf: *mut u8) -> u32 {
+        unsafe {
+            (buf as *mut UObjectHandle).write_unaligned(self.raw());
+
+            std::mem::size_of::<UObjectHandle>() as u32
+        }
+    }
 }
 
-// String: C++ uses [u32 len][utf8 bytes] format
 unsafe impl ContainerElement for String {
-    // Max buffer: 4 bytes length prefix + up to 4092 bytes of UTF-8 data
     const BUF_SIZE: u32 = 4096;
 
-    unsafe fn read_from_buf(buf: *const u8, written: u32) -> Self { unsafe {
-        if written < 4 {
-            return String::new();
-        }
-        let len = (buf as *const u32).read_unaligned() as usize;
-        let data_len = (written as usize).saturating_sub(4).min(len);
-        let slice = std::slice::from_raw_parts(buf.add(4), data_len);
-        String::from_utf8_lossy(slice).into_owned()
-    }}
+    unsafe fn read_from_buf(buf: *const u8, written: u32) -> Self {
+        unsafe {
+            if written < 4 {
+                return String::new();
+            }
 
-    unsafe fn write_to_buf(&self, buf: *mut u8) -> u32 { unsafe {
-        let bytes = self.as_bytes();
-        let len = bytes.len() as u32;
-        (buf as *mut u32).write_unaligned(len);
-        std::ptr::copy_nonoverlapping(bytes.as_ptr(), buf.add(4), bytes.len());
-        4 + len
-    }}
+            let len = (buf as *const u32).read_unaligned() as usize;
+            let data_len = (written as usize).saturating_sub(4).min(len);
+            let slice = std::slice::from_raw_parts(buf.add(4), data_len);
+
+            String::from_utf8_lossy(slice).into_owned()
+        }
+    }
+
+    unsafe fn write_to_buf(&self, buf: *mut u8) -> u32 {
+        unsafe {
+            let bytes = self.as_bytes();
+            let len = bytes.len() as u32;
+            (buf as *mut u32).write_unaligned(len);
+            std::ptr::copy_nonoverlapping(bytes.as_ptr(), buf.add(4), bytes.len());
+
+            4 + len
+        }
+    }
 }
 
-// ---------------------------------------------------------------------------
-// UeArray<T>
-// ---------------------------------------------------------------------------
-
-/// A view into a UE `TArray<T>` property on a UObject.
-///
-/// This is a lightweight `Copy` handle — it does not own the data.
-/// All operations go through FFI calls to the C++ container API.
 #[derive(Clone, Copy)]
 pub struct UeArray<T: ContainerElement> {
     owner: UObjectHandle,
@@ -197,7 +168,6 @@ pub struct UeArray<T: ContainerElement> {
 }
 
 impl<T: ContainerElement> UeArray<T> {
-    /// Create a new array view from an owner object handle and a property handle.
     #[inline]
     pub fn new(owner: UObjectHandle, prop: FPropertyHandle) -> Self {
         UeArray {
@@ -207,24 +177,24 @@ impl<T: ContainerElement> UeArray<T> {
         }
     }
 
-    /// Returns the number of elements in the array.
     pub fn len(&self) -> RustealResult<usize> {
         let n = unsafe { ffi_dispatch::container_array_len(self.owner, self.prop) };
+
         if n < 0 {
             return Err(RustealError::ObjectDestroyed);
         }
+
         Ok(n as usize)
     }
 
-    /// Returns true if the array is empty.
     pub fn is_empty(&self) -> RustealResult<bool> {
         Ok(self.len()? == 0)
     }
 
-    /// Get the element at `index`.
     pub fn get(&self, index: usize) -> RustealResult<T> {
         let mut buf = [0u8; MAX_ELEM_BUF];
         let mut written: u32 = 0;
+
         check_ffi(unsafe {
             ffi_dispatch::container_array_get(
                 self.owner,
@@ -235,14 +205,15 @@ impl<T: ContainerElement> UeArray<T> {
                 &mut written,
             )
         })?;
+
         Ok(unsafe { T::read_from_buf(buf.as_ptr(), written) })
     }
 
-    /// Set the element at `index`.
     pub fn set(&self, index: usize, val: &T) -> RustealResult<()> {
         let mut buf = [0u8; MAX_ELEM_BUF];
-        // SAFETY: buf is freshly allocated with BUF_SIZE bytes.
+
         let written = unsafe { val.write_to_buf(buf.as_mut_ptr()) };
+
         check_ffi(unsafe {
             ffi_dispatch::container_array_set(
                 self.owner,
@@ -254,31 +225,29 @@ impl<T: ContainerElement> UeArray<T> {
         })
     }
 
-    /// Append an element to the end of the array.
     pub fn push(&self, val: &T) -> RustealResult<()> {
         let mut buf = [0u8; MAX_ELEM_BUF];
-        // SAFETY: buf is freshly allocated with BUF_SIZE bytes.
+
         let written = unsafe { val.write_to_buf(buf.as_mut_ptr()) };
+
         check_ffi(unsafe {
             ffi_dispatch::container_array_add(self.owner, self.prop, buf.as_ptr(), written)
         })
     }
 
-    /// Remove the element at `index`, shifting subsequent elements down.
     pub fn remove(&self, index: usize) -> RustealResult<()> {
         check_ffi(unsafe {
             ffi_dispatch::container_array_remove(self.owner, self.prop, index as i32)
         })
     }
 
-    /// Remove all elements from the array.
     pub fn clear(&self) -> RustealResult<()> {
         check_ffi(unsafe { ffi_dispatch::container_array_clear(self.owner, self.prop) })
     }
 
-    /// Returns an iterator over the elements.
     pub fn iter(&self) -> UeArrayIter<'_, T> {
         let len = self.len().unwrap_or(0);
+
         UeArrayIter {
             array: self,
             index: 0,
@@ -296,7 +265,6 @@ impl<'a, T: ContainerElement> IntoIterator for &'a UeArray<T> {
     }
 }
 
-/// Iterator over `UeArray<T>` elements.
 pub struct UeArrayIter<'a, T: ContainerElement> {
     array: &'a UeArray<T>,
     index: usize,
@@ -310,24 +278,22 @@ impl<T: ContainerElement> Iterator for UeArrayIter<'_, T> {
         if self.index >= self.len {
             return None;
         }
+
         let result = self.array.get(self.index);
         self.index += 1;
+
         Some(result)
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
         let remaining = self.len.saturating_sub(self.index);
+
         (remaining, Some(remaining))
     }
 }
 
 impl<T: ContainerElement> ExactSizeIterator for UeArrayIter<'_, T> {}
 
-// ---------------------------------------------------------------------------
-// Bulk copy helper
-// ---------------------------------------------------------------------------
-
-/// Perform a bulk copy FFI call with automatic retry on BufferTooSmall.
 fn bulk_copy_with_retry(
     estimate: usize,
     call: impl Fn(*mut u8, u32, *mut u32, *mut i32) -> RustealErrorCode,
@@ -336,10 +302,11 @@ fn bulk_copy_with_retry(
     let mut written: u32 = 0;
     let mut count: i32 = 0;
     let code = call(buf.as_mut_ptr(), buf.len() as u32, &mut written, &mut count);
+
     if code == RustealErrorCode::BufferTooSmall {
-        // Retry with the size hint from C++
         let needed = (written as usize).max(buf.len() * 2);
         buf.resize(needed, 0);
+
         check_ffi(call(
             buf.as_mut_ptr(),
             buf.len() as u32,
@@ -349,26 +316,17 @@ fn bulk_copy_with_retry(
     } else {
         check_ffi(code)?;
     }
+
     buf.truncate(written as usize);
     Ok((buf, count))
 }
 
-// ---------------------------------------------------------------------------
-// Bulk iterators
-// ---------------------------------------------------------------------------
-
-/// Iterator that owns a pre-fetched buffer from a single bulk FFI call.
-/// Yields elements without further FFI calls.
-///
-/// Supports two modes:
-/// - **Framed** (`raw_elem_size == 0`): `[u32 written][data]` per element
-/// - **Raw** (`raw_elem_size > 0`): contiguous fixed-size elements, no framing
 pub struct BulkArrayIter<T: ContainerElement> {
     buf: Vec<u8>,
     count: usize,
     index: usize,
     offset: usize,
-    raw_elem_size: usize, // 0 = framed, >0 = raw stride
+    raw_elem_size: usize,
     _marker: PhantomData<T>,
 }
 
@@ -379,43 +337,47 @@ impl<T: ContainerElement> Iterator for BulkArrayIter<T> {
         if self.index >= self.count {
             return None;
         }
+
         if self.raw_elem_size > 0 {
-            // Raw mode: elements are contiguous with fixed stride
             let elem = unsafe {
                 T::read_from_buf(
                     self.buf.as_ptr().add(self.offset),
                     self.raw_elem_size as u32,
                 )
             };
+
             self.offset += self.raw_elem_size;
             self.index += 1;
+
             Some(elem)
         } else {
-            // Framed mode: [u32 written][data] per element
             if self.offset + 4 > self.buf.len() {
                 return None;
             }
-            let written = u32::from_ne_bytes(
-                self.buf[self.offset..self.offset + 4].try_into().unwrap(),
-            );
+
+            let written =
+                u32::from_ne_bytes(self.buf[self.offset..self.offset + 4].try_into().unwrap());
+
             self.offset += 4;
-            let elem =
-                unsafe { T::read_from_buf(self.buf.as_ptr().add(self.offset), written) };
+
+            let elem = unsafe { T::read_from_buf(self.buf.as_ptr().add(self.offset), written) };
+
             self.offset += written as usize;
             self.index += 1;
+
             Some(elem)
         }
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
         let r = self.count - self.index;
+
         (r, Some(r))
     }
 }
 
 impl<T: ContainerElement> ExactSizeIterator for BulkArrayIter<T> {}
 
-/// Bulk iterator over `TMap<K,V>` key-value pairs. Single FFI call.
 pub struct BulkMapIter<K: ContainerElement, V: ContainerElement> {
     buf: Vec<u8>,
     count: usize,
@@ -431,43 +393,47 @@ impl<K: ContainerElement, V: ContainerElement> Iterator for BulkMapIter<K, V> {
         if self.index >= self.count {
             return None;
         }
-        // Key: [u32 written][data]
+
         if self.offset + 4 > self.buf.len() {
             return None;
         }
-        let key_written = u32::from_ne_bytes(
-            self.buf[self.offset..self.offset + 4].try_into().unwrap(),
-        );
+
+        let key_written =
+            u32::from_ne_bytes(self.buf[self.offset..self.offset + 4].try_into().unwrap());
+
         self.offset += 4;
-        let key =
-            unsafe { K::read_from_buf(self.buf.as_ptr().add(self.offset), key_written) };
+
+        let key = unsafe { K::read_from_buf(self.buf.as_ptr().add(self.offset), key_written) };
+
         self.offset += key_written as usize;
 
-        // Value: [u32 written][data]
         if self.offset + 4 > self.buf.len() {
             return None;
         }
-        let val_written = u32::from_ne_bytes(
-            self.buf[self.offset..self.offset + 4].try_into().unwrap(),
-        );
+
+        let val_written =
+            u32::from_ne_bytes(self.buf[self.offset..self.offset + 4].try_into().unwrap());
+
         self.offset += 4;
-        let val =
-            unsafe { V::read_from_buf(self.buf.as_ptr().add(self.offset), val_written) };
+
+        let val = unsafe { V::read_from_buf(self.buf.as_ptr().add(self.offset), val_written) };
+
         self.offset += val_written as usize;
 
         self.index += 1;
+
         Some((key, val))
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
         let r = self.count - self.index;
+
         (r, Some(r))
     }
 }
 
 impl<K: ContainerElement, V: ContainerElement> ExactSizeIterator for BulkMapIter<K, V> {}
 
-/// Bulk iterator over `TSet<T>` elements. Single FFI call.
 pub struct BulkSetIter<T: ContainerElement> {
     buf: Vec<u8>,
     count: usize,
@@ -483,55 +449,58 @@ impl<T: ContainerElement> Iterator for BulkSetIter<T> {
         if self.index >= self.count {
             return None;
         }
+
         if self.offset + 4 > self.buf.len() {
             return None;
         }
-        let written = u32::from_ne_bytes(
-            self.buf[self.offset..self.offset + 4].try_into().unwrap(),
-        );
+
+        let written =
+            u32::from_ne_bytes(self.buf[self.offset..self.offset + 4].try_into().unwrap());
+
         self.offset += 4;
         let elem = unsafe { T::read_from_buf(self.buf.as_ptr().add(self.offset), written) };
         self.offset += written as usize;
         self.index += 1;
+
         Some(elem)
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
         let r = self.count - self.index;
+
         (r, Some(r))
     }
 }
 
 impl<T: ContainerElement> ExactSizeIterator for BulkSetIter<T> {}
 
-// ---------------------------------------------------------------------------
-// UeArray bulk methods
-// ---------------------------------------------------------------------------
-
 impl<T: ContainerElement> UeArray<T> {
-    /// Bulk-copy all elements to a `Vec<T>` in a single FFI call.
     pub fn to_vec(&self) -> RustealResult<Vec<T>> {
         let len = self.len()?;
+
         if len == 0 {
             return Ok(Vec::new());
         }
+
         let owner = self.owner;
         let prop = self.prop;
-        // Raw-copyable types have no per-element framing overhead
+
         let estimate = if T::RAW_COPYABLE {
             len * T::BUF_SIZE as usize
         } else {
             len * (T::BUF_SIZE as usize + 4)
         };
+
         let (buf, count) = bulk_copy_with_retry(estimate, |out, size, written, cnt| unsafe {
             ffi_dispatch::container_array_copy_all(owner, prop, out, size, written, cnt)
         })?;
-        // Negative count = raw format from C++
+
         let (actual_count, raw_elem_size) = if count < 0 {
             ((-count) as usize, T::BUF_SIZE as usize)
         } else {
             (count as usize, 0)
         };
+
         Ok(BulkArrayIter::<T> {
             buf,
             count: actual_count,
@@ -543,9 +512,9 @@ impl<T: ContainerElement> UeArray<T> {
         .collect())
     }
 
-    /// Bulk-fetch all elements as a lazy iterator (single FFI call).
     pub fn bulk_iter(&self) -> RustealResult<BulkArrayIter<T>> {
         let len = self.len()?;
+
         if len == 0 {
             return Ok(BulkArrayIter {
                 buf: Vec::new(),
@@ -556,21 +525,26 @@ impl<T: ContainerElement> UeArray<T> {
                 _marker: PhantomData,
             });
         }
+
         let owner = self.owner;
         let prop = self.prop;
+
         let estimate = if T::RAW_COPYABLE {
             len * T::BUF_SIZE as usize
         } else {
             len * (T::BUF_SIZE as usize + 4)
         };
+
         let (buf, count) = bulk_copy_with_retry(estimate, |out, size, written, cnt| unsafe {
             ffi_dispatch::container_array_copy_all(owner, prop, out, size, written, cnt)
         })?;
+
         let (actual_count, raw_elem_size) = if count < 0 {
             ((-count) as usize, T::BUF_SIZE as usize)
         } else {
             (count as usize, 0)
         };
+
         Ok(BulkArrayIter {
             buf,
             count: actual_count,
@@ -581,19 +555,21 @@ impl<T: ContainerElement> UeArray<T> {
         })
     }
 
-    /// Replace all array elements from a slice in a single FFI call.
     pub fn set_all(&self, items: &[T]) -> RustealResult<()> {
         if items.is_empty() {
             return self.clear();
         }
+
         if T::RAW_COPYABLE {
-            // Raw format: contiguous elements, no per-element framing
             let elem_size = T::BUF_SIZE as usize;
             let mut buf = vec![0u8; items.len() * elem_size];
+
             for (i, item) in items.iter().enumerate() {
-                unsafe { item.write_to_buf(buf.as_mut_ptr().add(i * elem_size)); }
+                unsafe {
+                    item.write_to_buf(buf.as_mut_ptr().add(i * elem_size));
+                }
             }
-            // Negative count signals raw format to C++
+
             check_ffi(unsafe {
                 ffi_dispatch::container_array_set_all(
                     self.owner,
@@ -604,14 +580,15 @@ impl<T: ContainerElement> UeArray<T> {
                 )
             })
         } else {
-            // Framed format: [u32 written][data] per element
             let mut buf = Vec::with_capacity(items.len() * (T::BUF_SIZE as usize + 4));
             let mut elem_buf = [0u8; MAX_ELEM_BUF];
+
             for item in items {
                 let written = unsafe { item.write_to_buf(elem_buf.as_mut_ptr()) };
                 buf.extend_from_slice(&written.to_ne_bytes());
                 buf.extend_from_slice(&elem_buf[..written as usize]);
             }
+
             check_ffi(unsafe {
                 ffi_dispatch::container_array_set_all(
                     self.owner,
@@ -625,11 +602,6 @@ impl<T: ContainerElement> UeArray<T> {
     }
 }
 
-// ---------------------------------------------------------------------------
-// UeMap<K, V>
-// ---------------------------------------------------------------------------
-
-/// A view into a UE `TMap<K, V>` property on a UObject.
 #[derive(Clone, Copy)]
 pub struct UeMap<K: ContainerElement, V: ContainerElement> {
     owner: UObjectHandle,
@@ -647,12 +619,13 @@ impl<K: ContainerElement, V: ContainerElement> UeMap<K, V> {
         }
     }
 
-    /// Returns the number of key-value pairs in the map.
     pub fn len(&self) -> RustealResult<usize> {
         let n = unsafe { ffi_dispatch::container_map_len(self.owner, self.prop) };
+
         if n < 0 {
             return Err(RustealError::ObjectDestroyed);
         }
+
         Ok(n as usize)
     }
 
@@ -660,8 +633,6 @@ impl<K: ContainerElement, V: ContainerElement> UeMap<K, V> {
         Ok(self.len()? == 0)
     }
 
-    /// Look up a value by key. Returns `Err(PropertyNotFound)` if the key
-    /// is not in the map.
     pub fn find(&self, key: &K) -> RustealResult<V> {
         let mut key_buf = [0u8; MAX_ELEM_BUF];
         let key_written = unsafe { key.write_to_buf(key_buf.as_mut_ptr()) };
@@ -679,10 +650,10 @@ impl<K: ContainerElement, V: ContainerElement> UeMap<K, V> {
                 &mut val_written,
             )
         })?;
+
         Ok(unsafe { V::read_from_buf(val_buf.as_ptr(), val_written) })
     }
 
-    /// Insert or replace a key-value pair.
     pub fn add(&self, key: &K, val: &V) -> RustealResult<()> {
         let mut key_buf = [0u8; MAX_ELEM_BUF];
         let key_written = unsafe { key.write_to_buf(key_buf.as_mut_ptr()) };
@@ -701,27 +672,19 @@ impl<K: ContainerElement, V: ContainerElement> UeMap<K, V> {
         })
     }
 
-    /// Remove a key from the map.
     pub fn remove(&self, key: &K) -> RustealResult<()> {
         let mut key_buf = [0u8; MAX_ELEM_BUF];
         let key_written = unsafe { key.write_to_buf(key_buf.as_mut_ptr()) };
 
         check_ffi(unsafe {
-            ffi_dispatch::container_map_remove(
-                self.owner,
-                self.prop,
-                key_buf.as_ptr(),
-                key_written,
-            )
+            ffi_dispatch::container_map_remove(self.owner, self.prop, key_buf.as_ptr(), key_written)
         })
     }
 
-    /// Remove all key-value pairs.
     pub fn clear(&self) -> RustealResult<()> {
         check_ffi(unsafe { ffi_dispatch::container_map_clear(self.owner, self.prop) })
     }
 
-    /// Get the key-value pair at logical index (for iteration).
     pub fn get_pair(&self, logical_index: usize) -> RustealResult<(K, V)> {
         let mut key_buf = [0u8; MAX_ELEM_BUF];
         let mut key_written: u32 = 0;
@@ -741,6 +704,7 @@ impl<K: ContainerElement, V: ContainerElement> UeMap<K, V> {
                 &mut val_written,
             )
         })?;
+
         Ok(unsafe {
             (
                 K::read_from_buf(key_buf.as_ptr(), key_written),
@@ -749,9 +713,9 @@ impl<K: ContainerElement, V: ContainerElement> UeMap<K, V> {
         })
     }
 
-    /// Returns an iterator over key-value pairs.
     pub fn iter(&self) -> UeMapIter<'_, K, V> {
         let len = self.len().unwrap_or(0);
+
         UeMapIter {
             map: self,
             index: 0,
@@ -769,7 +733,6 @@ impl<'a, K: ContainerElement, V: ContainerElement> IntoIterator for &'a UeMap<K,
     }
 }
 
-/// Iterator over `UeMap<K, V>` key-value pairs.
 pub struct UeMapIter<'a, K: ContainerElement, V: ContainerElement> {
     map: &'a UeMap<K, V>,
     index: usize,
@@ -783,27 +746,26 @@ impl<K: ContainerElement, V: ContainerElement> Iterator for UeMapIter<'_, K, V> 
         if self.index >= self.len {
             return None;
         }
+
         let result = self.map.get_pair(self.index);
         self.index += 1;
+
         Some(result)
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
         let remaining = self.len.saturating_sub(self.index);
+
         (remaining, Some(remaining))
     }
 }
 
 impl<K: ContainerElement, V: ContainerElement> ExactSizeIterator for UeMapIter<'_, K, V> {}
 
-// ---------------------------------------------------------------------------
-// UeMap bulk methods
-// ---------------------------------------------------------------------------
-
 impl<K: ContainerElement, V: ContainerElement> UeMap<K, V> {
-    /// Bulk-fetch all key-value pairs as a lazy iterator (single FFI call).
     pub fn bulk_iter(&self) -> RustealResult<BulkMapIter<K, V>> {
         let len = self.len()?;
+
         if len == 0 {
             return Ok(BulkMapIter {
                 buf: Vec::new(),
@@ -813,12 +775,15 @@ impl<K: ContainerElement, V: ContainerElement> UeMap<K, V> {
                 _marker: PhantomData,
             });
         }
+
         let owner = self.owner;
         let prop = self.prop;
         let estimate = len * (K::BUF_SIZE as usize + V::BUF_SIZE as usize + 8);
+
         let (buf, count) = bulk_copy_with_retry(estimate, |out, size, written, cnt| unsafe {
             ffi_dispatch::container_map_copy_all(owner, prop, out, size, written, cnt)
         })?;
+
         Ok(BulkMapIter {
             buf,
             count: count as usize,
@@ -830,23 +795,19 @@ impl<K: ContainerElement, V: ContainerElement> UeMap<K, V> {
 }
 
 impl<K: ContainerElement + Hash + Eq, V: ContainerElement> UeMap<K, V> {
-    /// Bulk-copy all key-value pairs to a `HashMap` in a single FFI call.
     pub fn to_hash_map(&self) -> RustealResult<HashMap<K, V>> {
         let iter = self.bulk_iter()?;
         let count = iter.count;
         let mut map = HashMap::with_capacity(count);
+
         for (k, v) in iter {
             map.insert(k, v);
         }
+
         Ok(map)
     }
 }
 
-// ---------------------------------------------------------------------------
-// UeSet<T>
-// ---------------------------------------------------------------------------
-
-/// A view into a UE `TSet<T>` property on a UObject.
 #[derive(Clone, Copy)]
 pub struct UeSet<T: ContainerElement> {
     owner: UObjectHandle,
@@ -864,12 +825,13 @@ impl<T: ContainerElement> UeSet<T> {
         }
     }
 
-    /// Returns the number of elements in the set.
     pub fn len(&self) -> RustealResult<usize> {
         let n = unsafe { ffi_dispatch::container_set_len(self.owner, self.prop) };
+
         if n < 0 {
             return Err(RustealError::ObjectDestroyed);
         }
+
         Ok(n as usize)
     }
 
@@ -877,42 +839,41 @@ impl<T: ContainerElement> UeSet<T> {
         Ok(self.len()? == 0)
     }
 
-    /// Check if the set contains an element.
     pub fn contains(&self, val: &T) -> RustealResult<bool> {
         let mut buf = [0u8; MAX_ELEM_BUF];
         let written = unsafe { val.write_to_buf(buf.as_mut_ptr()) };
+
         Ok(unsafe {
             ffi_dispatch::container_set_contains(self.owner, self.prop, buf.as_ptr(), written)
         })
     }
 
-    /// Add an element to the set.
     pub fn add(&self, val: &T) -> RustealResult<()> {
         let mut buf = [0u8; MAX_ELEM_BUF];
         let written = unsafe { val.write_to_buf(buf.as_mut_ptr()) };
+
         check_ffi(unsafe {
             ffi_dispatch::container_set_add(self.owner, self.prop, buf.as_ptr(), written)
         })
     }
 
-    /// Remove an element from the set.
     pub fn remove(&self, val: &T) -> RustealResult<()> {
         let mut buf = [0u8; MAX_ELEM_BUF];
         let written = unsafe { val.write_to_buf(buf.as_mut_ptr()) };
+
         check_ffi(unsafe {
             ffi_dispatch::container_set_remove(self.owner, self.prop, buf.as_ptr(), written)
         })
     }
 
-    /// Remove all elements from the set.
     pub fn clear(&self) -> RustealResult<()> {
         check_ffi(unsafe { ffi_dispatch::container_set_clear(self.owner, self.prop) })
     }
 
-    /// Get the element at logical index (for iteration).
     pub fn get_element(&self, logical_index: usize) -> RustealResult<T> {
         let mut buf = [0u8; MAX_ELEM_BUF];
         let mut written: u32 = 0;
+
         check_ffi(unsafe {
             ffi_dispatch::container_set_get_element(
                 self.owner,
@@ -923,12 +884,13 @@ impl<T: ContainerElement> UeSet<T> {
                 &mut written,
             )
         })?;
+
         Ok(unsafe { T::read_from_buf(buf.as_ptr(), written) })
     }
 
-    /// Returns an iterator over the elements.
     pub fn iter(&self) -> UeSetIter<'_, T> {
         let len = self.len().unwrap_or(0);
+
         UeSetIter {
             set: self,
             index: 0,
@@ -946,7 +908,6 @@ impl<'a, T: ContainerElement> IntoIterator for &'a UeSet<T> {
     }
 }
 
-/// Iterator over `UeSet<T>` elements.
 pub struct UeSetIter<'a, T: ContainerElement> {
     set: &'a UeSet<T>,
     index: usize,
@@ -960,27 +921,26 @@ impl<T: ContainerElement> Iterator for UeSetIter<'_, T> {
         if self.index >= self.len {
             return None;
         }
+
         let result = self.set.get_element(self.index);
         self.index += 1;
+
         Some(result)
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
         let remaining = self.len.saturating_sub(self.index);
+
         (remaining, Some(remaining))
     }
 }
 
 impl<T: ContainerElement> ExactSizeIterator for UeSetIter<'_, T> {}
 
-// ---------------------------------------------------------------------------
-// UeSet bulk methods
-// ---------------------------------------------------------------------------
-
 impl<T: ContainerElement> UeSet<T> {
-    /// Bulk-fetch all elements as a lazy iterator (single FFI call).
     pub fn bulk_iter(&self) -> RustealResult<BulkSetIter<T>> {
         let len = self.len()?;
+
         if len == 0 {
             return Ok(BulkSetIter {
                 buf: Vec::new(),
@@ -990,12 +950,15 @@ impl<T: ContainerElement> UeSet<T> {
                 _marker: PhantomData,
             });
         }
+
         let owner = self.owner;
         let prop = self.prop;
         let estimate = len * (T::BUF_SIZE as usize + 4);
+
         let (buf, count) = bulk_copy_with_retry(estimate, |out, size, written, cnt| unsafe {
             ffi_dispatch::container_set_copy_all(owner, prop, out, size, written, cnt)
         })?;
+
         Ok(BulkSetIter {
             buf,
             count: count as usize,
@@ -1007,27 +970,19 @@ impl<T: ContainerElement> UeSet<T> {
 }
 
 impl<T: ContainerElement + Hash + Eq> UeSet<T> {
-    /// Bulk-copy all elements to a `HashSet` in a single FFI call.
     pub fn to_hash_set(&self) -> RustealResult<HashSet<T>> {
         let iter = self.bulk_iter()?;
         let count = iter.count;
         let mut set = HashSet::with_capacity(count);
+
         for elem in iter {
             set.insert(elem);
         }
+
         Ok(set)
     }
 }
 
-// ---------------------------------------------------------------------------
-// OwnedStruct<T>: owned copy of struct data from a container
-// ---------------------------------------------------------------------------
-
-/// An owned copy of UE struct data retrieved from a container.
-///
-/// Since UE structs are opaque (their layout is managed by C++), this type
-/// holds the raw bytes copied from the container. Use [`as_ref`](Self::as_ref)
-/// to get a `UStructRef<T>` for property access.
 pub struct OwnedStruct<T: UeStruct> {
     data: Vec<u8>,
     needs_destroy: bool,
@@ -1041,21 +996,22 @@ impl<T: UeStruct> Default for OwnedStruct<T> {
 }
 
 impl<T: UeStruct> OwnedStruct<T> {
-    /// Allocate a new struct initialized via C++ default constructor.
-    ///
-    /// Uses the UE reflection system to determine the struct's size,
-    /// allocates a zero-filled buffer, then calls `UScriptStruct::InitializeStruct`
-    /// to properly construct non-trivial members (TArray, FString, etc.).
-    /// The struct is destroyed via `UScriptStruct::DestroyStruct` on drop.
     pub fn new() -> Self {
         let ustruct = T::static_struct();
         let size = unsafe { ffi_dispatch::reflection_get_struct_size(ustruct) };
-        debug_assert!(size > 0, "get_struct_size returned 0 for {}", std::any::type_name::<T>());
+
+        debug_assert!(
+            size > 0,
+            "get_struct_size returned 0 for {}",
+            std::any::type_name::<T>()
+        );
 
         let mut data = vec![0u8; size as usize];
+
         ffi_infallible(unsafe {
             ffi_dispatch::reflection_initialize_struct(ustruct, data.as_mut_ptr())
         });
+
         OwnedStruct {
             data,
             needs_destroy: true,
@@ -1063,10 +1019,6 @@ impl<T: UeStruct> OwnedStruct<T> {
         }
     }
 
-    /// Create from raw bytes (e.g., copied from a container element).
-    ///
-    /// The data is assumed to already be initialized by C++ — no destructor
-    /// will be called on drop.
     pub fn from_bytes(data: Vec<u8>) -> Self {
         OwnedStruct {
             data,
@@ -1075,10 +1027,9 @@ impl<T: UeStruct> OwnedStruct<T> {
         }
     }
 
-    /// A copy of the struct `src` points to, made with the struct's own copy
-    /// semantics (deep for strings, arrays and the like).
     pub fn copy_from(src: &UStructRef<T>) -> Self {
         let mut owned = Self::new();
+
         ffi_infallible(unsafe {
             ffi_dispatch::reflection_copy_struct(
                 T::static_struct(),
@@ -1086,20 +1037,18 @@ impl<T: UeStruct> OwnedStruct<T> {
                 src.as_ptr().0 as *const u8,
             )
         });
+
         owned
     }
 
-    /// Get a `UStructRef<T>` for property access on this struct data.
     pub fn as_ref(&self) -> UStructRef<T> {
         unsafe { UStructRef::from_raw(self.data.as_ptr() as *mut u8) }
     }
 
-    /// Get the raw bytes of the struct data.
     pub fn as_bytes(&self) -> &[u8] {
         &self.data
     }
 
-    /// Get the raw bytes of the struct data as an owned Vec.
     pub fn to_bytes(&self) -> Vec<u8> {
         self.data.clone()
     }
@@ -1119,38 +1068,39 @@ impl<T: UeStruct> Drop for OwnedStruct<T> {
     fn drop(&mut self) {
         if self.needs_destroy {
             unsafe {
-                ffi_dispatch::reflection_destroy_struct(
-                    T::static_struct(),
-                    self.data.as_mut_ptr(),
-                );
+                ffi_dispatch::reflection_destroy_struct(T::static_struct(), self.data.as_mut_ptr());
             }
         }
-        // Vec<u8> is always freed automatically.
     }
 }
 
 impl<T: UeStruct> std::fmt::Debug for OwnedStruct<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("OwnedStruct").field("size", &self.data.len()).finish()
+        f.debug_struct("OwnedStruct")
+            .field("size", &self.data.len())
+            .finish()
     }
 }
 
-// ContainerElement for OwnedStruct<T>: uses a fixed 4096-byte buffer.
-// The C++ side copies struct data via CopyScriptStruct; we store the
-// exact number of bytes written.
 unsafe impl<T: UeStruct> ContainerElement for OwnedStruct<T> {
     const BUF_SIZE: u32 = 4096;
 
-    unsafe fn read_from_buf(buf: *const u8, written: u32) -> Self { unsafe {
-        let data = vec![0u8; written as usize];
-        std::ptr::copy_nonoverlapping(buf, data.as_ptr() as *mut u8, written as usize);
-        OwnedStruct::from_bytes(data)
-    }}
+    unsafe fn read_from_buf(buf: *const u8, written: u32) -> Self {
+        unsafe {
+            let data = vec![0u8; written as usize];
+            std::ptr::copy_nonoverlapping(buf, data.as_ptr() as *mut u8, written as usize);
 
-    unsafe fn write_to_buf(&self, buf: *mut u8) -> u32 { unsafe {
-        let bytes = self.to_bytes();
-        let len = bytes.len();
-        std::ptr::copy_nonoverlapping(bytes.as_ptr(), buf, len);
-        len as u32
-    }}
+            OwnedStruct::from_bytes(data)
+        }
+    }
+
+    unsafe fn write_to_buf(&self, buf: *mut u8) -> u32 {
+        unsafe {
+            let bytes = self.to_bytes();
+            let len = bytes.len();
+            std::ptr::copy_nonoverlapping(bytes.as_ptr(), buf, len);
+
+            len as u32
+        }
+    }
 }

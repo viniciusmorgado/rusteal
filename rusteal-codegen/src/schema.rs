@@ -1,12 +1,6 @@
-// JSON schema types matching UHT exporter output.
-
-#![allow(dead_code)] // Schema fields are deserialized from JSON; some reserved for future codegen use.
+#![allow(dead_code)]
 
 use serde::{Deserialize, Deserializer};
-
-// ---------------------------------------------------------------------------
-// Top-level file wrappers
-// ---------------------------------------------------------------------------
 
 #[derive(Deserialize)]
 pub struct ClassesFile {
@@ -23,18 +17,12 @@ pub struct EnumsFile {
     pub enums: Vec<EnumInfo>,
 }
 
-// ---------------------------------------------------------------------------
-// Class
-// ---------------------------------------------------------------------------
-
 #[derive(Deserialize, Clone)]
 pub struct ClassInfo {
     pub name: String,
     pub cpp_name: String,
     pub package: String,
     pub header: String,
-    /// Whether the header is one another module can include (in a Classes
-    /// or Public folder): the C++ wrappers of the class's functions need it.
     #[serde(default = "default_true")]
     pub header_public: bool,
     #[serde(deserialize_with = "deser_flags_u32")]
@@ -49,20 +37,13 @@ pub struct ClassInfo {
     pub funcs: Vec<FunctionInfo>,
 }
 
-// ---------------------------------------------------------------------------
-// Struct
-// ---------------------------------------------------------------------------
-
 #[derive(Deserialize, Clone)]
 pub struct StructInfo {
     pub name: String,
     pub cpp_name: String,
     pub package: String,
-    /// Include path of the declaring header; empty for `NoExport` structs,
-    /// whose real declaration lives elsewhere (e.g. `FVector` in Core).
     #[serde(default)]
     pub header: String,
-    /// Whether the header is one another module can include (see `ClassInfo`).
     #[serde(default = "default_true")]
     pub header_public: bool,
     #[serde(deserialize_with = "deser_flags_u32")]
@@ -75,10 +56,6 @@ pub struct StructInfo {
     pub props: Vec<PropertyInfo>,
 }
 
-// ---------------------------------------------------------------------------
-// Enum
-// ---------------------------------------------------------------------------
-
 #[derive(Deserialize, Clone)]
 pub struct EnumInfo {
     pub name: String,
@@ -88,10 +65,6 @@ pub struct EnumInfo {
     pub cpp_form: u32,
     pub pairs: Vec<(String, i64)>,
 }
-
-// ---------------------------------------------------------------------------
-// Property (used in both class props and struct props)
-// ---------------------------------------------------------------------------
 
 #[derive(Deserialize, Clone)]
 pub struct PropertyInfo {
@@ -123,10 +96,6 @@ fn default_array_dim() -> u32 {
     1
 }
 
-// ---------------------------------------------------------------------------
-// Function
-// ---------------------------------------------------------------------------
-
 #[derive(Deserialize, Clone)]
 pub struct FunctionInfo {
     pub name: String,
@@ -136,19 +105,11 @@ pub struct FunctionInfo {
     pub is_static: bool,
     #[serde(default)]
     pub params: Vec<ParamInfo>,
-    /// Original UE function name (before overload renaming). Set by filter.
     #[serde(skip)]
     pub ue_name: String,
-    /// For a function copied from an implemented interface: the native
-    /// interface type it is declared on (e.g. `IEnhancedInputSubsystemInterface`).
-    /// Set by the context.
     #[serde(skip)]
     pub interface: Option<String>,
 }
-
-// ---------------------------------------------------------------------------
-// Function parameter
-// ---------------------------------------------------------------------------
 
 #[derive(Deserialize, Clone)]
 pub struct ParamInfo {
@@ -172,23 +133,13 @@ pub struct ParamInfo {
     pub default: Option<String>,
 }
 
-// ---------------------------------------------------------------------------
-// Flag constants — sourced from rusteal-ue-flags (single source of truth)
-// ---------------------------------------------------------------------------
-
 pub use rusteal_ue_flags::{
-    CPF_BLUEPRINT_ASSIGNABLE, CPF_BLUEPRINT_READ_ONLY, CPF_BLUEPRINT_VISIBLE, CPF_EDIT,
-    CPF_CONST_PARM, CPF_OUT_PARM, CPF_REFERENCE_PARM, CPF_RETURN_PARM,
-    CPF_NATIVE_ACCESS_SPECIFIER_PRIVATE as CPF_NATIVE_ACCESS_PRIVATE,
-    CPF_NATIVE_ACCESS_SPECIFIER_PROTECTED as CPF_NATIVE_ACCESS_PROTECTED,
-    FUNC_NATIVE, FUNC_STATIC, FUNC_BLUEPRINT_EVENT, FUNC_PROTECTED, FUNC_EDITOR_ONLY,
+    CPF_BLUEPRINT_ASSIGNABLE, CPF_BLUEPRINT_READ_ONLY, CPF_BLUEPRINT_VISIBLE, CPF_CONST_PARM,
+    CPF_EDIT, CPF_NATIVE_ACCESS_SPECIFIER_PRIVATE as CPF_NATIVE_ACCESS_PRIVATE,
+    CPF_NATIVE_ACCESS_SPECIFIER_PROTECTED as CPF_NATIVE_ACCESS_PROTECTED, CPF_OUT_PARM,
+    CPF_REFERENCE_PARM, CPF_RETURN_PARM, FUNC_BLUEPRINT_EVENT, FUNC_EDITOR_ONLY, FUNC_NATIVE,
+    FUNC_PROTECTED, FUNC_STATIC,
 };
-
-// ---------------------------------------------------------------------------
-// Serde helpers — the C# exporter sign-extends uint32 flags via
-// `(long)(int)flags`, so JSON values can be negative.  We read as i64
-// and truncate to u32 to recover the original bits.
-// ---------------------------------------------------------------------------
 
 fn default_true() -> bool {
     true

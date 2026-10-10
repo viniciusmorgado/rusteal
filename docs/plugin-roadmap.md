@@ -66,4 +66,4 @@ Each entry says what is missing, what it takes, and what to do meanwhile.
 |---|---|---|
 | **Replication of plugin classes** | Rusteal does not cover multiplayer yet. | — |
 | **Shaders and render passes** (global shaders, scene view extensions) | C++ and the render thread. | Materials and Niagara, which are assets. |
-| **Changing a class's properties or functions during hot reload** | Hot reload swaps function bodies; adding or removing a `uproperty` or `ufunction` needs an editor restart, for plugins as for games. | Restart the editor. |
+| **Changing a `#[ustruct]`'s fields during hot reload** | A hot reload replaces a class whose properties or functions changed and reinstances its objects ([hot-reload.md](hot-reload.md)); structs are not reinstanced, so a changed one keeps its old fields. | Restart the editor. |

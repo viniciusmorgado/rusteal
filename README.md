@@ -137,22 +137,44 @@ The engine brings the rest: the clang 20.1.8 toolchain UBT compiles with
 
 | Dependency | Version | Where from | What for |
 |---|---|---|---|
-| Visual Studio | 2022 17.8 or newer, or 2026 18.0 or newer | [visualstudio.microsoft.com](https://visualstudio.microsoft.com) | the C++ compiler UBT uses, and the linker Rust uses |
+| Visual Studio IDE | Community, Professional or Enterprise; 2022 17.8 or newer, or 2026 18.0 or newer | [visualstudio.microsoft.com](https://visualstudio.microsoft.com) | the C++ compiler UBT uses, and the linker Rust uses |
 | Rust | stable, 1.88 or newer, `x86_64-pc-windows-msvc` | [rustup](https://rustup.rs) (`rustup-init.exe`) | installing the `rusteal` CLI, building your game crate |
 | Unreal Engine | 5.8 | the Epic Games Launcher | the game |
 
-In the Visual Studio Installer, the workloads and components the engine asks for:
+Any edition of the Visual Studio IDE works (Community is free). In the Visual
+Studio Installer (**Modify** on an existing install), the **Workloads** tab needs
+exactly two workloads:
 
-- workloads **Desktop development with C++**, **Game development with C++**
-  (with its Unreal Engine components) and **.NET desktop development**;
-- **MSVC v143 x64/x86 build tools 14.44** for Visual Studio 2022 (14.50 for
-  2026). The engine refuses 14.39 to 14.43, 14.44 before 14.44.35211 and 14.50
-  before 14.50.35723;
-- **Windows 11 SDK 10.0.22621** (10.0.19041 at least);
+| Workload | Section | What the engine takes from it |
+|---|---|---|
+| **Desktop development with C++** | Desktop & Mobile | MSVC, the C++ compiler and linker; the Windows SDK |
+| **.NET desktop development** | Desktop & Mobile | the .NET Framework SDK (UBT stops with *Could not find NetFxSDK install dir* without it) |
+
+**Game development with C++** and its Unreal Engine components are optional:
+they add the IDE's Unreal integration, which the engine's command-line build,
+the one Rusteal runs, does not use.
+
+Then, in the **Individual components** tab, check that these are selected:
+
+- **MSVC v143 x64/x86 build tools 14.44** for Visual Studio 2022, **MSVC
+  x64/x86 build tools 14.50** for 2026. The engine refuses 14.39 to 14.43,
+  14.44 before 14.44.35211 and 14.50 before 14.50.35723, and warns about
+  versions newer than these (the "latest" component of Visual Studio 2026
+  installs 14.51); with both installed, it picks the one it prefers;
+- **Windows 11 SDK 10.0.22621** (10.0.19041 at least; UBT stops with
+  *Platform Win64 is not a valid platform to build* without one);
 - **.NET Framework 4.6.2 targeting pack**.
 
 Install Visual Studio before Rust: rustup uses its build tools for the MSVC
 toolchain. The engine brings the .NET SDK for UBT and UHT.
+
+Rust must use the MSVC host: `rustup show` prints *Default host:
+x86_64-pc-windows-msvc*. If your default toolchain is a `-windows-gnu` one,
+for another project, it can stay: set the default host
+(`rustup set default-host x86_64-pc-windows-msvc`) and install
+`stable-x86_64-pc-windows-msvc`, then pin it in your game project, either with
+a `rust-toolchain.toml` or, for the directory holding your projects,
+`rustup override set stable-x86_64-pc-windows-msvc --path <dir>`.
 
 ### Install
 
@@ -363,6 +385,9 @@ one:
 # The Rust libraries (steps 4-5), while you work on the game
 rusteal build
 
+# The same, every time a source file changes, until Ctrl+C
+rusteal watch
+
 # Every step
 rusteal build --all
 
@@ -392,14 +417,18 @@ crate's own `Cargo.toml` they are ignored with a warning):
   must still run well in the editor. Only the game crate, the one that
   changes, is barely optimized; the runtime crates and the generated
   bindings, which compile once, are fully optimized. A change to the game
-  crate rebuilds in about a second.
+  crate rebuilds in about a second. The game crate has full debug info; the
+  dependencies and the bindings keep only file and line, enough for
+  backtraces: with all of theirs, the library would be over a hundred
+  megabytes, which every hot reload loads again.
 - **release** (shipping): the fastest library possible, however long it
   takes to build. The whole program is optimized as one unit (link-time
   optimization, a single codegen unit), which also drops the parts of the
   bindings the game does not use.
 
-The settings follow Bevy's recommendations for game projects
-([Bevy setup](https://bevy.org/learn/quick-start/getting-started/setup/)). The
+The optimization levels follow Bevy's recommendations for game projects
+([Bevy setup](https://bevy.org/learn/quick-start/getting-started/setup/));
+trimming the dependencies' debug info is Rusteal's, for hot reload. The
 Rusteal crates and the `rusteal` binary are not affected: these profiles only
 shape the game's library.
 
@@ -777,15 +806,36 @@ During development, rebuild your Rust library and reload without restarting the 
 rusteal build
 ```
 
-Then in the UE console:
+The editor reloads each library as soon as `rusteal build` deploys it again,
+with a notification (`Rusteal.AutoReload 0` in the console turns that off).
+`rusteal watch` runs that build every time you save a Rust file, so saving is
+all it takes; a build that fails prints its errors and the watch goes on
+(`--plugin <Name>` watches one plugin). To reload by hand, in the UE console:
 ```
 Rusteal.Reload
 ```
 
 `Rusteal.Reload` swaps every Rust library of the project; `Rusteal.Reload
 <Name>` only one (the game's is named after the project, a plugin's after the
-plugin). Function implementations update immediately. Adding/removing
-`uproperty` or `ufunction` requires an editor restart.
+plugin). Function bodies update immediately. A class whose `#[uproperty]`s,
+`#[component]`s, `#[ufunction]`s or parent changed is created again, and its
+objects move to the new class: the actors in the level, its Blueprint
+children and its Rust subclasses, keeping their property values. Rust-private
+fields start over on every reload. A changed `#[ustruct]` still needs an editor
+restart, and so does a changed class outside the editor (`-game`). How it
+works, and why: [docs/hot-reload.md](docs/hot-reload.md).
+
+#### Console commands
+
+Typed in the editor's console: the `` ` `` key in the viewport, or the **Cmd**
+box at the bottom of the **Output Log** tab.
+
+| Command | What it does |
+|---|---|
+| `Rusteal.Reload` | Reloads every Rust library of the project. |
+| `Rusteal.Reload <Name>` | Reloads one library: the game's is named after the project, a plugin's after the plugin. |
+| `Rusteal.AutoReload 0` | Stops reloading a library when `rusteal build` deploys it again; `Rusteal.Reload` still works. |
+| `Rusteal.AutoReload 1` | Reloads a library when it is deployed again, the default. |
 
 ### Packaging a game
 
@@ -1094,6 +1144,12 @@ Everything in [Making a game › Prerequisites](#prerequisites), plus:
 | [clangd](https://clangd.llvm.org) (optional) | the distribution's package or LLVM; Zed downloads it on its own | C++ support in the editor, for `ue_plugin/` |
 | [.NET 10 SDK](https://dotnet.microsoft.com/download) (optional) | Microsoft, or the distribution's package (`dotnet-sdk-10.0`) | C# support in the editor, for the exporter in `ue_plugin/RustealGenerator/` |
 
+The checkout builds with the MSRV, Rust 1.88.0, whatever your default
+toolchain is: `rust-toolchain.toml` pins it, and rustup installs it on the
+first `cargo` command. The file names no host, so rustup completes it with its
+default host; on Windows that must be `x86_64-pc-windows-msvc` (see the
+Windows prerequisites above).
+
 ### Development environment
 
 The settings that depend on the machine live in `.env` at the repository root,
@@ -1198,8 +1254,9 @@ cargo run -p rusteal -- setup /tmp/Probe
 cargo run -p rusteal -- build /tmp/Probe --all
 ```
 
-In the editor, `Rusteal.Reload` swaps the library in without restarting; adding
-or removing a `uproperty`/`ufunction` still needs a restart.
+In the editor, each `build` reloads the library by itself, changed classes
+included (see [Hot Reload](#hot-reload)); a change to the UE plugins needs an
+editor restart.
 
 A project made with `--runtime-path` follows that checkout: the CLI acts on it
 only when built from the same checkout, so drive it with `cargo run -p rusteal --`

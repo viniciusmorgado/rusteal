@@ -1,7 +1,3 @@
-// Manual override conversions: glam/custom types ↔ OwnedStruct<UE type>.
-// These provide ergonomic TryFrom/TryInto conversions so users can work
-// with glam types and Rusteal math types instead of raw OwnedStruct.
-
 #[cfg(feature = "core")]
 pub mod vector;
 #[cfg(feature = "core")]

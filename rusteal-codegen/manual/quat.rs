@@ -1,5 +1,3 @@
-// DQuat ↔ OwnedStruct<FQuat> conversions.
-
 use glam::DQuat;
 use rusteal_core::{OwnedStruct};
 
@@ -12,6 +10,7 @@ pub trait OwnedFQuatExt {
 impl OwnedFQuatExt for OwnedStruct<FQuat> {
     fn to_dquat(&self) -> DQuat {
         let r = self.as_ref();
+
         DQuat::from_xyzw(r.get_x(), r.get_y(), r.get_z(), r.get_w())
     }
 }
@@ -24,6 +23,7 @@ impl FQuat {
         r.set_y(q.y);
         r.set_z(q.z);
         r.set_w(q.w);
+
         s
     }
 }

@@ -1,5 +1,3 @@
-// UeBox2d ↔ OwnedStruct<FBox2D> conversions (nested FVector2D fields).
-
 use rusteal_core::{OwnedStruct, UeBox2d};
 
 use crate::core_ue::{FBox2D, FBox2DExt, FVector2D};
@@ -14,6 +12,7 @@ impl OwnedFBox2DExt for OwnedStruct<FBox2D> {
         let r = self.as_ref();
         let min = r.get_min().to_dvec2();
         let max = r.get_max().to_dvec2();
+
         UeBox2d::new(min, max)
     }
 }
@@ -26,6 +25,7 @@ impl FBox2D {
         r.set_min(&min);
         let max = FVector2D::from_dvec2(b.max);
         r.set_max(&max);
+
         s
     }
 }

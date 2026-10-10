@@ -23,16 +23,22 @@ glam = "{{ glam_version }}"
 
 # Iterating: a little optimization for the game crate, which recompiles on
 # every change, and full optimization for everything else, which compiles once.
+# Full debug info for the game crate; file and line only for the dependencies
+# and the bindings, which is what backtraces need: their full debug info
+# makes the library over a hundred megabytes, which every hot reload loads
+# again, three times what it is this way.
 [profile.dev]
 opt-level = 1
 
 [profile.dev.package."*"]
 opt-level = 3
+debug = "line-tables-only"
 
 # The bindings are a workspace member, so `"*"` does not cover them; they only
 # recompile when `rusteal build --all` regenerates them.
 [profile.dev.package.bindings]
 opt-level = 3
+debug = "line-tables-only"
 
 # Shipping: the fastest game library, at the cost of longer builds.
 [profile.release]
