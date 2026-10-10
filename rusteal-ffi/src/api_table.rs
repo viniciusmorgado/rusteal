@@ -567,6 +567,15 @@ pub struct RustealReifyApi {
         config_name: *const u8,
         config_name_len: u32,
     ) -> RustealErrorCode,
+
+    pub create_enum: unsafe extern "C" fn(
+        name: *const u8,
+        name_len: u32,
+        entries: *const u8,
+        entries_len: u32,
+        values: *const i64,
+        count: u32,
+    ) -> UClassHandle,
 }
 
 pub const RUSTEAL_COMP_ROOT: u32 = 1;

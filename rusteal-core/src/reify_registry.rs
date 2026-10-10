@@ -20,6 +20,11 @@ pub struct StructRegistration {
 }
 inventory::collect!(StructRegistration);
 
+pub struct EnumRegistration {
+    pub create: fn(),
+}
+inventory::collect!(EnumRegistration);
+
 pub struct ClassFunctionRegistration {
     pub type_id: u64,
     pub shape: u64,
@@ -50,6 +55,10 @@ impl ClassDefaultsOutcome for crate::error::RustealResult<()> {
 }
 
 pub fn register_all_from_inventory() {
+    for ereg in inventory::iter::<EnumRegistration> {
+        (ereg.create)();
+    }
+
     let mut pending: Vec<&ClassRegistration> =
         inventory::iter::<ClassRegistration>.into_iter().collect();
 

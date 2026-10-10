@@ -373,6 +373,10 @@ struct FRustealReifyApi {
   ERustealErrorCode (*set_class_config)(RustealUClassHandle cls,
                                         const uint8 *config_name,
                                         uint32 config_name_len);
+
+  RustealUClassHandle (*create_enum)(const uint8 *name, uint32 name_len,
+                                     const uint8 *entries, uint32 entries_len,
+                                     const int64 *values, uint32 count);
 };
 struct FRustealWidgetApi {
   RustealUObjectHandle (*create_widget)(RustealUObjectHandle owning_object,
