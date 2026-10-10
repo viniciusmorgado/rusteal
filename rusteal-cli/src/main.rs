@@ -41,6 +41,8 @@ enum Commands {
         variant: Option<String>,
         #[arg(long)]
         runtime_path: Option<PathBuf>,
+        #[arg(long = "feature")]
+        features: Vec<String>,
         #[arg(long)]
         no_build: bool,
     },
@@ -115,6 +117,7 @@ fn main() {
             template,
             variant,
             runtime_path,
+            features,
             no_build,
         } => {
             let engine = global_config::engine_path();
@@ -126,6 +129,7 @@ fn main() {
                 variant: variant.as_deref(),
                 engine: &engine,
                 runtime_path: runtime_path.as_deref(),
+                features: &features,
                 build: !no_build,
             });
         }
@@ -256,7 +260,7 @@ fn project_root(given: Option<&Path>) -> PathBuf {
 mod tests {
     use clap::{CommandFactory, Parser};
 
-    use super::{Cli, first_build_step};
+    use super::{Cli, Commands, first_build_step};
 
     #[test]
     fn cli_definition_is_valid() {
@@ -293,5 +297,27 @@ mod tests {
         }
 
         assert!(Cli::try_parse_from(["rusteal", "build", "--all", "--release"]).is_ok());
+    }
+
+    #[test]
+    fn new_takes_repeated_features() {
+        let cli = Cli::try_parse_from([
+            "rusteal",
+            "new",
+            "Game",
+            "--template",
+            "third-person",
+            "--feature",
+            "mannequin",
+            "--feature",
+            "checkpoints",
+        ])
+        .unwrap();
+
+        let Commands::New { features, .. } = cli.command else {
+            panic!("not the new command");
+        };
+
+        assert_eq!(features, ["mannequin", "checkpoints"]);
     }
 }

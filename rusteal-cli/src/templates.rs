@@ -20,6 +20,8 @@ pub struct Manifest {
     pub exclude: Vec<String>,
     #[serde(default)]
     pub default_map: Option<String>,
+    #[serde(default)]
+    pub features: Vec<String>,
     pub next_step: String,
 }
 
@@ -142,6 +144,18 @@ pub fn select(template: &str, variant: Option<&str>) -> Result<Selected, String>
 }
 
 pub fn listing() -> String {
+    let mut out = template_listing();
+    let features = feature_listing();
+
+    if !features.is_empty() {
+        out.push_str("\n  features, added to any template with --feature:\n");
+        out.push_str(&features);
+    }
+
+    out
+}
+
+fn template_listing() -> String {
     let mut out = String::new();
 
     for template in available() {
@@ -183,6 +197,16 @@ fn manifest(dir: &str) -> Option<Manifest> {
 pub struct PluginManifest {
     pub description: String,
     pub next_step: String,
+    #[serde(default)]
+    pub feature: Option<Feature>,
+}
+
+#[derive(Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct Feature {
+    pub plugin: String,
+    #[serde(default)]
+    pub shared_packs: Vec<String>,
 }
 
 pub fn plugin_templates() -> Vec<(&'static str, PluginManifest)> {
@@ -228,6 +252,42 @@ pub fn plugin_listing() -> String {
         .iter()
         .map(|(name, manifest)| format!("  {name:<24} {}\n", manifest.description))
         .collect()
+}
+
+pub fn features() -> Vec<(&'static str, PluginManifest)> {
+    plugin_templates()
+        .into_iter()
+        .filter(|(_, manifest)| manifest.feature.is_some())
+        .collect()
+}
+
+pub fn select_feature(name: &str) -> Result<(&'static str, Feature), String> {
+    let wanted = normalize(name);
+
+    features()
+        .into_iter()
+        .find(|(feature, _)| normalize(feature) == wanted)
+        .and_then(|(feature, manifest)| Some((feature, manifest.feature?)))
+        .ok_or_else(|| {
+            format!(
+                "there is no feature '{name}'. The features are:\n{}",
+                feature_listing()
+            )
+        })
+}
+
+pub fn feature_listing() -> String {
+    features()
+        .iter()
+        .map(|(name, manifest)| format!("  {name:<24} {}\n", manifest.description))
+        .collect()
+}
+
+pub fn plugin_has_content(template: &str) -> bool {
+    let prefix = format!("{template}/Content/");
+    PLUGIN_TEMPLATE_FILES
+        .iter()
+        .any(|(path, _)| path.starts_with(&prefix))
 }
 
 pub fn write_plugin_files(template: &str, root: &Path, context: &tera::Context) -> usize {
@@ -317,6 +377,53 @@ mod tests {
             ]
         );
         assert!(manifest(SETUP_TEMPLATE).is_some());
+
+        for template in &templates {
+            for (variant, manifest) in &template.variants {
+                for feature in &manifest.features {
+                    assert!(
+                        select_feature(feature).is_ok(),
+                        "{}/{variant} bundles an unknown feature {feature}",
+                        template.name
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn features_are_plugin_templates_with_their_own_plugin() {
+        let features = features();
+        assert!(features.iter().any(|(name, _)| *name == "mannequin"));
+        let mut plugins: Vec<String> = Vec::new();
+
+        for (name, manifest) in &features {
+            let feature = manifest.feature.as_ref().unwrap();
+            assert!(
+                !plugins.contains(&feature.plugin),
+                "{name}: plugin {} twice",
+                feature.plugin
+            );
+            plugins.push(feature.plugin.clone());
+
+            for pack in &feature.shared_packs {
+                assert_eq!(
+                    pack.split('/').count(),
+                    2,
+                    "{name}: {pack} is not <Level>/<Pack>"
+                );
+            }
+        }
+
+        let (feature, mannequin) = select_feature("Mannequin").unwrap();
+        assert_eq!(
+            (feature, mannequin.plugin.as_str()),
+            ("mannequin", "Mannequin")
+        );
+        assert!(select_plugin("mannequin").is_ok());
+        let unknown = select_feature("nope").err().unwrap();
+        assert!(unknown.contains("mannequin"), "{unknown}");
+        assert!(listing().contains("--feature"));
     }
 
     #[test]

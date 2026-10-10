@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use rusteal_codegen::config::ProjectLayout;
 
-use crate::{build_cmd, setup, templates};
+use crate::{build_cmd, plugin_cmd, setup, templates};
 
 const TEXT_EXTENSIONS: &[&str] = &["cpp", "h", "ini", "cs"];
 
@@ -17,6 +17,7 @@ pub struct NewOptions<'a> {
     pub variant: Option<&'a str>,
     pub engine: &'a Path,
     pub runtime_path: Option<&'a Path>,
+    pub features: &'a [String],
     pub build: bool,
 }
 
@@ -29,6 +30,7 @@ pub fn run_new(opts: &NewOptions) {
     });
 
     let manifest = &selected.manifest;
+    let features = select_features(&manifest.features, opts.features);
     let root = opts.parent.join(opts.name);
 
     if root.exists() {
@@ -74,6 +76,18 @@ pub fn run_new(opts: &NewOptions) {
     eprintln!("rusteal new: installing the Rusteal plugins");
     setup::run_setup(&root, opts.engine);
 
+    let mut feature_steps = Vec::new();
+
+    for (feature, plugin) in &features {
+        eprintln!("rusteal new: adding the {feature} feature");
+        feature_steps.push(plugin_cmd::create_plugin(
+            plugin,
+            feature,
+            &root,
+            opts.engine,
+        ));
+    }
+
     if opts.build {
         build_cmd::run_build(&root, opts.engine, None, 1, false, None);
     }
@@ -89,6 +103,27 @@ pub fn run_new(opts: &NewOptions) {
         .unwrap_or_else(|e| panic!("Failed to render next_step: {e}"));
 
     eprintln!("  # {next_step}");
+
+    for step in feature_steps {
+        eprintln!("  # {step}");
+    }
+}
+
+fn select_features(bundled: &[String], asked: &[String]) -> Vec<(&'static str, String)> {
+    let mut out: Vec<(&'static str, String)> = Vec::new();
+
+    for name in bundled.iter().chain(asked) {
+        let (feature, manifest) = templates::select_feature(name).unwrap_or_else(|message| {
+            eprint!("Error: {message}");
+            std::process::exit(1);
+        });
+
+        if !out.iter().any(|(f, _)| *f == feature) {
+            out.push((feature, manifest.plugin));
+        }
+    }
+
+    out
 }
 
 fn validate_name(name: &str) {
@@ -428,6 +463,40 @@ fn copy_dir(from: &Path, to: &Path) -> usize {
     }
 
     copied
+}
+
+pub fn copy_shared_packs(engine: &Path, root: &Path, packs: &[String]) {
+    for pack in packs {
+        let source = engine
+            .join("Templates/TemplateResources")
+            .join(pack)
+            .join("Content");
+
+        if !source.is_dir() {
+            eprintln!("Error: {} has no shared pack {pack}.", engine.display());
+            std::process::exit(1);
+        }
+
+        let mount = pack.rsplit('/').next().unwrap_or(pack);
+        let target = root.join("Content").join(mount);
+        let mut copied = 0usize;
+
+        for path in walk(&source) {
+            let to = target.join(path.strip_prefix(&source).unwrap());
+
+            if to.exists() {
+                continue;
+            }
+
+            std::fs::create_dir_all(to.parent().unwrap())
+                .unwrap_or_else(|e| panic!("Failed to create {}: {e}", to.display()));
+
+            copy_file(&path, &to);
+            copied += 1;
+        }
+
+        eprintln!("  shared pack {mount}: {copied} files");
+    }
 }
 
 fn copy_file(from: &Path, to: &Path) {
