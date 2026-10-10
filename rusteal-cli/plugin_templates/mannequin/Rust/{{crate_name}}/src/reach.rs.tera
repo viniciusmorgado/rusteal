@@ -1,0 +1,208 @@
+use bindings::core_ue::Object;
+use bindings::core_ue::{Class, FTransform};
+use bindings::engine::{
+    Actor, ActorExt, AnimSequence, EBoneSpaces, ECollisionEnabled, EVisibilityBasedAnimTickOption,
+    PoseableMeshComponent, PoseableMeshComponentExt, PrimitiveComponentExt, SceneComponent,
+    SceneComponentExt, SkeletalMesh, SkeletalMeshComponent, SkeletalMeshComponentExt,
+    SkinnedMeshComponentExt, StaticMesh, StaticMeshComponent, StaticMeshComponentExt,
+};
+use bindings::prelude::*;
+use glam::{DQuat, DVec3};
+use rusteal_runtime::runtime::{FName, RustealResult, SubclassOf, Transform, UObjectRef};
+use rusteal_runtime::{uclass, uclass_impl};
+
+use crate::ik::{self, Chain};
+
+pub const MANNY: &str = "/Game/Characters/Mannequins/Meshes/SKM_Manny_Simple.SKM_Manny_Simple";
+pub const IDLE: &str = "/Game/Characters/Mannequins/Anims/Unarmed/MM_Idle.MM_Idle";
+pub const COPYCAT_ANIMATION: &str = "/Mannequin/ABP_Copycat.ABP_Copycat_C";
+pub const TARGET_MESH: &str = "/Engine/BasicShapes/Sphere.Sphere";
+
+const SHOULDER: &str = "upperarm_r";
+const ELBOW: &str = "lowerarm_r";
+const HAND: &str = "hand_r";
+
+#[uclass(parent = Actor)]
+pub struct CopycatMannequin {
+    #[component(root, name = "DefaultSceneRoot")]
+    default_scene_root: SceneComponent,
+
+    #[component(attach = "default_scene_root", name = "SkeletalMesh")]
+    skeletal_mesh: SkeletalMeshComponent,
+}
+
+#[uclass_impl]
+impl CopycatMannequin {
+    #[ufunction(Override)]
+    fn user_construction_script(&mut self) {
+        let Ok(mesh) = self.skeletal_mesh().and_then(|m| m.checked()) else {
+            return;
+        };
+
+        if !mesh.get_skeletal_mesh_asset().is_valid()
+            && let Ok(manny) = load_object::<SkeletalMesh>(MANNY)
+        {
+            mesh.set_skeletal_mesh_asset(manny);
+        }
+
+        if mesh.get_anim_class().is_null()
+            && let Ok(class) = load_object::<Class>(COPYCAT_ANIMATION)
+        {
+            mesh.set_anim_instance_class(unsafe {
+                SubclassOf::<Object>::from_raw(rusteal_runtime::ffi::UClassHandle(class.raw().0))
+            });
+        }
+    }
+}
+
+#[uclass(parent = Actor)]
+pub struct ReachTarget {
+    #[component(root, name = "Mesh")]
+    mesh: StaticMeshComponent,
+}
+
+#[uclass_impl]
+impl ReachTarget {
+    #[class_defaults]
+    fn class_defaults(&mut self) -> RustealResult<()> {
+        let mesh = self.mesh()?.checked()?;
+        mesh.set_collision_enabled(ECollisionEnabled::NoCollision);
+        mesh.set_relative_scale3_d(&FVector::from_dvec3(DVec3::splat(0.1)));
+        Ok(())
+    }
+
+    #[ufunction(Override)]
+    fn user_construction_script(&mut self) {
+        if let Ok(mesh) = self.mesh().and_then(|m| m.checked())
+            && !mesh.get_static_mesh().is_valid()
+            && let Ok(sphere) = load_object::<StaticMesh>(TARGET_MESH)
+        {
+            mesh.set_static_mesh(sphere);
+        }
+    }
+}
+
+#[uclass(parent = Actor)]
+pub struct ReachingMannequin {
+    #[component(root, name = "DefaultSceneRoot")]
+    default_scene_root: SceneComponent,
+
+    #[component(attach = "default_scene_root", name = "Body")]
+    body: SkeletalMeshComponent,
+
+    #[component(attach = "default_scene_root", name = "Pose")]
+    pose: PoseableMeshComponent,
+
+    #[uproperty(EditAnywhere, BlueprintReadWrite, category = "Reach")]
+    target: UObjectRef<Actor>,
+
+    #[uproperty(EditAnywhere, BlueprintReadWrite, category = "Reach")]
+    mesh: UObjectRef<SkeletalMesh>,
+
+    #[uproperty(EditAnywhere, BlueprintReadWrite, category = "Reach")]
+    idle_animation: UObjectRef<AnimSequence>,
+
+    #[uproperty(EditAnywhere, BlueprintReadWrite, category = "Reach", default = 30.0)]
+    reach_margin: f64,
+
+    #[uproperty(BlueprintReadOnly, category = "Reach", default = false)]
+    is_reaching: bool,
+}
+
+#[uclass_impl]
+impl ReachingMannequin {
+    #[class_defaults]
+    fn class_defaults(&mut self) -> RustealResult<()> {
+        let body = self.body()?.checked()?;
+        body.set_visibility(false, Some(false));
+        body.set_visibility_based_anim_tick_option(
+            EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones,
+        );
+        Ok(())
+    }
+
+    #[ufunction(Override)]
+    fn user_construction_script(&mut self) {
+        let _ = self.assign_assets();
+    }
+
+    #[ufunction(Override)]
+    fn receive_begin_play(&mut self) {
+        if self.assign_assets().is_ok()
+            && let Ok(body) = self.body().and_then(|b| b.checked())
+        {
+            body.play_animation(self.idle_animation().upcast_to(), true);
+        }
+    }
+
+    #[ufunction(Override)]
+    fn receive_tick(&mut self, _delta_seconds: f32) {
+        let reaching = self.follow_target().unwrap_or(false);
+        self.set_is_reaching(reaching);
+    }
+}
+
+impl ReachingMannequin {
+    fn assign_assets(&mut self) -> RustealResult<()> {
+        if !self.mesh().is_valid() {
+            self.set_mesh(load_object::<SkeletalMesh>(MANNY)?);
+        }
+
+        if !self.idle_animation().is_valid() {
+            self.set_idle_animation(load_object::<AnimSequence>(IDLE)?);
+        }
+
+        self.body()?.checked()?.set_skeletal_mesh_asset(self.mesh());
+        self.pose()?
+            .checked()?
+            .set_skinned_asset_and_update(self.mesh().upcast_to(), Some(true));
+        Ok(())
+    }
+
+    fn follow_target(&self) -> RustealResult<bool> {
+        let pose = self.pose()?.checked()?;
+        let body = self.body()?;
+        pose.copy_pose_from_skeletal_component(body);
+
+        let target = self.target().checked()?.k2_get_actor_location().to_dvec3();
+        let location = |bone: &str| {
+            pose.get_bone_location_by_name(FName::new(bone).handle(), EBoneSpaces::WorldSpace)
+                .to_dvec3()
+        };
+        let rotation = |bone: &str| -> DQuat {
+            pose.get_bone_rotation_by_name(FName::new(bone).handle(), EBoneSpaces::WorldSpace)
+                .to_rotator()
+                .into()
+        };
+
+        let chain = Chain {
+            root: location(SHOULDER),
+            joint: location(ELBOW),
+            end: location(HAND),
+        };
+
+        if !ik::within_reach(chain, target, self.reach_margin()) {
+            return Ok(false);
+        }
+
+        let down = -self.as_ref().checked()?.get_actor_up_vector().to_dvec3();
+        let solved = ik::reach(chain, target, down);
+        let shoulder = solved.root_delta * rotation(SHOULDER);
+        let elbow = solved.joint_delta * solved.root_delta * rotation(ELBOW);
+        let hand = rotation(HAND);
+
+        for (bone, rotation, location) in [
+            (SHOULDER, shoulder, chain.root),
+            (ELBOW, elbow, solved.joint),
+            (HAND, hand, solved.end),
+        ] {
+            pose.set_bone_transform_by_name(
+                FName::new(bone).handle(),
+                &FTransform::from_transform(Transform::new(rotation, location, DVec3::ONE)),
+                EBoneSpaces::WorldSpace,
+            );
+        }
+
+        Ok(true)
+    }
+}
