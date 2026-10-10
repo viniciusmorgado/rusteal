@@ -1,0 +1,25 @@
+use bindings::engine::{Actor, GameplayStatics};
+use rusteal_runtime::runtime::UObjectRef;
+use rusteal_runtime::{uclass, uclass_impl};
+
+use crate::subsystem::CheckpointSubsystem;
+
+#[uclass(parent = Actor)]
+pub struct SpawnPoint {}
+
+#[uclass_impl]
+impl SpawnPoint {
+    #[ufunction(Override)]
+    fn receive_actor_begin_overlap(&mut self, other_actor: UObjectRef<Actor>) {
+        let me = self.as_ref();
+        let player = GameplayStatics::get_player_pawn(me.upcast_to(), 0);
+
+        if other_actor != player.upcast_to() {
+            return;
+        }
+
+        if let Ok(mut checkpoints) = CheckpointSubsystem::get(me.upcast_to()) {
+            checkpoints.update_spawn_point(me.upcast_to());
+        }
+    }
+}

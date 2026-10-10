@@ -1,0 +1,14 @@
+# `rusteal new <Name> --template vr`: UE's Virtual Reality template with its
+# gameplay Blueprints in Rust.
+description = "The Virtual Reality template: OpenXR pawn with teleport, snap turn, grabbing, a pistol, a 3D menu, passthrough and a spectator camera in Rust."
+
+# The engine template the project starts from, copied with the engine's own
+# recipe (its Config/TemplateDefs.ini), as the editor's New Project dialog does.
+# It is Blueprint only: `rusteal new` adds the game module Rusteal builds with.
+engine_template = "TP_VirtualRealityBP"
+
+# Paths of the engine template to leave out, relative to it.
+exclude = []
+
+# Printed when the project is ready (Tera, same context as the files).
+next_step = "open {{ project }}.uproject and press Play > VR Preview with an OpenXR headset: right thumbstick forward aims a teleport, left thumbstick snaps the view, grips grab, triggers shoot the pistol, the menu button opens the menu"

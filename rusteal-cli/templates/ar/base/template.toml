@@ -1,0 +1,14 @@
+# `rusteal new <Name> --template ar`: UE's Handheld AR template with its
+# gameplay Blueprints in Rust.
+description = "The Handheld AR template: plane detection, placing and moving an object with touch gestures, light estimation and the styled menus in Rust."
+
+# The engine template the project starts from, copied with the engine's own
+# recipe (its Config/TemplateDefs.ini), as the editor's New Project dialog does.
+# It is Blueprint only: `rusteal new` adds the game module Rusteal builds with.
+engine_template = "TP_HandheldARBP"
+
+# Paths of the engine template to leave out, relative to it.
+exclude = []
+
+# Printed when the project is ready (Tera, same context as the files).
+next_step = "open {{ project }}.uproject and launch it on an ARCore Android or ARKit iOS device: tap Begin Scan, tap a plane, tap it again to place the object, drag with one finger to move it, twist or pinch with two to rotate or scale it"

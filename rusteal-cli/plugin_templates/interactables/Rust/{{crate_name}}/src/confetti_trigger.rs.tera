@@ -1,0 +1,74 @@
+use bindings::engine::{Actor, ActorComponentExt, KismetSystemLibrary};
+use bindings::niagara::NiagaraComponent;
+use rusteal_runtime::runtime::{LOG_WARNING, RustealResult, UObjectRef, ulog};
+use rusteal_runtime::{uclass, uclass_impl};
+
+use crate::components;
+
+use crate::trigger::TriggerSwitch;
+
+const CONFETTI_DELAY: f32 = 1.0;
+
+#[uclass(parent = Actor)]
+pub struct ConfettiTrigger {
+    #[uproperty(
+        EditAnywhere,
+        BlueprintReadWrite,
+        name = "TriggerRef",
+        category = "Confetti"
+    )]
+    trigger_ref: UObjectRef<TriggerSwitch>,
+
+    #[uproperty(BlueprintReadOnly, category = "Confetti", default = false)]
+    fired: bool,
+
+    #[uproperty(BlueprintReadOnly, category = "Confetti", default = 0)]
+    burst_count: i32,
+}
+
+impl ConfettiTrigger {
+    fn niagara(&self) -> RustealResult<UObjectRef<NiagaraComponent>> {
+        components::named(self.as_ref().upcast_to(), "Niagara")
+    }
+}
+
+#[uclass_impl]
+impl ConfettiTrigger {
+    #[ufunction(Override)]
+    fn receive_begin_play(&mut self) {
+        let me = self.as_ref();
+
+        if let Ok(trigger) = TriggerSwitch::from_obj(self.trigger_ref())
+            && let Err(e) = trigger.trigger_add_ufunction(&me, "TriggerConfetti")
+        {
+            ulog!(LOG_WARNING, "[Interactables] confetti: {e}");
+        }
+    }
+
+    #[ufunction]
+    fn trigger_confetti(&mut self) {
+        if self.fired() {
+            return;
+        }
+
+        self.set_fired(true);
+        KismetSystemLibrary::k2_set_timer(
+            self.as_ref().upcast_to(),
+            "Burst",
+            CONFETTI_DELAY,
+            false,
+            None,
+            None,
+            None,
+        );
+    }
+
+    #[ufunction]
+    fn burst(&mut self) {
+        self.set_burst_count(self.burst_count() + 1);
+
+        if let Ok(niagara) = self.niagara().and_then(|n| n.checked()) {
+            niagara.activate(Some(true));
+        }
+    }
+}

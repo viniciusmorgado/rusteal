@@ -1,0 +1,10 @@
+# `rusteal new <Name> --template <template> --feature checkpoints`, or
+# `rusteal plugin new Checkpoints --template checkpoints` in an existing project.
+description = "Spawn points that save the player's progress and bring them back to the last one, as the Intro To Unreal template's, in a Checkpoints plugin."
+
+# Printed when the plugin is ready (Tera, same context as the files).
+next_step = "place BP_SpawnPoint actors (Plugins > Checkpoints Content) along the level, press Play, walk past one, stop and play again: you start there"
+
+[feature]
+# The plugin's name in the project; its assets live under /Checkpoints/.
+plugin = "Checkpoints"

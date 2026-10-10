@@ -11,6 +11,7 @@ internal static class RustealEnumValues
         try
         {
             string body = FindBody(enumObj.HeaderFile.Data.ToString(), enumObj);
+            ThirdPartyConstants.EngineDirectory ??= enumObj.Session.EngineDirectory;
             return body == null ? null : EvaluateBody(body, enumObj.SourceName);
         }
         catch (FormatException)
@@ -377,8 +378,13 @@ internal static class RustealEnumValues
 
             string last = colons < 0 ? name : name[(colons + 2)..];
 
-            return names.TryGetValue(last, out long value)
-                ? value
+            if (names.TryGetValue(last, out long value))
+            {
+                return value;
+            }
+
+            return colons < 0 && ThirdPartyConstants.TryResolve(name, out long external)
+                ? external
                 : throw new FormatException($"unknown name {name}");
         }
 
@@ -388,6 +394,84 @@ internal static class RustealEnumValues
             {
                 _pos++;
             }
+        }
+    }
+
+    private static class ThirdPartyConstants
+    {
+        public static string EngineDirectory;
+
+        private static List<string> _headers;
+        private static readonly Dictionary<string, long?> Resolved = [];
+        private static readonly HashSet<string> Resolving = [];
+
+        public static bool TryResolve(string name, out long value)
+        {
+            value = 0;
+
+            if (Resolved.TryGetValue(name, out long? cached))
+            {
+                value = cached ?? 0;
+                return cached.HasValue;
+            }
+
+            if (EngineDirectory == null || !Resolving.Add(name))
+            {
+                return false;
+            }
+
+            long? found = null;
+
+            try
+            {
+                foreach (string header in Headers())
+                {
+                    string text = File.ReadAllText(header);
+
+                    if (!text.Contains(name, StringComparison.Ordinal))
+                    {
+                        continue;
+                    }
+
+                    var definition = System.Text.RegularExpressions.Regex.Match(
+                        StripComments(text),
+                        $@"(?:^|[\s,{{(])(?:#define\s+{name}\s+(?<expr>[^\n]+)|{name}\s*=\s*(?<expr>[^,\n}}]+))",
+                        System.Text.RegularExpressions.RegexOptions.Multiline);
+
+                    if (definition.Success
+                        && new ExpressionParser(definition.Groups["expr"].Value.Trim(), [], "").TryParse(out long parsed))
+                    {
+                        found = parsed;
+                        break;
+                    }
+                }
+            }
+            finally
+            {
+                Resolving.Remove(name);
+            }
+
+            Resolved[name] = found;
+            value = found ?? 0;
+            return found.HasValue;
+        }
+
+        private static List<string> Headers()
+        {
+            if (_headers != null)
+            {
+                return _headers;
+            }
+
+            string thirdParty = Path.Combine(EngineDirectory, "Source", "ThirdParty");
+
+            _headers = Directory.Exists(thirdParty)
+                ? Directory.EnumerateFiles(thirdParty, "*.h", SearchOption.AllDirectories)
+                    .Where(path => path.Replace('\\', '/').Contains("/include/", StringComparison.Ordinal))
+                    .ToList()
+                : [];
+
+            return _headers;
         }
     }
 }

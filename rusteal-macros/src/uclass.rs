@@ -113,9 +113,11 @@ pub(crate) struct UPropertyArgs {
     visible_anywhere: bool,
     save_game: bool,
     config: bool,
+    transient: bool,
     pub(crate) default_expr: Option<Expr>,
     name: Option<String>,
     category: Option<String>,
+    bind_widget: Option<&'static str>,
 }
 
 fn str_value(value: &Expr, what: &str) -> syn::Result<String> {
@@ -157,12 +159,26 @@ pub(crate) fn parse_uproperty_args(attr: &syn::Attribute) -> syn::Result<UProper
                     args.save_game = true;
                 } else if p.is_ident("Config") {
                     args.config = true;
+                } else if p.is_ident("Transient") {
+                    args.transient = true;
+                } else if p.is_ident("BindWidget") {
+                    args.bind_widget = Some("BindWidget");
+                } else if p.is_ident("BindWidgetOptional") {
+                    args.bind_widget = Some("BindWidgetOptional");
+                } else if p.is_ident("BindWidgetAnim") {
+                    args.bind_widget = Some("BindWidgetAnim");
+                    args.transient = true;
+                } else if p.is_ident("BindWidgetAnimOptional") {
+                    args.bind_widget = Some("BindWidgetAnimOptional");
+                    args.transient = true;
                 } else {
                     return Err(syn::Error::new_spanned(
                         p,
                         "unknown #[uproperty] argument: expected BlueprintReadWrite, \
                          BlueprintReadOnly, EditAnywhere, EditDefaultsOnly, VisibleAnywhere, \
-                         SaveGame, Config, default = ..., name = \"...\" or category = \"...\"",
+                         SaveGame, Config, Transient, BindWidget, BindWidgetOptional, \
+                         BindWidgetAnim, BindWidgetAnimOptional, default = ..., \
+                         name = \"...\" or category = \"...\"",
                     ));
                 }
             }
@@ -413,6 +429,13 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
     );
 
     let type_id_value = prop_type::fnv1a_hash(&struct_name_str);
+    let parent_type_id = prop_type::fnv1a_hash(&args.parent_name);
+
+    let component_type_ids: Vec<u64> = components
+        .iter()
+        .filter_map(|c| c.component_type.segments.last())
+        .map(|segment| prop_type::fnv1a_hash(&segment.ident.to_string()))
+        .collect();
 
     let shape_value = shape::hash(
         std::iter::once(attr_shape).chain(
@@ -912,6 +935,7 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
             ::rusteal_runtime::runtime::reify_registry::ClassRegistration {
                 type_id: #type_id_value,
                 shape: #shape_value,
+                depends_on: &[#parent_type_id, #(#component_type_ids),*],
                 create: #register_fn_name,
                 register: #members_fn_name,
                 finalize: #finalize_fn_name,
@@ -1228,6 +1252,10 @@ pub(crate) fn add_property_statements(uprops: &[UPropertyField]) -> Vec<TokenStr
             flag_parts.push(quote! { ::rusteal_runtime::ffi::CPF_CONFIG });
         }
 
+        if prop.args.transient {
+            flag_parts.push(quote! { ::rusteal_runtime::ffi::CPF_TRANSIENT });
+        }
+
         if flag_parts.is_empty() {
             flag_parts.push(quote! { 0u64 });
         }
@@ -1244,18 +1272,24 @@ pub(crate) fn add_property_statements(uprops: &[UPropertyField]) -> Vec<TokenStr
             None => quote! { std::ptr::null() },
         };
 
-        let meta_stmts: Vec<TokenStream> = prop
+        let metadata = prop
             .args
             .category
             .iter()
-            .map(|category| {
-                let value_bytes = category.as_bytes();
-                let value_len = category.len() as u32;
+            .map(|category| ("Category", category.as_str()))
+            .chain(prop.args.bind_widget.map(|key| (key, "true")));
+
+        let meta_stmts: Vec<TokenStream> = metadata
+            .map(|(key, value)| {
+                let key_bytes = key.as_bytes();
+                let key_len = key.len() as u32;
+                let value_bytes = value.as_bytes();
+                let value_len = value.len() as u32;
 
                 quote! {
                     unsafe {
                         ::rusteal_runtime::runtime::ffi_dispatch::reify_set_property_metadata(
-                            #prop_var, b"Category".as_ptr(), 8u32,
+                            #prop_var, [#(#key_bytes),*].as_ptr(), #key_len,
                             [#(#value_bytes),*].as_ptr(), #value_len,
                         );
                     }
@@ -1363,6 +1397,24 @@ mod tests {
         assert!(flagged[0].to_string().contains("CPF_SAVE_GAME"));
         let plain = add_property_statements(&[field(parse_quote!(#[uproperty(EditAnywhere)]))]);
         assert!(!plain[0].to_string().contains("CPF_SAVE_GAME"));
+    }
+
+    #[test]
+    fn bind_widget_properties_carry_their_metadata() {
+        let attr: syn::Attribute = parse_quote!(#[uproperty(BindWidget, BlueprintReadOnly)]);
+        assert_eq!(
+            parse_uproperty_args(&attr).unwrap().bind_widget,
+            Some("BindWidget")
+        );
+        let attr: syn::Attribute = parse_quote!(#[uproperty(BindWidgetAnim)]);
+        let args = parse_uproperty_args(&attr).unwrap();
+        assert_eq!(args.bind_widget, Some("BindWidgetAnim"));
+        assert!(args.transient);
+        let attr: syn::Attribute = parse_quote!(#[uproperty(BindWidgetOptional)]);
+        assert_eq!(
+            parse_uproperty_args(&attr).unwrap().bind_widget,
+            Some("BindWidgetOptional")
+        );
     }
 
     #[test]

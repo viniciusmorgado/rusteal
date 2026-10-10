@@ -1,0 +1,110 @@
+use glam::{DQuat, DVec3};
+
+pub const MIN_BEND: f64 = 1e-3;
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Chain {
+    pub root: DVec3,
+    pub joint: DVec3,
+    pub end: DVec3,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Solved {
+    pub joint: DVec3,
+    pub end: DVec3,
+    pub root_delta: DQuat,
+    pub joint_delta: DQuat,
+}
+
+pub fn reach(chain: Chain, target: DVec3, pole: DVec3) -> Solved {
+    let upper = chain.joint.distance(chain.root);
+    let lower = chain.end.distance(chain.joint);
+    let to_target = target - chain.root;
+    let direction = to_target.try_normalize().unwrap_or(DVec3::X);
+    let distance = to_target
+        .length()
+        .clamp((upper - lower).abs() + MIN_BEND, upper + lower - MIN_BEND);
+
+    let bend_hint = (chain.joint - chain.root) + pole;
+    let bend = (bend_hint - direction * bend_hint.dot(direction))
+        .try_normalize()
+        .unwrap_or_else(|| direction.any_orthonormal_vector());
+
+    let cos = ((upper * upper + distance * distance - lower * lower) / (2.0 * upper * distance))
+        .clamp(-1.0, 1.0);
+    let sin = (1.0 - cos * cos).sqrt();
+
+    let joint = chain.root + direction * (upper * cos) + bend * (upper * sin);
+    let end = chain.root + direction * distance;
+
+    let root_delta = DQuat::from_rotation_arc(
+        (chain.joint - chain.root).normalize(),
+        (joint - chain.root).normalize(),
+    );
+    let moved_end = joint + root_delta * (chain.end - chain.joint);
+    let joint_delta =
+        DQuat::from_rotation_arc((moved_end - joint).normalize(), (end - joint).normalize());
+
+    Solved {
+        joint,
+        end,
+        root_delta,
+        joint_delta,
+    }
+}
+
+pub fn within_reach(chain: Chain, target: DVec3, margin: f64) -> bool {
+    let length = chain.joint.distance(chain.root) + chain.end.distance(chain.joint);
+    target.distance(chain.root) <= length + margin
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const ARM: Chain = Chain {
+        root: DVec3::ZERO,
+        joint: DVec3::new(30.0, 0.0, 0.0),
+        end: DVec3::new(55.0, 0.0, 0.0),
+    };
+
+    fn assert_close(a: DVec3, b: DVec3) {
+        assert!(a.distance(b) < 1e-6, "{a} != {b}");
+    }
+
+    #[test]
+    fn the_hand_lands_on_a_target_in_reach() {
+        let target = DVec3::new(20.0, 25.0, 10.0);
+        let solved = reach(ARM, target, DVec3::new(0.0, 0.0, -1.0));
+        assert_close(solved.end, target);
+        assert!((solved.joint.distance(ARM.root) - 30.0).abs() < 1e-6);
+        assert!((solved.end.distance(solved.joint) - 25.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn the_rotations_carry_the_bones_onto_the_solution() {
+        let target = DVec3::new(10.0, 30.0, -20.0);
+        let solved = reach(ARM, target, DVec3::new(0.0, 0.0, -1.0));
+        let joint = ARM.root + solved.root_delta * (ARM.joint - ARM.root);
+        assert_close(joint, solved.joint);
+        let end = joint + solved.joint_delta * (solved.root_delta * (ARM.end - ARM.joint));
+        assert_close(end, solved.end);
+    }
+
+    #[test]
+    fn the_elbow_bends_toward_the_pole() {
+        let solved = reach(ARM, DVec3::new(40.0, 0.0, 0.0), DVec3::new(0.0, 0.0, -50.0));
+        assert!(solved.joint.z < -1.0, "{}", solved.joint);
+    }
+
+    #[test]
+    fn a_far_target_stretches_the_arm_toward_it() {
+        let target = DVec3::new(0.0, 500.0, 0.0);
+        let solved = reach(ARM, target, DVec3::new(0.0, 0.0, -1.0));
+        assert!((solved.end.distance(ARM.root) - 55.0).abs() < 0.01);
+        assert!(solved.end.normalize().distance(DVec3::Y) < 1e-3);
+        assert!(within_reach(ARM, DVec3::new(0.0, 60.0, 0.0), 10.0));
+        assert!(!within_reach(ARM, target, 10.0));
+    }
+}

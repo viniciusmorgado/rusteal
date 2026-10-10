@@ -1,0 +1,87 @@
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Key {
+    pub time: f64,
+    pub value: f64,
+    pub arrive: f64,
+    pub leave: f64,
+}
+
+pub const fn key(time: f64, value: f64, arrive: f64, leave: f64) -> Key {
+    Key {
+        time,
+        value,
+        arrive,
+        leave,
+    }
+}
+
+pub fn eval(keys: &[Key], time: f64) -> f64 {
+    let (Some(first), Some(last)) = (keys.first(), keys.last()) else {
+        return 0.0;
+    };
+
+    if time <= first.time {
+        return first.value;
+    }
+
+    if time >= last.time {
+        return last.value;
+    }
+
+    let next = keys
+        .iter()
+        .position(|k| k.time > time)
+        .unwrap_or(keys.len() - 1);
+    let (a, b) = (keys[next - 1], keys[next]);
+    let span = b.time - a.time;
+    let alpha = (time - a.time) / span;
+    let p1 = a.value + a.leave * span / 3.0;
+    let p2 = b.value - b.arrive * span / 3.0;
+    let inverse = 1.0 - alpha;
+
+    inverse.powi(3) * a.value
+        + 3.0 * inverse.powi(2) * alpha * p1
+        + 3.0 * inverse * alpha.powi(2) * p2
+        + alpha.powi(3) * b.value
+}
+
+pub fn looped(time: f64, length: f64) -> f64 {
+    if length <= 0.0 {
+        0.0
+    } else {
+        time.rem_euclid(length)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const RISE: [Key; 3] = [
+        key(0.0, 0.0, 2.854_138, 2.854_137),
+        key(0.746_717, 0.999_299, -0.027_573, -0.027_573),
+        key(1.5, 0.0, -2.865_836, -2.865_836),
+    ];
+
+    #[test]
+    fn a_curve_passes_through_its_keys() {
+        assert_eq!(eval(&RISE, 0.0), 0.0);
+        assert!((eval(&RISE, 0.746_717) - 0.999_299).abs() < 1e-9);
+        assert_eq!(eval(&RISE, 1.5), 0.0);
+        assert_eq!(eval(&RISE, 9.0), 0.0);
+    }
+
+    #[test]
+    fn a_curve_rises_and_falls_between_its_keys() {
+        let rising = eval(&RISE, 0.3);
+        let falling = eval(&RISE, 1.2);
+        assert!(rising > 0.4 && rising < 0.999, "{rising}");
+        assert!(falling > 0.0 && falling < 0.999, "{falling}");
+    }
+
+    #[test]
+    fn looped_time_wraps_around_the_length() {
+        assert!((looped(3.0, 2.5) - 0.5).abs() < 1e-9);
+        assert_eq!(looped(1.0, 0.0), 0.0);
+    }
+}

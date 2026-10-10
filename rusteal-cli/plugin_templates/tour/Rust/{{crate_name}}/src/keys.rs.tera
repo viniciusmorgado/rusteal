@@ -1,0 +1,280 @@
+use bindings::engine::{Actor, SceneComponentExt};
+use bindings::prelude::*;
+use bindings::umg::{
+    EUMGSequencePlayMode, Image, ImageExt, TextBlock, TextBlockExt, UserWidget, UserWidgetExt,
+    WidgetAnimation, WidgetComponent, WidgetComponentExt,
+};
+use glam::DVec3;
+use rusteal_runtime::runtime::{LinearColor, RustealResult, UObjectRef};
+use rusteal_runtime::{uclass, uclass_impl};
+
+use crate::components;
+
+use crate::curve::{self, Key};
+
+const MOUSE_GREY: LinearColor = LinearColor {
+    r: 0.490_625,
+    g: 0.490_625,
+    b: 0.490_625,
+    a: 1.0,
+};
+
+const MOUSE_PATH_LENGTH: f64 = 2.5;
+const MOUSE_PATH_SCALE: f64 = 25.0;
+
+const MOUSE_PATH_X: [Key; 3] = [
+    curve::key(-0.006_354, 0.0, 2.983_585, 2.983_586),
+    curve::key(0.993_13, 0.0, -4.762_861, -4.762_863),
+    curve::key(2.000_897, 0.0, 2.814_954, 2.814_954),
+];
+
+const MOUSE_PATH_Y: [Key; 3] = [
+    curve::key(0.511_134, 0.0, -2.651_6, -2.651_6),
+    curve::key(1.511_134, 0.0, 5.055_53, 5.055_53),
+    curve::key(2.511_134, 0.005_764, -2.805_306, -2.805_303),
+];
+
+pub fn play_looping(widget: UObjectRef<UserWidget>, animation: UObjectRef<WidgetAnimation>) {
+    if let Ok(widget) = widget.checked() {
+        widget.play_animation(
+            animation,
+            Some(0.0),
+            Some(0),
+            Some(EUMGSequencePlayMode::Forward),
+            Some(1.0),
+            Some(false),
+        );
+    }
+}
+
+#[uclass(parent = UserWidget)]
+pub struct KeyboardKeyWidget {
+    #[uproperty(BindWidget, BlueprintReadOnly, name = "Text")]
+    text: UObjectRef<TextBlock>,
+
+    #[uproperty(BindWidgetAnimOptional, BlueprintReadOnly, name = "Press")]
+    press: UObjectRef<WidgetAnimation>,
+
+    #[uproperty(EditAnywhere, BlueprintReadWrite, name = "Key", category = "Key")]
+    key: String,
+}
+
+#[uclass_impl]
+impl KeyboardKeyWidget {
+    #[ufunction(Override)]
+    fn pre_construct(&mut self, _is_design_time: bool) {
+        self.show_key();
+    }
+
+    #[ufunction(Override)]
+    fn construct(&mut self) {
+        play_looping(self.as_ref().upcast_to(), self.press());
+    }
+}
+
+impl KeyboardKeyWidget {
+    pub fn set_key_text(&mut self, key: &str) {
+        self.set_key(key);
+        self.show_key();
+    }
+
+    fn show_key(&self) {
+        if let Ok(text) = self.text().checked() {
+            text.set_text(&self.key());
+        }
+    }
+}
+
+#[uclass(parent = UserWidget)]
+pub struct MouseWidget {
+    #[uproperty(BindWidget, BlueprintReadOnly, name = "LeftMouse")]
+    left_mouse: UObjectRef<Image>,
+
+    #[uproperty(BindWidget, BlueprintReadOnly, name = "RightMouse")]
+    right_mouse: UObjectRef<Image>,
+
+    #[uproperty(BindWidgetAnimOptional, BlueprintReadOnly, name = "LeftClick")]
+    left_click: UObjectRef<WidgetAnimation>,
+
+    #[uproperty(BindWidgetAnimOptional, BlueprintReadOnly, name = "RighClick")]
+    right_click: UObjectRef<WidgetAnimation>,
+}
+
+#[uclass_impl]
+impl MouseWidget {
+    #[ufunction(Override)]
+    fn construct(&mut self) {
+        let grey = FLinearColor::from_linear_color(MOUSE_GREY);
+
+        for image in [self.left_mouse(), self.right_mouse()] {
+            if let Ok(image) = image.checked() {
+                image.set_color_and_opacity(&grey);
+            }
+        }
+    }
+
+    #[ufunction(BlueprintCallable)]
+    pub fn play_left_click(&mut self) {
+        play_looping(self.as_ref().upcast_to(), self.left_click());
+    }
+
+    #[ufunction(BlueprintCallable)]
+    pub fn play_right_click(&mut self) {
+        play_looping(self.as_ref().upcast_to(), self.right_click());
+    }
+}
+
+#[uclass(parent = Actor)]
+pub struct KeyboardKey {
+    #[uproperty(EditAnywhere, BlueprintReadWrite, name = "Key", category = "Key")]
+    key: String,
+}
+
+impl KeyboardKey {
+    fn widget(&self) -> RustealResult<UObjectRef<WidgetComponent>> {
+        components::named(self.as_ref().upcast_to(), "Widget")
+    }
+}
+
+#[uclass_impl]
+impl KeyboardKey {
+    #[ufunction(Override)]
+    fn user_construction_script(&mut self) {
+        self.show_key();
+    }
+
+    #[ufunction(Override)]
+    fn receive_begin_play(&mut self) {
+        if let Ok(widget) = self.widget().and_then(|w| w.checked()) {
+            widget.set_visibility(true, Some(false));
+        }
+
+        self.show_key();
+    }
+}
+
+impl KeyboardKey {
+    fn show_key(&self) {
+        let Ok(widget) = self.widget().and_then(|w| w.checked()) else {
+            return;
+        };
+
+        if let Ok(mut key) = KeyboardKeyWidget::from_obj(widget.get_widget()) {
+            key.set_key_text(&self.key());
+        }
+    }
+}
+
+#[uclass(parent = Actor)]
+pub struct MouseKey {
+    #[uproperty(EditAnywhere, BlueprintReadWrite, name = "Key", category = "Mouse")]
+    key: String,
+
+    #[uproperty(
+        EditAnywhere,
+        BlueprintReadWrite,
+        name = "MoveMouse",
+        category = "Mouse",
+        default = false
+    )]
+    move_mouse: bool,
+
+    #[uproperty(
+        EditAnywhere,
+        BlueprintReadWrite,
+        name = "Left Mouse",
+        category = "Mouse",
+        default = false
+    )]
+    left_mouse: bool,
+
+    #[uproperty(
+        EditAnywhere,
+        BlueprintReadWrite,
+        name = "Right Mouse",
+        category = "Mouse",
+        default = false
+    )]
+    right_mouse: bool,
+
+    #[uproperty(
+        EditAnywhere,
+        BlueprintReadWrite,
+        name = "Visible In Game",
+        category = "Mouse",
+        default = false
+    )]
+    visible_in_game: bool,
+
+    #[uproperty(BlueprintReadOnly, category = "Mouse", default = 0.0)]
+    path_time: f64,
+}
+
+impl MouseKey {
+    fn widget(&self) -> RustealResult<UObjectRef<WidgetComponent>> {
+        components::named(self.as_ref().upcast_to(), "Widget")
+    }
+}
+
+#[uclass_impl]
+impl MouseKey {
+    #[ufunction(Override)]
+    fn receive_begin_play(&mut self) {
+        let Ok(widget) = self.widget().and_then(|w| w.checked()) else {
+            return;
+        };
+
+        widget.set_visibility(self.visible_in_game(), Some(false));
+
+        let Ok(mut mouse) = MouseWidget::from_obj(widget.get_widget()) else {
+            return;
+        };
+
+        if self.left_mouse() {
+            mouse.play_left_click();
+        } else if self.right_mouse() {
+            mouse.play_right_click();
+        }
+    }
+
+    #[ufunction(Override)]
+    fn receive_tick(&mut self, delta_seconds: f32) {
+        if !self.move_mouse() {
+            return;
+        }
+
+        let time = curve::looped(
+            self.path_time() + f64::from(delta_seconds),
+            MOUSE_PATH_LENGTH,
+        );
+        self.set_path_time(time);
+
+        if let Ok(widget) = self.widget().and_then(|w| w.checked()) {
+            widget.k2_set_relative_location(&FVector::from_dvec3(mouse_path(time)), false, false);
+        }
+    }
+}
+
+pub fn mouse_path(time: f64) -> DVec3 {
+    DVec3::new(
+        0.0,
+        curve::eval(&MOUSE_PATH_X, time) * MOUSE_PATH_SCALE,
+        curve::eval(&MOUSE_PATH_Y, time) * MOUSE_PATH_SCALE,
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_mouse_path_circles_back_to_the_middle() {
+        assert!(mouse_path(0.0).length() < 2.0);
+        assert!(mouse_path(2.5).length() < 2.0);
+
+        for time in [0.5, 1.0, 1.5, 2.0] {
+            let offset = mouse_path(time).length();
+            assert!(offset > 20.0 && offset < 30.0, "{time}: {offset}");
+        }
+    }
+}

@@ -16,6 +16,7 @@ enum ParamKind {
     Scalar,
     Object,
     Class,
+    Enum,
     Struct(Box<Type>),
 }
 
@@ -96,8 +97,8 @@ pub(crate) fn parse_udelegate(method: &ImplItemFn) -> syn::Result<DelegateInfo> 
         let kind = param_kind(&ty).ok_or_else(|| {
             syn::Error::new_spanned(
                 &ty,
-                "a #[udelegate] takes bool/i32/i64/u8/f32/f64, UObjectRef<T>, SubclassOf<T> \
-                 and structs as &OwnedStruct<T>",
+                "a #[udelegate] takes bool/i32/i64/u8/f32/f64, UObjectRef<T>, SubclassOf<T>, \
+                 UE enums and structs as &OwnedStruct<T>",
             )
         })?;
 
@@ -136,6 +137,7 @@ fn param_kind(ty: &Type) -> Option<ParamKind> {
         PropKind::Scalar { .. } => Some(ParamKind::Scalar),
         PropKind::Object { .. } => Some(ParamKind::Object),
         PropKind::Class { .. } => Some(ParamKind::Class),
+        PropKind::Enum { .. } => Some(ParamKind::Enum),
         _ => None,
     }
 }
@@ -169,7 +171,7 @@ pub(crate) fn broadcast_body(struct_name: &Ident, d: &DelegateInfo) -> syn::Bloc
             let param = &p.ue_name;
 
             match &p.kind {
-                ParamKind::Scalar => quote! { call.set(#param, #name)?; },
+                ParamKind::Scalar | ParamKind::Enum => quote! { call.set(#param, #name)?; },
                 ParamKind::Object => quote! { call.set(#param, #name.raw())?; },
                 ParamKind::Class => {
                     quote! { call.set(#param, ::rusteal_runtime::ffi::UObjectHandle(#name.raw().0))?; }
@@ -297,6 +299,16 @@ pub(crate) fn binding_methods(struct_name: &Ident, d: &DelegateInfo) -> TokenStr
             match &p.kind {
                 ParamKind::Scalar => quote! {
                     ::rusteal_runtime::runtime::ffi_dispatch::native_mem_read::<#ty>(params, offsets[#idx] as usize)
+                },
+                ParamKind::Enum => quote! {
+                    {
+                        let raw = ::rusteal_runtime::runtime::ffi_dispatch::native_mem_read::<
+                            <#ty as ::rusteal_runtime::runtime::UeEnum>::Repr,
+                        >(params, offsets[#idx] as usize);
+
+                        <#ty as ::rusteal_runtime::runtime::UeEnum>::from_i64(i64::try_from(raw).unwrap_or(-1))
+                            .expect(concat!("an invalid value for ", stringify!(#ty)))
+                    }
                 },
                 ParamKind::Object => quote! { <#ty>::from_raw(#handle) },
                 ParamKind::Class => quote! {

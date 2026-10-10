@@ -1,0 +1,33 @@
+use bindings::engine::{Actor, AudioComponent, AudioComponentExt};
+use rusteal_runtime::runtime::{FName, RustealResult, UObjectRef};
+use rusteal_runtime::{uclass, uclass_impl};
+
+use crate::components;
+
+#[uclass(parent = Actor)]
+pub struct SeededSound {
+    #[uproperty(
+        EditAnywhere,
+        BlueprintReadWrite,
+        name = "Random Seed",
+        category = "Sound",
+        default = 0
+    )]
+    random_seed: i32,
+}
+
+impl SeededSound {
+    fn audio(&self) -> RustealResult<UObjectRef<AudioComponent>> {
+        components::named(self.as_ref().upcast_to(), "Audio")
+    }
+}
+
+#[uclass_impl]
+impl SeededSound {
+    #[ufunction(Override)]
+    fn receive_tick(&mut self, _delta_seconds: f32) {
+        if let Ok(audio) = self.audio().and_then(|a| a.checked()) {
+            audio.set_int_parameter(FName::new("Seed").handle(), self.random_seed());
+        }
+    }
+}

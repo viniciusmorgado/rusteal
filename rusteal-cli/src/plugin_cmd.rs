@@ -16,14 +16,41 @@ pub struct PluginNewOptions<'a> {
 }
 
 pub fn run_plugin_new(opts: &PluginNewOptions) {
-    validate_name(opts.name, opts.root);
+    let next_step = create_plugin(opts.name, opts.template, opts.root, opts.engine);
 
-    let (template, manifest) = templates::select_plugin(opts.template).unwrap_or_else(|message| {
+    if opts.build {
+        build_cmd::run_build(opts.root, opts.engine, None, 1, false, None);
+    }
+
+    eprintln!("\nrusteal plugin new: done.");
+
+    if !opts.build {
+        eprintln!("  rusteal build --all   # UE build, bindings, plugin, cargo, deploy");
+    }
+
+    eprintln!("  # {next_step}");
+}
+
+pub fn create_plugin(name: &str, template: &str, root: &Path, engine: &Path) -> String {
+    validate_name(name, root);
+
+    let (template, manifest) = templates::select_plugin(template).unwrap_or_else(|message| {
         eprint!("Error: {message}");
         std::process::exit(1);
     });
 
-    let dir = opts.root.join("Plugins").join(opts.name);
+    if let Some(feature) = &manifest.feature
+        && feature.plugin != name
+        && templates::plugin_has_content(template)
+    {
+        fail(&format!(
+            "the {template} feature's assets live under /{plugin}/, so its plugin is named \
+             {plugin}: rusteal plugin new {plugin} --template {template}",
+            plugin = feature.plugin
+        ));
+    }
+
+    let dir = root.join("Plugins").join(name);
 
     if dir.exists() {
         fail(&format!("{} already exists.", dir.display()));
@@ -36,33 +63,25 @@ pub fn run_plugin_new(opts: &PluginNewOptions) {
         dir.display()
     );
 
-    let crate_name = setup::crate_name_for(opts.name);
-    let context = plugin_context(opts.name, &crate_name, opts.root);
+    let crate_name = setup::crate_name_for(name);
+    let context = plugin_context(name, &crate_name, root);
     let written = templates::write_plugin_files(template, &dir, &context);
     eprintln!("rusteal plugin new: {written} files (crate {crate_name})");
     new_cmd::write_bindings_placeholder(&layout.rust_workspace().join("bindings"));
 
     setup::write_cpp_stubs(
         &layout.output(Default::default()).cpp_generated,
-        &format!("{}_", opts.name),
+        &format!("{name}_"),
     );
 
-    enable_in_uproject(opts.root, opts.name);
+    enable_in_uproject(root, name);
 
-    if opts.build {
-        build_cmd::run_build(opts.root, opts.engine, None, 1, false, None);
+    if let Some(feature) = &manifest.feature {
+        new_cmd::copy_shared_packs(engine, root, &feature.shared_packs);
     }
 
-    eprintln!("\nrusteal plugin new: done.");
-
-    if !opts.build {
-        eprintln!("  rusteal build --all   # UE build, bindings, plugin, cargo, deploy");
-    }
-
-    let next_step = tera::Tera::one_off(&manifest.next_step, &context, false)
-        .unwrap_or_else(|e| panic!("Failed to render next_step: {e}"));
-
-    eprintln!("  # {next_step}");
+    tera::Tera::one_off(&manifest.next_step, &context, false)
+        .unwrap_or_else(|e| panic!("Failed to render next_step: {e}"))
 }
 
 fn validate_name(name: &str, root: &Path) {

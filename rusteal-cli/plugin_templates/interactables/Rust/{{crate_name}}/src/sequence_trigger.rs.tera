@@ -1,0 +1,28 @@
+use bindings::engine::Actor;
+use bindings::level_sequence::{LevelSequenceActor, LevelSequenceActorExt};
+use bindings::movie_scene::MovieSceneSequencePlayerExt;
+use rusteal_runtime::runtime::UObjectRef;
+use rusteal_runtime::{uclass, uclass_impl};
+
+#[uclass(parent = Actor)]
+pub struct SequenceTrigger {
+    #[uproperty(
+        EditAnywhere,
+        BlueprintReadWrite,
+        name = "Seq Ref",
+        category = "Sequence"
+    )]
+    seq_ref: UObjectRef<LevelSequenceActor>,
+}
+
+#[uclass_impl]
+impl SequenceTrigger {
+    #[ufunction(Override)]
+    fn receive_actor_begin_overlap(&mut self, _other_actor: UObjectRef<Actor>) {
+        if let Ok(sequence) = self.seq_ref().checked()
+            && let Ok(player) = sequence.get_sequence_player().checked()
+        {
+            player.play();
+        }
+    }
+}
