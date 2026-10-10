@@ -6,6 +6,7 @@ use crate::{lock_or_recover, read_or_recover, write_or_recover};
 pub struct ClassRegistration {
     pub type_id: u64,
     pub shape: u64,
+    pub depends_on: &'static [u64],
     pub create: fn(last_try: bool, shape: u64) -> bool,
     pub register: fn(),
     pub finalize: fn(),
@@ -103,6 +104,8 @@ pub fn register_all_from_inventory() {
         (reg.register)();
     }
 
+    let ordered = dependency_order(&ordered);
+
     let mut func_reg_count = 0u32;
 
     for freg in inventory::iter::<ClassFunctionRegistration> {
@@ -135,6 +138,41 @@ pub fn register_all_from_inventory() {
     unsafe {
         crate::ffi_dispatch::logging_log(0, bytes.as_ptr(), bytes.len() as u32);
     }
+}
+
+fn dependency_order<'a>(classes: &[&'a ClassRegistration]) -> Vec<&'a ClassRegistration> {
+    let ids: Vec<u64> = classes.iter().map(|class| class.type_id).collect();
+    let mut state = vec![0u8; classes.len()];
+    let mut out = Vec::with_capacity(classes.len());
+
+    fn visit<'a>(
+        index: usize,
+        classes: &[&'a ClassRegistration],
+        ids: &[u64],
+        state: &mut [u8],
+        out: &mut Vec<&'a ClassRegistration>,
+    ) {
+        if state[index] != 0 {
+            return;
+        }
+
+        state[index] = 1;
+
+        for dependency in classes[index].depends_on {
+            if let Some(found) = ids.iter().position(|id| id == dependency) {
+                visit(found, classes, ids, state, out);
+            }
+        }
+
+        state[index] = 2;
+        out.push(classes[index]);
+    }
+
+    for index in 0..classes.len() {
+        visit(index, classes, &ids, &mut state, &mut out);
+    }
+
+    out
 }
 
 fn class_shape(class: &ClassRegistration) -> u64 {
@@ -350,5 +388,55 @@ mod tests {
         assert_ne!(shape, combine_shapes(9, &[2, 3]));
         assert_ne!(shape, combine_shapes(1, &[2, 4]));
         assert_ne!(shape, combine_shapes(1, &[2]));
+    }
+}
+
+#[cfg(test)]
+mod order_tests {
+    use super::*;
+
+    fn noop() {}
+
+    fn create(_last_try: bool, _shape: u64) -> bool {
+        true
+    }
+
+    const fn class(type_id: u64, depends_on: &'static [u64]) -> ClassRegistration {
+        ClassRegistration {
+            type_id,
+            shape: 0,
+            depends_on,
+            create,
+            register: noop,
+            finalize: noop,
+            after_defaults: noop,
+        }
+    }
+
+    #[test]
+    fn component_and_parent_classes_come_first() {
+        static GRABBABLE: ClassRegistration = class(1, &[100, 2]);
+        static GRAB: ClassRegistration = class(2, &[101]);
+        static PISTOL: ClassRegistration = class(3, &[100, 2, 4]);
+        static PROJECTILE: ClassRegistration = class(4, &[100]);
+
+        let order: Vec<u64> = dependency_order(&[&GRABBABLE, &PISTOL, &GRAB, &PROJECTILE])
+            .iter()
+            .map(|class| class.type_id)
+            .collect();
+
+        let position = |id| order.iter().position(|o| *o == id).unwrap();
+        assert!(position(2) < position(1));
+        assert!(position(2) < position(3));
+        assert!(position(4) < position(3));
+        assert_eq!(order.len(), 4);
+    }
+
+    #[test]
+    fn cycles_still_order_every_class() {
+        static A: ClassRegistration = class(1, &[2]);
+        static B: ClassRegistration = class(2, &[1]);
+
+        assert_eq!(dependency_order(&[&A, &B]).len(), 2);
     }
 }

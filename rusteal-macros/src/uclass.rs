@@ -419,6 +419,13 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
     );
 
     let type_id_value = prop_type::fnv1a_hash(&struct_name_str);
+    let parent_type_id = prop_type::fnv1a_hash(&args.parent_name);
+
+    let component_type_ids: Vec<u64> = components
+        .iter()
+        .filter_map(|c| c.component_type.segments.last())
+        .map(|segment| prop_type::fnv1a_hash(&segment.ident.to_string()))
+        .collect();
 
     let shape_value = shape::hash(
         std::iter::once(attr_shape).chain(
@@ -918,6 +925,7 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
             ::rusteal_runtime::runtime::reify_registry::ClassRegistration {
                 type_id: #type_id_value,
                 shape: #shape_value,
+                depends_on: &[#parent_type_id, #(#component_type_ids),*],
                 create: #register_fn_name,
                 register: #members_fn_name,
                 finalize: #finalize_fn_name,
