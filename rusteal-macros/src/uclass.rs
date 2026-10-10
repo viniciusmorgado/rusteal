@@ -116,6 +116,7 @@ pub(crate) struct UPropertyArgs {
     pub(crate) default_expr: Option<Expr>,
     name: Option<String>,
     category: Option<String>,
+    bind_widget: Option<&'static str>,
 }
 
 fn str_value(value: &Expr, what: &str) -> syn::Result<String> {
@@ -157,12 +158,17 @@ pub(crate) fn parse_uproperty_args(attr: &syn::Attribute) -> syn::Result<UProper
                     args.save_game = true;
                 } else if p.is_ident("Config") {
                     args.config = true;
+                } else if p.is_ident("BindWidget") {
+                    args.bind_widget = Some("BindWidget");
+                } else if p.is_ident("BindWidgetOptional") {
+                    args.bind_widget = Some("BindWidgetOptional");
                 } else {
                     return Err(syn::Error::new_spanned(
                         p,
                         "unknown #[uproperty] argument: expected BlueprintReadWrite, \
                          BlueprintReadOnly, EditAnywhere, EditDefaultsOnly, VisibleAnywhere, \
-                         SaveGame, Config, default = ..., name = \"...\" or category = \"...\"",
+                         SaveGame, Config, BindWidget, BindWidgetOptional, default = ..., \
+                         name = \"...\" or category = \"...\"",
                     ));
                 }
             }
@@ -1244,18 +1250,24 @@ pub(crate) fn add_property_statements(uprops: &[UPropertyField]) -> Vec<TokenStr
             None => quote! { std::ptr::null() },
         };
 
-        let meta_stmts: Vec<TokenStream> = prop
+        let metadata = prop
             .args
             .category
             .iter()
-            .map(|category| {
-                let value_bytes = category.as_bytes();
-                let value_len = category.len() as u32;
+            .map(|category| ("Category", category.as_str()))
+            .chain(prop.args.bind_widget.map(|key| (key, "true")));
+
+        let meta_stmts: Vec<TokenStream> = metadata
+            .map(|(key, value)| {
+                let key_bytes = key.as_bytes();
+                let key_len = key.len() as u32;
+                let value_bytes = value.as_bytes();
+                let value_len = value.len() as u32;
 
                 quote! {
                     unsafe {
                         ::rusteal_runtime::runtime::ffi_dispatch::reify_set_property_metadata(
-                            #prop_var, b"Category".as_ptr(), 8u32,
+                            #prop_var, [#(#key_bytes),*].as_ptr(), #key_len,
                             [#(#value_bytes),*].as_ptr(), #value_len,
                         );
                     }
@@ -1363,6 +1375,20 @@ mod tests {
         assert!(flagged[0].to_string().contains("CPF_SAVE_GAME"));
         let plain = add_property_statements(&[field(parse_quote!(#[uproperty(EditAnywhere)]))]);
         assert!(!plain[0].to_string().contains("CPF_SAVE_GAME"));
+    }
+
+    #[test]
+    fn bind_widget_properties_carry_their_metadata() {
+        let attr: syn::Attribute = parse_quote!(#[uproperty(BindWidget, BlueprintReadOnly)]);
+        assert_eq!(
+            parse_uproperty_args(&attr).unwrap().bind_widget,
+            Some("BindWidget")
+        );
+        let attr: syn::Attribute = parse_quote!(#[uproperty(BindWidgetOptional)]);
+        assert_eq!(
+            parse_uproperty_args(&attr).unwrap().bind_widget,
+            Some("BindWidgetOptional")
+        );
     }
 
     #[test]
