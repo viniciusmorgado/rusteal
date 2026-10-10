@@ -4,7 +4,11 @@ use std::error::Error;
 use std::fmt;
 use std::panic::Location;
 
-use rusteal_ffi::{RustealErrorCode, UClassHandle, UObjectHandle};
+use std::sync::OnceLock;
+
+use rusteal_ffi::{
+    FWeakObjectHandle, RustealErrorCode, RustealErrorReport, UClassHandle, UObjectHandle,
+};
 
 use crate::traits::UeHandle;
 
@@ -90,7 +94,9 @@ struct Frame {
 struct Inner {
     kind: ErrorKind,
     message: Option<Cow<'static, str>>,
+    engine: Option<String>,
     subject: Option<UeSubject>,
+    object: Option<FWeakObjectHandle>,
     location: &'static Location<'static>,
     frames: Vec<Frame>,
     source: Option<Box<dyn Error + Send + Sync + 'static>>,
@@ -108,7 +114,9 @@ impl RustealError {
             inner: Box::new(Inner {
                 kind,
                 message: None,
+                engine: None,
                 subject: None,
+                object: None,
                 location,
                 frames: Vec::new(),
                 source: None,
@@ -231,6 +239,10 @@ impl RustealError {
                 class: class_name(class_of(object)),
             };
 
+            if subject.object.is_some() {
+                self.inner.object = Some(unsafe { crate::ffi_dispatch::core_make_weak(object) });
+            }
+
             if subject.object.is_some() || subject.class.is_some() {
                 self.inner.subject = Some(subject);
             }
@@ -292,16 +304,64 @@ impl RustealError {
         format!("{self:?}")
     }
 
+    pub fn engine_message(&self) -> Option<&str> {
+        self.inner.engine.as_deref()
+    }
+
+    pub fn source_file(&self) -> String {
+        absolute_path(self.inner.location.file())
+    }
+
     pub fn log(&self, level: u8) {
+        self.send(level, false, None);
+    }
+
+    #[doc(hidden)]
+    pub fn __raise(&self, function: &str) {
+        self.send(crate::logging::LOG_ERROR, true, Some(function));
+    }
+
+    #[doc(hidden)]
+    pub fn __log_in(&self, level: u8, what: &str) {
+        self.send(level, false, Some(what));
+    }
+
+    fn send(&self, level: u8, script_error: bool, function: Option<&str>) {
         if !crate::api::is_api_initialized() {
             return;
         }
 
-        let report = format!("[Rusteal] {self:?}");
-        let bytes = report.as_bytes();
+        let summary = match function {
+            Some(function) => format!("{function} failed: {self}"),
+            None => self.to_string(),
+        };
+
+        let details = match function {
+            Some(function) => format!("{function} failed: {self:?}"),
+            None => format!("{self:?}"),
+        };
+
+        let file = self.source_file();
+
+        let report = RustealErrorReport {
+            level,
+            script_error,
+            summary: summary.as_ptr(),
+            summary_len: summary.len() as u32,
+            details: details.as_ptr(),
+            details_len: details.len() as u32,
+            object: self.inner.object.unwrap_or(FWeakObjectHandle {
+                object_index: -1,
+                object_serial_number: 0,
+            }),
+            file: file.as_ptr(),
+            file_len: file.len() as u32,
+            line: self.inner.location.line(),
+            column: self.inner.location.column(),
+        };
 
         unsafe {
-            crate::ffi_dispatch::logging_log(level, bytes.as_ptr(), bytes.len() as u32);
+            crate::ffi_dispatch::logging_report(&report);
         }
     }
 
@@ -329,6 +389,10 @@ impl RustealError {
 
         if let Some(subject) = &self.inner.subject {
             write!(f, " ({subject})")?;
+        }
+
+        if let Some(engine) = &self.inner.engine {
+            write!(f, ": Unreal: {engine}")?;
         }
 
         Ok(())
@@ -405,7 +469,7 @@ impl From<ErrorKind> for RustealError {
 impl From<RustealErrorCode> for RustealError {
     #[track_caller]
     fn from(code: RustealErrorCode) -> Self {
-        let error = Self::build(code.into(), Location::caller());
+        let error = from_code(code, Location::caller());
 
         match code {
             RustealErrorCode::Ok => error.message_or("unexpected Ok error code"),
@@ -553,6 +617,73 @@ fn short_location(location: &Location<'_>) -> String {
     format!("{short}:{}:{}", location.line(), location.column())
 }
 
+static SOURCE_ROOT: OnceLock<String> = OnceLock::new();
+
+#[doc(hidden)]
+pub fn set_source_root(crate_dir: &str) {
+    let root = std::path::Path::new(crate_dir)
+        .parent()
+        .unwrap_or(std::path::Path::new(crate_dir));
+
+    let _ = SOURCE_ROOT.set(root.to_string_lossy().into_owned());
+}
+
+pub(crate) fn absolute_path(file: &str) -> String {
+    let path = std::path::Path::new(file);
+
+    match SOURCE_ROOT.get() {
+        Some(root) if path.is_relative() => std::path::Path::new(root)
+            .join(path)
+            .to_string_lossy()
+            .into_owned(),
+        _ => file.to_owned(),
+    }
+}
+
+#[cold]
+fn from_code(code: RustealErrorCode, location: &'static Location<'static>) -> RustealError {
+    let mut error = RustealError::build(code.into(), location);
+
+    if code != RustealErrorCode::ObjectDestroyed {
+        error.inner.engine = engine_message(code);
+    }
+
+    error
+}
+
+fn engine_message(code: RustealErrorCode) -> Option<String> {
+    if !crate::api::is_api_initialized() {
+        return None;
+    }
+
+    let mut buf = vec![0u8; 512];
+    let mut len: u32 = 0;
+
+    let found = unsafe {
+        crate::ffi_dispatch::core_take_error_message(
+            code,
+            buf.as_mut_ptr(),
+            buf.len() as u32,
+            &mut len,
+        )
+    };
+
+    if !found {
+        return None;
+    }
+
+    if len as usize > buf.len() {
+        buf.resize(len as usize, 0);
+
+        unsafe {
+            crate::ffi_dispatch::core_take_error_message(code, buf.as_mut_ptr(), len, &mut len);
+        }
+    }
+
+    buf.truncate(len as usize);
+    Some(String::from_utf8_lossy(&buf).into_owned())
+}
+
 #[cold]
 pub(crate) fn destroyed<T: ?Sized>(location: &'static Location<'static>) -> RustealError {
     RustealError::build(ErrorKind::ObjectDestroyed, location)
@@ -627,7 +758,7 @@ pub(crate) fn class_name(class: UClassHandle) -> Option<String> {
 pub fn check_ffi(code: RustealErrorCode) -> RustealResult<()> {
     match code {
         RustealErrorCode::Ok => Ok(()),
-        other => Err(RustealError::build(other.into(), Location::caller())),
+        other => Err(from_code(other, Location::caller())),
     }
 }
 
@@ -636,7 +767,7 @@ pub fn check_ffi_ctx(code: RustealErrorCode, context: &str) -> RustealResult<()>
     match code {
         RustealErrorCode::Ok => Ok(()),
         other => {
-            let error = RustealError::build(other.into(), Location::caller());
+            let error = from_code(other, Location::caller());
 
             Err(match other {
                 RustealErrorCode::PropertyNotFound
@@ -852,6 +983,37 @@ mod tests {
         assert_eq!(
             error.to_string(),
             "property not found: Health (object BP_Enemy_C_0 of class BP_Enemy_C)"
+        );
+    }
+
+    #[test]
+    fn the_engine_reason_follows_the_object() {
+        let mut error = RustealError::type_mismatch();
+        error.inner.subject = Some(UeSubject {
+            object: Some("BP_Enemy_C_0".into()),
+            class: Some("BP_Enemy_C".into()),
+        });
+        error.inner.engine =
+            Some("Health, a FloatProperty of BP_Enemy_C, is not a FBoolProperty".into());
+
+        assert_eq!(
+            error.to_string(),
+            "type mismatch (object BP_Enemy_C_0 of class BP_Enemy_C): Unreal: Health, a \
+             FloatProperty of BP_Enemy_C, is not a FBoolProperty"
+        );
+        assert_eq!(error.engine_message().unwrap().len(), 61);
+    }
+
+    #[test]
+    fn source_files_are_made_absolute_from_the_crate_root() {
+        set_source_root("/project/Rust/my-game");
+        assert_eq!(
+            absolute_path("my-game/src/turret.rs"),
+            "/project/Rust/my-game/src/turret.rs"
+        );
+        assert_eq!(
+            absolute_path("/abs/rusteal-core/src/x.rs"),
+            "/abs/rusteal-core/src/x.rs"
         );
     }
 
