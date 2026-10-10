@@ -254,6 +254,23 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
                 Some(prop_type::PropKind::Class { .. }) => quote! {
                     <#rust_ty>::from_raw(::rusteal_runtime::ffi::UClassHandle(#read_handle.0))
                 },
+                Some(prop_type::PropKind::Enum { .. }) => quote! {
+                    {
+                        const _: () = assert!(
+                            ::core::mem::size_of::<#rust_ty>() == 1,
+                            "a ufunction enum parameter is a one-byte (uint8) Unreal enum"
+                        );
+
+                        let raw = ::rusteal_runtime::runtime::ffi_dispatch::native_mem_read::<
+                            <#rust_ty as ::rusteal_runtime::runtime::UeEnum>::Repr,
+                        >(params, offsets[#idx] as usize);
+
+                        <#rust_ty as ::rusteal_runtime::runtime::UeEnum>::from_i64(
+                            i64::try_from(raw).unwrap_or(-1),
+                        )
+                        .expect(concat!("an invalid value for ", stringify!(#rust_ty)))
+                    }
+                },
                 _ => quote! {
                     ::rusteal_runtime::runtime::ffi_dispatch::native_mem_read::<#rust_ty>(params, offsets[#idx] as usize)
                 },
@@ -286,6 +303,31 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
                 Some(prop_type::PropKind::Class { .. }) => (
                     write(quote! { ::rusteal_runtime::ffi::UObjectHandle::null() }),
                     write(quote! { ::rusteal_runtime::ffi::UObjectHandle(__ret.raw().0) }),
+                ),
+                Some(prop_type::PropKind::OwnedStruct { strukt }) => (
+                    quote! {},
+                    quote! {
+                        unsafe {
+                            let _ = ::rusteal_runtime::runtime::ffi_dispatch::reflection_copy_struct(
+                                <#strukt as ::rusteal_runtime::runtime::UeStruct>::static_struct(),
+                                params.add(offsets[#ret_idx] as usize),
+                                __ret.as_bytes().as_ptr(),
+                            );
+                        }
+                    },
+                ),
+                Some(prop_type::PropKind::Enum { .. }) => (
+                    write(quote! {
+                        {
+                            const _: () = assert!(
+                                ::core::mem::size_of::<#ret_ty>() == 1,
+                                "a ufunction enum return value is a one-byte (uint8) Unreal enum"
+                            );
+
+                            <<#ret_ty as ::rusteal_runtime::runtime::UeEnum>::Repr as ::core::default::Default>::default()
+                        }
+                    }),
+                    write(quote! { __ret }),
                 ),
                 _ => (
                     write(quote! { unsafe { std::mem::zeroed::<#ret_ty>() } }),
@@ -617,7 +659,7 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
                     return Err(syn::Error::new_spanned(
                         &ty,
                         "unsupported ufunction parameter type: supported are bool/i32/i64/u8/f32/f64, \
-                         UObjectRef<T>, SubclassOf<T> and UStructRef<T>",
+                         UObjectRef<T>, SubclassOf<T>, UStructRef<T> and UE enums",
                     ));
                 }
 
@@ -663,7 +705,7 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
                     return Err(syn::Error::new_spanned(
                         ty,
                         "unsupported ufunction return type: supported are bool/i32/i64/u8/f32/f64, \
-                         UObjectRef<T> and SubclassOf<T>",
+                         UObjectRef<T>, SubclassOf<T> and UE enums",
                     ));
                 }
 
@@ -689,10 +731,7 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
 
 fn supported_param(ty: &Type) -> bool {
     prop_type::map_type(ty).is_some_and(|info| {
-        !matches!(
-            info.kind,
-            prop_type::PropKind::Array { .. } | prop_type::PropKind::Enum { .. }
-        ) && !info.kind.property_only()
+        !matches!(info.kind, prop_type::PropKind::Array { .. }) && !info.kind.property_only()
     })
 }
 
@@ -700,9 +739,7 @@ fn supported_return(ty: &Type) -> bool {
     prop_type::map_type(ty).is_some_and(|info| {
         !matches!(
             info.kind,
-            prop_type::PropKind::Array { .. }
-                | prop_type::PropKind::Struct { .. }
-                | prop_type::PropKind::Enum { .. }
+            prop_type::PropKind::Array { .. } | prop_type::PropKind::Struct { .. }
         ) && !info.kind.property_only()
     })
 }
