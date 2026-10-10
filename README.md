@@ -1227,6 +1227,16 @@ what to do meanwhile, is in
 | Windows (x64) | Supported |
 | macOS | Not yet tested |
 
+## Known limitations
+
+- **Mobile.** Rusteal does not build for Android or iOS yet. The `ar`
+  template, made for ARCore and ARKit devices, runs in the editor, and the
+  touch controls of the other templates can be tried there, but none of them
+  can be packaged for a phone or a tablet. Mobile support is being actively
+  worked on.
+- **Consoles.** Rusteal does not build for consoles yet; console support is
+  being actively worked on too.
+
 ## Working on Rusteal
 
 This part is for changing Rusteal itself: its crates, the `rusteal` CLI and the
