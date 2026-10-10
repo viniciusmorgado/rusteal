@@ -28,3 +28,9 @@ using FRustealClassReinstancer =
 
 RUSTEAL_API void
 RustealSetClassReinstancer(FRustealClassReinstancer Reinstancer);
+
+using FRustealInterfaceRefresher =
+    TFunction<void(const TArray<UClass *> &Interfaces)>;
+
+RUSTEAL_API void
+RustealSetInterfaceRefresher(FRustealInterfaceRefresher Refresher);

@@ -46,7 +46,13 @@ static bool IsAImpl(RustealUObjectHandle Obj, RustealUClassHandle TargetClass) {
     return false;
   }
 
-  return Object->IsA(static_cast<UClass *>(TargetClass.ptr));
+  UClass *Target = static_cast<UClass *>(TargetClass.ptr);
+
+  if (Target->HasAnyClassFlags(CLASS_Interface)) {
+    return Object->GetClass()->ImplementsInterface(Target);
+  }
+
+  return Object->IsA(Target);
 }
 
 static RustealUObjectHandle GetOuterImpl(RustealUObjectHandle Obj) {

@@ -1,3 +1,4 @@
+#include "BlueprintActionDatabase.h"
 #include "Engine/Blueprint.h"
 #include "K2Node.h"
 #include "Kismet2/BlueprintEditorUtils.h"
@@ -9,6 +10,7 @@
 DEFINE_LOG_CATEGORY_STATIC(LogRustealReload, Log, All);
 #include "RustealAutoReload.h"
 #include "RustealLibraries.h"
+#include "URustealReifiedClass.h"
 
 static bool UsesAny(UBlueprint *Blueprint, const TArray<UClass *> &Classes) {
   TArray<UK2Node *> Nodes;
@@ -91,15 +93,62 @@ ReinstanceClasses(const TArray<TPair<UClass *, UClass *>> &Classes) {
   Reload.Finalize(false);
 }
 
+static void RefreshInterfaces(const TArray<UClass *> &Interfaces) {
+  TArray<UBlueprint *> Users;
+
+  for (TObjectIterator<UBlueprint> It; It; ++It) {
+    UBlueprint *Blueprint = *It;
+    UClass *Generated = Blueprint->GeneratedClass;
+
+    if (!Generated ||
+        Blueprint->HasAnyFlags(RF_NeedLoad | RF_ClassDefaultObject) ||
+        Blueprint->GetOutermost() == GetTransientPackage() ||
+        Generated->HasAnyClassFlags(CLASS_NewerVersionExists) ||
+        (Cast<URustealReifiedClass>(Generated) &&
+         Generated->ClassGeneratedBy == Blueprint)) {
+      continue;
+    }
+
+    const bool bImplements =
+        Interfaces.ContainsByPredicate([Generated](UClass *Interface) {
+          return Generated->ImplementsInterface(Interface);
+        });
+
+    if (bImplements || UsesAny(Blueprint, Interfaces)) {
+      Users.Add(Blueprint);
+    }
+  }
+
+  for (UBlueprint *Blueprint : Users) {
+    UE_LOG(LogRustealReload, Display,
+           TEXT("Recompiling %s, which uses a changed interface"),
+           *Blueprint->GetPathName());
+
+    FBlueprintEditorUtils::ConformImplementedInterfaces(Blueprint);
+    FBlueprintEditorUtils::RefreshAllNodes(Blueprint);
+
+    FKismetEditorUtilities::CompileBlueprint(
+        Blueprint, EBlueprintCompileOptions::SkipGarbageCollection);
+  }
+
+  if (FBlueprintActionDatabase *Actions = FBlueprintActionDatabase::TryGet()) {
+    for (UClass *Interface : Interfaces) {
+      Actions->RefreshClassActions(Interface);
+    }
+  }
+}
+
 class FRustealEditorModule : public IModuleInterface {
 public:
   virtual void StartupModule() override {
     RustealSetClassReinstancer(&ReinstanceClasses);
+    RustealSetInterfaceRefresher(&RefreshInterfaces);
     AutoReload.Start();
   }
 
   virtual void ShutdownModule() override {
     AutoReload.Stop();
+    RustealSetInterfaceRefresher(nullptr);
     RustealSetClassReinstancer(nullptr);
   }
 

@@ -7,6 +7,7 @@
 #include "RustealLibraries.h"
 #include "RustealLibrary.h"
 #include "RustealModule.h"
+#include "UObject/Interface.h"
 #include "UObject/UObjectArray.h"
 #include "UObject/UObjectGlobals.h"
 #include "UObject/UObjectIterator.h"
@@ -296,6 +297,13 @@ static FRustealClassReinstancer GClassReinstancer;
 
 static TArray<TPair<UClass *, UClass *>> GReplacedClasses;
 
+static TSet<TWeakObjectPtr<UClass>> GUnlinkedInterfaces;
+
+static bool IsLockedInterface(const UClass *Class) {
+  return Class && Class->HasAnyClassFlags(CLASS_Interface) &&
+         !GUnlinkedInterfaces.Contains(const_cast<UClass *>(Class));
+}
+
 void RustealSetClassReinstancer(FRustealClassReinstancer Reinstancer) {
   GClassReinstancer = MoveTemp(Reinstancer);
 }
@@ -527,6 +535,10 @@ static RustealUFunctionHandle AddFunctionImpl(RustealUClassHandle Cls,
   UFunction *ExistingFunc = Class->FindFunctionByName(
       FName(*FuncName), EIncludeSuperFlag::ExcludeSuper);
 
+  if (IsLockedInterface(Class)) {
+    return RustealUFunctionHandle{ExistingFunc};
+  }
+
   if (ExistingFunc) {
     if (URustealReifiedFunction *Reified =
             Cast<URustealReifiedFunction>(ExistingFunc)) {
@@ -597,6 +609,10 @@ AddFunctionParamImpl(RustealUFunctionHandle Func, const uint8 *Name,
 
   if (!Function) {
     return ERustealErrorCode::NullArgument;
+  }
+
+  if (IsLockedInterface(Function->GetOwnerClass())) {
+    return ERustealErrorCode::Ok;
   }
 
   const FName ParamName = ReifyUtf8ToFName(Name, NameLen);
@@ -1174,6 +1190,228 @@ static RustealUClassHandle CreateEnumImpl(const uint8 *Name, uint32 NameLen,
   return RustealUClassHandle{NewEnum};
 }
 
+static TMap<TWeakObjectPtr<UClass>, uint64> GInterfaceShapes;
+static TArray<TWeakObjectPtr<UClass>> GChangedInterfaces;
+static FRustealInterfaceRefresher GInterfaceRefresher;
+
+void RustealSetInterfaceRefresher(FRustealInterfaceRefresher Refresher) {
+  GInterfaceRefresher = MoveTemp(Refresher);
+}
+
+void RustealReifyRefreshChangedInterfaces() {
+  TArray<UClass *> Changed;
+
+  for (const TWeakObjectPtr<UClass> &Interface : GChangedInterfaces) {
+    if (UClass *Live = Interface.Get()) {
+      Changed.Add(Live);
+    }
+  }
+
+  GChangedInterfaces.Reset();
+
+  if (Changed.IsEmpty() || !GInterfaceRefresher) {
+    return;
+  }
+
+  UE_LOG(LogRusteal, Display,
+         TEXT("[Rusteal] Hot reload: refreshing the Blueprints of %d changed "
+              "interface(s)"),
+         Changed.Num());
+
+  GInterfaceRefresher(Changed);
+}
+
+static void RetireInterfaceFunctions(UClass *Interface) {
+  TArray<UFunction *> Functions;
+
+  for (TFieldIterator<UFunction> It(Interface,
+                                    EFieldIteratorFlags::ExcludeSuper);
+       It; ++It) {
+    Functions.Add(*It);
+  }
+
+  Interface->Children = nullptr;
+
+  const ERenameFlags Flags =
+      REN_DontCreateRedirectors | REN_NonTransactional | REN_DoNotDirty;
+
+  for (UFunction *Function : Functions) {
+    Interface->RemoveFunctionFromFunctionMap(Function);
+
+    if (URustealReifiedFunction *Reified =
+            Cast<URustealReifiedFunction>(Function)) {
+      Reified->Library = nullptr;
+    }
+
+    Function->Rename(
+        *MakeUniqueObjectName(Interface, Function->GetClass(),
+                              *(TEXT("RUSTEAL_") + Function->GetName()))
+             .ToString(),
+        Interface, Flags);
+
+    Function->SetFlags(RF_Transient);
+  }
+}
+
+static RustealUClassHandle CreateInterfaceImpl(const uint8 *Name,
+                                               uint32 NameLen, uint64 Shape) {
+  UPackage *RustealPackage = RustealCurrentPackage();
+  const FString InterfaceName = ReifyUtf8ToFString(Name, NameLen);
+
+  if (UClass *Existing = FindObject<UClass>(RustealPackage, *InterfaceName)) {
+    if (!Existing->HasAnyClassFlags(CLASS_Interface)) {
+      UE_LOG(LogRusteal, Error,
+             TEXT("[Rusteal] Interface %s: a class of that name already "
+                  "exists"),
+             *InterfaceName);
+
+      return RustealUClassHandle{nullptr};
+    }
+
+    const uint64 *OldShape = GInterfaceShapes.Find(Existing);
+
+    if (OldShape && *OldShape == Shape) {
+      UE_LOG(LogRusteal, Display,
+             TEXT("[Rusteal] Hot reload: reusing existing interface %s"),
+             *InterfaceName);
+
+      return RustealUClassHandle{Existing};
+    }
+
+    if (!GInterfaceRefresher) {
+      UE_LOG(LogRusteal, Warning,
+             TEXT("[Rusteal] Hot reload: the functions of interface %s "
+                  "changed, which only the editor can apply: restart to use "
+                  "them."),
+             *InterfaceName);
+
+      return RustealUClassHandle{Existing};
+    }
+
+    UE_LOG(LogRusteal, Display,
+           TEXT("[Rusteal] Hot reload: the functions of interface %s changed, "
+                "rebuilding them"),
+           *InterfaceName);
+
+    RetireInterfaceFunctions(Existing);
+    GInterfaceShapes.Add(Existing, Shape);
+    GUnlinkedInterfaces.Add(Existing);
+    GChangedInterfaces.AddUnique(Existing);
+
+    return RustealUClassHandle{Existing};
+  }
+
+  UClass *Super = UInterface::StaticClass();
+
+  UClass *Interface = NewObject<UClass>(RustealPackage, FName(*InterfaceName),
+                                        RF_Public | RF_Standalone);
+
+  Interface->SetSuperStruct(Super);
+  Interface->ClassWithin = Super->ClassWithin;
+  Interface->ClassConstructor = Super->ClassConstructor;
+  Interface->ClassFlags |= CLASS_Interface | CLASS_Abstract;
+
+#if WITH_EDITORONLY_DATA
+
+  Interface->SetMetaData(TEXT("IsBlueprintBase"), TEXT("true"));
+  Interface->SetMetaData(TEXT("BlueprintType"), TEXT("true"));
+#endif
+
+  Interface->AddToRoot();
+
+  GInterfaceShapes.Add(Interface, Shape);
+  GUnlinkedInterfaces.Add(Interface);
+
+  UE_LOG(LogRusteal, Display, TEXT("[Rusteal] Created interface: %s"),
+         *InterfaceName);
+
+  return RustealUClassHandle{Interface};
+}
+
+static ERustealErrorCode FinalizeInterfaceImpl(RustealUClassHandle Handle) {
+  UClass *Interface = static_cast<UClass *>(Handle.ptr);
+
+  if (!Interface) {
+    return ERustealErrorCode::NullArgument;
+  }
+
+  if (!GUnlinkedInterfaces.Remove(Interface)) {
+    return ERustealErrorCode::Ok;
+  }
+
+  int32 FunctionCount = 0;
+
+  for (TFieldIterator<UFunction> It(Interface,
+                                    EFieldIteratorFlags::ExcludeSuper);
+       It; ++It) {
+    It->Bind();
+    It->StaticLink(true);
+    FunctionCount++;
+  }
+
+  if (Interface->GetDefaultObject(false)) {
+    for (TObjectIterator<UClass> It; It; ++It) {
+      if (It->ImplementsInterface(Interface)) {
+        It->ClearFunctionMapsCaches();
+      }
+    }
+
+    Interface->ClearFunctionMapsCaches();
+
+    UE_LOG(LogRusteal, Display,
+           TEXT("[Rusteal] Rebuilt interface: %s (%d functions)"),
+           *Interface->GetName(), FunctionCount);
+
+    return ERustealErrorCode::Ok;
+  }
+
+  Interface->Bind();
+  Interface->StaticLink(true);
+  Interface->AssembleReferenceTokenStream(true);
+
+  NotifyRegistrationEvent(
+      Interface->GetOutermost()->GetFName(), Interface->GetFName(),
+      ENotifyRegistrationType::NRT_Class,
+      ENotifyRegistrationPhase::NRP_Finished, nullptr, false, Interface);
+
+  Interface->GetDefaultObject(true);
+
+  UE_LOG(LogRusteal, Display,
+         TEXT("[Rusteal] Finalized interface: %s (%d functions)"),
+         *Interface->GetName(), FunctionCount);
+
+  return ERustealErrorCode::Ok;
+}
+
+static ERustealErrorCode AddInterfaceClassImpl(RustealUClassHandle Cls,
+                                               RustealUClassHandle Handle) {
+  UClass *Class = static_cast<UClass *>(Cls.ptr);
+  UClass *Interface = static_cast<UClass *>(Handle.ptr);
+
+  if (!Class || !Interface) {
+    return ERustealErrorCode::NullArgument;
+  }
+
+  if (!Interface->HasAnyClassFlags(CLASS_Interface)) {
+    UE_LOG(LogRusteal, Error,
+           TEXT("[Rusteal] %s implements %s: not an interface"),
+           *Class->GetName(), *Interface->GetName());
+
+    return ERustealErrorCode::InvalidCast;
+  }
+
+  if (Class->ImplementsInterface(Interface)) {
+    return ERustealErrorCode::Ok;
+  }
+
+  Class->Interfaces.Add(FImplementedInterface(Interface, 0, true));
+
+  UE_LOG(LogRusteal, Display, TEXT("[Rusteal] %s implements %s"),
+         *Class->GetName(), *Interface->GetPathName());
+
+  return ERustealErrorCode::Ok;
+}
+
 FRustealReifyApi GReifyApi = {
     &CreateClassImpl,         &AddPropertyImpl,
     &AddFunctionImpl,         &AddFunctionParamImpl,
@@ -1182,5 +1420,6 @@ FRustealReifyApi GReifyApi = {
     &SetPropertyMetadataImpl, &CreateStructImpl,
     &FinalizeStructImpl,      &AddDelegateImpl,
     &AddInterfaceImpl,        &SetClassConfigImpl,
-    &CreateEnumImpl,
+    &CreateEnumImpl,          &CreateInterfaceImpl,
+    &FinalizeInterfaceImpl,   &AddInterfaceClassImpl,
 };
