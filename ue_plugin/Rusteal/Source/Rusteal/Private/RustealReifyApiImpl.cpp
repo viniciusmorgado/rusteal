@@ -936,11 +936,19 @@ static ERustealErrorCode FinalizeStructImpl(RustealUStructHandle Handle) {
     return ERustealErrorCode::Ok;
   }
 
-  for (TFieldIterator<FStructProperty> It(Struct,
-                                          EFieldIteratorFlags::ExcludeSuper);
+  for (TFieldIterator<FProperty> It(Struct, EFieldIteratorFlags::ExcludeSuper);
        It; ++It) {
-    if (It->Struct && It->Struct->GetStructureSize() == 0) {
-      FinalizeStructImpl(RustealUStructHandle{It->Struct});
+    FProperty *Field = *It;
+
+    if (const FArrayProperty *Array = CastField<FArrayProperty>(Field)) {
+      Field = Array->Inner;
+    }
+
+    const FStructProperty *StructField = CastField<FStructProperty>(Field);
+
+    if (StructField && StructField->Struct &&
+        StructField->Struct->GetStructureSize() == 0) {
+      FinalizeStructImpl(RustealUStructHandle{StructField->Struct});
     }
   }
 

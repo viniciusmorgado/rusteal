@@ -170,6 +170,7 @@ pub fn map_type(ty: &Type) -> Option<PropTypeInfo> {
                     | PropKind::Object { .. }
                     | PropKind::Class { .. }
                     | PropKind::Name
+                    | PropKind::OwnedStruct { .. }
             ) {
                 return None;
             }
@@ -368,6 +369,14 @@ mod tests {
     }
 
     #[test]
+    fn arrays_hold_structs() {
+        assert_eq!(
+            kind(parse_quote!(UeArray<OwnedStruct<FVector>>)),
+            Some("array")
+        );
+    }
+
+    #[test]
     fn rejects_unsupported_types() {
         assert_eq!(kind(parse_quote!(UObjectRef)), None);
         assert_eq!(kind(parse_quote!(OwnedStruct)), None);
@@ -376,7 +385,6 @@ mod tests {
         assert_eq!(kind(parse_quote!(usize)), None);
         assert_eq!(kind(parse_quote!(UeArray<UeArray<f32>>)), None);
         assert_eq!(kind(parse_quote!(UeArray<String>)), None);
-        assert_eq!(kind(parse_quote!(UeArray<OwnedStruct<FVector>>)), None);
         assert_eq!(kind(parse_quote!(UeArray<UStructRef<FVector>>)), None);
         assert_eq!(kind(parse_quote!(Vec<UObjectRef<InputAction>>)), None);
     }
