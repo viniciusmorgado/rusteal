@@ -639,7 +639,8 @@ they are read-only.
 A `#[ufunction]` takes the scalar types, objects (`UObjectRef<T>`), classes
 (`SubclassOf<T>`) and structs (`UStructRef<T>`, a reference into the call's
 parameters; `to_owned()` keeps a copy), and returns a scalar, an object or a
-class. It is `BlueprintCallable` unless it says otherwise:
+class, or a `RustealResult` of one when it can fail (see [Errors](#errors)). It
+is `BlueprintCallable` unless it says otherwise:
 
 - `BlueprintPure`: callable without execution pins;
 - `Override`: Rust code for an engine event of a parent class, taking what it
@@ -900,13 +901,33 @@ call.call()?;
 
 What fails in the engine (a destroyed object, a wrong cast, a missing
 function) is a `RustealResult<T>`, whose `RustealError` says what went wrong,
-on which object, and where in your code:
+on which object, why Unreal refused when it says, and where in your code:
 
 ```text
 invalid cast: expected Pawn (object StaticMeshActor_0 of class StaticMeshActor)
     at my-game/src/turret.rs:42:23
 while aiming at the target
     at my-game/src/turret.rs:30:14
+```
+
+```text
+index out of range: Unreal: index 5 past the 0 elements of Items (ArrayProperty of Turret)
+```
+
+A `#[ufunction]` returns a `RustealResult<T>` when it can fail; Unreal sees it
+return `T`. An `Err` is reported with the function's name and the function
+returns the default value; called from a Blueprint, the error is a Blueprint
+runtime error on the node that called it. Reported errors (and panics, with
+their file and line) go to the Output Log with the Blueprint call stack, and
+to the **Rusteal** tab of the Message Log (*Window > Message Log*), where the
+object and the Rust line are links: the line opens in your IDE.
+
+```rust
+#[ufunction]
+fn reload(&mut self) -> RustealResult<i32> {
+    let magazine = self.magazine().checked()?;
+    Ok(magazine.rounds())
+}
 ```
 
 `{e}` is one line, `{e:#}` adds the causes and the location, `{e:?}` is the
