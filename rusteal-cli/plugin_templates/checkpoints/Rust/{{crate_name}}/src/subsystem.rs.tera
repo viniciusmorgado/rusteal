@@ -1,0 +1,132 @@
+use bindings::core_ue::Object;
+use bindings::engine::{
+    Actor, ActorExt, ControllerExt, GameplayStatics, SubsystemBlueprintLibrary, WorldSubsystem,
+};
+use bindings::rusteal::RustealWorldSubsystem;
+use rusteal_runtime::runtime::{
+    LOG_DISPLAY, LOG_WARNING, RustealResult, SubclassOf, UObjectRef, UeClass, ulog,
+};
+use rusteal_runtime::{uclass, uclass_impl};
+
+use crate::save_data::CheckpointSaveData;
+
+pub const SLOT_NAME: &str = "SAVE";
+
+#[uclass(parent = RustealWorldSubsystem)]
+pub struct CheckpointSubsystem {
+    #[uproperty(BlueprintReadOnly, category = "Checkpoint")]
+    save: UObjectRef<CheckpointSaveData>,
+}
+
+#[uclass_impl]
+impl CheckpointSubsystem {
+    #[ufunction(Override)]
+    fn receive_world_begin_play(&mut self) {
+        self.load_game_data();
+
+        if !self.respawn_player() {
+            return;
+        }
+
+        ulog!(
+            LOG_DISPLAY,
+            "[Checkpoints] the player starts at the last spawn point"
+        );
+    }
+
+    #[ufunction(BlueprintCallable)]
+    pub fn update_spawn_point(&mut self, spawn_point: UObjectRef<Actor>) {
+        if let Err(e) = self.save_spawn_point(spawn_point) {
+            ulog!(
+                LOG_WARNING,
+                "[Checkpoints] cannot save the spawn point: {e}"
+            );
+        }
+    }
+
+    #[ufunction(BlueprintCallable)]
+    pub fn respawn_player(&mut self) -> bool {
+        self.move_player_to_checkpoint().unwrap_or(false)
+    }
+
+    #[ufunction(BlueprintCallable)]
+    pub fn clear_checkpoint(&mut self) {
+        if let Ok(save) = CheckpointSaveData::from_obj(self.save()) {
+            save.set_has_checkpoint(false);
+            save.set_spawn_point(UObjectRef::null());
+            GameplayStatics::save_game_to_slot(self.save().upcast_to(), SLOT_NAME, 0);
+        }
+    }
+
+    #[ufunction(BlueprintPure)]
+    pub fn has_checkpoint(&self) -> bool {
+        CheckpointSaveData::from_obj(self.save())
+            .is_ok_and(|save| save.has_checkpoint() && save.level_name() == self.level_name())
+    }
+}
+
+impl CheckpointSubsystem {
+    pub fn get(context: UObjectRef<Object>) -> RustealResult<Self> {
+        let class = unsafe { SubclassOf::<WorldSubsystem>::from_raw(Self::static_class()) };
+        Self::from_obj(SubsystemBlueprintLibrary::get_world_subsystem(
+            context, class,
+        ))
+    }
+
+    fn level_name(&self) -> String {
+        GameplayStatics::get_current_level_name(self.as_ref().upcast_to(), Some(true))
+    }
+
+    fn load_game_data(&mut self) {
+        let loaded = if GameplayStatics::does_save_game_exist(SLOT_NAME, 0) {
+            GameplayStatics::load_game_from_slot(SLOT_NAME, 0).cast::<CheckpointSaveData>()
+        } else {
+            Err(rusteal_runtime::runtime::RustealError::NullArgument)
+        };
+
+        let save = match loaded {
+            Ok(save) => save,
+            Err(_) => {
+                let save = GameplayStatics::create_save_game_object(
+                    SubclassOf::<CheckpointSaveData>::base().upcast(),
+                );
+                GameplayStatics::save_game_to_slot(save, SLOT_NAME, 0);
+                save.cast::<CheckpointSaveData>().unwrap_or_default()
+            }
+        };
+
+        self.set_save(save);
+    }
+
+    fn save_spawn_point(&mut self, spawn_point: UObjectRef<Actor>) -> RustealResult<()> {
+        if !self.save().is_valid() {
+            self.load_game_data();
+        }
+
+        let actor = spawn_point.checked()?;
+        let save = CheckpointSaveData::from_obj(self.save())?;
+        save.set_has_checkpoint(true);
+        save.set_level_name(&self.level_name());
+        save.set_location(&actor.k2_get_actor_location());
+        save.set_rotation(&actor.k2_get_actor_rotation());
+        save.set_spawn_point(spawn_point);
+
+        GameplayStatics::save_game_to_slot(self.save().upcast_to(), SLOT_NAME, 0);
+        Ok(())
+    }
+
+    fn move_player_to_checkpoint(&self) -> RustealResult<bool> {
+        if !self.has_checkpoint() {
+            return Ok(false);
+        }
+
+        let save = CheckpointSaveData::from_obj(self.save())?;
+        let controller = GameplayStatics::get_player_controller(self.as_ref().upcast_to(), 0);
+        let controller = controller.checked()?;
+        let pawn = controller.k2_get_pawn().checked()?;
+
+        pawn.k2_set_actor_location_and_rotation(&save.location(), &save.rotation(), false, true);
+        controller.set_control_rotation(&save.rotation());
+        Ok(true)
+    }
+}

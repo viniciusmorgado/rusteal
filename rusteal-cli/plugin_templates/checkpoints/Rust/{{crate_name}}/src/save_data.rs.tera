@@ -1,0 +1,25 @@
+use bindings::engine::SaveGame;
+use bindings::prelude::*;
+use rusteal_runtime::runtime::{OwnedStruct, UObjectRef};
+use rusteal_runtime::{uclass, uclass_impl};
+
+#[uclass(parent = SaveGame)]
+pub struct CheckpointSaveData {
+    #[uproperty(SaveGame, BlueprintReadOnly, category = "Checkpoint", default = false)]
+    has_checkpoint: bool,
+
+    #[uproperty(SaveGame, BlueprintReadOnly, category = "Checkpoint")]
+    level_name: String,
+
+    #[uproperty(SaveGame, BlueprintReadOnly, category = "Checkpoint")]
+    location: OwnedStruct<FVector>,
+
+    #[uproperty(SaveGame, BlueprintReadOnly, category = "Checkpoint")]
+    rotation: OwnedStruct<FRotator>,
+
+    #[uproperty(SaveGame, BlueprintReadOnly, category = "Checkpoint")]
+    spawn_point: UObjectRef<bindings::engine::Actor>,
+}
+
+#[uclass_impl]
+impl CheckpointSaveData {}
