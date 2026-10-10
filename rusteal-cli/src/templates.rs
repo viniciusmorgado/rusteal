@@ -373,6 +373,7 @@ mod tests {
                 "ar",
                 "blank",
                 "first-person",
+                "intro",
                 "third-person",
                 "top-down",
                 "vehicle",

@@ -1,0 +1,26 @@
+# `rusteal new <Name> --template intro`: UE's Intro To Unreal template, its
+# first person character and every station of its tour in Rust.
+description = "The Intro To Unreal template: a guided tour of the engine whose stations (copycat mannequins, checkpoints, triggers, doors, effects, keys and gizmos) are the mannequin, checkpoints, interactables and tour features, and a first person character, in Rust."
+
+# The engine template the project starts from, copied with the engine's own
+# recipe (its Config/TemplateDefs.ini), as the editor's New Project dialog does.
+# It is Blueprint only: `rusteal new` adds the game module Rusteal builds with.
+engine_template = "TP_UEIntro_BP"
+
+# Paths of the engine template to leave out, relative to it: the save game
+# Blueprint the checkpoints feature replaces, and the shooter and horror
+# variants' external actors and objects, whose levels the template does not
+# ship.
+exclude = [
+    "Content/DemoTemplate/_Core/BP_SaveData.uasset",
+    "Content/__ExternalActors__/Variant_Horror",
+    "Content/__ExternalActors__/Variant_Shooter",
+    "Content/__ExternalObjects__/Variant_Horror",
+    "Content/__ExternalObjects__/Variant_Shooter",
+]
+
+# The features the template is made of, added as plugins.
+features = ["mannequin", "checkpoints", "interactables", "tour"]
+
+# Printed when the project is ready (Tera, same context as the files).
+next_step = "open {{ project }}.uproject and press Play: WASD / left stick move, mouse / right stick look, Space / A jump; follow the tour from the first station"
