@@ -684,8 +684,8 @@ Interfaces load once the engine is initialized (a game module's or an
 asset's cannot be loaded earlier), so the class implements them from then on.
 An interface whose functions are not Blueprint events (marked
 `CannotImplementInterfaceInBlueprint`) has only a C++ implementation and is
-refused, as Blueprints refuse it. Between Rust classes, a Rust trait is the
-lighter tool.
+refused, as Blueprints refuse it. An interface can be declared in Rust too, see
+[Defining UE Interfaces](#defining-ue-interfaces).
 
 ### Defining UE Structs
 
@@ -747,6 +747,71 @@ A `#[uenum]` has unit variants with values up to 254, as a Blueprint enum's
 `uint8`; the macro sets the representation. It is a property type, a
 `#[ufunction]` parameter or return value, and a `match` like any Rust enum.
 Engine enums from the bindings are ufunction parameters and return values too.
+
+### Defining UE Interfaces
+
+An interface the game's code calls on actors of any kind (something to
+interact with, to damage, to pick up) is declared in Rust as UHT's
+`UINTERFACE(Blueprintable)`: a `#[uinterface]` trait becomes a UE interface
+whose functions are Blueprint events.
+
+```rust
+#[uinterface]
+pub trait Interactable {
+    fn interact(&mut self, instigator: UObjectRef<Actor>) -> bool;
+    fn highlight(&mut self, on: bool);
+}
+```
+
+Its functions take `&self` or `&mut self`, then what a `#[ufunction]` takes,
+and return what it returns. They have no body: each class implementing the
+interface writes its own. A Rust class implements it with `#[uclass_impl]` on
+the trait's implementation, whose methods are the interface's functions, with
+no `#[ufunction]`:
+
+```rust
+#[uclass(parent = Actor)]
+pub struct Door {
+    #[uproperty(EditAnywhere)]
+    locked: bool,
+}
+
+#[uclass_impl]
+impl Interactable for Door {
+    fn interact(&mut self, instigator: UObjectRef<Actor>) -> bool {
+        !self.locked()
+    }
+
+    fn highlight(&mut self, on: bool) {}
+}
+```
+
+A Blueprint implements it in *Class Settings > Implemented Interfaces*, as it
+implements a Blueprint Interface, and a Blueprint child of `Door` overrides
+`Door`'s functions, as it overrides a C++ `BlueprintNativeEvent`. A class that
+leaves the functions to its Blueprint children lists the interface instead:
+`#[uclass(parent = Actor, implements = [Interactable])]`.
+
+Rust code calls it on any object, whichever language implements it:
+
+```rust
+if let Ok(mut target) = hit_actor.interface::<dyn Interactable>() {
+    target.interact(self.as_ref().upcast_to());
+}
+```
+
+`interface::<dyn Interactable>()` is C++'s `Cast<IInteractable>`: an error
+when the object does not implement the interface, a
+`ScriptInterface<dyn Interactable>` (C++'s `TScriptInterface`) when it does;
+`implements::<dyn Interactable>()` only tells. A function the object's class
+does not implement returns the default value, as a Blueprint's interface
+message does. Blueprints call it as *Interact (Message)*, or on an
+*Interactable* reference.
+
+The interface is `/Script/Rusteal.Interactable` (a plugin's is
+`/Script/<Plugin>.Interactable`): the classes of another library implement it
+by that path, `implements = ["/Script/Inventory.Interactable"]`, with
+`#[ufunction]`s named as its functions.
 
 ### Widgets
 
@@ -919,8 +984,11 @@ plugin). Function bodies update immediately. A class whose `#[uproperty]`s,
 `#[component]`s, `#[ufunction]`s or parent changed is created again, and its
 objects move to the new class: the actors in the level, its Blueprint
 children and its Rust subclasses, keeping their property values. Rust-private
-fields start over on every reload. A changed `#[ustruct]` still needs an editor
-restart, and so does a changed class outside the editor (`-game`). How it
+fields start over on every reload. A changed `#[uinterface]` keeps its class
+and gets its new functions, and the Blueprints implementing or calling it are
+recompiled, as when a Blueprint Interface changes. A changed `#[ustruct]` still
+needs an editor restart, and so does a changed class or interface outside the
+editor (`-game`). How it
 works, and why: [docs/hot-reload.md](docs/hot-reload.md).
 
 #### Console commands
