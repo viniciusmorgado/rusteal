@@ -187,6 +187,12 @@ templates travel inside it. The first command that needs the engine asks where
 it is and keeps the answer in `~/.config/rusteal/config.toml` — the only
 per-machine setting Rusteal has.
 
+Every command is also a Cargo subcommand: `cargo rusteal watch` is
+`rusteal watch`, run from anywhere inside the project. An IDE that runs Cargo
+commands (RustRover, VS Code's rust-analyzer tasks) can then start
+`rusteal watch` or `rusteal build` with a Cargo run configuration whose command
+is `rusteal watch`, the same on Linux and Windows.
+
 ### A new project
 
 ```bash
