@@ -55,6 +55,9 @@ struct FRustealCoreApi {
 
   bool (*take_error_message)(ERustealErrorCode code, uint8 *buf, uint32 buf_len,
                              uint32 *out_len);
+
+  bool (*is_child_of)(RustealUClassHandle class_handle,
+                      RustealUClassHandle parent);
 };
 
 struct FRustealErrorReport {

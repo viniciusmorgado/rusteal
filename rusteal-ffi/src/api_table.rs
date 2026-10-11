@@ -68,6 +68,8 @@ pub struct RustealCoreApi {
         buf_len: u32,
         out_len: *mut u32,
     ) -> bool,
+
+    pub is_child_of: unsafe extern "C" fn(class: UClassHandle, parent: UClassHandle) -> bool,
 }
 
 #[repr(C)]

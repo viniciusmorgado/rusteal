@@ -58,6 +58,24 @@ impl<T: UeClass> SubclassOf<T> {
         }
     }
 
+    #[track_caller]
+    pub fn from_class(class: UClassHandle) -> crate::error::RustealResult<Self> {
+        use crate::error::RustealError;
+
+        if class.is_null() {
+            return Err(RustealError::null_argument());
+        }
+
+        if !unsafe { crate::ffi_dispatch::core_is_child_of(class, T::static_class()) } {
+            return Err(RustealError::invalid_cast_to(
+                UObjectHandle(class.0),
+                T::static_class(),
+            ));
+        }
+
+        Ok(unsafe { Self::from_raw(class) })
+    }
+
     pub fn raw(&self) -> UClassHandle {
         self.handle
     }
