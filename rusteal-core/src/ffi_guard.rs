@@ -1,4 +1,33 @@
+use std::cell::RefCell;
+
+use rusteal_ffi::{FWeakObjectHandle, RustealErrorReport};
+
 use crate::api::is_api_initialized;
+
+struct PanicSite {
+    file: String,
+    line: u32,
+    column: u32,
+}
+
+thread_local! {
+    static PANIC_SITE: RefCell<Option<PanicSite>> = const { RefCell::new(None) };
+}
+
+pub fn install_panic_hook() {
+    let previous = std::panic::take_hook();
+
+    std::panic::set_hook(Box::new(move |info| {
+        let site = info.location().map(|location| PanicSite {
+            file: location.file().to_owned(),
+            line: location.line(),
+            column: location.column(),
+        });
+
+        PANIC_SITE.with(|slot| *slot.borrow_mut() = site);
+        previous(info);
+    }));
+}
 
 pub fn ffi_boundary<F, R>(default: R, f: F) -> R
 where
@@ -8,12 +37,7 @@ where
         Ok(value) => value,
         Err(payload) => {
             if is_api_initialized() {
-                let msg = panic_message(&payload);
-                let bytes = msg.as_bytes();
-
-                unsafe {
-                    crate::ffi_dispatch::logging_log(2, bytes.as_ptr(), bytes.len() as u32);
-                }
+                report_panic(&panic_message(&payload));
             }
 
             default
@@ -21,13 +45,56 @@ where
     }
 }
 
+fn report_panic(message: &str) {
+    let site = PANIC_SITE.with(|slot| slot.borrow_mut().take());
+    let summary = format!("Rust panic: {message}");
+
+    let (details, file, line, column) = match &site {
+        Some(site) => {
+            let file = crate::error::absolute_path(&site.file);
+
+            (
+                format!(
+                    "{summary}\n    at {}:{}:{}",
+                    site.file, site.line, site.column
+                ),
+                file,
+                site.line,
+                site.column,
+            )
+        }
+        None => (summary.clone(), String::new(), 0, 0),
+    };
+
+    let report = RustealErrorReport {
+        level: crate::logging::LOG_ERROR,
+        script_error: true,
+        summary: summary.as_ptr(),
+        summary_len: summary.len() as u32,
+        details: details.as_ptr(),
+        details_len: details.len() as u32,
+        object: FWeakObjectHandle {
+            object_index: -1,
+            object_serial_number: 0,
+        },
+        file: file.as_ptr(),
+        file_len: file.len() as u32,
+        line,
+        column,
+    };
+
+    unsafe {
+        crate::ffi_dispatch::logging_report(&report);
+    }
+}
+
 fn panic_message(payload: &Box<dyn std::any::Any + Send>) -> String {
     if let Some(s) = payload.downcast_ref::<&str>() {
-        format!("[Rusteal] Rust panic: {s}")
+        (*s).to_owned()
     } else if let Some(s) = payload.downcast_ref::<String>() {
-        format!("[Rusteal] Rust panic: {s}")
+        s.clone()
     } else {
-        "[Rusteal] Rust panic (unknown payload)".to_string()
+        "unknown payload".to_string()
     }
 }
 
@@ -57,5 +124,13 @@ mod tests {
         });
 
         assert!(!result);
+    }
+
+    #[test]
+    fn panic_messages_keep_their_text() {
+        let payload: Box<dyn std::any::Any + Send> = Box::new("boom");
+        assert_eq!(panic_message(&payload), "boom");
+        let payload: Box<dyn std::any::Any + Send> = Box::new(String::from("bang"));
+        assert_eq!(panic_message(&payload), "bang");
     }
 }

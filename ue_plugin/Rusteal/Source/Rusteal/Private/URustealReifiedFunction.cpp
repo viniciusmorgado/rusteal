@@ -1,5 +1,8 @@
 #include "URustealReifiedFunction.h"
+#include "Blueprint/BlueprintExceptionInfo.h"
 #include "RustealApiTable.h"
+#include "RustealErrors.h"
+#include "UObject/Script.h"
 #include "RustealLibrary.h"
 #include "RustealModule.h"
 #include "URustealReifiedClass.h"
@@ -113,12 +116,23 @@ DEFINE_FUNCTION(URustealReifiedFunction::execCallRustFunction) {
 
   UObject *Self = P_THIS;
 
+  RustealTakePendingScriptError();
+
   RustealCallLibrary(
       ReifiedFunc->Library,
       [ReifiedFunc, Self, ParamsPtr](const FRustealRustCallbacks &Cb) {
         Cb.invoke_rust_function(ReifiedFunc->CallbackId,
                                 RustealUObjectHandle{Self}, ParamsPtr);
       });
+
+  const FString ScriptError = RustealTakePendingScriptError();
+
+  if (!ScriptError.IsEmpty() && !bFromProcessEvent) {
+    FBlueprintCoreDelegates::ThrowScriptException(
+        Self, Stack,
+        FBlueprintExceptionInfo(EBlueprintExceptionType::UserRaisedError,
+                                FText::FromString(ScriptError)));
+  }
 
   for (const TPair<FProperty *, uint8 *> &Out : OutDestinations) {
     uint8 *Value = ParamsPtr + Out.Key->GetOffset_ForUFunction();

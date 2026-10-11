@@ -28,3 +28,8 @@ using FRustealClassReinstancer =
 
 RUSTEAL_API void
 RustealSetClassReinstancer(FRustealClassReinstancer Reinstancer);
+
+using FRustealSourceOpener =
+    TFunction<void(const FString &File, int32 Line, int32 Column)>;
+
+RUSTEAL_API void RustealSetSourceOpener(FRustealSourceOpener Opener);

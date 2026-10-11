@@ -548,6 +548,7 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
         let comp_name_len = comp_name.len() as u32;
 
         accessor_methods.push(quote! {
+            #[track_caller]
             pub fn #field_ident(&self) -> ::rusteal_runtime::runtime::RustealResult<::rusteal_runtime::runtime::UObjectRef<#comp_type>> {
                 let h = unsafe {
                     ::rusteal_runtime::runtime::ffi_dispatch::reify_find_default_subobject(
@@ -557,9 +558,9 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
                 };
 
                 if h.is_null() {
-                    return Err(::rusteal_runtime::runtime::RustealError::InvalidOperation(
-                        concat!("subobject '", #comp_name, "' not found").into()
-                    ));
+                    return Err(::rusteal_runtime::runtime::RustealError::invalid_operation(
+                        concat!("subobject '", #comp_name, "' not found")
+                    ).on_handle(self.__obj));
                 }
 
                 Ok(unsafe { ::rusteal_runtime::runtime::UObjectRef::from_raw(h) })
@@ -576,6 +577,7 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
     });
 
     accessor_methods.push(quote! {
+        #[track_caller]
         pub fn from_obj(obj: ::rusteal_runtime::runtime::UObjectRef<impl ::rusteal_runtime::runtime::UeClass>) -> ::rusteal_runtime::runtime::RustealResult<Self> {
             let handle = obj.checked()?.raw();
 
@@ -584,7 +586,10 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
             };
 
             if !is_a {
-                return Err(::rusteal_runtime::runtime::RustealError::InvalidCast);
+                return Err(::rusteal_runtime::runtime::RustealError::invalid_cast_to(
+                    handle,
+                    <Self as ::rusteal_runtime::runtime::UeClass>::static_class(),
+                ));
             }
 
             let rust_data = ::rusteal_runtime::runtime::reify_registry::get_instance_data(
@@ -593,7 +598,9 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
             ) as *mut #rust_data_name;
 
             if rust_data.is_null() {
-                return Err(::rusteal_runtime::runtime::RustealError::InvalidOperation("no rust data for reified cast".into()));
+                return Err(::rusteal_runtime::runtime::RustealError::internal(
+                    concat!("no Rust data for ", stringify!(#struct_name), ": its library was reloaded or unloaded")
+                ).on_handle(handle));
             }
 
             Ok(Self { __obj: handle, __rust_data: rust_data })
@@ -601,6 +608,7 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
     });
 
     accessor_methods.push(quote! {
+        #[track_caller]
         pub fn get_default() -> ::rusteal_runtime::runtime::RustealResult<Self> {
             let class = <Self as ::rusteal_runtime::runtime::UeClass>::static_class();
             let cdo = unsafe { ::rusteal_runtime::runtime::ffi_dispatch::reify_get_cdo(class) };

@@ -3,6 +3,7 @@ use rusteal_ffi::UObjectHandle;
 use crate::error::{RustealResult, check_ffi_ctx};
 use crate::ffi_dispatch;
 
+#[track_caller]
 pub fn bind_action_raw(
     actor: UObjectHandle,
     action: UObjectHandle,

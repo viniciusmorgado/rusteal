@@ -16,6 +16,7 @@ pub struct DynamicCall {
 }
 
 impl DynamicCall {
+    #[track_caller]
     pub fn new(obj: &UObjectRef<impl UeClass>, func_name: &str) -> RustealResult<Self> {
         let h = obj.checked()?.raw();
 
@@ -24,7 +25,7 @@ impl DynamicCall {
         };
 
         if func.is_null() {
-            return Err(RustealError::FunctionNotFound(func_name.to_string()));
+            return Err(RustealError::function_not_found(func_name.to_string()).on_handle(h));
         }
 
         let params = unsafe { ffi_dispatch::reflection_alloc_params(func) };
@@ -37,6 +38,7 @@ impl DynamicCall {
         })
     }
 
+    #[track_caller]
     pub fn for_delegate(
         obj: &UObjectRef<impl UeClass>,
         delegate: FPropertyHandle,
@@ -44,13 +46,15 @@ impl DynamicCall {
         let h = obj.checked()?.raw();
 
         if delegate.is_null() {
-            return Err(RustealError::PropertyNotFound("delegate".to_string()));
+            return Err(RustealError::property_not_found("delegate").on_handle(h));
         }
 
         let func = unsafe { ffi_dispatch::reflection_get_delegate_signature(delegate) };
 
         if func.is_null() {
-            return Err(RustealError::TypeMismatch);
+            return Err(RustealError::type_mismatch()
+                .context("the property is not a delegate")
+                .on_handle(h));
         }
 
         let params = unsafe { ffi_dispatch::reflection_alloc_params(func) };
@@ -63,6 +67,7 @@ impl DynamicCall {
         })
     }
 
+    #[track_caller]
     pub fn set<T: Copy + 'static>(&mut self, name: &str, value: T) -> RustealResult<()> {
         let (prop, offset) = self.find_param(name)?;
 
@@ -79,6 +84,7 @@ impl DynamicCall {
         Ok(())
     }
 
+    #[track_caller]
     pub fn set_struct<T: crate::traits::UeStruct>(
         &mut self,
         name: &str,
@@ -95,9 +101,10 @@ impl DynamicCall {
         })
     }
 
+    #[track_caller]
     pub fn broadcast(self) -> RustealResult<()> {
         if self.delegate.is_null() {
-            return Err(RustealError::InvalidOperation("not a delegate call".into()));
+            return Err(RustealError::invalid_operation("not a delegate call"));
         }
 
         check_ffi(unsafe {
@@ -105,11 +112,15 @@ impl DynamicCall {
         })
     }
 
+    #[track_caller]
     pub fn call(mut self) -> RustealResult<DynamicCallResult> {
         let code =
             unsafe { ffi_dispatch::reflection_call_function(self.obj, self.func, self.params) };
 
-        check_ffi(code)?;
+        check_ffi(code).map_err(|e| {
+            e.context(format!("calling {}", function_name(self.func)))
+                .on_handle(self.obj)
+        })?;
 
         let result = DynamicCallResult {
             func: self.func,
@@ -121,13 +132,14 @@ impl DynamicCall {
         Ok(result)
     }
 
+    #[track_caller]
     fn find_param(&self, name: &str) -> RustealResult<(FPropertyHandle, u32)> {
         let prop = unsafe {
             ffi_dispatch::reflection_get_function_param(self.func, name.as_ptr(), name.len() as u32)
         };
 
         if prop.is_null() {
-            return Err(RustealError::PropertyNotFound(name.to_string()));
+            return Err(missing_param(self.func, name).on_handle(self.obj));
         }
 
         let offset = unsafe { ffi_dispatch::reflection_get_property_offset(prop) };
@@ -150,13 +162,14 @@ pub struct DynamicCallResult {
 }
 
 impl DynamicCallResult {
+    #[track_caller]
     pub fn get<T: Copy + 'static>(&self, name: &str) -> RustealResult<T> {
         let prop = unsafe {
             ffi_dispatch::reflection_get_function_param(self.func, name.as_ptr(), name.len() as u32)
         };
 
         if prop.is_null() {
-            return Err(RustealError::PropertyNotFound(name.to_string()));
+            return Err(missing_param(self.func, name));
         }
 
         if is_fname::<T>() {
@@ -176,7 +189,7 @@ impl DynamicCallResult {
                 .downcast_ref::<T>()
                 .or_else(|| (&handle as &dyn Any).downcast_ref::<T>())
                 .copied()
-                .ok_or(RustealError::TypeMismatch);
+                .ok_or_else(|| RustealError::type_mismatch());
         }
 
         let offset = unsafe { ffi_dispatch::reflection_get_property_offset(prop) };
@@ -185,6 +198,15 @@ impl DynamicCallResult {
 
         Ok(value)
     }
+}
+
+fn function_name(func: UFunctionHandle) -> String {
+    crate::error::object_name(UObjectHandle(func.0)).unwrap_or_else(|| "a function".to_owned())
+}
+
+#[track_caller]
+fn missing_param(func: UFunctionHandle, name: &str) -> RustealError {
+    RustealError::property_not_found(format!("parameter {name} of {}", function_name(func)))
 }
 
 fn is_fname<T: 'static>() -> bool {

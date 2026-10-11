@@ -1,4 +1,5 @@
 #include "EnhancedInputComponent.h"
+#include "RustealErrors.h"
 #include "GameFramework/Actor.h"
 #include "InputAction.h"
 #include "InputActionValue.h"
@@ -92,7 +93,7 @@ static ERustealErrorCode BindActionImpl(RustealUObjectHandle ActorHandle,
       Cast<UInputAction>(static_cast<UObject *>(ActionHandle.ptr));
 
   if (!IsValid(Actor) || !IsValid(Action) || !FunctionName) {
-    return ERustealErrorCode::NullArgument;
+    return RustealFail(ERustealErrorCode::NullArgument);
   }
 
   UEnhancedInputComponent *Input =
@@ -103,7 +104,10 @@ static ERustealErrorCode BindActionImpl(RustealUObjectHandle ActorHandle,
            TEXT("[Rusteal] BindAction: %s has no Enhanced Input component"),
            *Actor->GetName());
 
-    return ERustealErrorCode::InvalidOperation;
+    return RustealFail(
+        ERustealErrorCode::InvalidOperation,
+        FString::Printf(TEXT("BindAction: %s has no Enhanced Input component"),
+                        *Actor->GetName()));
   }
 
   const FUTF8ToTCHAR NameChars(reinterpret_cast<const ANSICHAR *>(FunctionName),
@@ -117,7 +121,10 @@ static ERustealErrorCode BindActionImpl(RustealUObjectHandle ActorHandle,
            TEXT("[Rusteal] BindAction: %s has no function %s"),
            *Actor->GetName(), *Name.ToString());
 
-    return ERustealErrorCode::FunctionNotFound;
+    return RustealFail(
+        ERustealErrorCode::FunctionNotFound,
+        FString::Printf(TEXT("BindAction: %s has no function %s"),
+                        *Actor->GetName(), *Name.ToString()));
   }
 
   FRustealActionHandlerParams Params;
@@ -129,7 +136,13 @@ static ERustealErrorCode BindActionImpl(RustealUObjectHandle ActorHandle,
                 "or a leading part of it"),
            *Actor->GetName(), *Name.ToString());
 
-    return ERustealErrorCode::TypeMismatch;
+    return RustealFail(
+        ERustealErrorCode::TypeMismatch,
+        FString::Printf(
+            TEXT("BindAction: %s::%s must take (FInputActionValue, "
+                 "float ElapsedSeconds, float TriggeredSeconds, UInputAction*) "
+                 "or a leading part of it"),
+            *Actor->GetName(), *Name.ToString()));
   }
 
   if (!AddActionBinding(

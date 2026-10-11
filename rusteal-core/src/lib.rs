@@ -34,7 +34,8 @@ pub use containers::{ContainerElement, OwnedStruct, UeArray, UeMap, UeSet};
 pub use delegate_registry::DelegateBinding;
 pub use dynamic_call::{DynamicCall, DynamicCallResult};
 pub use error::{
-    RustealError, RustealResult, check_ffi, check_ffi_ctx, ffi_infallible, ffi_infallible_ctx,
+    ErrorContext, ErrorKind, RustealError, RustealResult, UeSubject, check_ffi, check_ffi_ctx,
+    ffi_infallible, ffi_infallible_ctx,
 };
 pub use ffi_guard::ffi_boundary;
 pub use logging::{LOG_DISPLAY, LOG_ERROR, LOG_WARNING};

@@ -175,20 +175,23 @@ impl<T: ContainerElement> UeArray<T> {
         }
     }
 
+    #[track_caller]
     pub fn len(&self) -> RustealResult<usize> {
         let n = unsafe { ffi_dispatch::container_array_len(self.owner, self.prop) };
 
         if n < 0 {
-            return Err(RustealError::ObjectDestroyed);
+            return Err(RustealError::object_destroyed());
         }
 
         Ok(n as usize)
     }
 
+    #[track_caller]
     pub fn is_empty(&self) -> RustealResult<bool> {
         Ok(self.len()? == 0)
     }
 
+    #[track_caller]
     pub fn get(&self, index: usize) -> RustealResult<T> {
         let mut buf = [0u8; MAX_ELEM_BUF];
         let mut written: u32 = 0;
@@ -207,6 +210,7 @@ impl<T: ContainerElement> UeArray<T> {
         Ok(unsafe { T::read_from_buf(buf.as_ptr(), written) })
     }
 
+    #[track_caller]
     pub fn set(&self, index: usize, val: &T) -> RustealResult<()> {
         let mut buf = [0u8; MAX_ELEM_BUF];
 
@@ -223,6 +227,7 @@ impl<T: ContainerElement> UeArray<T> {
         })
     }
 
+    #[track_caller]
     pub fn push(&self, val: &T) -> RustealResult<()> {
         let mut buf = [0u8; MAX_ELEM_BUF];
 
@@ -233,12 +238,14 @@ impl<T: ContainerElement> UeArray<T> {
         })
     }
 
+    #[track_caller]
     pub fn remove(&self, index: usize) -> RustealResult<()> {
         check_ffi(unsafe {
             ffi_dispatch::container_array_remove(self.owner, self.prop, index as i32)
         })
     }
 
+    #[track_caller]
     pub fn clear(&self) -> RustealResult<()> {
         check_ffi(unsafe { ffi_dispatch::container_array_clear(self.owner, self.prop) })
     }
@@ -473,6 +480,7 @@ impl<T: ContainerElement> Iterator for BulkSetIter<T> {
 impl<T: ContainerElement> ExactSizeIterator for BulkSetIter<T> {}
 
 impl<T: ContainerElement> UeArray<T> {
+    #[track_caller]
     pub fn to_vec(&self) -> RustealResult<Vec<T>> {
         let len = self.len()?;
 
@@ -510,6 +518,7 @@ impl<T: ContainerElement> UeArray<T> {
         .collect())
     }
 
+    #[track_caller]
     pub fn bulk_iter(&self) -> RustealResult<BulkArrayIter<T>> {
         let len = self.len()?;
 
@@ -553,6 +562,7 @@ impl<T: ContainerElement> UeArray<T> {
         })
     }
 
+    #[track_caller]
     pub fn set_all(&self, items: &[T]) -> RustealResult<()> {
         if items.is_empty() {
             return self.clear();
@@ -617,20 +627,23 @@ impl<K: ContainerElement, V: ContainerElement> UeMap<K, V> {
         }
     }
 
+    #[track_caller]
     pub fn len(&self) -> RustealResult<usize> {
         let n = unsafe { ffi_dispatch::container_map_len(self.owner, self.prop) };
 
         if n < 0 {
-            return Err(RustealError::ObjectDestroyed);
+            return Err(RustealError::object_destroyed());
         }
 
         Ok(n as usize)
     }
 
+    #[track_caller]
     pub fn is_empty(&self) -> RustealResult<bool> {
         Ok(self.len()? == 0)
     }
 
+    #[track_caller]
     pub fn find(&self, key: &K) -> RustealResult<V> {
         let mut key_buf = [0u8; MAX_ELEM_BUF];
         let key_written = unsafe { key.write_to_buf(key_buf.as_mut_ptr()) };
@@ -652,6 +665,7 @@ impl<K: ContainerElement, V: ContainerElement> UeMap<K, V> {
         Ok(unsafe { V::read_from_buf(val_buf.as_ptr(), val_written) })
     }
 
+    #[track_caller]
     pub fn add(&self, key: &K, val: &V) -> RustealResult<()> {
         let mut key_buf = [0u8; MAX_ELEM_BUF];
         let key_written = unsafe { key.write_to_buf(key_buf.as_mut_ptr()) };
@@ -670,6 +684,7 @@ impl<K: ContainerElement, V: ContainerElement> UeMap<K, V> {
         })
     }
 
+    #[track_caller]
     pub fn remove(&self, key: &K) -> RustealResult<()> {
         let mut key_buf = [0u8; MAX_ELEM_BUF];
         let key_written = unsafe { key.write_to_buf(key_buf.as_mut_ptr()) };
@@ -679,10 +694,12 @@ impl<K: ContainerElement, V: ContainerElement> UeMap<K, V> {
         })
     }
 
+    #[track_caller]
     pub fn clear(&self) -> RustealResult<()> {
         check_ffi(unsafe { ffi_dispatch::container_map_clear(self.owner, self.prop) })
     }
 
+    #[track_caller]
     pub fn get_pair(&self, logical_index: usize) -> RustealResult<(K, V)> {
         let mut key_buf = [0u8; MAX_ELEM_BUF];
         let mut key_written: u32 = 0;
@@ -761,6 +778,7 @@ impl<K: ContainerElement, V: ContainerElement> Iterator for UeMapIter<'_, K, V> 
 impl<K: ContainerElement, V: ContainerElement> ExactSizeIterator for UeMapIter<'_, K, V> {}
 
 impl<K: ContainerElement, V: ContainerElement> UeMap<K, V> {
+    #[track_caller]
     pub fn bulk_iter(&self) -> RustealResult<BulkMapIter<K, V>> {
         let len = self.len()?;
 
@@ -793,6 +811,7 @@ impl<K: ContainerElement, V: ContainerElement> UeMap<K, V> {
 }
 
 impl<K: ContainerElement + Hash + Eq, V: ContainerElement> UeMap<K, V> {
+    #[track_caller]
     pub fn to_hash_map(&self) -> RustealResult<HashMap<K, V>> {
         let iter = self.bulk_iter()?;
         let count = iter.count;
@@ -823,20 +842,23 @@ impl<T: ContainerElement> UeSet<T> {
         }
     }
 
+    #[track_caller]
     pub fn len(&self) -> RustealResult<usize> {
         let n = unsafe { ffi_dispatch::container_set_len(self.owner, self.prop) };
 
         if n < 0 {
-            return Err(RustealError::ObjectDestroyed);
+            return Err(RustealError::object_destroyed());
         }
 
         Ok(n as usize)
     }
 
+    #[track_caller]
     pub fn is_empty(&self) -> RustealResult<bool> {
         Ok(self.len()? == 0)
     }
 
+    #[track_caller]
     pub fn contains(&self, val: &T) -> RustealResult<bool> {
         let mut buf = [0u8; MAX_ELEM_BUF];
         let written = unsafe { val.write_to_buf(buf.as_mut_ptr()) };
@@ -846,6 +868,7 @@ impl<T: ContainerElement> UeSet<T> {
         })
     }
 
+    #[track_caller]
     pub fn add(&self, val: &T) -> RustealResult<()> {
         let mut buf = [0u8; MAX_ELEM_BUF];
         let written = unsafe { val.write_to_buf(buf.as_mut_ptr()) };
@@ -855,6 +878,7 @@ impl<T: ContainerElement> UeSet<T> {
         })
     }
 
+    #[track_caller]
     pub fn remove(&self, val: &T) -> RustealResult<()> {
         let mut buf = [0u8; MAX_ELEM_BUF];
         let written = unsafe { val.write_to_buf(buf.as_mut_ptr()) };
@@ -864,10 +888,12 @@ impl<T: ContainerElement> UeSet<T> {
         })
     }
 
+    #[track_caller]
     pub fn clear(&self) -> RustealResult<()> {
         check_ffi(unsafe { ffi_dispatch::container_set_clear(self.owner, self.prop) })
     }
 
+    #[track_caller]
     pub fn get_element(&self, logical_index: usize) -> RustealResult<T> {
         let mut buf = [0u8; MAX_ELEM_BUF];
         let mut written: u32 = 0;
@@ -936,6 +962,7 @@ impl<T: ContainerElement> Iterator for UeSetIter<'_, T> {
 impl<T: ContainerElement> ExactSizeIterator for UeSetIter<'_, T> {}
 
 impl<T: ContainerElement> UeSet<T> {
+    #[track_caller]
     pub fn bulk_iter(&self) -> RustealResult<BulkSetIter<T>> {
         let len = self.len()?;
 
@@ -968,6 +995,7 @@ impl<T: ContainerElement> UeSet<T> {
 }
 
 impl<T: ContainerElement + Hash + Eq> UeSet<T> {
+    #[track_caller]
     pub fn to_hash_set(&self) -> RustealResult<HashSet<T>> {
         let iter = self.bulk_iter()?;
         let count = iter.count;

@@ -49,3 +49,12 @@ static_assert(offsetof(FRustealConsoleArgs, args_len) == 8,
               "FRustealConsoleArgs::args_len at offset 8");
 static_assert(offsetof(FRustealConsoleArgs, world) == 16,
               "FRustealConsoleArgs::world at offset 16");
+
+static_assert(sizeof(FRustealErrorReport) == 72,
+              "FRustealErrorReport must be 72 bytes");
+static_assert(offsetof(FRustealErrorReport, object) == 36,
+              "FRustealErrorReport::object at offset 36");
+static_assert(offsetof(FRustealErrorReport, file) == 48,
+              "FRustealErrorReport::file at offset 48");
+static_assert(offsetof(FRustealErrorReport, column) == 64,
+              "FRustealErrorReport::column at offset 64");

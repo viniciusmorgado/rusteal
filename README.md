@@ -104,12 +104,6 @@ Rusteal is a hard fork of [**uika**](https://github.com/VioletHelianthus/uika) b
 
 Rusteal does not intend to stay compatible with the original uika, unless its author wants to port the improvements back. From here on it develops the Unreal bindings independently.
 
-## Example
-
-[`examples/gem_collector`](https://github.com/viniciusmorgado/rusteal/tree/main/examples/gem_collector)
-in this repository is a full working demo of the runtime API: copy the
-directory into a project's `Rust/` and add it to the workspace members.
-
 ## Making a game
 
 Everything from here to [Making a plugin](#making-a-plugin) is about using
@@ -652,7 +646,8 @@ they are read-only.
 A `#[ufunction]` takes the scalar types, objects (`UObjectRef<T>`), classes
 (`SubclassOf<T>`) and structs (`UStructRef<T>`, a reference into the call's
 parameters; `to_owned()` keeps a copy), and returns a scalar, an object or a
-class. It is `BlueprintCallable` unless it says otherwise:
+class, or a `RustealResult` of one when it can fail (see [Errors](#errors)). It
+is `BlueprintCallable` unless it says otherwise:
 
 - `BlueprintPure`: callable without execution pins;
 - `Override`: Rust code for an engine event of a parent class, taking what it
@@ -908,6 +903,49 @@ let mut call = DynamicCall::new(&actor, "SetMobility")?;
 call.set("NewMobility", 2u8)?;
 call.call()?;
 ```
+
+### Errors
+
+What fails in the engine (a destroyed object, a wrong cast, a missing
+function) is a `RustealResult<T>`, whose `RustealError` says what went wrong,
+on which object, why Unreal refused when it says, and where in your code:
+
+```text
+invalid cast: expected Pawn (object StaticMeshActor_0 of class StaticMeshActor)
+    at my-game/src/turret.rs:42:23
+while aiming at the target
+    at my-game/src/turret.rs:30:14
+```
+
+```text
+index out of range: Unreal: index 5 past the 0 elements of Items (ArrayProperty of Turret)
+```
+
+A `#[ufunction]` returns a `RustealResult<T>` when it can fail; Unreal sees it
+return `T`. An `Err` is reported with the function's name and the function
+returns the default value; called from a Blueprint, the error is a Blueprint
+runtime error on the node that called it. Reported errors (and panics, with
+their file and line) go to the Output Log with the Blueprint call stack, and
+to the **Rusteal** tab of the Message Log (*Window > Message Log*), where the
+object and the Rust line are links: the line opens in your IDE.
+
+```rust
+#[ufunction]
+fn reload(&mut self) -> RustealResult<i32> {
+    let magazine = self.magazine().checked()?;
+    Ok(magazine.rounds())
+}
+```
+
+`{e}` is one line, `{e:#}` adds the causes and the location, `{e:?}` is the
+report above, and `e.log(LOG_WARNING)` writes it to the Output Log. The location
+is the line of your call, since the functions returning a `RustealResult` pass
+their caller's along. `.context("aiming at the target")` adds what the code was
+doing, on any `Result` (another crate's error becomes the cause) and on an
+`Option`; `?` converts the standard library's errors by itself. `kind()` is an
+`ErrorKind` to match on (`e.is(ErrorKind::InvalidCast)`), and `bail!` and
+`ensure!` return errors of your own. `RustealError` implements
+`std::error::Error`, so it also goes into `anyhow` or an error type of yours.
 
 ### Hot Reload
 

@@ -1,4 +1,5 @@
 #include "RustealApiTable.h"
+#include "RustealErrors.h"
 #include "RustealFNameHelper.h"
 #include "UObject/TextProperty.h"
 #include "UObject/UObjectGlobals.h"
@@ -7,7 +8,7 @@
 #define RUSTEAL_CHECK_VALID(ObjHandle)                                         \
   void *Object = (ObjHandle).ptr;                                              \
   if (!Object) {                                                               \
-    return ERustealErrorCode::ObjectDestroyed;                                 \
+    return RustealFail(ERustealErrorCode::ObjectDestroyed);                    \
   }
 
 static ERustealErrorCode GetBoolImpl(RustealUObjectHandle Obj,
@@ -18,7 +19,7 @@ static ERustealErrorCode GetBoolImpl(RustealUObjectHandle Obj,
       CastField<FBoolProperty>(static_cast<FProperty *>(Prop.ptr));
 
   if (!BoolProp) {
-    return ERustealErrorCode::TypeMismatch;
+    return RustealFailType(Prop.ptr, TEXT("FBoolProperty"));
   }
 
   *Out = BoolProp->GetPropertyValue_InContainer(Object);
@@ -33,7 +34,7 @@ static ERustealErrorCode SetBoolImpl(RustealUObjectHandle Obj,
       CastField<FBoolProperty>(static_cast<FProperty *>(Prop.ptr));
 
   if (!BoolProp) {
-    return ERustealErrorCode::TypeMismatch;
+    return RustealFailType(Prop.ptr, TEXT("FBoolProperty"));
   }
 
   BoolProp->SetPropertyValue_InContainer(Object, Val);
@@ -134,7 +135,7 @@ static ERustealErrorCode GetStringImpl(RustealUObjectHandle Obj,
                  CastField<FTextProperty>(Property)) {
     Value = TextProp->GetPropertyValue_InContainer(Object).ToString();
   } else {
-    return ERustealErrorCode::TypeMismatch;
+    return RustealFailType(Property, TEXT("FTextProperty"));
   }
 
   const FTCHARToUTF8 Utf8(*Value);
@@ -166,7 +167,7 @@ static ERustealErrorCode SetStringImpl(RustealUObjectHandle Obj,
   } else if (FTextProperty *TextProp = CastField<FTextProperty>(Property)) {
     TextProp->SetPropertyValue_InContainer(Object, FText::FromString(Value));
   } else {
-    return ERustealErrorCode::TypeMismatch;
+    return RustealFailType(Property, TEXT("FTextProperty"));
   }
 
   return ERustealErrorCode::Ok;
@@ -182,7 +183,7 @@ static ERustealErrorCode GetSoftObjectPathImpl(RustealUObjectHandle Obj,
       CastField<FSoftObjectProperty>(static_cast<FProperty *>(Prop.ptr));
 
   if (!SoftProp) {
-    return ERustealErrorCode::TypeMismatch;
+    return RustealFailType(Prop.ptr, TEXT("FSoftObjectProperty"));
   }
 
   const FString Value = SoftProp->GetPropertyValue_InContainer(Object)
@@ -212,7 +213,7 @@ static ERustealErrorCode SetSoftObjectPathImpl(RustealUObjectHandle Obj,
       CastField<FSoftObjectProperty>(static_cast<FProperty *>(Prop.ptr));
 
   if (!SoftProp) {
-    return ERustealErrorCode::TypeMismatch;
+    return RustealFailType(Prop.ptr, TEXT("FSoftObjectProperty"));
   }
 
   const FString Path(Len, UTF8_TO_TCHAR(reinterpret_cast<const char *>(InBuf)));
@@ -252,7 +253,7 @@ static ERustealErrorCode GetObjectImpl(RustealUObjectHandle Obj,
       CastField<FObjectPropertyBase>(static_cast<FProperty *>(Prop.ptr));
 
   if (!ObjProp) {
-    return ERustealErrorCode::TypeMismatch;
+    return RustealFailType(Prop.ptr, TEXT("FObjectPropertyBase"));
   }
 
   UObject *Value = ObjProp->GetObjectPropertyValue_InContainer(Object);
@@ -269,7 +270,7 @@ static ERustealErrorCode SetObjectImpl(RustealUObjectHandle Obj,
       CastField<FObjectPropertyBase>(static_cast<FProperty *>(Prop.ptr));
 
   if (!ObjProp) {
-    return ERustealErrorCode::TypeMismatch;
+    return RustealFailType(Prop.ptr, TEXT("FObjectPropertyBase"));
   }
 
   ObjProp->SetObjectPropertyValue_InContainer(Object,
@@ -291,7 +292,7 @@ static ERustealErrorCode GetEnumImpl(RustealUObjectHandle Obj,
                  CastField<FByteProperty>(Property)) {
     *Out = static_cast<int64>(*ByteProp->ContainerPtrToValuePtr<uint8>(Object));
   } else {
-    return ERustealErrorCode::TypeMismatch;
+    return RustealFailType(Property, TEXT("FByteProperty"));
   }
 
   return ERustealErrorCode::Ok;
@@ -311,7 +312,7 @@ static ERustealErrorCode SetEnumImpl(RustealUObjectHandle Obj,
   } else if (FByteProperty *ByteProp = CastField<FByteProperty>(Property)) {
     *ByteProp->ContainerPtrToValuePtr<uint8>(Object) = static_cast<uint8>(Val);
   } else {
-    return ERustealErrorCode::TypeMismatch;
+    return RustealFailType(Property, TEXT("FByteProperty"));
   }
 
   return ERustealErrorCode::Ok;
@@ -326,7 +327,7 @@ static ERustealErrorCode GetStructImpl(RustealUObjectHandle Obj,
       CastField<FStructProperty>(static_cast<FProperty *>(Prop.ptr));
 
   if (!StructProp) {
-    return ERustealErrorCode::TypeMismatch;
+    return RustealFailType(Prop.ptr, TEXT("FStructProperty"));
   }
 
   const void *SrcPtr = StructProp->ContainerPtrToValuePtr<void>(Object);
@@ -343,7 +344,7 @@ static ERustealErrorCode SetStructImpl(RustealUObjectHandle Obj,
       CastField<FStructProperty>(static_cast<FProperty *>(Prop.ptr));
 
   if (!StructProp) {
-    return ERustealErrorCode::TypeMismatch;
+    return RustealFailType(Prop.ptr, TEXT("FStructProperty"));
   }
 
   void *DstPtr = StructProp->ContainerPtrToValuePtr<void>(Object);
@@ -359,16 +360,19 @@ static ERustealErrorCode GetPropertyAtImpl(RustealUObjectHandle Obj,
   FProperty *Property = static_cast<FProperty *>(Prop.ptr);
 
   if (!Property)
-    return ERustealErrorCode::PropertyNotFound;
+    return RustealFail(ERustealErrorCode::PropertyNotFound);
 
   if (Index >= (uint32)Property->ArrayDim)
-    return ERustealErrorCode::IndexOutOfRange;
+    return RustealFail(
+        ERustealErrorCode::IndexOutOfRange,
+        FString::Printf(TEXT("index %u past the %d elements of %s"), Index,
+                        Property->ArrayDim, *RustealDescribe(Property)));
 
   const void *Src = Property->ContainerPtrToValuePtr<void>(Object, Index);
   uint32 ElemSize = Property->GetElementSize();
 
   if (BufSize < ElemSize)
-    return ERustealErrorCode::InternalError;
+    return RustealFail(ERustealErrorCode::InternalError);
 
   Property->CopySingleValue(OutBuf, Src);
   return ERustealErrorCode::Ok;
@@ -382,16 +386,19 @@ static ERustealErrorCode SetPropertyAtImpl(RustealUObjectHandle Obj,
   FProperty *Property = static_cast<FProperty *>(Prop.ptr);
 
   if (!Property)
-    return ERustealErrorCode::PropertyNotFound;
+    return RustealFail(ERustealErrorCode::PropertyNotFound);
 
   if (Index >= (uint32)Property->ArrayDim)
-    return ERustealErrorCode::IndexOutOfRange;
+    return RustealFail(
+        ERustealErrorCode::IndexOutOfRange,
+        FString::Printf(TEXT("index %u past the %d elements of %s"), Index,
+                        Property->ArrayDim, *RustealDescribe(Property)));
 
   void *Dest = Property->ContainerPtrToValuePtr<void>(Object, Index);
   uint32 ElemSize = Property->GetElementSize();
 
   if (BufSize < ElemSize)
-    return ERustealErrorCode::InternalError;
+    return RustealFail(ERustealErrorCode::InternalError);
 
   Property->CopySingleValue(Dest, InBuf);
   return ERustealErrorCode::Ok;

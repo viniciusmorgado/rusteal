@@ -41,6 +41,7 @@ impl<T: UeClass> SoftObjectRef<T> {
             .unwrap_or_else(|_| UObjectRef::null())
     }
 
+    #[track_caller]
     pub fn load_synchronous(&self) -> RustealResult<UObjectRef<T>> {
         if self.is_null() {
             return Ok(UObjectRef::null());
