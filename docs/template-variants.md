@@ -2,8 +2,8 @@
 
 How the engine's C++ templates and their variants became Rusteal templates,
 where the Rust ports differ from the C++ and why, and what Rusteal still lacks
-for them. The templates themselves are listed in the README
-([Templates](../README.md#templates)); the gaps of the Third Person base,
+for them. The templates themselves are listed in the game developer's handbook
+([Starting from a template](https://viniciusmorgado.github.io/game.rusteal.github.io/getting_started/templates.html)); the gaps of the Third Person base,
 closed since, are in [`third-person-gaps.md`](third-person-gaps.md).
 
 Every variant was ported in a project the editor created from the UE 5.8.2 C++

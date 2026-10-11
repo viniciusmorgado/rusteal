@@ -1,8 +1,8 @@
 # Plugin roadmap
 
 What Rusteal does not do yet for writing Unreal Engine plugins (editor tools and
-runtime gameplay plugins) in Rust, and why. What it does is in the README,
-[Making a plugin](../README.md#making-a-plugin).
+runtime gameplay plugins) in Rust, and why. What it does is in the game developer's handbook,
+[Plugins](https://viniciusmorgado.github.io/game.rusteal.github.io/plugins/overview.html).
 
 The plugin features Rusteal covers were picked as the ones plugins use most:
 a plugin's own Rust library next to the game's, runtime and editor plugins,
