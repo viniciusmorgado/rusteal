@@ -63,7 +63,9 @@ macros at compile time:
 - `#[uclass(...)]`'s arguments: the parent, `implements`, `config`;
 - each `#[uproperty]` and `#[component]` field: its attribute, name and type;
 - each `#[ufunction]` and `#[udelegate]` method of its `#[uclass_impl]`
-  blocks: its attribute and signature.
+  blocks: its attribute and signature;
+- each `#[uinterface]` trait it implements with a `#[uclass_impl]`: the trait,
+  and the signature of every method.
 
 Method bodies, doc comments and Rust-private fields are not part of it, so
 changing code alone keeps the class. The order of fields and methods does not
@@ -72,6 +74,28 @@ its layout starts with its parent's.
 
 A `#[ustruct]` has a shape as well, but structs are not reinstanced: a changed
 struct is logged, and keeps its old fields until the editor restarts.
+
+A `#[uinterface]`'s shape is its name and its functions' signatures.
+
+## Rebuilding an interface
+
+An interface is not replaced: the Blueprints implementing it hold its class,
+and so does every class implementing it, so a new class would leave all of
+them on the old one. It has no instance data either, only functions. When its
+shape changed, `CreateInterfaceImpl` keeps the class and retires its
+functions: out of its `Children` and function map, renamed `RUSTEAL_<Name>`
+and transient, kept by the bytecode that still calls them until its Blueprint
+compiles again. The library adds the new functions; `FinalizeInterfaceImpl`
+links them and clears the function caches of the classes implementing the
+interface, which `FindFunctionByName` fills with interface functions.
+
+After the classes are reinstanced, the module hands the changed interfaces to
+the interface refresher of the RustealEditor module, which conforms and
+recompiles the loaded Blueprints implementing or calling them
+(`FBlueprintEditorUtils::ConformImplementedInterfaces`, as the Blueprint
+editor does when a Blueprint Interface changes) and refreshes the
+interfaces' Blueprint actions. The Rust classes implementing a changed
+interface changed too, and were replaced with their Blueprint children.
 
 ## Replacing a class
 
@@ -133,7 +157,9 @@ is known:
 
 - **Without the editor** (a game, `-game`), there is no reinstancer: a changed
   class is kept as it was, with a warning to restart.
-- **Structs** (`#[ustruct]`) are not reinstanced (above).
+- **Structs** (`#[ustruct]`) are not reinstanced (above). Neither are
+  interfaces without the editor: a changed one keeps its functions, with a
+  warning to restart.
 - **Rust-private fields** start over on every reload, changed or not.
 - Removing a property or a function that a Blueprint uses breaks that
   Blueprint's nodes, as it would for a C++ class: the node gets a compile

@@ -36,6 +36,7 @@ extern void RustealReifyUnregisterDeleteListener();
 extern void RustealReifyForEachReifiedInstance(
     TFunctionRef<void(UObject *, URustealReifiedClass *)> Callback);
 extern void RustealReifyReinstanceReplacedClasses();
+extern void RustealReifyRefreshChangedInterfaces();
 
 extern void RustealRegisterComponentListResync();
 extern void RustealUnregisterComponentListResync();
@@ -391,6 +392,7 @@ static bool ReloadLibrary(FRustealLibrary &Library) {
   const double LoadMs = Lap();
 
   RustealReifyReinstanceReplacedClasses();
+  RustealReifyRefreshChangedInterfaces();
   const double ReinstanceMs = Lap();
 
   if (!bLoaded) {

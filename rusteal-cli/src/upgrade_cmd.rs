@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use crate::project_version::{self, PINNED, PLUGINS, Pins, Scope, Version};
-use crate::{build_cmd, global_config, setup};
+use crate::{build_cmd, global_config, new_cmd, setup};
 
 pub fn run_upgrade(root: &Path) {
     let cli = Version::cli();
@@ -52,13 +52,16 @@ pub fn run_upgrade(root: &Path) {
         let manifest = std::fs::read_to_string(&manifest_path)
             .unwrap_or_else(|e| fail(&format!("cannot read {}: {e}", manifest_path.display())));
 
-        std::fs::write(&manifest_path, rewrite_pins(&manifest, cli))
+        let rewritten = rewrite_glam(&rewrite_pins(&manifest, cli), new_cmd::GLAM_VERSION);
+
+        std::fs::write(&manifest_path, rewritten)
             .unwrap_or_else(|e| fail(&format!("cannot write {}: {e}", manifest_path.display())));
 
         eprintln!(
-            "  {}: {} pinned to ={cli}",
+            "  {}: {} pinned to ={cli}, glam {}",
             manifest_path.display(),
-            PINNED.join(", ")
+            PINNED.join(", "),
+            new_cmd::GLAM_VERSION
         );
     }
 
@@ -116,6 +119,43 @@ pub fn rewrite_pins(manifest: &str, version: Version) -> String {
     out
 }
 
+pub fn rewrite_glam(manifest: &str, glam: &str) -> String {
+    let mut in_deps = false;
+    let mut out = String::with_capacity(manifest.len());
+
+    for line in manifest.split_inclusive('\n') {
+        let trimmed = line.trim_start();
+
+        if trimmed.starts_with('[') {
+            in_deps = trimmed.starts_with("[workspace.dependencies]");
+        }
+
+        let value = trimmed
+            .strip_prefix("glam")
+            .map(str::trim_start)
+            .and_then(|rest| rest.strip_prefix('='))
+            .map(str::trim_start);
+
+        let rewritten = match value {
+            Some(value) if in_deps && value.starts_with('"') => {
+                let indent = &line[..line.len() - trimmed.len()];
+                let newline = if line.ends_with('\n') { "\n" } else { "" };
+                Some(format!("{indent}glam = \"{glam}\"{newline}"))
+            }
+            Some(_) if in_deps => line.find("version").and_then(|at| {
+                let open = at + line[at..].find('"')? + 1;
+                let close = open + line[open..].find('"')?;
+                Some(format!("{}{glam}{}", &line[..open], &line[close..]))
+            }),
+            _ => None,
+        };
+
+        out.push_str(rewritten.as_deref().unwrap_or(line));
+    }
+
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -154,5 +194,26 @@ glam = "0.33.8"
 
         let other = "[dependencies]\nrusteal-core = \"=0.2.1\"\n";
         assert_eq!(rewrite_pins(other, v("0.3.0")), other);
+    }
+
+    #[test]
+    fn glam_follows_the_cli() {
+        assert_eq!(
+            rewrite_glam(EXACT, "0.34"),
+            EXACT.replace("glam = \"0.33.8\"", "glam = \"0.34\"")
+        );
+
+        let table = EXACT.replace(
+            "glam = \"0.33.8\"",
+            "glam = { version = \"0.33.8\", features = [\"serde\"] }",
+        );
+
+        assert_eq!(
+            rewrite_glam(&table, "0.34"),
+            table.replace("\"0.33.8\"", "\"0.34\"")
+        );
+
+        let other = "[dependencies]\nglam = \"0.33\"\n";
+        assert_eq!(rewrite_glam(other, "0.34"), other);
     }
 }

@@ -8,7 +8,7 @@ use crate::{build_cmd, optimizations, plugin_cmd, setup, templates};
 
 const TEXT_EXTENSIONS: &[&str] = &["cpp", "h", "ini", "cs"];
 
-pub const GLAM_VERSION: &str = "0.33";
+pub const GLAM_VERSION: &str = "0.34";
 
 pub struct NewOptions<'a> {
     pub name: &'a str,

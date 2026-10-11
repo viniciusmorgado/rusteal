@@ -600,6 +600,14 @@ pub struct RustealReifyApi {
         values: *const i64,
         count: u32,
     ) -> UClassHandle,
+
+    pub create_interface:
+        unsafe extern "C" fn(name: *const u8, name_len: u32, shape: u64) -> UClassHandle,
+
+    pub finalize_interface: unsafe extern "C" fn(interface: UClassHandle) -> RustealErrorCode,
+
+    pub add_interface_class:
+        unsafe extern "C" fn(cls: UClassHandle, interface: UClassHandle) -> RustealErrorCode,
 }
 
 pub const RUSTEAL_COMP_ROOT: u32 = 1;
