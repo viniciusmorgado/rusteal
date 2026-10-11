@@ -107,3 +107,15 @@ functions = [
     "WidgetAnimationPlayCallbackProxy.NewPlayAnimationProxyObject",
     "WidgetAnimationPlayCallbackProxy.NewPlayAnimationTimeRangeProxyObject",
 ]
+
+# Per-platform engine settings. `rusteal new`, `rusteal watch` and `rusteal package`
+# write the host platform's table into Config/<Platform>/<Platform><File>.ini,
+# between Rusteal's markers: [optimizations.<platform>.<File>.<Section>], with the
+# platforms linux, windows and mac. `--optimizations off` leaves them out; a key
+# you already set in that .ini keeps your value.
+
+# The swapchain image is waited on with a GPU semaphore instead of a CPU fence:
+# NVIDIA's Linux driver crashes in vkWaitForFences after an out-of-date
+# swapchain (resizing, closing a window, stopping PIE). Android ships it too.
+[optimizations.linux.Engine.ConsoleVariables]
+"r.Vulkan.CpuWaitForFence" = 0

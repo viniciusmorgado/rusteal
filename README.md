@@ -104,12 +104,6 @@ Rusteal is a hard fork of [**uika**](https://github.com/VioletHelianthus/uika) b
 
 Rusteal does not intend to stay compatible with the original uika, unless its author wants to port the improvements back. From here on it develops the Unreal bindings independently.
 
-## Example
-
-[`examples/gem_collector`](https://github.com/viniciusmorgado/rusteal/tree/main/examples/gem_collector)
-in this repository is a full working demo of the runtime API: copy the
-directory into a project's `Rust/` and add it to the workspace members.
-
 ## Making a game
 
 Everything from here to [Making a plugin](#making-a-plugin) is about using
@@ -284,6 +278,13 @@ and `tour` the `LevelPrototyping` one). Its Blueprints are in the plugin's
 content (**Plugins > <Plugin> Content** in the Content Browser), children of
 its Rust classes holding the meshes, materials and widget layouts. An existing
 project takes one with `rusteal plugin new <Plugin> --template <feature>`.
+
+Other features add files to the project instead of a plugin: the setup of a
+tool around it.
+
+| Feature | Adds | What it is |
+|---|---|---|
+| `rustrover` | `Rust/.run/` | RustRover run configurations, stored as project files: **Rusteal Watch** (`cargo rusteal watch`) and **Rusteal Test** (`cargo test -p <game crate>`), the same on Linux and Windows. Open the project's `Rust` folder in RustRover to find them. |
 
 ### Screenshots
 
@@ -645,7 +646,8 @@ they are read-only.
 A `#[ufunction]` takes the scalar types, objects (`UObjectRef<T>`), classes
 (`SubclassOf<T>`) and structs (`UStructRef<T>`, a reference into the call's
 parameters; `to_owned()` keeps a copy), and returns a scalar, an object or a
-class. It is `BlueprintCallable` unless it says otherwise:
+class, or a `RustealResult` of one when it can fail (see [Errors](#errors)). It
+is `BlueprintCallable` unless it says otherwise:
 
 - `BlueprintPure`: callable without execution pins;
 - `Override`: Rust code for an engine event of a parent class, taking what it
@@ -902,6 +904,49 @@ call.set("NewMobility", 2u8)?;
 call.call()?;
 ```
 
+### Errors
+
+What fails in the engine (a destroyed object, a wrong cast, a missing
+function) is a `RustealResult<T>`, whose `RustealError` says what went wrong,
+on which object, why Unreal refused when it says, and where in your code:
+
+```text
+invalid cast: expected Pawn (object StaticMeshActor_0 of class StaticMeshActor)
+    at my-game/src/turret.rs:42:23
+while aiming at the target
+    at my-game/src/turret.rs:30:14
+```
+
+```text
+index out of range: Unreal: index 5 past the 0 elements of Items (ArrayProperty of Turret)
+```
+
+A `#[ufunction]` returns a `RustealResult<T>` when it can fail; Unreal sees it
+return `T`. An `Err` is reported with the function's name and the function
+returns the default value; called from a Blueprint, the error is a Blueprint
+runtime error on the node that called it. Reported errors (and panics, with
+their file and line) go to the Output Log with the Blueprint call stack, and
+to the **Rusteal** tab of the Message Log (*Window > Message Log*), where the
+object and the Rust line are links: the line opens in your IDE.
+
+```rust
+#[ufunction]
+fn reload(&mut self) -> RustealResult<i32> {
+    let magazine = self.magazine().checked()?;
+    Ok(magazine.rounds())
+}
+```
+
+`{e}` is one line, `{e:#}` adds the causes and the location, `{e:?}` is the
+report above, and `e.log(LOG_WARNING)` writes it to the Output Log. The location
+is the line of your call, since the functions returning a `RustealResult` pass
+their caller's along. `.context("aiming at the target")` adds what the code was
+doing, on any `Result` (another crate's error becomes the cause) and on an
+`Option`; `?` converts the standard library's errors by itself. `kind()` is an
+`ErrorKind` to match on (`e.is(ErrorKind::InvalidCast)`), and `bail!` and
+`ensure!` return errors of your own. `RustealError` implements
+`std::error::Error`, so it also goes into `anyhow` or an error type of yours.
+
 ### Hot Reload
 
 During development, rebuild your Rust library and reload without restarting the editor:
@@ -955,6 +1000,49 @@ game's and its runtime plugins'. Assets that only Rust code loads by path
 (`load_object`) are not found by the cooker through references: list their
 directory in *Project Settings > Packaging > Additional Asset Directories to
 Cook*.
+
+### Platform optimizations
+
+Some engine settings only make sense on one platform. `rusteal.toml` lists them
+per platform (`linux`, `windows`, `mac`), as
+`[optimizations.<platform>.<File>.<Section>]`, and the CLI writes the table of
+the platform it was compiled for into the project's
+`Config/<Platform>/<Platform><File>.ini`, between two Rusteal comment lines:
+
+```toml
+[optimizations.linux.Engine.ConsoleVariables]
+"r.Vulkan.CpuWaitForFence" = 0
+```
+
+```ini
+; Rusteal optimizations, written by rusteal from rusteal.toml [optimizations]: begin
+[ConsoleVariables]
+r.Vulkan.CpuWaitForFence=0
+; Rusteal optimizations: end
+```
+
+Every template ships this Linux setting: the swapchain image is waited on with
+a GPU semaphore instead of a CPU fence, because NVIDIA's Linux driver crashes
+in `vkWaitForFences` after the swapchain goes out of date (resizing, closing a
+window, stopping PIE). Epic ships the same value on Android.
+
+| Command | What it does with the optimizations |
+|---|---|
+| `rusteal new` | Writes them into the new project. |
+| `rusteal watch` | Writes them when it starts, so every machine a developer works on gets them. |
+| `rusteal package` | Writes them for the packaged game, then puts the project's files back as they were. |
+| `--optimizations off` (or `0`) | On any of the three: leaves them out (`watch`: removes them until the next `watch`). |
+
+- A key you already set yourself in that `.ini`, outside the Rusteal lines,
+  keeps your value; the rest of the file is never touched.
+- A Windows CLI never writes Linux settings, and a Windows package never
+  carries them (the engine stages `Config/Linux` only for Linux).
+- A project whose `rusteal.toml` has no `[optimizations]` table gets the
+  defaults above; an empty `[optimizations]` turns them all off.
+- Settings changed in the engine install itself, such as
+  `Engine/Config/Linux/LinuxEngine.ini`, apply to every project and every
+  game packaged with that engine, whatever `--optimizations` says, and are
+  lost when the engine is reinstalled or upgraded.
 
 ## Making a plugin
 

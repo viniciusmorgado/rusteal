@@ -3,6 +3,10 @@
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "Kismet2/KismetEditorUtilities.h"
 #include "Kismet2/ReloadUtilities.h"
+#include "MessageLogInitializationOptions.h"
+#include "MessageLogModule.h"
+#include "Misc/Paths.h"
+#include "SourceCodeNavigation.h"
 #include "Modules/ModuleManager.h"
 #include "UObject/UObjectIterator.h"
 
@@ -91,9 +95,37 @@ ReinstanceClasses(const TArray<TPair<UClass *, UClass *>> &Classes) {
   Reload.Finalize(false);
 }
 
+#define LOCTEXT_NAMESPACE "RustealEditor"
+
+static void OpenRustSource(const FString &File, int32 Line, int32 Column) {
+  if (!FPaths::FileExists(File)) {
+    UE_LOG(LogRustealReload, Warning, TEXT("No file %s to open"), *File);
+    return;
+  }
+
+  if (!FSourceCodeNavigation::OpenSourceFile(File, Line, Column)) {
+    FPlatformProcess::LaunchFileInDefaultExternalApplication(*File);
+  }
+}
+
+static void RegisterMessageLog() {
+  FMessageLogModule &MessageLog =
+      FModuleManager::LoadModuleChecked<FMessageLogModule>("MessageLog");
+
+  FMessageLogInitializationOptions Options;
+  Options.bShowFilters = true;
+  Options.bShowPages = false;
+  Options.bAllowClear = true;
+
+  MessageLog.RegisterLogListing("Rusteal", LOCTEXT("RustealLog", "Rusteal"),
+                                Options);
+}
+
 class FRustealEditorModule : public IModuleInterface {
 public:
   virtual void StartupModule() override {
+    RegisterMessageLog();
+    RustealSetSourceOpener(&OpenRustSource);
     RustealSetClassReinstancer(&ReinstanceClasses);
     AutoReload.Start();
   }
@@ -101,10 +133,18 @@ public:
   virtual void ShutdownModule() override {
     AutoReload.Stop();
     RustealSetClassReinstancer(nullptr);
+    RustealSetSourceOpener(nullptr);
+
+    if (FMessageLogModule *MessageLog =
+            FModuleManager::GetModulePtr<FMessageLogModule>("MessageLog")) {
+      MessageLog->UnregisterLogListing("Rusteal");
+    }
   }
 
 private:
   FRustealAutoReload AutoReload;
 };
+
+#undef LOCTEXT_NAMESPACE
 
 IMPLEMENT_MODULE(FRustealEditorModule, RustealEditor)

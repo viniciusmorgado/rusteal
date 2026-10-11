@@ -1,4 +1,5 @@
 #include "RustealApiTable.h"
+#include "RustealErrors.h"
 #include "UObject/UObjectGlobals.h"
 #include "UObject/UnrealType.h"
 
@@ -123,13 +124,18 @@ static ERustealErrorCode CallFunctionImpl(RustealUObjectHandle Obj,
                                           uint8 *Params) {
   UObject *Object = static_cast<UObject *>(Obj.ptr);
 
-  if (!::IsValid(Object))
-    return ERustealErrorCode::ObjectDestroyed;
-
   UFunction *Function = static_cast<UFunction *>(Func.ptr);
 
+  if (!::IsValid(Object))
+    return RustealFail(
+        ERustealErrorCode::ObjectDestroyed,
+        FString::Printf(TEXT("calling %s on an object that is gone"),
+                        Function ? *Function->GetName() : TEXT("a function")));
+
   if (!Function)
-    return ERustealErrorCode::FunctionNotFound;
+    return RustealFail(ERustealErrorCode::FunctionNotFound,
+                       FString::Printf(TEXT("a null function called on %s"),
+                                       *RustealDescribe(Object)));
 
   Object->ProcessEvent(Function, Params);
   return ERustealErrorCode::Ok;
@@ -190,7 +196,7 @@ InitializeStructImpl(RustealUStructHandle UStructHandle, uint8 *Data) {
   UScriptStruct *Struct = static_cast<UScriptStruct *>(UStructHandle.ptr);
 
   if (!Struct || !Data)
-    return ERustealErrorCode::NullArgument;
+    return RustealFail(ERustealErrorCode::NullArgument);
 
   Struct->InitializeStruct(Data);
   return ERustealErrorCode::Ok;
@@ -201,7 +207,7 @@ static ERustealErrorCode DestroyStructImpl(RustealUStructHandle UStructHandle,
   UScriptStruct *Struct = static_cast<UScriptStruct *>(UStructHandle.ptr);
 
   if (!Struct || !Data)
-    return ERustealErrorCode::NullArgument;
+    return RustealFail(ERustealErrorCode::NullArgument);
 
   Struct->DestroyStruct(Data);
   return ERustealErrorCode::Ok;
@@ -212,7 +218,7 @@ static ERustealErrorCode CopyStructImpl(RustealUStructHandle UStructHandle,
   UScriptStruct *Struct = static_cast<UScriptStruct *>(UStructHandle.ptr);
 
   if (!Struct || !Dest || !Src)
-    return ERustealErrorCode::NullArgument;
+    return RustealFail(ERustealErrorCode::NullArgument);
 
   Struct->CopyScriptStruct(Dest, Src);
   return ERustealErrorCode::Ok;

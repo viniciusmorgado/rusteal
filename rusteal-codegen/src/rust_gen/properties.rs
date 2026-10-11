@@ -782,7 +782,7 @@ fn generate_fixed_array_property(
                 rust_type.clone(),
                 format!(
                     "let raw = {actual_repr}::from_ne_bytes(buf[..{byte_count}].try_into().unwrap());\n\
-                     \x20       {rust_type}::from_value(raw).ok_or(rusteal_core::RustealError::TypeMismatch)"
+                     \x20       {rust_type}::from_value(raw).ok_or_else(|| rusteal_core::RustealError::type_mismatch())"
                 ),
                 rust_type.clone(),
                 format!("let buf = (val as {actual_repr}).to_ne_bytes().to_vec();"),
@@ -809,14 +809,14 @@ fn generate_fixed_array_property(
     };
 
     out.push_str(&format!(
-        "    fn get_{rust_name}(&self, index: u32) -> rusteal_core::RustealResult<{getter_ret_type}> {{\n"
+        "    #[track_caller]\n    fn get_{rust_name}(&self, index: u32) -> rusteal_core::RustealResult<{getter_ret_type}> {{\n"
     ));
 
     emit_prop_lookup(out, byte_lit, prop_name_len, pctx);
     emit_pre_access(out, pctx);
 
     out.push_str(&format!(
-        "        if index >= {array_dim} {{ return Err(rusteal_core::RustealError::IndexOutOfRange); }}\n\
+        "        if index >= {array_dim} {{ return Err(rusteal_core::RustealError::index_out_of_range()); }}\n\
          \x20       let elem_size = unsafe {{ rusteal_core::ffi_dispatch::reflection_get_element_size(prop) }} as usize;\n\
          \x20       let mut buf = vec![0u8; elem_size];\n\
          \x20       rusteal_core::check_ffi_ctx(unsafe {{\n\
@@ -827,14 +827,14 @@ fn generate_fixed_array_property(
     ));
 
     out.push_str(&format!(
-        "    fn set_{rust_name}(&self, index: u32, val: {setter_param_type}) -> rusteal_core::RustealResult<()> {{\n"
+        "    #[track_caller]\n    fn set_{rust_name}(&self, index: u32, val: {setter_param_type}) -> rusteal_core::RustealResult<()> {{\n"
     ));
 
     emit_prop_lookup(out, byte_lit, prop_name_len, pctx);
     emit_pre_access(out, pctx);
 
     out.push_str(&format!(
-        "        if index >= {array_dim} {{ return Err(rusteal_core::RustealError::IndexOutOfRange); }}\n\
+        "        if index >= {array_dim} {{ return Err(rusteal_core::RustealError::index_out_of_range()); }}\n\
          \x20       let elem_size = unsafe {{ rusteal_core::ffi_dispatch::reflection_get_element_size(prop) }} as usize;\n\
          \x20       {setter_conversion}\n\
          \x20       rusteal_core::check_ffi_ctx(unsafe {{\n\

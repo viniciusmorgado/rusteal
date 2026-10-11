@@ -1,4 +1,5 @@
 #include "RustealModule.h"
+#include "RustealErrors.h"
 #include "HAL/FileManager.h"
 #include "HAL/IConsoleManager.h"
 #include "HAL/PlatformProcess.h"
@@ -67,7 +68,7 @@ static void RustealLogImpl(uint8 Level, const uint8 *Msg, uint32 MsgLen) {
   }
 }
 
-static FRustealLoggingApi GLoggingApi = {&RustealLogImpl};
+static FRustealLoggingApi GLoggingApi = {&RustealLogImpl, &RustealReport};
 
 static FRustealApiTable GApiTable;
 static bool GApiTableFilled = false;

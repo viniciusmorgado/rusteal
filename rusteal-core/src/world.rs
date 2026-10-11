@@ -3,6 +3,7 @@ use rusteal_ffi::{FNameHandle, UClassHandle, UObjectHandle, UStructHandle};
 use crate::error::{RustealError, RustealResult, check_ffi};
 use crate::ffi_dispatch;
 
+#[track_caller]
 pub fn spawn_actor_raw(
     world: UObjectHandle,
     class: UClassHandle,
@@ -20,20 +21,19 @@ pub fn spawn_actor_raw(
     };
 
     if result.is_null() {
-        Err(RustealError::InvalidOperation(
-            "spawn_actor returned null".into(),
-        ))
+        Err(RustealError::invalid_operation("spawn_actor returned null"))
     } else {
         Ok(result)
     }
 }
 
+#[track_caller]
 pub fn find_object_raw(class: UClassHandle, path: &str) -> RustealResult<UObjectHandle> {
     let result =
         unsafe { ffi_dispatch::world_find_object(class, path.as_ptr(), path.len() as u32) };
 
     if result.is_null() {
-        Err(RustealError::InvalidOperation(format!(
+        Err(RustealError::invalid_operation(format!(
             "find_object: not found: {path}"
         )))
     } else {
@@ -41,12 +41,13 @@ pub fn find_object_raw(class: UClassHandle, path: &str) -> RustealResult<UObject
     }
 }
 
+#[track_caller]
 pub fn load_object_raw(class: UClassHandle, path: &str) -> RustealResult<UObjectHandle> {
     let result =
         unsafe { ffi_dispatch::world_load_object(class, path.as_ptr(), path.len() as u32) };
 
     if result.is_null() {
-        Err(RustealError::InvalidOperation(format!(
+        Err(RustealError::invalid_operation(format!(
             "load_object: failed to load: {path}"
         )))
     } else {
@@ -54,18 +55,18 @@ pub fn load_object_raw(class: UClassHandle, path: &str) -> RustealResult<UObject
     }
 }
 
+#[track_caller]
 pub fn new_object_raw(outer: UObjectHandle, class: UClassHandle) -> RustealResult<UObjectHandle> {
     let result = unsafe { ffi_dispatch::world_new_object(outer, class) };
 
     if result.is_null() {
-        Err(RustealError::InvalidOperation(
-            "new_object returned null".into(),
-        ))
+        Err(RustealError::invalid_operation("new_object returned null"))
     } else {
         Ok(result)
     }
 }
 
+#[track_caller]
 pub fn spawn_actor_deferred_raw(
     world: UObjectHandle,
     class: UClassHandle,
@@ -87,14 +88,15 @@ pub fn spawn_actor_deferred_raw(
     };
 
     if result.is_null() {
-        Err(RustealError::InvalidOperation(
-            "spawn_actor_deferred returned null".into(),
+        Err(RustealError::invalid_operation(
+            "spawn_actor_deferred returned null",
         ))
     } else {
         Ok(result)
     }
 }
 
+#[track_caller]
 pub fn finish_spawning_raw(actor: UObjectHandle, transform_buf: &[u8]) -> RustealResult<()> {
     check_ffi(unsafe {
         ffi_dispatch::world_finish_spawning(
@@ -105,18 +107,18 @@ pub fn finish_spawning_raw(actor: UObjectHandle, transform_buf: &[u8]) -> Rustea
     })
 }
 
+#[track_caller]
 pub fn get_world_raw(object: UObjectHandle) -> RustealResult<UObjectHandle> {
     let result = unsafe { ffi_dispatch::world_get_world(object) };
 
     if result.is_null() {
-        Err(RustealError::InvalidOperation(
-            "get_world returned null".into(),
-        ))
+        Err(RustealError::invalid_operation("get_world returned null"))
     } else {
         Ok(result)
     }
 }
 
+#[track_caller]
 pub fn get_all_actors_of_class_raw(
     world: UObjectHandle,
     class: UClassHandle,

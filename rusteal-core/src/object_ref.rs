@@ -1,9 +1,10 @@
 use std::marker::PhantomData;
 use std::ops::Deref;
+use std::panic::Location;
 
 use rusteal_ffi::{UClassHandle, UObjectHandle};
 
-use crate::error::{RustealError, RustealResult, check_ffi};
+use crate::error::{RustealError, RustealResult};
 use crate::ffi_dispatch;
 use crate::pinned::Pinned;
 use crate::traits::{HasParent, UeClass, UeHandle, ValidHandle};
@@ -72,6 +73,7 @@ impl<T: UeClass> UObjectRef<T> {
     }
 
     #[inline]
+    #[track_caller]
     pub fn checked(&self) -> RustealResult<Checked<T>> {
         if self.is_valid() {
             Ok(Checked {
@@ -79,10 +81,11 @@ impl<T: UeClass> UObjectRef<T> {
                 _marker: PhantomData,
             })
         } else {
-            Err(RustealError::ObjectDestroyed)
+            Err(crate::error::destroyed::<T>(Location::caller()))
         }
     }
 
+    #[track_caller]
     pub fn cast<U: UeClass>(self) -> RustealResult<UObjectRef<U>> {
         let h = self.checked()?.raw();
         let target = U::static_class();
@@ -92,37 +95,30 @@ impl<T: UeClass> UObjectRef<T> {
                 _marker: PhantomData,
             })
         } else {
-            Err(RustealError::InvalidCast)
+            Err(crate::error::cast_failed(h, target, Location::caller()))
         }
     }
 
+    #[track_caller]
     pub fn pin(self) -> RustealResult<Pinned<T>> {
         Pinned::new(self)
     }
 
+    #[track_caller]
     pub fn get_name(&self) -> RustealResult<String> {
         let h = self.checked()?.raw();
 
-        let mut buf = [0u8; 256];
-        let mut out_len: u32 = 0;
-
-        let code = unsafe {
-            ffi_dispatch::core_get_name(h, buf.as_mut_ptr(), buf.len() as u32, &mut out_len)
-        };
-
-        check_ffi(code)?;
-
-        std::str::from_utf8(&buf[..out_len as usize])
-            .map(|s| s.to_owned())
-            .map_err(|_| RustealError::Internal("name is not valid UTF-8".into()))
+        crate::error::object_name(h).ok_or_else(|| RustealError::object_destroyed().on_handle(h))
     }
 
+    #[track_caller]
     pub fn get_class(&self) -> RustealResult<UClassHandle> {
         let h = self.checked()?.raw();
 
         Ok(unsafe { ffi_dispatch::core_get_class(h) })
     }
 
+    #[track_caller]
     pub fn get_outer(&self) -> RustealResult<UObjectHandle> {
         let h = self.checked()?.raw();
 
@@ -232,11 +228,16 @@ impl<T: UeClass> Checked<T> {
         unsafe { ffi_dispatch::core_is_a(self.handle, U::static_class()) }
     }
 
+    #[track_caller]
     pub fn cast<U: UeClass>(self) -> RustealResult<Checked<U>> {
         if self.is_a::<U>() {
             Ok(Checked::new_unchecked(self.handle))
         } else {
-            Err(RustealError::InvalidCast)
+            Err(crate::error::cast_failed(
+                self.handle,
+                U::static_class(),
+                Location::caller(),
+            ))
         }
     }
 }
