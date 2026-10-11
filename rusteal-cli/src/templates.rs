@@ -4,6 +4,7 @@ use serde::Deserialize;
 
 include!(concat!(env!("OUT_DIR"), "/template_files.rs"));
 include!(concat!(env!("OUT_DIR"), "/plugin_template_files.rs"));
+include!(concat!(env!("OUT_DIR"), "/project_feature_files.rs"));
 
 pub const DEFAULT_PLUGIN_TEMPLATE: &str = "blank";
 
@@ -257,20 +258,76 @@ pub fn plugin_listing() -> String {
         .collect()
 }
 
-pub fn features() -> Vec<(&'static str, PluginManifest)> {
-    plugin_templates()
-        .into_iter()
-        .filter(|(_, manifest)| manifest.feature.is_some())
-        .collect()
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProjectFeatureManifest {
+    pub description: String,
+    pub next_step: String,
 }
 
-pub fn select_feature(name: &str) -> Result<(&'static str, Feature), String> {
+pub enum FeatureKind {
+    Plugin(Feature),
+    ProjectFiles(ProjectFeatureManifest),
+}
+
+pub struct FeatureInfo {
+    pub name: &'static str,
+    pub description: String,
+    pub kind: FeatureKind,
+}
+
+pub fn project_features() -> Vec<(&'static str, ProjectFeatureManifest)> {
+    let mut features: Vec<(&'static str, ProjectFeatureManifest)> = PROJECT_FEATURE_FILES
+        .iter()
+        .filter_map(|(path, contents)| {
+            let name = path.strip_suffix("/template.toml")?;
+
+            if name.contains('/') {
+                return None;
+            }
+
+            let text = std::str::from_utf8(contents)
+                .unwrap_or_else(|e| panic!("{path} is not UTF-8: {e}"));
+
+            Some((
+                name,
+                toml::from_str(text).unwrap_or_else(|e| panic!("{path}: {e}")),
+            ))
+        })
+        .collect();
+
+    features.sort_by_key(|(name, _)| *name);
+    features
+}
+
+pub fn features() -> Vec<FeatureInfo> {
+    let plugins = plugin_templates()
+        .into_iter()
+        .filter_map(|(name, manifest)| {
+            Some(FeatureInfo {
+                name,
+                description: manifest.description,
+                kind: FeatureKind::Plugin(manifest.feature?),
+            })
+        });
+
+    let files = project_features()
+        .into_iter()
+        .map(|(name, manifest)| FeatureInfo {
+            name,
+            description: manifest.description.clone(),
+            kind: FeatureKind::ProjectFiles(manifest),
+        });
+
+    plugins.chain(files).collect()
+}
+
+pub fn select_feature(name: &str) -> Result<FeatureInfo, String> {
     let wanted = normalize(name);
 
     features()
         .into_iter()
-        .find(|(feature, _)| normalize(feature) == wanted)
-        .and_then(|(feature, manifest)| Some((feature, manifest.feature?)))
+        .find(|feature| normalize(feature.name) == wanted)
         .ok_or_else(|| {
             format!(
                 "there is no feature '{name}'. The features are:\n{}",
@@ -282,8 +339,12 @@ pub fn select_feature(name: &str) -> Result<(&'static str, Feature), String> {
 pub fn feature_listing() -> String {
     features()
         .iter()
-        .map(|(name, manifest)| format!("  {name:<24} {}\n", manifest.description))
+        .map(|feature| format!("  {:<24} {}\n", feature.name, feature.description))
         .collect()
+}
+
+pub fn write_project_feature_files(feature: &str, root: &Path, context: &tera::Context) -> usize {
+    write_files(PROJECT_FEATURE_FILES, feature, root, context)
 }
 
 pub fn plugin_has_content(template: &str) -> bool {
@@ -398,11 +459,15 @@ mod tests {
     #[test]
     fn features_are_plugin_templates_with_their_own_plugin() {
         let features = features();
-        assert!(features.iter().any(|(name, _)| *name == "mannequin"));
+        assert!(features.iter().any(|f| f.name == "mannequin"));
         let mut plugins: Vec<String> = Vec::new();
 
-        for (name, manifest) in &features {
-            let feature = manifest.feature.as_ref().unwrap();
+        for info in &features {
+            let FeatureKind::Plugin(feature) = &info.kind else {
+                continue;
+            };
+
+            let name = info.name;
             assert!(
                 !plugins.contains(&feature.plugin),
                 "{name}: plugin {} twice",
@@ -419,15 +484,65 @@ mod tests {
             }
         }
 
-        let (feature, mannequin) = select_feature("Mannequin").unwrap();
+        let mannequin = select_feature("Mannequin").unwrap();
+        let FeatureKind::Plugin(plugin) = &mannequin.kind else {
+            panic!("mannequin is a plugin feature");
+        };
         assert_eq!(
-            (feature, mannequin.plugin.as_str()),
+            (mannequin.name, plugin.plugin.as_str()),
             ("mannequin", "Mannequin")
         );
         assert!(select_plugin("mannequin").is_ok());
         let unknown = select_feature("nope").err().unwrap();
-        assert!(unknown.contains("mannequin"), "{unknown}");
+        assert!(
+            unknown.contains("mannequin") && unknown.contains("rustrover"),
+            "{unknown}"
+        );
         assert!(listing().contains("--feature"));
+    }
+
+    #[test]
+    fn feature_names_are_unique_across_kinds() {
+        let mut names: Vec<String> = features().iter().map(|f| normalize(f.name)).collect();
+        let count = names.len();
+        names.sort();
+        names.dedup();
+        assert_eq!(names.len(), count, "two features share a name");
+    }
+
+    #[test]
+    fn the_rustrover_feature_writes_its_run_configurations() {
+        let rustrover = select_feature("RustRover").unwrap();
+        assert!(matches!(rustrover.kind, FeatureKind::ProjectFiles(_)));
+
+        let root = std::env::temp_dir().join(format!("rusteal-rustrover-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let mut context = tera::Context::new();
+        context.insert("project", "MyGame");
+        context.insert("crate_name", "my-game");
+
+        assert_eq!(write_project_feature_files("rustrover", &root, &context), 2);
+
+        let watch = std::fs::read_to_string(root.join("Rust/.run/Rusteal Watch.run.xml")).unwrap();
+        let test = std::fs::read_to_string(root.join("Rust/.run/Rusteal Test.run.xml")).unwrap();
+        std::fs::remove_dir_all(&root).unwrap();
+
+        assert!(watch.contains(r#"name="Rusteal Watch" type="CargoCommandRunConfiguration""#));
+        assert!(watch.contains(r#"<option name="command" value="rusteal watch" />"#));
+        assert!(test.contains(r#"name="Rusteal Test" type="CargoCommandRunConfiguration""#));
+        assert!(test.contains(r#"<option name="command" value="test -p my-game" />"#));
+
+        for config in [&watch, &test] {
+            assert!(
+                config
+                    .contains(r#"<option name="workingDirectory" value="file://$PROJECT_DIR$" />"#)
+            );
+            assert!(config.contains(r#"<option name="requiredFeatures" value="false" />"#));
+            assert!(
+                config.contains(r#"<method v="2" />"#),
+                "no task before launch"
+            );
+        }
     }
 
     #[test]
