@@ -4,7 +4,7 @@
 # No host triple, so the file works on every platform: rustup completes the
 # channel with its default host (`rustup show` prints it). On Windows that must
 # be x86_64-pc-windows-msvc, the toolchain Unreal Engine's libraries link with;
-# see the README's Windows requirements.
+# see the Windows prerequisites in the game developer's handbook.
 [toolchain]
 channel = "1.88.0"
 components = ["clippy", "rustfmt"]
