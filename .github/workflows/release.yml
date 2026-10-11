@@ -117,7 +117,8 @@ jobs:
                 -e 's/^\(\s*"VersionName": \)"[^"]*",$/\1"'"$TARGET_VERSION"'",/' "$UPLUGIN"
             done
             git add Cargo.toml $UPLUGINS
-            git commit -m "chore: bump version to $TARGET_VERSION"
+            # [skip ci], as in prepare-release.yml: no run for the bot's commit.
+            git commit -m "chore: bump version to $TARGET_VERSION [skip ci]"
             git push
           fi
 
