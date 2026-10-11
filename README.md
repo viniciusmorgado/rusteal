@@ -14,7 +14,7 @@
 
 **Rust bindings for Unreal Engine 5.8**
 
-Rusteal lets you write Unreal Engine games and plugins in Rust: gameplay, reusable gameplay systems, editor tools. Your Rust code compiles to a shared library that is loaded by a small UE C++ plugin. All UE API calls cross the FFI boundary through a function pointer table — no C++ compilation required during Rust iteration.
+Rusteal lets you write Unreal Engine games and plugins in Rust: gameplay, reusable gameplay systems, editor tools. Your Rust code compiles to a shared library that is loaded by a small UE C++ plugin. All UE API calls cross the FFI boundary through a function pointer table, no C++ compilation required during Rust iteration.
 
 > **⚠️ Early Stage Project** — Rusteal is under active development and **not ready for production use**. APIs will change without notice, documentation is incomplete, and many UE features are not yet covered. Contributions and feedback are welcome, but please do not use this for shipping projects.
 
@@ -24,7 +24,7 @@ Rusteal lets you write Unreal Engine games and plugins in Rust: gameplay, reusab
 
 <img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/mascot.png" alt="The Rusteal mascot" width="180" align="right">
 
-Rusteal keeps everything that makes Unreal productive, its classes, Blueprints, editor and assets, and moves the gameplay code to Rust. Compared with C++, a change rebuilds only your crate, without the Unreal Build Tool, and reloads into the running editor in seconds; the compiler rules out the use-after-free and data races that crash an editor, and a panic is caught and logged instead of taking it down. Compared with Blueprints alone, the heavy gameplay (AI for hundreds of agents, simulations, procedural generation) runs as native code spread across every core, the rules are plain Rust tested with `cargo test` without opening the engine, and crates.io is one line away. Rust classes still speak Unreal's language, `#[uclass]`, `#[uproperty]`, `#[ufunction]`, so designers keep working in Blueprint children of them.
+When gameplay becomes too complex or demanding for Blueprint graphs, the usual next step is C++. Rusteal makes Rust an alternative for that transition, bringing native performance with compiler checks against common memory and concurrency errors. Because your gameplay builds independently of Unreal’s C++ pipeline and reloads into the running editor, moving to native code also preserves a quick cycle of making changes and trying them in the game. Your Rust classes remain available to Blueprints, so designers can keep building on that logic as it grows. You also gain access to Rust’s ecosystem of crates.
 
 ## Future migration to UE6
 
