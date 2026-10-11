@@ -181,6 +181,12 @@ templates travel inside it. The first command that needs the engine asks where
 it is and keeps the answer in `~/.config/rusteal/config.toml` — the only
 per-machine setting Rusteal has.
 
+Every command is also a Cargo subcommand: `cargo rusteal watch` is
+`rusteal watch`, run from anywhere inside the project. An IDE that runs Cargo
+commands (RustRover, VS Code's rust-analyzer tasks) can then start
+`rusteal watch` or `rusteal build` with a Cargo run configuration whose command
+is `rusteal watch`, the same on Linux and Windows.
+
 ### A new project
 
 ```bash
@@ -272,6 +278,13 @@ and `tour` the `LevelPrototyping` one). Its Blueprints are in the plugin's
 content (**Plugins > <Plugin> Content** in the Content Browser), children of
 its Rust classes holding the meshes, materials and widget layouts. An existing
 project takes one with `rusteal plugin new <Plugin> --template <feature>`.
+
+Other features add files to the project instead of a plugin: the setup of a
+tool around it.
+
+| Feature | Adds | What it is |
+|---|---|---|
+| `rustrover` | `Rust/.run/` | RustRover run configurations, stored as project files: **Rusteal Watch** (`cargo rusteal watch`) and **Rusteal Test** (`cargo test -p <game crate>`), the same on Linux and Windows. Open the project's `Rust` folder in RustRover to find them. |
 
 ### Screenshots
 
@@ -987,6 +1000,49 @@ game's and its runtime plugins'. Assets that only Rust code loads by path
 (`load_object`) are not found by the cooker through references: list their
 directory in *Project Settings > Packaging > Additional Asset Directories to
 Cook*.
+
+### Platform optimizations
+
+Some engine settings only make sense on one platform. `rusteal.toml` lists them
+per platform (`linux`, `windows`, `mac`), as
+`[optimizations.<platform>.<File>.<Section>]`, and the CLI writes the table of
+the platform it was compiled for into the project's
+`Config/<Platform>/<Platform><File>.ini`, between two Rusteal comment lines:
+
+```toml
+[optimizations.linux.Engine.ConsoleVariables]
+"r.Vulkan.CpuWaitForFence" = 0
+```
+
+```ini
+; Rusteal optimizations, written by rusteal from rusteal.toml [optimizations]: begin
+[ConsoleVariables]
+r.Vulkan.CpuWaitForFence=0
+; Rusteal optimizations: end
+```
+
+Every template ships this Linux setting: the swapchain image is waited on with
+a GPU semaphore instead of a CPU fence, because NVIDIA's Linux driver crashes
+in `vkWaitForFences` after the swapchain goes out of date (resizing, closing a
+window, stopping PIE). Epic ships the same value on Android.
+
+| Command | What it does with the optimizations |
+|---|---|
+| `rusteal new` | Writes them into the new project. |
+| `rusteal watch` | Writes them when it starts, so every machine a developer works on gets them. |
+| `rusteal package` | Writes them for the packaged game, then puts the project's files back as they were. |
+| `--optimizations off` (or `0`) | On any of the three: leaves them out (`watch`: removes them until the next `watch`). |
+
+- A key you already set yourself in that `.ini`, outside the Rusteal lines,
+  keeps your value; the rest of the file is never touched.
+- A Windows CLI never writes Linux settings, and a Windows package never
+  carries them (the engine stages `Config/Linux` only for Linux).
+- A project whose `rusteal.toml` has no `[optimizations]` table gets the
+  defaults above; an empty `[optimizations]` turns them all off.
+- Settings changed in the engine install itself, such as
+  `Engine/Config/Linux/LinuxEngine.ini`, apply to every project and every
+  game packaged with that engine, whatever `--optimizations` says, and are
+  lost when the engine is reinstalled or upgraded.
 
 ## Making a plugin
 

@@ -70,6 +70,14 @@ fn main() {
         "PLUGIN_TEMPLATE_FILES",
         "plugin_template_files.rs",
     );
+
+    embed_templates(
+        &manifest_dir,
+        &out_dir,
+        "project_features",
+        "PROJECT_FEATURE_FILES",
+        "project_feature_files.rs",
+    );
 }
 
 fn embed_templates(

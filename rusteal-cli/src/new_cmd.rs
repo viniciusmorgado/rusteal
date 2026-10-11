@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use rusteal_codegen::config::ProjectLayout;
 
-use crate::{build_cmd, plugin_cmd, setup, templates};
+use crate::{build_cmd, optimizations, plugin_cmd, setup, templates};
 
 const TEXT_EXTENSIONS: &[&str] = &["cpp", "h", "ini", "cs"];
 
@@ -19,6 +19,7 @@ pub struct NewOptions<'a> {
     pub runtime_path: Option<&'a Path>,
     pub features: &'a [String],
     pub build: bool,
+    pub optimizations: optimizations::Switch,
 }
 
 pub fn run_new(opts: &NewOptions) {
@@ -72,20 +73,34 @@ pub fn run_new(opts: &NewOptions) {
     );
 
     write_bindings_placeholder(&ProjectLayout::new(&root).bindings_crate());
+    optimizations::report("new", &root, opts.optimizations);
 
     eprintln!("rusteal new: installing the Rusteal plugins");
     setup::run_setup(&root, opts.engine);
 
     let mut feature_steps = Vec::new();
 
-    for (feature, plugin) in &features {
-        eprintln!("rusteal new: adding the {feature} feature");
-        feature_steps.push(plugin_cmd::create_plugin(
-            plugin,
-            feature,
-            &root,
-            opts.engine,
-        ));
+    for feature in &features {
+        eprintln!("rusteal new: adding the {} feature", feature.name);
+
+        match &feature.kind {
+            templates::FeatureKind::Plugin(plugin) => {
+                feature_steps.push(plugin_cmd::create_plugin(
+                    &plugin.plugin,
+                    feature.name,
+                    &root,
+                    opts.engine,
+                ));
+            }
+            templates::FeatureKind::ProjectFiles(manifest) => {
+                templates::write_project_feature_files(feature.name, &root, &context);
+
+                feature_steps.push(
+                    tera::Tera::one_off(&manifest.next_step, &context, false)
+                        .unwrap_or_else(|e| panic!("Failed to render next_step: {e}")),
+                );
+            }
+        }
     }
 
     if opts.build {
@@ -109,17 +124,17 @@ pub fn run_new(opts: &NewOptions) {
     }
 }
 
-fn select_features(bundled: &[String], asked: &[String]) -> Vec<(&'static str, String)> {
-    let mut out: Vec<(&'static str, String)> = Vec::new();
+fn select_features(bundled: &[String], asked: &[String]) -> Vec<templates::FeatureInfo> {
+    let mut out: Vec<templates::FeatureInfo> = Vec::new();
 
     for name in bundled.iter().chain(asked) {
-        let (feature, manifest) = templates::select_feature(name).unwrap_or_else(|message| {
+        let feature = templates::select_feature(name).unwrap_or_else(|message| {
             eprint!("Error: {message}");
             std::process::exit(1);
         });
 
-        if !out.iter().any(|(f, _)| *f == feature) {
-            out.push((feature, manifest.plugin));
+        if !out.iter().any(|f| f.name == feature.name) {
+            out.push(feature);
         }
     }
 
