@@ -18,6 +18,7 @@ concurrency:
 # read-only in a new repository.
 permissions:
   contents: write
+  statuses: write
 
 env:
   CARGO_TERM_COLOR: always
@@ -74,7 +75,14 @@ jobs:
             echo "version=$CURRENT" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          SUBJECTS=$(git log --format=%s origin/main..HEAD | grep -v '^chore: bump version' || true)
+          # The commits since the release on crates.io, by its tag, which the
+          # release workflow creates only once it has published: a merge to
+          # main whose release failed is still counted.
+          BASE="v$RELEASED"
+          if ! git rev-parse -q --verify "refs/tags/$BASE" > /dev/null; then
+            BASE=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || echo origin/main)
+          fi
+          SUBJECTS=$(git log --format=%s "$BASE..HEAD" | grep -v '^chore: bump version' || true)
           if echo "$SUBJECTS" | grep -q '^BREAKING CHANGE:'; then
             BUMP=major
           elif echo "$SUBJECTS" | grep -q '^feat'; then
@@ -89,12 +97,19 @@ jobs:
             patch) PATCH=$((PATCH + 1)) ;;
           esac
           VERSION="$MAJOR.$MINOR.$PATCH"
-          echo "Released (crates.io): $RELEASED, bump: $BUMP, next: $VERSION"
+          echo "Released (crates.io): $RELEASED, commits since $BASE, bump: $BUMP, next: $VERSION"
+          # Never lower the version: one already above it in Cargo.toml is not
+          # on crates.io yet, and stays.
+          if [ "$(printf '%s\n%s\n' "$VERSION" "$CURRENT" | sort -V | tail -n 1)" != "$VERSION" ]; then
+            echo "Cargo.toml is at $CURRENT, above $VERSION: keeping $CURRENT."
+            VERSION="$CURRENT"
+          fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       # One version for the whole workspace: [workspace.package].version, which every crate
       # inherits, and the internal dependencies that carry it for the published manifests.
       - name: Commit the version to the PR branch
+        id: commit
         if: steps.guard.outputs.skip != 'true'
         run: |
           TARGET_VERSION="${{ steps.semver.outputs.version }}"
@@ -122,4 +137,50 @@ jobs:
             # of the pull request itself already checked everything else.
             git commit -m "chore: bump version to $TARGET_VERSION [skip ci]"
             git push origin HEAD:${{ github.head_ref }}
+            echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           fi
+
+      # The release workflow runs these steps after the merge, where a failure
+      # leaves main ahead of crates.io. Run here, on the version the merge will
+      # publish, they fail the pull request instead, before it reaches main.
+      - name: Test
+        if: steps.guard.outputs.skip != 'true'
+        run: cargo test --workspace
+
+      - name: Clippy
+        if: steps.guard.outputs.skip != 'true'
+        run: cargo clippy --workspace --all-targets --no-deps -- -D warnings
+
+      - name: Sync the plugin snapshot
+        if: steps.guard.outputs.skip != 'true'
+        run: |
+          cargo run -p rusteal -- sync-plugin
+          test -f rusteal-cli/ue_plugin_embed/Rusteal/Rusteal.uplugin
+
+      # Builds every crate from the package crates.io will receive, against the
+      # other crates' packages at this version, which are not on crates.io yet:
+      # what cargo publish checks, without publishing. The Cargo the workspace
+      # pins cannot package crates whose dependencies are unpublished; the
+      # stable one can.
+      - name: Package every crate as it will be published
+        if: steps.guard.outputs.skip != 'true'
+        run: |
+          rustup toolchain install stable --profile minimal
+          cargo +stable package --workspace --exclude xtask --allow-dirty
+
+      # The version commit pushed above is now the head of the pull request,
+      # and it creates no runs of its own. This job has just run on it what the
+      # CI checks (build, tests, clippy) and what the release needs, so it
+      # reports both checks a pull request to main must pass on that commit.
+      - name: Report the checks on the version commit
+        if: steps.commit.outputs.sha != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ steps.commit.outputs.sha }}
+        run: |
+          for CONTEXT in build bump; do
+            gh api "repos/${{ github.repository }}/statuses/$SHA" \
+              -f state=success -f context="$CONTEXT" \
+              -f description="Checked by Prepare release on this commit" \
+              -f target_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          done
