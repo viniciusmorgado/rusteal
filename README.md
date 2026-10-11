@@ -70,8 +70,6 @@ and configs, `rapier` for deterministic physics, `ggrs` for rollback,
 where things go. Everything around them is Rust: structs and traits, `Result`
 for errors, pattern matching, Cargo, rust-analyzer and clippy.
 
-<br clear="right">
-
 ## Future migration to UE6
 
 We are aware of the deep changes Unreal Engine 6 makes to the engine's
@@ -88,9 +86,13 @@ generates its bindings from. What changes, what Rusteal depends on and the open
 questions are tracked in the
 [UE6 radar](https://github.com/viniciusmorgado/rusteal/blob/ue6/docs/ue6-radar.md), on the `ue6` branch.
 
----
+## Getting started
+
+Making a game or a plugin? Read the Rusteal game developer's handbook:
 
 **[The game developer's handbook](https://viniciusmorgado.github.io/game.rusteal.github.io/)** — making games and plugins with Rusteal: installing it, the templates, writing gameplay in Rust, iterating with hot reload, packaging.
+
+Want to contribute to Rusteal itself? Read the Rusteal developer's handbook:
 
 **[The developer's handbook](https://viniciusmorgado.github.io/dev.rusteal.github.io/)** — how Rusteal works inside, and working on it: setting up a checkout, testing a change, templates, releases.
 
