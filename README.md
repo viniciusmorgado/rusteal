@@ -90,12 +90,7 @@ questions are tracked in the
 
 ### Making a game or a plugin
 
-<a href="https://viniciusmorgado.github.io/game.rusteal.github.io/"><b>The Rusteal game developer's handbook</b></a> is where everything about using Rusteal lives, from installing the CLI to shipping the game:
-
-```bash
-cargo install rusteal
-rusteal new MyGame --template third-person
-```
+<a href="https://viniciusmorgado.github.io/game.rusteal.github.io/"><b>The Rusteal game developer's handbook</b></a> is where everything about using Rusteal lives, from installing the CLI to shipping the game.
 
 | Chapter | What you find there |
 |---|---|
