@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use rusteal_codegen::config::ProjectLayout;
 
-use crate::{build_cmd, setup, templates};
+use crate::{build_cmd, plugin_cmd, setup, templates};
 
 const TEXT_EXTENSIONS: &[&str] = &["cpp", "h", "ini", "cs"];
 
@@ -17,6 +17,7 @@ pub struct NewOptions<'a> {
     pub variant: Option<&'a str>,
     pub engine: &'a Path,
     pub runtime_path: Option<&'a Path>,
+    pub features: &'a [String],
     pub build: bool,
 }
 
@@ -29,6 +30,7 @@ pub fn run_new(opts: &NewOptions) {
     });
 
     let manifest = &selected.manifest;
+    let features = select_features(&manifest.features, opts.features);
     let root = opts.parent.join(opts.name);
 
     if root.exists() {
@@ -50,6 +52,11 @@ pub fn run_new(opts: &NewOptions) {
     let template = Template::load(opts.engine, &manifest.engine_template, &manifest.exclude);
     template.instantiate(opts.name, &root);
     write_uproject(&template, opts.name, opts.engine, &root);
+
+    if template.blueprint_only {
+        write_game_module(opts.name, &root);
+    }
+
     write_project_ini(&template, opts.name, &root);
 
     if let Some(map) = &manifest.default_map {
@@ -69,6 +76,18 @@ pub fn run_new(opts: &NewOptions) {
     eprintln!("rusteal new: installing the Rusteal plugins");
     setup::run_setup(&root, opts.engine);
 
+    let mut feature_steps = Vec::new();
+
+    for (feature, plugin) in &features {
+        eprintln!("rusteal new: adding the {feature} feature");
+        feature_steps.push(plugin_cmd::create_plugin(
+            plugin,
+            feature,
+            &root,
+            opts.engine,
+        ));
+    }
+
     if opts.build {
         build_cmd::run_build(&root, opts.engine, None, 1, false, None);
     }
@@ -84,6 +103,27 @@ pub fn run_new(opts: &NewOptions) {
         .unwrap_or_else(|e| panic!("Failed to render next_step: {e}"));
 
     eprintln!("  # {next_step}");
+
+    for step in feature_steps {
+        eprintln!("  # {step}");
+    }
+}
+
+fn select_features(bundled: &[String], asked: &[String]) -> Vec<(&'static str, String)> {
+    let mut out: Vec<(&'static str, String)> = Vec::new();
+
+    for name in bundled.iter().chain(asked) {
+        let (feature, manifest) = templates::select_feature(name).unwrap_or_else(|message| {
+            eprint!("Error: {message}");
+            std::process::exit(1);
+        });
+
+        if !out.iter().any(|(f, _)| *f == feature) {
+            out.push((feature, manifest.plugin));
+        }
+    }
+
+    out
 }
 
 fn validate_name(name: &str) {
@@ -110,6 +150,8 @@ struct Replacement {
 struct Template {
     name: String,
     dir: PathBuf,
+    uproject: PathBuf,
+    blueprint_only: bool,
     engine: PathBuf,
     folders_to_ignore: Vec<String>,
     files_to_ignore: Vec<String>,
@@ -131,8 +173,15 @@ impl Template {
             std::process::exit(1);
         });
 
+        let uproject = find_uproject_in(&dir).unwrap_or_else(|| {
+            eprintln!("Error: {} has no .uproject.", dir.display());
+            std::process::exit(1);
+        });
+
         let mut t = Template {
             name: name.to_string(),
+            blueprint_only: !dir.join("Source").is_dir(),
+            uproject,
             dir: dir.clone(),
             engine: engine.to_path_buf(),
             folders_to_ignore: Vec::new(),
@@ -275,7 +324,8 @@ impl Template {
             let ignored_file = self
                 .files_to_ignore
                 .iter()
-                .any(|file| self.expand(file, project).to_lowercase() == rel_lower);
+                .any(|file| self.expand(file, project).to_lowercase() == rel_lower)
+                || path == self.uproject;
 
             if ignored_folder || ignored_file || self.is_excluded(&rel_str, project) {
                 continue;
@@ -415,6 +465,40 @@ fn copy_dir(from: &Path, to: &Path) -> usize {
     copied
 }
 
+pub fn copy_shared_packs(engine: &Path, root: &Path, packs: &[String]) {
+    for pack in packs {
+        let source = engine
+            .join("Templates/TemplateResources")
+            .join(pack)
+            .join("Content");
+
+        if !source.is_dir() {
+            eprintln!("Error: {} has no shared pack {pack}.", engine.display());
+            std::process::exit(1);
+        }
+
+        let mount = pack.rsplit('/').next().unwrap_or(pack);
+        let target = root.join("Content").join(mount);
+        let mut copied = 0usize;
+
+        for path in walk(&source) {
+            let to = target.join(path.strip_prefix(&source).unwrap());
+
+            if to.exists() {
+                continue;
+            }
+
+            std::fs::create_dir_all(to.parent().unwrap())
+                .unwrap_or_else(|e| panic!("Failed to create {}: {e}", to.display()));
+
+            copy_file(&path, &to);
+            copied += 1;
+        }
+
+        eprintln!("  shared pack {mount}: {copied} files");
+    }
+}
+
 fn copy_file(from: &Path, to: &Path) {
     std::fs::copy(from, to).unwrap_or_else(|e| panic!("Failed to copy {}: {e}", from.display()));
 
@@ -431,9 +515,9 @@ fn copy_file(from: &Path, to: &Path) {
 }
 
 fn write_uproject(template: &Template, project: &str, engine: &Path, root: &Path) {
-    let source = template.dir.join(format!("{}.uproject", template.name));
+    let source = &template.uproject;
 
-    let text = std::fs::read_to_string(&source)
+    let text = std::fs::read_to_string(source)
         .unwrap_or_else(|e| panic!("Failed to read {}: {e}", source.display()));
 
     let mut json: serde_json::Value = serde_json::from_str(text.trim_start_matches('\u{feff}'))
@@ -447,6 +531,8 @@ fn write_uproject(template: &Template, project: &str, engine: &Path, root: &Path
                 module["Name"] = serde_json::Value::String(name.replace(&template.name, project));
             }
         }
+    } else if template.blueprint_only {
+        with_game_module(&mut json, project);
     }
 
     let path = root.join(format!("{project}.uproject"));
@@ -455,6 +541,74 @@ fn write_uproject(template: &Template, project: &str, engine: &Path, root: &Path
 
     std::fs::write(&path, text)
         .unwrap_or_else(|e| panic!("Failed to write {}: {e}", path.display()));
+}
+
+fn find_uproject_in(dir: &Path) -> Option<PathBuf> {
+    let mut found: Vec<PathBuf> = std::fs::read_dir(dir)
+        .ok()?
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "uproject"))
+        .collect();
+
+    found.sort();
+    found.into_iter().next()
+}
+
+fn with_game_module(uproject: &mut serde_json::Value, project: &str) {
+    uproject["Modules"] =
+        serde_json::json!([{ "Name": project, "Type": "Runtime", "LoadingPhase": "Default" }]);
+}
+
+fn write_game_module(project: &str, root: &Path) {
+    let source = root.join("Source");
+    let module = source.join(project);
+
+    std::fs::create_dir_all(&module)
+        .unwrap_or_else(|e| panic!("Failed to create {}: {e}", module.display()));
+
+    for (target, kind) in [
+        (project.to_string(), "Game"),
+        (format!("{project}Editor"), "Editor"),
+    ] {
+        write(
+            &source.join(format!("{target}.Target.cs")),
+            &format!(
+                "using UnrealBuildTool;\n\npublic class {target}Target : TargetRules\n{{\n\
+                 \tpublic {target}Target(TargetInfo Target) : base(Target)\n\t{{\n\
+                 \t\tType = TargetType.{kind};\n\
+                 \t\tDefaultBuildSettings = BuildSettingsVersion.Latest;\n\
+                 \t\tIncludeOrderVersion = EngineIncludeOrderVersion.Latest;\n\
+                 \t\tExtraModuleNames.Add(\"{project}\");\n\t}}\n}}\n"
+            ),
+        );
+    }
+
+    write(
+        &module.join(format!("{project}.Build.cs")),
+        &format!(
+            "using UnrealBuildTool;\n\npublic class {project} : ModuleRules\n{{\n\
+             \tpublic {project}(ReadOnlyTargetRules Target) : base(Target)\n\t{{\n\
+             \t\tPCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;\n\n\
+             \t\tPublicDependencyModuleNames.AddRange(new string[] {{ \"Core\", \"CoreUObject\", \"Engine\", \"InputCore\", \"EnhancedInput\" }});\n\
+             \t}}\n}}\n"
+        ),
+    );
+
+    write(
+        &module.join(format!("{project}.h")),
+        "#pragma once\n\n#include \"CoreMinimal.h\"\n",
+    );
+
+    write(
+        &module.join(format!("{project}.cpp")),
+        &format!(
+            "#include \"{project}.h\"\n#include \"Modules/ModuleManager.h\"\n\n\
+             IMPLEMENT_PRIMARY_GAME_MODULE(FDefaultGameModuleImpl, {project}, \"{project}\");\n"
+        ),
+    );
+
+    eprintln!("  Source/{project}: the game module the Blueprint template has not");
 }
 
 fn engine_association(engine: &Path) -> String {
@@ -672,6 +826,20 @@ mod tests {
 
         std::fs::set_permissions(&from, std::fs::Permissions::from_mode(0o644)).unwrap();
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn blueprint_templates_get_a_game_module() {
+        let mut uproject: serde_json::Value = serde_json::from_str(
+            r#"{"FileVersion": 3, "Category": "", "Plugins": [{"Name": "OpenXR", "Enabled": true}]}"#,
+        )
+        .unwrap();
+
+        with_game_module(&mut uproject, "MyVR");
+
+        assert_eq!(uproject["Plugins"][0]["Name"], "OpenXR");
+        assert_eq!(uproject["Modules"][0]["Name"], "MyVR");
+        assert_eq!(uproject["Modules"][0]["Type"], "Runtime");
     }
 
     #[test]

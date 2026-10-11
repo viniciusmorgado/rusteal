@@ -146,7 +146,7 @@ pub fn generate_class(class: &ClassInfo, ctx: &CodegenContext) -> String {
     suppress_setters.extend(
         deduped_props
             .iter()
-            .filter(|p| properties::is_read_only_non_public(p))
+            .filter(|p| properties::is_read_only_non_public(p) || p.setter.is_some())
             .map(|p| format!("set_{}", properties::rust_property_name(p))),
     );
 
@@ -164,7 +164,6 @@ pub fn generate_class(class: &ClassInfo, ctx: &CodegenContext) -> String {
         handle_expr: format!("{name}::static_class()"),
         pre_access: "let h = self.handle();".to_string(),
         container_expr: "h".to_string(),
-        is_class: true,
     };
 
     delegates::generate_delegate_structs(&mut out, &own_delegate_infos, name);

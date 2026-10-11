@@ -1,0 +1,113 @@
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Key {
+    pub time: f64,
+    pub value: f64,
+    pub arrive: f64,
+    pub leave: f64,
+}
+
+pub const fn key(time: f64, value: f64, arrive: f64, leave: f64) -> Key {
+    Key {
+        time,
+        value,
+        arrive,
+        leave,
+    }
+}
+
+pub fn eval(keys: &[Key], time: f64) -> f64 {
+    let (Some(first), Some(last)) = (keys.first(), keys.last()) else {
+        return 0.0;
+    };
+
+    if time <= first.time {
+        return first.value;
+    }
+
+    if time >= last.time {
+        return last.value;
+    }
+
+    let next = keys
+        .iter()
+        .position(|k| k.time > time)
+        .unwrap_or(keys.len() - 1);
+    let (a, b) = (keys[next - 1], keys[next]);
+    let span = b.time - a.time;
+    let alpha = (time - a.time) / span;
+    let p1 = a.value + a.leave * span / 3.0;
+    let p2 = b.value - b.arrive * span / 3.0;
+    let inverse = 1.0 - alpha;
+
+    inverse.powi(3) * a.value
+        + 3.0 * inverse.powi(2) * alpha * p1
+        + 3.0 * inverse * alpha.powi(2) * p2
+        + alpha.powi(3) * b.value
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct Timeline {
+    pub position: f64,
+    pub direction: f64,
+}
+
+impl Timeline {
+    pub fn play(&mut self) {
+        self.direction = 1.0;
+    }
+
+    pub fn reverse(&mut self) {
+        self.direction = -1.0;
+    }
+
+    pub fn is_playing(&self) -> bool {
+        self.direction != 0.0
+    }
+
+    pub fn advance(&mut self, delta: f64, length: f64) -> f64 {
+        self.position = (self.position + delta * self.direction).clamp(0.0, length);
+
+        if (self.direction > 0.0 && self.position >= length)
+            || (self.direction < 0.0 && self.position <= 0.0)
+        {
+            self.direction = 0.0;
+        }
+
+        self.position
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const DOOR: [Key; 2] = [key(0.0, 0.0, 0.0, 7.314_739), key(0.3, 1.0, 0.0, 0.0)];
+
+    #[test]
+    fn a_curve_holds_its_ends() {
+        assert_eq!(eval(&DOOR, -1.0), 0.0);
+        assert_eq!(eval(&DOOR, 0.0), 0.0);
+        assert_eq!(eval(&DOOR, 0.3), 1.0);
+        assert_eq!(eval(&DOOR, 5.0), 1.0);
+    }
+
+    #[test]
+    fn a_curve_follows_its_tangents() {
+        let early = eval(&DOOR, 0.03);
+        assert!(early > 0.15 && early < 0.25, "{early}");
+        assert!(eval(&DOOR, 0.15) < 1.0);
+    }
+
+    #[test]
+    fn a_timeline_plays_and_reverses_to_its_ends() {
+        let mut timeline = Timeline::default();
+        timeline.play();
+        assert_eq!(timeline.advance(0.2, 0.3), 0.2);
+        assert_eq!(timeline.advance(0.2, 0.3), 0.3);
+        assert!(!timeline.is_playing());
+        timeline.reverse();
+        assert!((timeline.advance(0.1, 0.3) - 0.2).abs() < 1e-9);
+        timeline.play();
+        assert_eq!(timeline.advance(1.0, 0.3), 0.3);
+    }
+}

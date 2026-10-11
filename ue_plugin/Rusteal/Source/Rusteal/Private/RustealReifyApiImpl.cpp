@@ -33,6 +33,7 @@ static FProperty *CreatePropertyByType(FFieldVariant Owner, FName PropName,
   switch (PropType) {
   case ERustealReifyPropType::Bool: {
     FBoolProperty *BoolProp = new FBoolProperty(Owner, PropName, RF_Public);
+    BoolProp->SetBoolSize(sizeof(bool), true);
     Prop = BoolProp;
     break;
   }
@@ -935,11 +936,19 @@ static ERustealErrorCode FinalizeStructImpl(RustealUStructHandle Handle) {
     return ERustealErrorCode::Ok;
   }
 
-  for (TFieldIterator<FStructProperty> It(Struct,
-                                          EFieldIteratorFlags::ExcludeSuper);
+  for (TFieldIterator<FProperty> It(Struct, EFieldIteratorFlags::ExcludeSuper);
        It; ++It) {
-    if (It->Struct && It->Struct->GetStructureSize() == 0) {
-      FinalizeStructImpl(RustealUStructHandle{It->Struct});
+    FProperty *Field = *It;
+
+    if (const FArrayProperty *Array = CastField<FArrayProperty>(Field)) {
+      Field = Array->Inner;
+    }
+
+    const FStructProperty *StructField = CastField<FStructProperty>(Field);
+
+    if (StructField && StructField->Struct &&
+        StructField->Struct->GetStructureSize() == 0) {
+      FinalizeStructImpl(RustealUStructHandle{StructField->Struct});
     }
   }
 
@@ -1098,6 +1107,73 @@ static ERustealErrorCode SetClassConfigImpl(RustealUClassHandle Cls,
   return ERustealErrorCode::Ok;
 }
 
+static RustealUClassHandle CreateEnumImpl(const uint8 *Name, uint32 NameLen,
+                                          const uint8 *Entries,
+                                          uint32 EntriesLen,
+                                          const int64 *Values, uint32 Count) {
+  UPackage *RustealPackage = RustealCurrentPackage();
+  const FName EnumName = ReifyUtf8ToFName(Name, NameLen);
+  const FString EnumString = EnumName.ToString();
+
+  TArray<FString> Names;
+  FString(EntriesLen, reinterpret_cast<const UTF8CHAR *>(Entries))
+      .ParseIntoArray(Names, TEXT("\n"), false);
+
+  if (Names.Num() != static_cast<int32>(Count)) {
+    UE_LOG(LogRusteal, Error,
+           TEXT("[Rusteal] Enum %s: %d names for %u values"), *EnumString,
+           Names.Num(), Count);
+    return RustealUClassHandle{nullptr};
+  }
+
+  TArray<TPair<FName, int64>> Pairs;
+
+  for (uint32 Index = 0; Index < Count; ++Index) {
+    Pairs.Emplace(FName(*FString::Printf(TEXT("%s::%s"), *EnumString,
+                                         *Names[Index])),
+                  Values[Index]);
+  }
+
+  if (UEnum *Existing = FindObject<UEnum>(RustealPackage, *EnumString)) {
+    bool bSame = Existing->NumEnums() - 1 == Pairs.Num();
+
+    for (int32 Index = 0; bSame && Index < Pairs.Num(); ++Index) {
+      bSame = Existing->GetNameByIndex(Index) == Pairs[Index].Key &&
+              Existing->GetValueByIndex(Index) == Pairs[Index].Value;
+    }
+
+    if (!bSame) {
+      UE_LOG(LogRusteal, Warning,
+             TEXT("[Rusteal] Hot reload: the values of enum %s changed, "
+                  "which a hot reload does not apply: restart the editor to "
+                  "use them."),
+             *EnumString);
+    }
+
+    return RustealUClassHandle{Existing};
+  }
+
+  UEnum *NewEnum =
+      NewObject<UEnum>(RustealPackage, EnumName, RF_Public | RF_Standalone);
+
+  NewEnum->CppType = EnumString;
+  NewEnum->SetEnums(Pairs, UEnum::ECppForm::EnumClass);
+#if WITH_EDITORONLY_DATA
+
+  NewEnum->SetMetaData(TEXT("BlueprintType"), TEXT("true"));
+#endif
+
+  NotifyRegistrationEvent(
+      NewEnum->GetOutermost()->GetFName(), NewEnum->GetFName(),
+      ENotifyRegistrationType::NRT_Enum, ENotifyRegistrationPhase::NRP_Finished,
+      nullptr, false, NewEnum);
+
+  UE_LOG(LogRusteal, Display, TEXT("[Rusteal] Created enum: %s (%u values)"),
+         *EnumString, Count);
+
+  return RustealUClassHandle{NewEnum};
+}
+
 FRustealReifyApi GReifyApi = {
     &CreateClassImpl,         &AddPropertyImpl,
     &AddFunctionImpl,         &AddFunctionParamImpl,
@@ -1106,4 +1182,5 @@ FRustealReifyApi GReifyApi = {
     &SetPropertyMetadataImpl, &CreateStructImpl,
     &FinalizeStructImpl,      &AddDelegateImpl,
     &AddInterfaceImpl,        &SetClassConfigImpl,
+    &CreateEnumImpl,
 };

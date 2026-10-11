@@ -187,6 +187,12 @@ templates travel inside it. The first command that needs the engine asks where
 it is and keeps the answer in `~/.config/rusteal/config.toml` — the only
 per-machine setting Rusteal has.
 
+Every command is also a Cargo subcommand: `cargo rusteal watch` is
+`rusteal watch`, run from anywhere inside the project. An IDE that runs Cargo
+commands (RustRover, VS Code's rust-analyzer tasks) can then start
+`rusteal watch` or `rusteal build` with a Cargo run configuration whose command
+is `rusteal watch`, the same on Linux and Windows.
+
 ### A new project
 
 ```bash
@@ -215,9 +221,12 @@ rusteal new MyGame --template third-person
 rusteal new MyGame --template third-person --variant combat
 ```
 
-A template is one of the engine's C++ templates with its gameplay written in
+A template is one of the engine's templates with its gameplay written in
 Rust: the C++ classes are gone, the Rust crate in `Rust/` takes their place,
-and their Blueprint children, with the same names, have Rust parents.
+and their Blueprint children, with the same names, have Rust parents. The
+engine's Blueprint-only templates (`vr`, `ar`, `intro`) keep their Blueprints too, reparented
+to Rust classes and holding only data: meshes, materials, effects, input
+assets, widget layouts and Anim Blueprint graphs.
 
 The engine's templates come with variants, genre starting points the C++
 version puts all in one project. Here each is its own project: `--variant`
@@ -234,13 +243,47 @@ templates make it, and opens and plays the variant's level.
 | `top-down` | | The engine's Top Down template: its character, game mode and point and click player controller in Rust (the engine's Blueprint-only base Blueprints made their children), playable as it comes (mouse, touch). |
 | `top-down` | `strategy` | A real-time strategy start: units selected with clicks, boxes and touches, sent along the navigation mesh by EnvQueries, and interacting with the units they reach. |
 | `top-down` | `twin-stick` | A twin stick shooter: projectiles, dashes and area attacks against waves of enemies run by a StateTree, pickups and a combo score. |
+| `intro` | | The engine's Intro To Unreal template: its guided tour level, whose stations are the four [features](#features) below (copycat mannequins, checkpoints, triggers and doors, effects, animated keys, gizmos, editor hints), and its first person character, in Rust. |
 | `third-person` | | The engine's Third Person template: its character, game mode and player controller in Rust, playable as it comes (keyboard, mouse, gamepad, touch). |
 | `third-person` | `combat` | Melee combat: combo and charged attacks, enemies run by a StateTree, spawners, checkpoints, damageable props. |
 | `third-person` | `platforming` | Double jump, wall jump, coyote time, a dash, local multiplayer and respawn. |
 | `third-person` | `side-scrolling` | A side view platformer: soft platforms, jump pads, moving platforms, pickups with a counter and an NPC run by a StateTree. |
+| `vehicle` | | The engine's Vehicle template: its sports car and offroad car on Chaos Vehicles, game mode, player controller and speed and gear HUD in Rust, playable as it comes (keyboard, gamepad, steering wheel, touch). |
+| `vehicle` | `offroad` | The offroad car on an offroad level, its game mode ready for local split screen players. |
+| `vehicle` | `time-trial` | A race track with a start countdown, gates to pass in order, laps and the best lap time. |
+| `ar` | | The engine's Handheld AR template on ARCore and ARKit: its pawn (touch gestures to pick a detected plane, place the object on it, then move, rotate and scale it; light estimation), plane and placeable actors and its styled menus in Rust. It runs in the editor; Rusteal does not build for Android or iOS yet. |
+| `vr` | | The engine's Virtual Reality template on OpenXR: its pawn (teleport along the navigation mesh, snap turn, hand poses), grabbable objects, pistol and projectiles, 3D menu, passthrough and spectator camera in Rust. |
 
 Names are matched loosely (`side-scrolling`, `SideScrolling`), and `rusteal
 new` with an unknown template or variant lists them all.
+
+#### Features
+
+A feature is gameplay any template can take: a Rusteal plugin with its Rust
+classes, which `--feature` adds to the new project (as many as wanted).
+
+```bash
+rusteal new MyGame --template third-person --feature mannequin
+```
+
+| Feature | Plugin | What it is |
+|---|---|---|
+| `mannequin` | `Mannequin` | `CopycatAnimInstance`, an Animation Blueprint parent that copies a character's movement (ground speed, direction, moving, falling), the player's unless told which, and `BP_CopycatMannequin`, the Intro To Unreal template's copycat mannequin; `ReachingMannequin`, whose right hand reaches for a `ReachTarget` placed in the level (two-bone IK solved in Rust). |
+| `checkpoints` | `Checkpoints` | `BP_SpawnPoint`s that save the player's progress when walked past (`CheckpointSaveData`), and a world subsystem (`CheckpointSubsystem`) that brings the player back to the last one when the level starts or on `RespawnPlayer`. |
+| `interactables` | `Interactables` | `BP_DoorTrigger`, a switch broadcasting its `Trigger` event; `BP_Light`s and a `BP_DoorFrame_Unlockable` that it toggles and unlocks; `BP_ConfettiTrigger`, a Niagara burst; `BP_SequenceTrigger`, which plays a level sequence; `BP_Metasound`, a MetaSound with a seed parameter; `BP_DangleBlocks`, cubes hanging on physics constraints. |
+| `tour` | `Tour` | The tour pieces: `BP_TextSwitcher` (text that changes in game), `BP_Titles` (station numbers), animated `BP_KeyboardKey`s and `BP_MouseKey`s, `BP_GizmoDemo` (the move, rotate and scale gizmos at work), `BP_TemplateCube`, `BP_SplinePath` (decal arrows along a spline) and `BP_UI_Update` (editor panels shown in game). |
+
+The `intro` template is made of all four: `rusteal new MyTour --template intro`
+adds them by itself, and its level's Blueprints are children of their Rust
+classes.
+
+Each feature is written into `Plugins/<Plugin>/`, enabled in the `.uproject`,
+built with the project, and brings the engine content it needs when the
+project lacks it (`mannequin` copies the `Characters` pack, `interactables`
+and `tour` the `LevelPrototyping` one). Its Blueprints are in the plugin's
+content (**Plugins > <Plugin> Content** in the Content Browser), children of
+its Rust classes holding the meshes, materials and widget layouts. An existing
+project takes one with `rusteal plugin new <Plugin> --template <feature>`.
 
 ### Screenshots
 
@@ -492,7 +535,7 @@ impl MyActor {
 
 A `#[uproperty]` is `bool`, `i32`, `i64`, `u8`, `f32`, `f64`, an object
 (`UObjectRef<T>`), a class (`SubclassOf<T>`, UE's `TSubclassOf<T>`), a
-`UeArray` of any of those or of `FName`s, a struct (`OwnedStruct<FVector>`), an `FName`, a
+`UeArray` of any of those, of `FName`s or of structs (`UeArray<OwnedStruct<FLinearColor>>`), a struct (`OwnedStruct<FVector>`), an `FName`, a
 `String` (`FString`) or an engine enum (`ECollisionChannel`). Each gets a
 getter named after the field and a `set_` setter (`BlueprintReadOnly` is
 about Blueprints; the class's own code writes it, as C++ does); an array's
@@ -685,6 +728,67 @@ self.set_weapon_class(row.weapon_to_spawn());
 `SoftObjectRef<T>` is UE's `TSoftObjectPtr<T>`: an object by path, loaded on
 demand (`load_synchronous`), or `get` if it already is.
 
+### Defining UE Enums
+
+An enum a Rust class's properties or functions use, and a Blueprint can pick
+from a dropdown, is declared in Rust too, as UHT's `UENUM(BlueprintType)`:
+
+```rust
+#[uenum]
+pub enum EGrabType {
+    None,
+    Snap,
+    Custom = 3,
+    Free,
+}
+
+#[uclass(parent = SceneComponent)]
+pub struct GrabComponent {
+    #[uproperty(EditAnywhere, default = EGrabType::Free)]
+    grab_type: EGrabType,
+}
+```
+
+A `#[uenum]` has unit variants with values up to 254, as a Blueprint enum's
+`uint8`; the macro sets the representation. It is a property type, a
+`#[ufunction]` parameter or return value, and a `match` like any Rust enum.
+Engine enums from the bindings are ufunction parameters and return values too.
+
+### Widgets
+
+A Rust `UserWidget` reaches the widgets its Widget Blueprint's layout names as
+C++'s `UPROPERTY(meta = (BindWidget))` does: a property with the widget's name
+and `BindWidget` (`BindWidgetOptional` when the layout may leave it out) is
+set when the widget is created. A widget animation of the Widget Blueprint is
+reached the same way with `BindWidgetAnim` (`BindWidgetAnimOptional`), which
+makes the property `Transient`, as the engine requires; `Transient` keeps any
+property out of what is saved.
+
+```rust
+#[uclass(parent = UserWidget)]
+pub struct MenuWidget {
+    #[uproperty(BindWidget, BlueprintReadOnly)]
+    restart_button: UObjectRef<Button>,
+}
+
+#[uclass_impl]
+impl MenuWidget {
+    #[ufunction(Override)]
+    fn construct(&mut self) {
+        let me = self.as_ref().upcast_to::<UserWidget>();
+
+        if let Ok(button) = self.restart_button().checked() {
+            let _ = button.on_clicked().add_ufunction(&me, "Restart");
+        }
+    }
+
+    #[ufunction(BlueprintCallable)]
+    fn restart(&mut self) {
+        // ...
+    }
+}
+```
+
 ### Input
 
 With the `enhanced-input` feature (on in new projects), input works as in the
@@ -784,7 +888,7 @@ impl PlayerCharacter {
 character.on_health_changed_add(|health, armor| { /* ... */ })?.detach();
 ```
 
-Its parameters are the scalar types, objects, classes and structs (as
+Its parameters are the scalar types, `#[uenum]`s, objects, classes and structs (as
 `&OwnedStruct<T>`; a closure receives an `OwnedStruct<T>`). `#[udelegate(name =
 "...")]` gives the UE name when the method's PascalCase is not it.
 
@@ -893,6 +997,7 @@ C++ module's: letters and digits, not the project's own name.
 | `blank` (default) | A runtime plugin with a `HelloComponent` in Rust. |
 | `editor` | An editor plugin: an editor subsystem, a *Tools* menu entry counting the project's assets on a background thread, a console command doing the same, and an asset validator. |
 | `inventory` | A runtime gameplay plugin: items as data assets (`<Name>Item`), an inventory component stacking them and broadcasting its changes (`<Name>Component`), a world subsystem (`<Name>Subsystem`), project settings for its limits (`<Name>Settings`) and console commands giving, taking and listing the player's items. |
+| `mannequin` | The `mannequin` feature (see [Features](#features)). |
 
 ### Plugin layout
 
@@ -1128,6 +1233,16 @@ what to do meanwhile, is in
 | Windows (x64) | Supported |
 | macOS | Not yet tested |
 
+## Known limitations
+
+- **Mobile.** Rusteal does not build for Android or iOS yet. The `ar`
+  template, made for ARCore and ARKit devices, runs in the editor, and the
+  touch controls of the other templates can be tried there, but none of them
+  can be packaged for a phone or a tablet. Mobile support is being actively
+  worked on.
+- **Consoles.** Rusteal does not build for consoles yet; console support is
+  being actively worked on too.
+
 ## Working on Rusteal
 
 This part is for changing Rusteal itself: its crates, the `rusteal` CLI and the
@@ -1328,6 +1443,14 @@ are rendered the same way, with `plugin`, `crate_name`, `version`,
 `glam_version` and `runtime_path` as context. The plugin's module, its
 `Build.cs` and `<Name>Module.cpp`, come with the template: copy them from
 `blank` (a runtime module) or `editor` (an editor module).
+
+A plugin template with a `[feature]` table in its `template.toml` is a
+feature: `plugin` is the plugin's name in the project (its assets live under
+`/<plugin>/`, so a feature with `Content/` keeps that name), and
+`shared_packs` lists the engine template packs it needs
+(`High/Characters` is `Templates/TemplateResources/High/Characters`), copied
+into the project's `Content/` without replacing what is there. A template's
+`template.toml` bundles features with `features = [...]`.
 
 Engine APIs Rusteal uses that Unreal has deprecated are tracked in
 [`docs/ue-deprecations.md`](https://github.com/viniciusmorgado/rusteal/blob/main/docs/ue-deprecations.md): what, since which UE

@@ -3,6 +3,7 @@ mod shape;
 mod uclass;
 mod uclass_impl;
 mod udelegate;
+mod uenum;
 mod ustruct;
 
 #[proc_macro_attribute]
@@ -33,6 +34,17 @@ pub fn ustruct(
     item: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
     match ustruct::expand_ustruct(attr.into(), item.into()) {
+        Ok(tokens) => tokens.into(),
+        Err(err) => err.to_compile_error().into(),
+    }
+}
+
+#[proc_macro_attribute]
+pub fn uenum(
+    attr: proc_macro::TokenStream,
+    item: proc_macro::TokenStream,
+) -> proc_macro::TokenStream {
+    match uenum::expand_uenum(attr.into(), item.into()) {
         Ok(tokens) => tokens.into(),
         Err(err) => err.to_compile_error().into(),
     }

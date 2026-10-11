@@ -1,4 +1,5 @@
 #include "RustealApiTable.h"
+#include "RustealFNameHelper.h"
 #include "UObject/TextProperty.h"
 #include "UObject/UObjectGlobals.h"
 #include "UObject/UnrealType.h"
@@ -228,11 +229,7 @@ static ERustealErrorCode GetFNameImpl(RustealUObjectHandle Obj,
   RUSTEAL_CHECK_VALID(Obj);
   FProperty *Property = static_cast<FProperty *>(Prop.ptr);
   const FName *NamePtr = Property->ContainerPtrToValuePtr<FName>(Object);
-
-  static_assert(sizeof(FName) >= sizeof(uint64),
-                "FName must be at least 8 bytes");
-
-  FMemory::Memcpy(&Out->value, NamePtr, sizeof(uint64));
+  Out->value = RustealPackFName(*NamePtr);
   return ERustealErrorCode::Ok;
 }
 
@@ -242,7 +239,7 @@ static ERustealErrorCode SetFNameImpl(RustealUObjectHandle Obj,
   RUSTEAL_CHECK_VALID(Obj);
   FProperty *Property = static_cast<FProperty *>(Prop.ptr);
   FName *NamePtr = Property->ContainerPtrToValuePtr<FName>(Object);
-  FMemory::Memcpy(NamePtr, &Val.value, sizeof(uint64));
+  *NamePtr = RustealUnpackFName(Val.value);
   return ERustealErrorCode::Ok;
 }
 

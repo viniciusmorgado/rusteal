@@ -1,0 +1,12 @@
+use bindings::engine::{Actor, ActorComponent, ActorExt};
+use rusteal_runtime::runtime::{RustealError, RustealResult, SubclassOf, UObjectRef, UeClass};
+
+pub fn named<T: UeClass>(actor: UObjectRef<Actor>, name: &str) -> RustealResult<UObjectRef<T>> {
+    actor
+        .checked()?
+        .k2_get_components_by_class(SubclassOf::<ActorComponent>::base())
+        .into_iter()
+        .find(|component| component.get_name().is_ok_and(|n| n == name))
+        .ok_or_else(|| RustealError::InvalidOperation(format!("no component {name}")))?
+        .cast::<T>()
+}

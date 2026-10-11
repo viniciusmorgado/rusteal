@@ -73,10 +73,14 @@ public static class RustealExport
         private readonly HashSet<string> _exportedClassNames = [];
         private readonly HashSet<string> _exportedStructNames = [];
         private readonly HashSet<string> _exportedEnumNames = [];
+        private readonly Dictionary<string, (UhtScriptStruct Struct, string Package, UhtHeaderFile Header)> _skippedStructs = [];
+        private readonly Dictionary<string, (UhtClass Class, string Package, UhtHeaderFile Header)> _skippedClasses = [];
 
         public void Run()
         {
             CollectTypes();
+            ExportReachableClasses();
+            ExportReachableStructs();
             WriteJsonFiles();
         }
 
@@ -110,16 +114,23 @@ public static class RustealExport
             }
         }
 
-        private void TryExportClass(UhtClass classObj, string package, UhtHeaderFile header)
+        private void TryExportClass(UhtClass classObj, string package, UhtHeaderFile header, bool reached = false)
         {
             string name = StripPrefix(classObj.SourceName);
 
             if (!_exportedClassNames.Add(name))
                 return;
 
-            if (!ShouldExportClass(classObj))
+            if (!reached && !ShouldExportClass(classObj))
             {
                 _exportedClassNames.Remove(name);
+
+                if (!classObj.ClassFlags.HasAnyFlags(EClassFlags.Deprecated) && !IsApiClass(classObj)
+                    && (IsScriptExposed(classObj) || HasScriptExposedFields(classObj)))
+                {
+                    _skippedClasses[name] = (classObj, package, header);
+                }
+
                 return;
             }
 
@@ -135,7 +146,7 @@ public static class RustealExport
 
             foreach (UhtFunction func in classObj.Functions)
             {
-                if (ShouldExportFunction(func))
+                if (!reached && ShouldExportFunction(func))
                     funcs.Add(ExportFunction(func));
             }
 
@@ -189,16 +200,17 @@ public static class RustealExport
                 || classObj.ClassFlags.HasAnyFlags(EClassFlags.RequiredAPI);
         }
 
-        private void TryExportStruct(UhtScriptStruct structObj, string package, UhtHeaderFile header)
+        private void TryExportStruct(UhtScriptStruct structObj, string package, UhtHeaderFile header, bool reached = false)
         {
             string name = StripPrefix(structObj.SourceName);
 
             if (!_exportedStructNames.Add(name))
                 return;
 
-            if (!ShouldExportStruct(structObj))
+            if (!reached && !ShouldExportStruct(structObj))
             {
                 _exportedStructNames.Remove(name);
+                _skippedStructs.TryAdd(name, (structObj, package, header));
                 return;
             }
 
@@ -233,6 +245,119 @@ public static class RustealExport
                 ["has_static_struct"] = hasStaticStruct,
                 ["props"] = props,
             });
+        }
+
+        private void ExportReachableClasses()
+        {
+            var pending = new Queue<string>();
+
+            foreach (JsonObject type in _classes.Concat(_structs))
+                EnqueueReferencedClasses(type, pending);
+
+            while (pending.TryDequeue(out string name))
+            {
+                if (!_skippedClasses.Remove(name, out var skipped))
+                    continue;
+
+                int before = _classes.Count;
+                TryExportClass(skipped.Class, skipped.Package, skipped.Header, reached: true);
+
+                for (int i = before; i < _classes.Count; i++)
+                    EnqueueReferencedClasses(_classes[i], pending);
+            }
+        }
+
+        private static void EnqueueReferencedClasses(JsonObject type, Queue<string> pending)
+        {
+            if (type["super"] is JsonValue super)
+                pending.Enqueue(super.GetValue<string>());
+
+            foreach (string list in new[] { "props", "funcs" })
+            {
+                if (type[list] is not JsonArray items)
+                    continue;
+
+                foreach (JsonNode item in items)
+                {
+                    if (item is not JsonObject itemObj)
+                        continue;
+
+                    if (itemObj["params"] is JsonArray parameters)
+                    {
+                        foreach (JsonNode param in parameters)
+                        {
+                            if (param is JsonObject paramObj)
+                                EnqueuePropertyClasses(paramObj, pending);
+                        }
+                    }
+                    else
+                    {
+                        EnqueuePropertyClasses(itemObj, pending);
+                    }
+                }
+            }
+        }
+
+        private static void EnqueuePropertyClasses(JsonObject prop, Queue<string> pending)
+        {
+            foreach (string key in new[] { "class_name", "meta_class_name" })
+            {
+                if (prop[key] is JsonValue className)
+                    pending.Enqueue(className.GetValue<string>());
+            }
+
+            foreach (string key in new[] { "inner_prop", "element_prop", "key_prop", "value_prop" })
+            {
+                if (prop[key] is JsonObject inner)
+                    EnqueuePropertyClasses(inner, pending);
+            }
+        }
+
+        private void ExportReachableStructs()
+        {
+            var pending = new Queue<string>();
+
+            foreach (JsonObject type in _classes.Concat(_structs))
+                EnqueueReferencedStructs(type, pending);
+
+            while (pending.TryDequeue(out string name))
+            {
+                if (!_skippedStructs.Remove(name, out var skipped))
+                    continue;
+
+                int before = _structs.Count;
+                TryExportStruct(skipped.Struct, skipped.Package, skipped.Header, reached: true);
+
+                for (int i = before; i < _structs.Count; i++)
+                    EnqueueReferencedStructs(_structs[i], pending);
+            }
+        }
+
+        private static void EnqueueReferencedStructs(JsonObject type, Queue<string> pending)
+        {
+            if (type["super"] is JsonValue super)
+                pending.Enqueue(super.GetValue<string>());
+
+            if (type["props"] is not JsonArray props)
+                return;
+
+            foreach (JsonNode prop in props)
+            {
+                if (prop is JsonObject propObj)
+                    EnqueuePropertyStructs(propObj, pending);
+            }
+        }
+
+        private static void EnqueuePropertyStructs(JsonObject prop, Queue<string> pending)
+        {
+            if (prop["struct_name"] is JsonValue structName)
+                pending.Enqueue(structName.GetValue<string>());
+
+            foreach (string key in new[] { "inner_prop", "element_prop", "key_prop", "value_prop" })
+            {
+                if (prop[key] is JsonObject inner)
+                    EnqueuePropertyStructs(inner, pending);
+            }
         }
 
         private static bool ShouldExportStruct(UhtScriptStruct structObj)

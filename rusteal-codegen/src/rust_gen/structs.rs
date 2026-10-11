@@ -61,7 +61,6 @@ pub fn generate_struct(s: &StructInfo, ctx: &CodegenContext) -> String {
                 handle_expr: format!("{name}::static_struct()"),
                 pre_access: String::new(),
                 container_expr: "self.as_ptr()".to_string(),
-                is_class: false,
             };
 
             let trait_name = format!("{name}Ext");

@@ -1,0 +1,8 @@
+use bindings::engine::Actor;
+use rusteal_runtime::{uclass, uclass_impl};
+
+#[uclass(parent = Actor)]
+pub struct DangleBlocks {}
+
+#[uclass_impl]
+impl DangleBlocks {}

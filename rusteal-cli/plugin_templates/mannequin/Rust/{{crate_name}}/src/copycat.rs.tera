@@ -1,0 +1,138 @@
+use bindings::engine::{
+    AnimInstance, AnimInstanceExt, Character, CharacterExt, CharacterMovementComponent,
+    CharacterMovementComponentExt, ControllerExt, GameplayStatics, MovementComponentExt,
+    NavMovementComponentExt,
+};
+use bindings::prelude::*;
+use glam::DVec3;
+use rusteal_runtime::runtime::{OwnedStruct, UObjectRef};
+use rusteal_runtime::{uclass, uclass_impl};
+
+const MOVING_SPEED: f64 = 0.01;
+const DIRECTION_LIMIT: f64 = 45.0;
+
+#[uclass(parent = AnimInstance)]
+pub struct CopycatAnimInstance {
+    #[uproperty(EditAnywhere, BlueprintReadWrite, category = "Copycat")]
+    source_character: UObjectRef<Character>,
+
+    #[uproperty(BlueprintReadOnly, category = "Copycat")]
+    character: UObjectRef<Character>,
+
+    #[uproperty(BlueprintReadOnly, category = "Copycat")]
+    movement_component: UObjectRef<CharacterMovementComponent>,
+
+    #[uproperty(BlueprintReadOnly, category = "Copycat")]
+    velocity: OwnedStruct<FVector>,
+
+    #[uproperty(BlueprintReadOnly, category = "Copycat", default = 0.0)]
+    ground_speed: f64,
+
+    #[uproperty(BlueprintReadOnly, category = "Copycat", default = 0.0)]
+    direction: f64,
+
+    #[uproperty(BlueprintReadOnly, category = "Copycat", default = false)]
+    should_move: bool,
+
+    #[uproperty(BlueprintReadOnly, category = "Copycat", default = false)]
+    is_falling: bool,
+}
+
+#[uclass_impl]
+impl CopycatAnimInstance {
+    #[ufunction(Override)]
+    fn blueprint_update_animation(&mut self, _delta_time_x: f32) {
+        if !self.character().is_valid() || !self.movement_component().is_valid() {
+            self.find_character();
+        }
+
+        let (Ok(anim), Ok(character), Ok(movement)) = (
+            self.as_ref().checked(),
+            self.character().checked(),
+            self.movement_component().checked(),
+        ) else {
+            return;
+        };
+
+        let velocity = movement.get_velocity();
+        let ground_speed = ground_speed(velocity.to_dvec3());
+        let direction =
+            f64::from(anim.calculate_direction(&velocity, &character.k2_get_actor_rotation()));
+
+        self.set_velocity(&velocity);
+        self.set_ground_speed(ground_speed);
+        self.set_direction(clamp_direction(
+            direction,
+            movement.get_orient_rotation_to_movement(),
+        ));
+        self.set_should_move(should_move(
+            ground_speed,
+            movement.get_current_acceleration().to_dvec3(),
+        ));
+        self.set_is_falling(movement.is_falling());
+    }
+}
+
+impl CopycatAnimInstance {
+    fn find_character(&mut self) {
+        let character = if self.source_character().is_valid() {
+            self.source_character()
+        } else {
+            let controller = GameplayStatics::get_player_controller(self.as_ref().upcast_to(), 0);
+
+            controller
+                .checked()
+                .ok()
+                .and_then(|c| c.k2_get_pawn().cast::<Character>().ok())
+                .unwrap_or_default()
+        };
+
+        let movement = character
+            .checked()
+            .map(|c| c.get_character_movement())
+            .unwrap_or_default();
+
+        self.set_character(character);
+        self.set_movement_component(movement);
+    }
+}
+
+pub fn ground_speed(velocity: DVec3) -> f64 {
+    velocity.truncate().length()
+}
+
+pub fn should_move(ground_speed: f64, acceleration: DVec3) -> bool {
+    ground_speed > MOVING_SPEED && acceleration != DVec3::ZERO
+}
+
+pub fn clamp_direction(direction: f64, orient_to_movement: bool) -> f64 {
+    if orient_to_movement {
+        direction.clamp(-DIRECTION_LIMIT, DIRECTION_LIMIT)
+    } else {
+        direction
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ground_speed_ignores_the_vertical_axis() {
+        assert_eq!(ground_speed(DVec3::new(3.0, 4.0, -900.0)), 5.0);
+    }
+
+    #[test]
+    fn moves_only_with_speed_and_acceleration() {
+        assert!(should_move(300.0, DVec3::X));
+        assert!(!should_move(300.0, DVec3::ZERO));
+        assert!(!should_move(0.005, DVec3::X));
+    }
+
+    #[test]
+    fn clamps_the_direction_when_orienting_to_movement() {
+        assert_eq!(clamp_direction(170.0, true), 45.0);
+        assert_eq!(clamp_direction(-170.0, true), -45.0);
+        assert_eq!(clamp_direction(170.0, false), 170.0);
+    }
+}

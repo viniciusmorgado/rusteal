@@ -1,0 +1,41 @@
+# `rusteal new <Name> --template vehicle`: UE's Vehicle template with its
+# gameplay classes in Rust.
+description = "The Vehicle template, its sports car, offroad car, game mode, player controller and HUD in Rust."
+
+# The engine template the project starts from, copied with the engine's own
+# recipe (its Config/TemplateDefs.ini), as the editor's New Project dialog does.
+engine_template = "TP_VehicleAdv"
+
+# Paths of the engine template to leave out, relative to it; %TEMPLATENAME%
+# stands for its name, and a folder leaves out everything under it. The C++
+# gameplay classes are replaced by the Rust crate, their Blueprint children by
+# this template's (same names, Rust parents), and the variants are left to
+# their own `--variant`s.
+exclude = [
+    "Source/%TEMPLATENAME%/%TEMPLATENAME%GameMode.cpp",
+    "Source/%TEMPLATENAME%/%TEMPLATENAME%GameMode.h",
+    "Source/%TEMPLATENAME%/%TEMPLATENAME%Pawn.cpp",
+    "Source/%TEMPLATENAME%/%TEMPLATENAME%Pawn.h",
+    "Source/%TEMPLATENAME%/%TEMPLATENAME%PlayerController.cpp",
+    "Source/%TEMPLATENAME%/%TEMPLATENAME%PlayerController.h",
+    "Source/%TEMPLATENAME%/%TEMPLATENAME%SportsCar.cpp",
+    "Source/%TEMPLATENAME%/%TEMPLATENAME%UI.cpp",
+    "Source/%TEMPLATENAME%/%TEMPLATENAME%UI.h",
+    "Source/%TEMPLATENAME%/%TEMPLATENAME%WheelFront.cpp",
+    "Source/%TEMPLATENAME%/%TEMPLATENAME%WheelFront.h",
+    "Source/%TEMPLATENAME%/%TEMPLATENAME%WheelRear.cpp",
+    "Source/%TEMPLATENAME%/%TEMPLATENAME%WheelRear.h",
+    "Source/%TEMPLATENAME%/OffroadCar",
+    "Source/%TEMPLATENAME%/SportsCar",
+    "Source/%TEMPLATENAME%/Variant_OffRoad",
+    "Source/%TEMPLATENAME%/Variant_TimeTrial",
+    "Content/Variant_OffRoad",
+    "Content/Variant_TimeTrial",
+    "Content/__ExternalActors__/Variant_OffRoad",
+    "Content/__ExternalActors__/Variant_TimeTrial",
+    "Content/__ExternalObjects__/Variant_OffRoad",
+    "Content/__ExternalObjects__/Variant_TimeTrial",
+]
+
+# Printed when the project is ready (Tera, same context as the files).
+next_step = "open {{ project }}.uproject and press Play: W / right trigger throttle, S / left trigger brake and reverse, A D / left stick steer, Space / left shoulder handbrake, mouse / right stick look around, Tab toggles the camera, Backspace resets the car"

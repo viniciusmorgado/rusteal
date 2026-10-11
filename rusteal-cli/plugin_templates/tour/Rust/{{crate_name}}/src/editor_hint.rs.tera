@@ -1,0 +1,228 @@
+use bindings::core_ue::Object;
+use bindings::engine::{Actor, GameplayStatics, SubsystemBlueprintLibrary, WorldSubsystem};
+use bindings::prelude::*;
+use bindings::rusteal::RustealWorldSubsystem;
+use bindings::umg::{
+    ESlateVisibility, EUMGSequencePlayMode, UserWidget, UserWidgetExt, Widget, WidgetAnimation,
+    WidgetExt,
+};
+use rusteal_runtime::runtime::{RustealResult, SubclassOf, UObjectRef, UeClass};
+use rusteal_runtime::{uclass, uclass_impl};
+
+#[uclass(parent = UserWidget)]
+pub struct EditorHintWidget {
+    #[uproperty(BindWidget, BlueprintReadOnly, name = "Details")]
+    details: UObjectRef<Widget>,
+
+    #[uproperty(BindWidget, BlueprintReadOnly, name = "ContentDrawerContainer")]
+    content_drawer_container: UObjectRef<Widget>,
+
+    #[uproperty(BindWidget, BlueprintReadOnly, name = "OutlinerContainer")]
+    outliner_container: UObjectRef<Widget>,
+
+    #[uproperty(BindWidget, BlueprintReadOnly, name = "Trasform")]
+    trasform: UObjectRef<Widget>,
+
+    #[uproperty(BindWidgetAnimOptional, BlueprintReadOnly, name = "DetailsDemo")]
+    details_demo: UObjectRef<WidgetAnimation>,
+
+    #[uproperty(BindWidgetAnimOptional, BlueprintReadOnly, name = "ContentDrawerDemo")]
+    content_drawer_demo: UObjectRef<WidgetAnimation>,
+
+    #[uproperty(BindWidgetAnimOptional, BlueprintReadOnly, name = "Outliner")]
+    outliner: UObjectRef<WidgetAnimation>,
+
+    #[uproperty(BindWidgetAnimOptional, BlueprintReadOnly, name = "Transform")]
+    transform: UObjectRef<WidgetAnimation>,
+}
+
+#[uclass_impl]
+impl EditorHintWidget {
+    #[ufunction(BlueprintCallable)]
+    pub fn toggle_details(&mut self, visible: bool) {
+        self.toggle(self.details(), self.details_demo(), visible);
+    }
+
+    #[ufunction(BlueprintCallable)]
+    pub fn toggle_content(&mut self, visible: bool) {
+        self.toggle(
+            self.content_drawer_container(),
+            self.content_drawer_demo(),
+            visible,
+        );
+    }
+
+    #[ufunction(BlueprintCallable)]
+    pub fn toggle_outliner(&mut self, visible: bool) {
+        self.toggle(self.outliner_container(), self.outliner(), visible);
+    }
+
+    #[ufunction(BlueprintCallable)]
+    pub fn toggle_transform(&mut self, visible: bool) {
+        self.toggle(self.trasform(), self.transform(), visible);
+    }
+}
+
+impl EditorHintWidget {
+    fn toggle(
+        &self,
+        panel: UObjectRef<Widget>,
+        animation: UObjectRef<WidgetAnimation>,
+        visible: bool,
+    ) {
+        let Ok(me) = self.as_ref().checked() else {
+            return;
+        };
+
+        if visible {
+            me.play_animation(
+                animation,
+                Some(0.0),
+                Some(0),
+                Some(EUMGSequencePlayMode::Forward),
+                Some(1.0),
+                Some(true),
+            );
+        } else {
+            me.stop_animation(animation);
+        }
+
+        if let Ok(panel) = panel.checked() {
+            panel.set_visibility(if visible {
+                ESlateVisibility::Visible
+            } else {
+                ESlateVisibility::Collapsed
+            });
+        }
+    }
+}
+
+#[uclass(parent = RustealWorldSubsystem)]
+pub struct TourSubsystem {
+    #[uproperty(BlueprintReadOnly, category = "Tour")]
+    hint_widget: UObjectRef<EditorHintWidget>,
+}
+
+#[uclass_impl]
+impl TourSubsystem {
+    #[ufunction(BlueprintCallable)]
+    pub fn show_hint_widget(
+        &mut self,
+        class: SubclassOf<EditorHintWidget>,
+    ) -> UObjectRef<EditorHintWidget> {
+        if !self.hint_widget().is_valid() {
+            let controller = GameplayStatics::get_player_controller(self.as_ref().upcast_to(), 0);
+
+            if let Ok(widget) = create_widget_of_class(&controller, class) {
+                if let Ok(user_widget) = widget.upcast_to::<UserWidget>().checked() {
+                    user_widget.add_to_viewport(Some(0));
+                }
+
+                self.set_hint_widget(widget);
+            }
+        }
+
+        self.hint_widget()
+    }
+}
+
+impl TourSubsystem {
+    pub fn get(context: UObjectRef<Object>) -> RustealResult<Self> {
+        let class = unsafe { SubclassOf::<WorldSubsystem>::from_raw(Self::static_class()) };
+        Self::from_obj(SubsystemBlueprintLibrary::get_world_subsystem(
+            context, class,
+        ))
+    }
+}
+
+#[uclass(parent = Actor)]
+pub struct EditorHintTrigger {
+    #[uproperty(
+        EditAnywhere,
+        BlueprintReadWrite,
+        name = "Show Details",
+        category = "Hint",
+        default = false
+    )]
+    show_details: bool,
+
+    #[uproperty(
+        EditAnywhere,
+        BlueprintReadWrite,
+        name = "Show Outliner",
+        category = "Hint",
+        default = false
+    )]
+    show_outliner: bool,
+
+    #[uproperty(
+        EditAnywhere,
+        BlueprintReadWrite,
+        name = "Show Content",
+        category = "Hint",
+        default = false
+    )]
+    show_content: bool,
+
+    #[uproperty(
+        EditAnywhere,
+        BlueprintReadWrite,
+        name = "Show Transform",
+        category = "Hint",
+        default = false
+    )]
+    show_transform: bool,
+
+    #[uproperty(EditAnywhere, BlueprintReadWrite, category = "Hint")]
+    hint_widget_class: SubclassOf<EditorHintWidget>,
+}
+
+#[uclass_impl]
+impl EditorHintTrigger {
+    #[ufunction(Override)]
+    fn receive_actor_begin_overlap(&mut self, _other_actor: UObjectRef<Actor>) {
+        self.show(true);
+    }
+
+    #[ufunction(Override)]
+    fn receive_actor_end_overlap(&mut self, _other_actor: UObjectRef<Actor>) {
+        self.show(false);
+    }
+
+    #[ufunction(BlueprintPure)]
+    pub fn hint_widget(&self) -> UObjectRef<EditorHintWidget> {
+        TourSubsystem::get(self.as_ref().upcast_to())
+            .map(|tour| tour.hint_widget())
+            .unwrap_or_default()
+    }
+}
+
+impl EditorHintTrigger {
+    fn show(&self, visible: bool) {
+        let Ok(mut tour) = TourSubsystem::get(self.as_ref().upcast_to()) else {
+            return;
+        };
+
+        let Ok(mut widget) =
+            EditorHintWidget::from_obj(tour.show_hint_widget(self.hint_widget_class()))
+        else {
+            return;
+        };
+
+        if self.show_details() {
+            widget.toggle_details(visible);
+        }
+
+        if self.show_content() {
+            widget.toggle_content(visible);
+        }
+
+        if self.show_outliner() {
+            widget.toggle_outliner(visible);
+        }
+
+        if self.show_transform() {
+            widget.toggle_transform(visible);
+        }
+    }
+}
