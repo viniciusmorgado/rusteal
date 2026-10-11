@@ -1,13 +1,26 @@
 use rusteal_ffi::{RustealConsoleArgs, UObjectHandle};
 
 use crate::error::{RustealError, RustealResult, check_ffi_ctx};
+use crate::object_ref::UObjectRef;
+use crate::traits::UeClass;
 use crate::{delegate_registry, ffi_dispatch};
+
+pub struct CommandContext {
+    world: UObjectHandle,
+}
+
+impl CommandContext {
+    #[track_caller]
+    pub fn world<W: UeClass>(&self) -> RustealResult<UObjectRef<W>> {
+        UObjectRef::from_handle(self.world)
+    }
+}
 
 #[track_caller]
 pub fn register_command(
     name: &str,
     help: &str,
-    mut run: impl FnMut(&[&str], UObjectHandle) + Send + 'static,
+    mut run: impl FnMut(&[&str], &CommandContext) + Send + 'static,
 ) -> RustealResult<()> {
     let callback_id = delegate_registry::register_callback(move |params| {
         let args = unsafe { &*(params as *const RustealConsoleArgs) };
@@ -26,7 +39,7 @@ pub fn register_command(
             text.split('\n').collect()
         };
 
-        run(&words, args.world);
+        run(&words, &CommandContext { world: args.world });
     });
 
     let code = unsafe {
