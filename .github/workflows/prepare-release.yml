@@ -151,6 +151,18 @@ jobs:
         if: steps.guard.outputs.skip != 'true'
         run: cargo clippy --workspace --all-targets --no-deps -- -D warnings
 
+      # The same audit as CI, on the version this pull request publishes: a
+      # vulnerable dependency stops the release before the merge.
+      - name: Install cargo-audit
+        if: steps.guard.outputs.skip != 'true'
+        uses: taiki-e/install-action@4cef1412cce204788f482e778a0b9187f9626a29 # v2.87.21
+        with:
+          tool: cargo-audit@0.22.2
+
+      - name: Audit the dependencies
+        if: steps.guard.outputs.skip != 'true'
+        run: cargo audit
+
       - name: Sync the plugin snapshot
         if: steps.guard.outputs.skip != 'true'
         run: |
@@ -170,8 +182,9 @@ jobs:
 
       # The version commit pushed above is now the head of the pull request,
       # and it creates no runs of its own. This job has just run on it what the
-      # CI checks (build, tests, clippy) and what the release needs, so it
-      # reports both checks a pull request to main must pass on that commit.
+      # CI checks (build, tests, clippy, the dependency audit) and what the
+      # release needs, so it reports both checks a pull request to main must
+      # pass on that commit.
       - name: Report the checks on the version commit
         if: steps.commit.outputs.sha != ''
         env:

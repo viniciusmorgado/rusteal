@@ -34,3 +34,14 @@ jobs:
 
       - name: Clippy
         run: cargo clippy --workspace --all-targets --no-deps -- -D warnings
+
+      # Fails on any dependency with a RustSec vulnerability advisory, in the
+      # Cargo.lock the build above resolved (the lock is not versioned, so this
+      # is what a build gets today). Unmaintained or yanked crates only warn.
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@4cef1412cce204788f482e778a0b9187f9626a29 # v2.87.21
+        with:
+          tool: cargo-audit@0.22.2
+
+      - name: Audit the dependencies
+        run: cargo audit
