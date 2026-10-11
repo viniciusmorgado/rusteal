@@ -1,0 +1,6 @@
+# `rusteal new <Name> --template <template> --feature rustrover`: files added to
+# the project, rendered with Tera in the template's context.
+description = "RustRover run configurations, stored as project files: Rusteal Watch (cargo rusteal watch) and Rusteal Test (the game crate's tests)."
+
+# Printed when the project is ready (Tera, same context as the files).
+next_step = "open {{ project }}/Rust in RustRover: Rusteal Watch and Rusteal Test are in the run configurations"

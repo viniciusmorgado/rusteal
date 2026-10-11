@@ -285,6 +285,13 @@ content (**Plugins > <Plugin> Content** in the Content Browser), children of
 its Rust classes holding the meshes, materials and widget layouts. An existing
 project takes one with `rusteal plugin new <Plugin> --template <feature>`.
 
+Other features add files to the project instead of a plugin: the setup of a
+tool around it.
+
+| Feature | Adds | What it is |
+|---|---|---|
+| `rustrover` | `Rust/.run/` | RustRover run configurations, stored as project files: **Rusteal Watch** (`cargo rusteal watch`) and **Rusteal Test** (`cargo test -p <game crate>`), the same on Linux and Windows. Open the project's `Rust` folder in RustRover to find them. |
+
 ### Screenshots
 
 #### `first-person`
