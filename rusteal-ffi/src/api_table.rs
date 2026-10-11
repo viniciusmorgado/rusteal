@@ -61,11 +61,35 @@ pub struct RustealCoreApi {
     pub resolve_weak: unsafe extern "C" fn(weak: FWeakObjectHandle) -> UObjectHandle,
 
     pub is_weak_valid: unsafe extern "C" fn(weak: FWeakObjectHandle) -> bool,
+
+    pub take_error_message: unsafe extern "C" fn(
+        code: RustealErrorCode,
+        buf: *mut u8,
+        buf_len: u32,
+        out_len: *mut u32,
+    ) -> bool,
 }
 
 #[repr(C)]
 pub struct RustealLoggingApi {
     pub log: unsafe extern "C" fn(level: u8, msg: *const u8, msg_len: u32),
+
+    pub report: unsafe extern "C" fn(report: *const RustealErrorReport),
+}
+
+#[repr(C)]
+pub struct RustealErrorReport {
+    pub level: u8,
+    pub script_error: bool,
+    pub summary: *const u8,
+    pub summary_len: u32,
+    pub details: *const u8,
+    pub details_len: u32,
+    pub object: FWeakObjectHandle,
+    pub file: *const u8,
+    pub file_len: u32,
+    pub line: u32,
+    pub column: u32,
 }
 
 #[repr(C)]

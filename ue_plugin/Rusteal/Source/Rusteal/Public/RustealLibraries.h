@@ -34,3 +34,8 @@ using FRustealInterfaceRefresher =
 
 RUSTEAL_API void
 RustealSetInterfaceRefresher(FRustealInterfaceRefresher Refresher);
+
+using FRustealSourceOpener =
+    TFunction<void(const FString &File, int32 Line, int32 Column)>;
+
+RUSTEAL_API void RustealSetSourceOpener(FRustealSourceOpener Opener);

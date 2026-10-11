@@ -52,10 +52,29 @@ struct FRustealCoreApi {
   RustealFWeakObjectHandle (*make_weak)(RustealUObjectHandle obj);
   RustealUObjectHandle (*resolve_weak)(RustealFWeakObjectHandle weak);
   bool (*is_weak_valid)(RustealFWeakObjectHandle weak);
+
+  bool (*take_error_message)(ERustealErrorCode code, uint8 *buf, uint32 buf_len,
+                             uint32 *out_len);
+};
+
+struct FRustealErrorReport {
+  uint8 level;
+  bool script_error;
+  const uint8 *summary;
+  uint32 summary_len;
+  const uint8 *details;
+  uint32 details_len;
+  RustealFWeakObjectHandle object;
+  const uint8 *file;
+  uint32 file_len;
+  uint32 line;
+  uint32 column;
 };
 
 struct FRustealLoggingApi {
   void (*log)(uint8 level, const uint8 *msg, uint32 msg_len);
+
+  void (*report)(const FRustealErrorReport *report);
 };
 
 struct FRustealLifecycleApi {

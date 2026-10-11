@@ -37,6 +37,7 @@ struct UFunctionInfo {
     exec: bool,
     name_expr: TokenStream,
     param_name_exprs: Vec<TokenStream>,
+    fallible: bool,
 }
 
 pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream> {
@@ -393,10 +394,30 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
             None => quote! { __this.#method_ident(#(#param_idents),*) },
         };
 
-        let call_expr = if uf.return_type.is_some() {
-            quote! { let __ret = #call; }
-        } else {
-            quote! { #call; }
+        let struct_label = struct_name.to_string();
+        let ue_name = &uf.ue_name;
+
+        let raise = quote! {
+            __error.__raise(&format!("{}::{}", #struct_label, #ue_name));
+        };
+
+        let call_expr = match (uf.fallible, uf.return_type.is_some()) {
+            (true, true) => quote! {
+                let __ret = match #call {
+                    Ok(value) => value,
+                    Err(__error) => {
+                        #raise
+                        return;
+                    }
+                };
+            },
+            (true, false) => quote! {
+                if let Err(__error) = #call {
+                    #raise
+                }
+            },
+            (false, true) => quote! { let __ret = #call; },
+            (false, false) => quote! { #call; },
         };
 
         let func_var = format_ident!("__func_{}", method_ident);
@@ -733,10 +754,25 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
         }
     }
 
-    let return_type = match &method.sig.output {
-        ReturnType::Default => None,
-        ReturnType::Type(_, ty) => {
-            if let Type::Tuple(tuple) = &**ty {
+    let (fallible, output) = match &method.sig.output {
+        ReturnType::Default => (false, None),
+        ReturnType::Type(_, ty) => match result_value(ty) {
+            Some(value) => (true, Some(value)),
+            None => (false, Some((**ty).clone())),
+        },
+    };
+
+    if fallible && kind == FnKind::ImplementableEvent {
+        return Err(syn::Error::new_spanned(
+            &method.sig.output,
+            "a BlueprintImplementableEvent has no Rust body to fail: it returns its value, not a RustealResult",
+        ));
+    }
+
+    let return_type = match output.as_ref() {
+        None => None,
+        Some(ty) => {
+            if let Type::Tuple(tuple) = ty {
                 if tuple.elems.is_empty() {
                     None
                 } else {
@@ -759,7 +795,7 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
                 Some(ParamInfo {
                     rust_name: Ident::new("ReturnValue", proc_macro2::Span::call_site()),
                     ue_name: "ReturnValue".to_string(),
-                    rust_ty: (**ty).clone(),
+                    rust_ty: ty.clone(),
                 })
             }
         }
@@ -785,6 +821,7 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
         exec,
         name_expr,
         param_name_exprs,
+        fallible,
     })
 }
 
@@ -821,7 +858,37 @@ fn parse_interface_fn(method: &ImplItemFn, trait_path: &syn::Path) -> syn::Resul
         exec: false,
         name_expr,
         param_name_exprs,
+        fallible: false,
     })
+}
+
+fn result_value(ty: &Type) -> Option<Type> {
+    let Type::Path(path) = ty else {
+        return None;
+    };
+
+    let segment = path.path.segments.last()?;
+
+    let syn::PathArguments::AngleBracketed(args) = &segment.arguments else {
+        return None;
+    };
+
+    let mut types = args.args.iter().filter_map(|arg| match arg {
+        syn::GenericArgument::Type(ty) => Some(ty),
+        _ => None,
+    });
+
+    let value = types.next()?.clone();
+
+    let is_result = match segment.ident.to_string().as_str() {
+        "RustealResult" => types.next().is_none(),
+        "Result" => types.next().is_some_and(|error| {
+            matches!(error, Type::Path(p) if p.path.segments.last().is_some_and(|s| s.ident == "RustealError"))
+        }),
+        _ => false,
+    };
+
+    is_result.then_some(value)
 }
 
 pub(crate) fn supported_param(ty: &Type) -> bool {
@@ -987,10 +1054,7 @@ pub(crate) fn dynamic_call_body(
         match __call() {
             Ok(value) => value,
             Err(e) => {
-                ::rusteal_runtime::runtime::ulog!(
-                    ::rusteal_runtime::runtime::LOG_WARNING,
-                    "[Rusteal] {} failed: {}", #ue_name, e
-                );
+                e.__log_in(::rusteal_runtime::runtime::LOG_WARNING, #ue_name);
 
                 #fallback
             }
@@ -1055,6 +1119,71 @@ mod tests {
                 }
             })
             .is_err()
+        );
+    }
+
+    #[test]
+    fn a_function_returning_a_result_reports_its_error() {
+        let out = expand(quote! {
+            impl Turret {
+                #[ufunction]
+                fn ammo(&self) -> RustealResult<i32> {
+                    Ok(1)
+                }
+
+                #[ufunction(Override)]
+                fn receive_begin_play(&mut self) -> Result<(), RustealError> {
+                    Ok(())
+                }
+            }
+        })
+        .unwrap();
+
+        assert!(out.contains("Err (__error) => { __error . __raise"));
+        assert!(out.contains("if let Err (__error) = __this . receive_begin_play ()"));
+        assert!(out.contains("\"Turret\""));
+        assert!(out.contains("native_mem_read") || out.contains("ReturnValue"));
+    }
+
+    #[test]
+    fn the_value_of_the_result_is_the_unreal_return_type() {
+        let method: ImplItemFn = syn::parse_quote! {
+            #[ufunction]
+            fn ammo(&self) -> RustealResult<i32> { Ok(1) }
+        };
+
+        let info = parse_ufunction(&method).unwrap();
+        assert!(info.fallible);
+        assert_eq!(info.return_type.unwrap().rust_ty, syn::parse_quote!(i32));
+
+        let method: ImplItemFn = syn::parse_quote! {
+            #[ufunction]
+            fn fire(&mut self) -> RustealResult<()> { Ok(()) }
+        };
+
+        let info = parse_ufunction(&method).unwrap();
+        assert!(info.fallible && info.return_type.is_none());
+    }
+
+    #[test]
+    fn an_implementable_event_cannot_fail() {
+        let method: ImplItemFn = syn::parse_quote! {
+            #[ufunction(BlueprintImplementableEvent)]
+            fn on_hit(&self) -> RustealResult<()> {}
+        };
+
+        assert!(parse_ufunction(&method).is_err());
+    }
+
+    #[test]
+    fn other_results_are_not_taken_for_rusteal_ones() {
+        assert!(result_value(&syn::parse_quote!(Result<i32, String>)).is_none());
+        assert!(result_value(&syn::parse_quote!(Option<i32>)).is_none());
+        assert!(
+            result_value(&syn::parse_quote!(
+                rusteal_runtime::runtime::RustealResult<f32>
+            ))
+            .is_some()
         );
     }
 }

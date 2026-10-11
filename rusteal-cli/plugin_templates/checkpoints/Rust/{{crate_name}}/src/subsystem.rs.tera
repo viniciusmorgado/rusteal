@@ -81,7 +81,7 @@ impl CheckpointSubsystem {
         let loaded = if GameplayStatics::does_save_game_exist(SLOT_NAME, 0) {
             GameplayStatics::load_game_from_slot(SLOT_NAME, 0).cast::<CheckpointSaveData>()
         } else {
-            Err(rusteal_runtime::runtime::RustealError::NullArgument)
+            Err(rusteal_runtime::runtime::RustealError::null_argument())
         };
 
         let save = match loaded {

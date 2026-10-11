@@ -88,6 +88,7 @@ pub unsafe fn init(api_table: *const ffi::RustealApiTable) -> *const ffi::Rustea
 
         runtime::init_api(api_table);
         runtime::task::mark_game_thread();
+        runtime::ffi_guard::install_panic_hook();
 
         log_greeting();
         register_all_classes();
@@ -142,6 +143,7 @@ macro_rules! entry {
             pub extern "C" fn rusteal_init(
                 api_table: *const $crate::ffi::RustealApiTable,
             ) -> *const $crate::ffi::RustealRustCallbacks {
+                $crate::runtime::error::set_source_root(env!("CARGO_MANIFEST_DIR"));
                 unsafe { $crate::init(api_table) }
             }
 

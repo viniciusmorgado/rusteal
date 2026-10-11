@@ -1,4 +1,5 @@
 #include "Engine/DataTable.h"
+#include "RustealErrors.h"
 #include "Engine/EngineTypes.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
@@ -54,7 +55,7 @@ GetAllActorsOfClassImpl(RustealUObjectHandle WorldHandle,
     if (OutCount)
       *OutCount = 0;
 
-    return ERustealErrorCode::NullArgument;
+    return RustealFail(ERustealErrorCode::NullArgument);
   }
 
   const uint32 BufCapacity =
@@ -178,7 +179,7 @@ static ERustealErrorCode FinishSpawningImpl(RustealUObjectHandle ActorHandle,
   AActor *Actor = Cast<AActor>(static_cast<UObject *>(ActorHandle.ptr));
 
   if (!Actor)
-    return ERustealErrorCode::NullArgument;
+    return RustealFail(ERustealErrorCode::NullArgument);
 
   FTransform SpawnTransform = FTransform::Identity;
 

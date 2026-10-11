@@ -1,7 +1,7 @@
 # Hot reload
 
 How Rusteal swaps a Rust library while the editor runs, and why it is built the
-way it is. The commands are in the README, [Hot Reload](../README.md#hot-reload).
+way it is. The commands are in the game developer's handbook, [Hot reload](https://viniciusmorgado.github.io/game.rusteal.github.io/iteration/hot_reload.html).
 
 ## What a reload does
 

@@ -41,13 +41,14 @@ impl<I: UeInterface + ?Sized> std::fmt::Debug for ScriptInterface<I> {
 unsafe impl<I: UeInterface + ?Sized> Send for ScriptInterface<I> {}
 
 impl<I: UeInterface + ?Sized> ScriptInterface<I> {
+    #[track_caller]
     pub fn new(object: UObjectHandle) -> RustealResult<Self> {
         if !unsafe { ffi_dispatch::core_is_valid(object) } {
-            return Err(RustealError::ObjectDestroyed);
+            return Err(RustealError::object_destroyed());
         }
 
         if !unsafe { ffi_dispatch::core_is_a(object, I::static_class()) } {
-            return Err(RustealError::InvalidCast);
+            return Err(RustealError::invalid_cast_to(object, I::static_class()));
         }
 
         Ok(ScriptInterface {
@@ -70,9 +71,10 @@ impl<I: UeInterface + ?Sized> ScriptInterface<I> {
         unsafe { UObjectRef::<T>::from_raw(self.handle) }.cast()
     }
 
+    #[track_caller]
     pub fn call(&self, function: &str) -> RustealResult<DynamicCall> {
         if !self.is_valid() {
-            return Err(RustealError::ObjectDestroyed);
+            return Err(RustealError::object_destroyed());
         }
 
         DynamicCall::on_object(self.handle, function)

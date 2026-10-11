@@ -1,4 +1,5 @@
 #include "RustealApiTable.h"
+#include "RustealErrors.h"
 #include "UObject/UObjectGlobals.h"
 
 static bool IsValidImpl(RustealUObjectHandle Obj) {
@@ -10,7 +11,7 @@ static ERustealErrorCode GetNameImpl(RustealUObjectHandle Obj, uint8 *Buf,
   UObject *Object = static_cast<UObject *>(Obj.ptr);
 
   if (!::IsValid(Object)) {
-    return ERustealErrorCode::ObjectDestroyed;
+    return RustealFail(ERustealErrorCode::ObjectDestroyed);
   }
 
   const FString Name = Object->GetFName().ToString();
@@ -134,7 +135,15 @@ static bool IsWeakValidImpl(RustealFWeakObjectHandle WeakHandle) {
 }
 
 FRustealCoreApi GCoreApi = {
-    &IsValidImpl,     &GetNameImpl,     &GetClassImpl,      &IsAImpl,
-    &GetOuterImpl,    &MakeFNameImpl,   &FNameToStringImpl, &MakeWeakImpl,
-    &ResolveWeakImpl, &IsWeakValidImpl,
+    &IsValidImpl,
+    &GetNameImpl,
+    &GetClassImpl,
+    &IsAImpl,
+    &GetOuterImpl,
+    &MakeFNameImpl,
+    &FNameToStringImpl,
+    &MakeWeakImpl,
+    &ResolveWeakImpl,
+    &IsWeakValidImpl,
+    &RustealTakeErrorMessage,
 };

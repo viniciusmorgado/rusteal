@@ -3,6 +3,7 @@ use rusteal_ffi::{UClassHandle, UObjectHandle};
 use crate::error::{RustealError, RustealResult, check_ffi};
 use crate::ffi_dispatch;
 
+#[track_caller]
 pub fn create_widget_raw(
     owning_object: UObjectHandle,
     widget_class: UClassHandle,
@@ -10,14 +11,15 @@ pub fn create_widget_raw(
     let result = unsafe { ffi_dispatch::widget_create_widget(owning_object, widget_class) };
 
     if result.is_null() {
-        Err(RustealError::InvalidOperation(
-            "create_widget returned null".into(),
+        Err(RustealError::invalid_operation(
+            "create_widget returned null",
         ))
     } else {
         Ok(result)
     }
 }
 
+#[track_caller]
 pub fn set_root_widget_raw(
     user_widget: UObjectHandle,
     root_widget: UObjectHandle,
@@ -25,12 +27,13 @@ pub fn set_root_widget_raw(
     check_ffi(unsafe { ffi_dispatch::widget_set_root_widget(user_widget, root_widget) })
 }
 
+#[track_caller]
 pub fn get_widget_tree_raw(user_widget: UObjectHandle) -> RustealResult<UObjectHandle> {
     let result = unsafe { ffi_dispatch::widget_get_widget_tree(user_widget) };
 
     if result.is_null() {
-        Err(RustealError::InvalidOperation(
-            "get_widget_tree returned null".into(),
+        Err(RustealError::invalid_operation(
+            "get_widget_tree returned null",
         ))
     } else {
         Ok(result)

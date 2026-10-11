@@ -200,7 +200,7 @@ fn rust_type_str(ty: &ApiType) -> String {
             mutability: Mutability::Const,
         } => "*const core::ffi::c_void".into(),
         ApiType::NamedStructPtr { mutability, name } => {
-            format!("{} rusteal_ffi::reify_types::{name}", mut_qual(*mutability))
+            format!("{} rusteal_ffi::{name}", mut_qual(*mutability))
         }
         ApiType::Ptr {
             mutability,

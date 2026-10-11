@@ -52,12 +52,10 @@ impl ClassDefaultsOutcome for () {
 impl ClassDefaultsOutcome for crate::error::RustealResult<()> {
     fn report(self, class: &str) {
         if let Err(e) = self {
-            let msg = format!("[Rusteal] {class}: class defaults failed: {e}");
-            let bytes = msg.as_bytes();
-
-            unsafe {
-                crate::ffi_dispatch::logging_log(1, bytes.as_ptr(), bytes.len() as u32);
-            }
+            e.__log_in(
+                crate::logging::LOG_WARNING,
+                &format!("{class}'s class defaults"),
+            );
         }
     }
 }

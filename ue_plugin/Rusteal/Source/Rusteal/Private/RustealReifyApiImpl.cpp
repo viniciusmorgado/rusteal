@@ -1,4 +1,5 @@
 #include "Engine/Blueprint.h"
+#include "RustealErrors.h"
 #include "GameFramework/Actor.h"
 #include "Engine/Engine.h"
 #include "Misc/CoreDelegates.h"
@@ -608,7 +609,7 @@ AddFunctionParamImpl(RustealUFunctionHandle Func, const uint8 *Name,
       Cast<URustealReifiedFunction>(static_cast<UFunction *>(Func.ptr));
 
   if (!Function) {
-    return ERustealErrorCode::NullArgument;
+    return RustealFail(ERustealErrorCode::NullArgument);
   }
 
   if (IsLockedInterface(Function->GetOwnerClass())) {
@@ -630,7 +631,7 @@ AddFunctionParamImpl(RustealUFunctionHandle Func, const uint8 *Name,
                            static_cast<ERustealReifyPropType>(PropType), Extra);
 
   if (!Param) {
-    return ERustealErrorCode::InternalError;
+    return RustealFail(ERustealErrorCode::InternalError);
   }
 
   Param->PropertyFlags |= static_cast<EPropertyFlags>(ParamFlags) | CPF_Parm;
@@ -660,7 +661,7 @@ static ERustealErrorCode FinalizeClassImpl(RustealUClassHandle Cls) {
       Cast<URustealReifiedClass>(static_cast<UClass *>(Cls.ptr));
 
   if (!Class) {
-    return ERustealErrorCode::NullArgument;
+    return RustealFail(ERustealErrorCode::NullArgument);
   }
 
   Class->InvalidateCustomPropertyList();
@@ -764,12 +765,12 @@ static ERustealErrorCode AddDefaultSubobjectImpl(
       Cast<URustealReifiedClass>(static_cast<UClass *>(Cls.ptr));
 
   if (!RC)
-    return ERustealErrorCode::InvalidCast;
+    return RustealFail(ERustealErrorCode::InvalidCast);
 
   UClass *CompUClass = static_cast<UClass *>(CompClass.ptr);
 
   if (!CompUClass)
-    return ERustealErrorCode::PropertyNotFound;
+    return RustealFail(ERustealErrorCode::PropertyNotFound);
 
   FRustealComponentDef Def;
   Def.SubobjectName = FName(ReifyUtf8ToFString(Name, NameLen));
@@ -837,7 +838,7 @@ SetPropertyMetadataImpl(RustealFPropertyHandle Prop, const uint8 *Key,
   FProperty *Property = static_cast<FProperty *>(Prop.ptr);
 
   if (!Property) {
-    return ERustealErrorCode::NullArgument;
+    return RustealFail(ERustealErrorCode::NullArgument);
   }
 
 #if WITH_EDITORONLY_DATA
@@ -945,7 +946,7 @@ static ERustealErrorCode FinalizeStructImpl(RustealUStructHandle Handle) {
   UScriptStruct *Struct = static_cast<UScriptStruct *>(Handle.ptr);
 
   if (!Struct) {
-    return ERustealErrorCode::NullArgument;
+    return RustealFail(ERustealErrorCode::NullArgument);
   }
 
   if (Struct->GetStructureSize() > 0) {
@@ -1085,7 +1086,7 @@ static ERustealErrorCode AddInterfaceImpl(RustealUClassHandle Cls,
   UClass *Class = static_cast<UClass *>(Cls.ptr);
 
   if (!Class || !Path) {
-    return ERustealErrorCode::NullArgument;
+    return RustealFail(ERustealErrorCode::NullArgument);
   }
 
   const FString InterfacePath = ReifyUtf8ToFString(Path, PathLen);
@@ -1110,7 +1111,7 @@ static ERustealErrorCode SetClassConfigImpl(RustealUClassHandle Cls,
       Cast<URustealReifiedClass>(static_cast<UClass *>(Cls.ptr));
 
   if (!Class || !Name || NameLen == 0) {
-    return ERustealErrorCode::NullArgument;
+    return RustealFail(ERustealErrorCode::NullArgument);
   }
 
   Class->ClassConfigName = ReifyUtf8ToFName(Name, NameLen);
