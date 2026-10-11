@@ -116,6 +116,10 @@ jobs:
                 -e 's/^\(\s*"VersionName": \)"[^"]*",$/\1"'"$TARGET_VERSION"'",/' "$UPLUGIN"
             done
             git add Cargo.toml $UPLUGINS
-            git commit -m "chore: bump version to $TARGET_VERSION"
+            # [skip ci]: GitHub creates no workflow run for this commit. A run
+            # it triggers is a pull request run by github-actions[bot], which
+            # waits for an approval and fails when that never comes; the runs
+            # of the pull request itself already checked everything else.
+            git commit -m "chore: bump version to $TARGET_VERSION [skip ci]"
             git push origin HEAD:${{ github.head_ref }}
           fi
