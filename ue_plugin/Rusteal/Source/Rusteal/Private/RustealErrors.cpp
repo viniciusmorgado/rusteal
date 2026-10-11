@@ -1,4 +1,5 @@
 #include "RustealErrors.h"
+#include "Engine/World.h"
 
 #include "Logging/MessageLog.h"
 #include "Logging/TokenizedMessage.h"
@@ -156,7 +157,27 @@ void RustealReport(const FRustealErrorReport *Report) {
   FMemory::Memcpy(&Weak, &Report->object, sizeof(Report->object));
 
   if (UObject *Object = Weak.Get()) {
-    Message->AddToken(FUObjectToken::Create(Object));
+    TSharedRef<FUObjectToken> Token = FUObjectToken::Create(Object);
+    const FString EditorPath = UWorld::RemovePIEPrefix(Object->GetPathName());
+
+    if (EditorPath != Object->GetPathName()) {
+      Token->OnMessageTokenActivated(FOnMessageTokenActivated::CreateLambda(
+          [EditorPath](const TSharedRef<IMessageToken> &Activated) {
+            const FOnMessageTokenActivated &Default =
+                FUObjectToken::DefaultOnMessageTokenActivated();
+
+            if (StaticCastSharedRef<FUObjectToken>(Activated)
+                    ->GetObject()
+                    .IsValid()) {
+              Default.ExecuteIfBound(Activated);
+            } else if (UObject *Counterpart =
+                           FindObject<UObject>(nullptr, *EditorPath)) {
+              Default.ExecuteIfBound(FUObjectToken::Create(Counterpart));
+            }
+          }));
+    }
+
+    Message->AddToken(Token);
   }
 
   if (!File.IsEmpty()) {
