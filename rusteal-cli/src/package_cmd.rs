@@ -4,8 +4,9 @@ use std::path::{Path, PathBuf};
 use rusteal_codegen::config::{find_plugins, find_uproject};
 
 use crate::build_cmd::{self, HostPlatform};
+use crate::optimizations::{self, Snapshot, Switch};
 
-pub fn run_package(root: &Path, engine: &Path, output: &Path, configuration: &str) {
+pub fn run_package(root: &Path, engine: &Path, output: &Path, configuration: &str, switch: Switch) {
     eprintln!("rusteal package: the libraries, release profile");
     build_cmd::run_build(root, engine, None, 1, true, None);
 
@@ -30,7 +31,10 @@ pub fn run_package(root: &Path, engine: &Path, output: &Path, configuration: &st
         platform.ubt_platform
     );
 
-    build_cmd::run_cmd(&[
+    let snapshot = Snapshot::take(root);
+    optimizations::report("package", root, switch);
+
+    let code = build_cmd::run_cmd_code(&[
         uat.to_str().unwrap(),
         "BuildCookRun",
         &format!("-project={}", uproject.display()),
@@ -46,6 +50,12 @@ pub fn run_package(root: &Path, engine: &Path, output: &Path, configuration: &st
         "-unattended",
         "-utf8output",
     ]);
+
+    snapshot.restore();
+
+    if code != 0 {
+        std::process::exit(code);
+    }
 
     eprintln!(
         "\nrusteal package: done, the game is in {}",

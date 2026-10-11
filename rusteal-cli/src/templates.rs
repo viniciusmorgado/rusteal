@@ -425,6 +425,26 @@ mod tests {
     use super::*;
 
     #[test]
+    fn every_template_carries_the_default_optimizations() {
+        let configs: Vec<_> = TEMPLATE_FILES
+            .iter()
+            .filter(|(path, _)| path.ends_with("/rusteal.toml.tera"))
+            .collect();
+
+        assert!(!configs.is_empty());
+
+        for (path, contents) in configs {
+            let text = std::str::from_utf8(contents).unwrap();
+
+            assert_eq!(
+                crate::optimizations::parse(text).unwrap(),
+                Some(crate::optimizations::defaults()),
+                "{path}"
+            );
+        }
+    }
+
+    #[test]
     fn every_template_has_a_valid_manifest() {
         let templates = available();
         let names: Vec<&str> = templates.iter().map(|t| t.name).collect();
