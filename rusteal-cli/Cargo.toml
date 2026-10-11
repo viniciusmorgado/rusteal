@@ -7,6 +7,7 @@ repository.workspace = true
 description = "Rust bindings for Unreal Engine 5.8.2"
 readme = "../README.md"
 build = "build.rs"
+default-run = "rusteal"
 include = ["src/**", "templates/**", "plugin_templates/**", "build.rs", "Cargo.toml", "ue_plugin_embed/**"]
 
 [dependencies]
