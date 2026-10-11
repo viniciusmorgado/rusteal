@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use rusteal_codegen::config::ProjectLayout;
 
-use crate::{build_cmd, plugin_cmd, setup, templates};
+use crate::{build_cmd, optimizations, plugin_cmd, setup, templates};
 
 const TEXT_EXTENSIONS: &[&str] = &["cpp", "h", "ini", "cs"];
 
@@ -19,6 +19,7 @@ pub struct NewOptions<'a> {
     pub runtime_path: Option<&'a Path>,
     pub features: &'a [String],
     pub build: bool,
+    pub optimizations: optimizations::Switch,
 }
 
 pub fn run_new(opts: &NewOptions) {
@@ -72,6 +73,7 @@ pub fn run_new(opts: &NewOptions) {
     );
 
     write_bindings_placeholder(&ProjectLayout::new(&root).bindings_crate());
+    optimizations::report("new", &root, opts.optimizations);
 
     eprintln!("rusteal new: installing the Rusteal plugins");
     setup::run_setup(&root, opts.engine);

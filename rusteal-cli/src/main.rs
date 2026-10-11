@@ -1,6 +1,7 @@
 mod build_cmd;
 mod global_config;
 mod new_cmd;
+mod optimizations;
 mod package_cmd;
 mod plugin_cmd;
 mod project_version;
@@ -45,6 +46,8 @@ enum Commands {
         features: Vec<String>,
         #[arg(long)]
         no_build: bool,
+        #[arg(long, value_parser = optimizations::Switch::parse, default_value = "on")]
+        optimizations: optimizations::Switch,
     },
     Plugin {
         #[command(subcommand)]
@@ -70,6 +73,8 @@ enum Commands {
         project: Option<PathBuf>,
         #[arg(long)]
         plugin: Option<String>,
+        #[arg(long, value_parser = optimizations::Switch::parse, default_value = "on")]
+        optimizations: optimizations::Switch,
     },
     Generate {
         project: Option<PathBuf>,
@@ -80,6 +85,8 @@ enum Commands {
         output: Option<PathBuf>,
         #[arg(long)]
         shipping: bool,
+        #[arg(long, value_parser = optimizations::Switch::parse, default_value = "on")]
+        optimizations: optimizations::Switch,
     },
     Upgrade {
         project: Option<PathBuf>,
@@ -119,6 +126,7 @@ fn main() {
             runtime_path,
             features,
             no_build,
+            optimizations,
         } => {
             let engine = global_config::engine_path();
 
@@ -131,6 +139,7 @@ fn main() {
                 runtime_path: runtime_path.as_deref(),
                 features: &features,
                 build: !no_build,
+                optimizations,
             });
         }
         Commands::Plugin {
@@ -172,13 +181,14 @@ fn main() {
             project,
             output,
             shipping,
+            optimizations,
         } => {
             let root = project_root(project.as_deref());
             check_version(&root, Scope::PinsAndPlugins);
             let engine = global_config::engine_path();
             let output = output.unwrap_or_else(|| root.join("Packaged"));
             let configuration = if shipping { "Shipping" } else { "Development" };
-            package_cmd::run_package(&root, &engine, &output, configuration);
+            package_cmd::run_package(&root, &engine, &output, configuration, optimizations);
         }
         Commands::Setup { project } => {
             if project.join("Rust/Cargo.toml").exists() {
@@ -202,9 +212,14 @@ fn main() {
             let from = first_build_step(all, step, from);
             build_cmd::run_build(&root, &engine, step, from, release, plugin.as_deref());
         }
-        Commands::Watch { project, plugin } => {
+        Commands::Watch {
+            project,
+            plugin,
+            optimizations,
+        } => {
             let root = project_root(project.as_deref());
             check_version(&root, Scope::PinsAndPlugins);
+            optimizations::report("watch", &root, optimizations);
             watch_cmd::run_watch(&root, plugin.as_deref());
         }
         Commands::Generate { project } => {
@@ -261,6 +276,7 @@ mod tests {
     use clap::{CommandFactory, Parser};
 
     use super::{Cli, Commands, first_build_step};
+    use crate::optimizations::Switch;
 
     #[test]
     fn cli_definition_is_valid() {
@@ -319,5 +335,25 @@ mod tests {
         };
 
         assert_eq!(features, ["mannequin", "checkpoints"]);
+    }
+
+    #[test]
+    fn optimizations_are_on_unless_turned_off() {
+        let watch = |args: &[&str]| match Cli::try_parse_from(args).unwrap().command {
+            Commands::Watch { optimizations, .. } => optimizations,
+            _ => panic!("not the watch command"),
+        };
+
+        assert_eq!(watch(&["rusteal", "watch"]), Switch::On);
+        assert_eq!(
+            watch(&["rusteal", "watch", "--optimizations", "off"]),
+            Switch::Off
+        );
+        assert_eq!(
+            watch(&["rusteal", "watch", "--optimizations", "0"]),
+            Switch::Off
+        );
+        assert!(Cli::try_parse_from(["rusteal", "package", "--optimizations", "no"]).is_err());
+        assert!(Cli::try_parse_from(["rusteal", "new", "G", "--optimizations", "off"]).is_ok());
     }
 }

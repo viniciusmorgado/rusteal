@@ -481,6 +481,14 @@ fn deploy(src: &Path, dest: &Path) -> std::io::Result<()> {
 }
 
 pub fn run_cmd(args: &[&str]) {
+    let code = run_cmd_code(args);
+
+    if code != 0 {
+        std::process::exit(code);
+    }
+}
+
+pub fn run_cmd_code(args: &[&str]) -> i32 {
     let display: String = args.to_vec().join(" ");
 
     let truncated = if display.len() > 200 {
@@ -496,11 +504,13 @@ pub fn run_cmd(args: &[&str]) {
         .status()
         .unwrap_or_else(|e| panic!("Failed to run {}: {e}", args[0]));
 
-    if !status.success() {
-        let code = status.code().unwrap_or(1);
-        eprintln!("\n  Command failed with exit code {code}");
-        std::process::exit(code);
+    if status.success() {
+        return 0;
     }
+
+    let code = status.code().unwrap_or(1);
+    eprintln!("\n  Command failed with exit code {code}");
+    code
 }
 
 #[cfg(test)]
