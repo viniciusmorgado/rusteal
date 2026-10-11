@@ -18,6 +18,7 @@ concurrency:
 # read-only in a new repository.
 permissions:
   contents: write
+  statuses: write
 
 env:
   CARGO_TERM_COLOR: always
@@ -95,6 +96,7 @@ jobs:
       # One version for the whole workspace: [workspace.package].version, which every crate
       # inherits, and the internal dependencies that carry it for the published manifests.
       - name: Commit the version to the PR branch
+        id: commit
         if: steps.guard.outputs.skip != 'true'
         run: |
           TARGET_VERSION="${{ steps.semver.outputs.version }}"
@@ -122,6 +124,7 @@ jobs:
             # of the pull request itself already checked everything else.
             git commit -m "chore: bump version to $TARGET_VERSION [skip ci]"
             git push origin HEAD:${{ github.head_ref }}
+            echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           fi
 
       # The release workflow runs these steps after the merge, where a failure
@@ -130,6 +133,10 @@ jobs:
       - name: Test
         if: steps.guard.outputs.skip != 'true'
         run: cargo test --workspace
+
+      - name: Clippy
+        if: steps.guard.outputs.skip != 'true'
+        run: cargo clippy --workspace --all-targets --no-deps -- -D warnings
 
       - name: Sync the plugin snapshot
         if: steps.guard.outputs.skip != 'true'
@@ -147,3 +154,20 @@ jobs:
         run: |
           rustup toolchain install stable --profile minimal
           cargo +stable package --workspace --exclude xtask --allow-dirty
+
+      # The version commit pushed above is now the head of the pull request,
+      # and it creates no runs of its own. This job has just run on it what the
+      # CI checks (build, tests, clippy) and what the release needs, so it
+      # reports both checks a pull request to main must pass on that commit.
+      - name: Report the checks on the version commit
+        if: steps.commit.outputs.sha != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ steps.commit.outputs.sha }}
+        run: |
+          for CONTEXT in build bump; do
+            gh api "repos/${{ github.repository }}/statuses/$SHA" \
+              -f state=success -f context="$CONTEXT" \
+              -f description="Checked by Prepare release on this commit" \
+              -f target_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          done
