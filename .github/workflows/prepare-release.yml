@@ -123,3 +123,27 @@ jobs:
             git commit -m "chore: bump version to $TARGET_VERSION [skip ci]"
             git push origin HEAD:${{ github.head_ref }}
           fi
+
+      # The release workflow runs these steps after the merge, where a failure
+      # leaves main ahead of crates.io. Run here, on the version the merge will
+      # publish, they fail the pull request instead, before it reaches main.
+      - name: Test
+        if: steps.guard.outputs.skip != 'true'
+        run: cargo test --workspace
+
+      - name: Sync the plugin snapshot
+        if: steps.guard.outputs.skip != 'true'
+        run: |
+          cargo run -p rusteal -- sync-plugin
+          test -f rusteal-cli/ue_plugin_embed/Rusteal/Rusteal.uplugin
+
+      # Builds every crate from the package crates.io will receive, against the
+      # other crates' packages at this version, which are not on crates.io yet:
+      # what cargo publish checks, without publishing. The Cargo the workspace
+      # pins cannot package crates whose dependencies are unpublished; the
+      # stable one can.
+      - name: Package every crate as it will be published
+        if: steps.guard.outputs.skip != 'true'
+        run: |
+          rustup toolchain install stable --profile minimal
+          cargo +stable package --workspace --exclude xtask --allow-dirty
