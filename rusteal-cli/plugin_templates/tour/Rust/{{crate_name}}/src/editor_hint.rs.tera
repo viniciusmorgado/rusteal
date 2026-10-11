@@ -128,7 +128,7 @@ impl TourSubsystem {
 
 impl TourSubsystem {
     pub fn get(context: UObjectRef<Object>) -> RustealResult<Self> {
-        let class = unsafe { SubclassOf::<WorldSubsystem>::from_raw(Self::static_class()) };
+        let class = SubclassOf::<Self>::base().upcast_to::<WorldSubsystem>();
         Self::from_obj(SubsystemBlueprintLibrary::get_world_subsystem(
             context, class,
         ))

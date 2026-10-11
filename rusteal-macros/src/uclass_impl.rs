@@ -1,5 +1,5 @@
 use proc_macro2::TokenStream;
-use quote::{format_ident, quote};
+use quote::{ToTokens, format_ident, quote};
 use syn::ext::IdentExt;
 use syn::punctuated::Punctuated;
 use syn::{
@@ -12,10 +12,10 @@ use crate::shape;
 use crate::uclass::{to_screaming_snake, to_snake_case};
 use crate::udelegate;
 
-struct ParamInfo {
-    rust_name: Ident,
-    ue_name: String,
-    rust_ty: Type,
+pub(crate) struct ParamInfo {
+    pub rust_name: Ident,
+    pub ue_name: String,
+    pub rust_ty: Type,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -24,6 +24,7 @@ enum FnKind {
     Pure,
     Override,
     ImplementableEvent,
+    InterfaceImpl,
 }
 
 struct UFunctionInfo {
@@ -34,6 +35,8 @@ struct UFunctionInfo {
     is_mut: bool,
     kind: FnKind,
     exec: bool,
+    name_expr: TokenStream,
+    param_name_exprs: Vec<TokenStream>,
     fallible: bool,
 }
 
@@ -71,7 +74,29 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
     let mut shape_parts: Vec<String> = Vec::new();
     let mut clean_impl = input.clone();
 
+    let interface = input.trait_.as_ref().map(|(path, _)| path.clone());
+
+    if let Some(trait_path) = &interface {
+        shape_parts.push(format!("impl {}", trait_path.to_token_stream()));
+
+        for item in &input.items {
+            let ImplItem::Fn(method) = item else {
+                return Err(syn::Error::new_spanned(
+                    item,
+                    "an interface implementation holds the interface's functions only",
+                ));
+            };
+
+            shape_parts.push(shape::declaration(&method.attrs, &[], &method.sig));
+            ufunctions.push(parse_interface_fn(method, trait_path)?);
+        }
+    }
+
     for item in &input.items {
+        if interface.is_some() {
+            break;
+        }
+
         if let ImplItem::Fn(method) = item {
             let has_ufunction = method.attrs.iter().any(|a| a.path().is_ident("ufunction"));
 
@@ -151,17 +176,22 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
         }
     }
 
+    let interface_suffix = interface
+        .as_ref()
+        .and_then(|path| path.segments.last())
+        .map(|segment| format!("_{}", to_snake_case(&segment.ident.to_string())))
+        .unwrap_or_default();
+
     let register_fns_name = format_ident!(
-        "__rusteal_register_{}_functions",
+        "__rusteal_register_{}{}_functions",
         to_snake_case(&struct_name_str),
+        interface_suffix,
     );
 
     let mut register_stmts: Vec<TokenStream> = Vec::new();
 
     for uf in &ufunctions {
-        let ue_name = &uf.ue_name;
-        let ue_name_bytes = ue_name.as_bytes();
-        let ue_name_len = ue_name.len() as u32;
+        let name_expr = &uf.name_expr;
         let method_ident = &uf.method_ident;
 
         let flags_expr = match uf.kind {
@@ -179,6 +209,11 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
                 ::rusteal_runtime::ffi::FUNC_EVENT | ::rusteal_runtime::ffi::FUNC_BLUEPRINT_EVENT
                     | ::rusteal_runtime::ffi::FUNC_BLUEPRINT_CALLABLE | ::rusteal_runtime::ffi::FUNC_PUBLIC
             },
+            FnKind::InterfaceImpl => quote! {
+                ::rusteal_runtime::ffi::FUNC_NATIVE | ::rusteal_runtime::ffi::FUNC_EVENT
+                    | ::rusteal_runtime::ffi::FUNC_BLUEPRINT_EVENT | ::rusteal_runtime::ffi::FUNC_BLUEPRINT_CALLABLE
+                    | ::rusteal_runtime::ffi::FUNC_PUBLIC
+            },
         };
 
         let flags_expr = if uf.exec {
@@ -191,17 +226,13 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
 
         let mut offset_inits: Vec<TokenStream> = Vec::new();
 
-        for param in &uf.params {
-            let param_ue_name = &param.ue_name;
-            let param_ue_bytes = param_ue_name.as_bytes();
-            let param_ue_len = param_ue_name.len() as u32;
-
+        for param_name in &uf.param_name_exprs {
             offset_inits.push(quote! {
                 {
                     let p = ::rusteal_runtime::runtime::ffi_dispatch::reflection_get_function_param(
                         func,
-                        [#(#param_ue_bytes),*].as_ptr(),
-                        #param_ue_len,
+                        #param_name.as_ptr(),
+                        #param_name.len() as u32,
                     );
 
                     ::rusteal_runtime::runtime::ffi_dispatch::reflection_get_property_offset(p)
@@ -355,8 +386,16 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
             }
         };
 
-        let call = quote! { __this.#method_ident(#(#param_idents),*) };
+        let call = match &interface {
+            Some(trait_path) if uf.is_mut => {
+                quote! { #trait_path::#method_ident(&mut __this, #(#param_idents),*) }
+            }
+            Some(trait_path) => quote! { #trait_path::#method_ident(&__this, #(#param_idents),*) },
+            None => quote! { __this.#method_ident(#(#param_idents),*) },
+        };
+
         let struct_label = struct_name.to_string();
+        let ue_name = &uf.ue_name;
 
         let raise = quote! {
             __error.__raise(&format!("{}::{}", #struct_label, #ue_name));
@@ -388,8 +427,8 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
                 let #func_var = unsafe {
                     ::rusteal_runtime::runtime::ffi_dispatch::reify_add_function(
                         cls,
-                        [#(#ue_name_bytes),*].as_ptr(),
-                        #ue_name_len,
+                        #name_expr.as_ptr(),
+                        #name_expr.len() as u32,
                         0u64,
                         #flags_expr,
                     )
@@ -407,8 +446,8 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
                             let cls = <#struct_name as ::rusteal_runtime::runtime::UeClass>::static_class();
                             let func = ::rusteal_runtime::runtime::ffi_dispatch::reflection_find_function_by_class(
                                 cls,
-                                [#(#ue_name_bytes),*].as_ptr(),
-                                #ue_name_len,
+                                #name_expr.as_ptr(),
+                                #name_expr.len() as u32,
                             );
                             [#(#offset_inits),*]
                         });
@@ -426,8 +465,8 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
             let #func_var = unsafe {
                 ::rusteal_runtime::runtime::ffi_dispatch::reify_add_function(
                     cls,
-                    [#(#ue_name_bytes),*].as_ptr(),
-                    #ue_name_len,
+                    #name_expr.as_ptr(),
+                    #name_expr.len() as u32,
                     __callback_id,
                     #flags_expr,
                 )
@@ -436,14 +475,11 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
         }
 
         if uf.kind != FnKind::Override {
-            for param in &uf.params {
+            for (param, param_name) in uf.params.iter().zip(&uf.param_name_exprs) {
                 let reg_ty =
                     event_struct_param(&param.rust_ty).unwrap_or_else(|| param.rust_ty.clone());
 
                 let info = prop_type::map_type(&reg_ty).unwrap();
-                let param_ue_name = &param.ue_name;
-                let param_ue_bytes = param_ue_name.as_bytes();
-                let param_ue_len = param_ue_name.len() as u32;
                 let prop_type_expr = &info.prop_type_expr;
                 let extra_expr = extra_expr(&info);
 
@@ -451,8 +487,8 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
                     unsafe {
                         ::rusteal_runtime::runtime::ffi_dispatch::reify_add_function_param(
                             #func_var,
-                            [#(#param_ue_bytes),*].as_ptr(),
-                            #param_ue_len,
+                            #param_name.as_ptr(),
+                            #param_name.len() as u32,
                             #prop_type_expr as u32,
                             ::rusteal_runtime::ffi::CPF_PARM,
                             #extra_expr,
@@ -491,6 +527,16 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
         .map(|d| udelegate::binding_methods(&struct_name, d))
         .collect();
 
+    let add_interface = interface.as_ref().map(|trait_path| {
+        quote! {
+            let __interface = <dyn #trait_path>::__rusteal_interface_handle();
+
+            if !__interface.is_null() {
+                unsafe { ::rusteal_runtime::runtime::ffi_dispatch::reify_add_interface_class(cls, __interface); }
+            }
+        }
+    });
+
     let register_functions_fn = quote! {
         #[doc(hidden)]
         pub fn #register_fns_name() {
@@ -499,6 +545,7 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
                 _ => return,
             };
 
+            #add_interface
             #(#register_stmts)*
         }
     };
@@ -754,6 +801,16 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
         }
     };
 
+    let name_expr = quote! { #ue_name };
+
+    let param_name_exprs = params
+        .iter()
+        .map(|param| {
+            let name = &param.ue_name;
+            quote! { #name }
+        })
+        .collect();
+
     Ok(UFunctionInfo {
         method_ident,
         ue_name,
@@ -762,7 +819,46 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
         is_mut,
         kind,
         exec,
+        name_expr,
+        param_name_exprs,
         fallible,
+    })
+}
+
+fn parse_interface_fn(method: &ImplItemFn, trait_path: &syn::Path) -> syn::Result<UFunctionInfo> {
+    if let Some(attr) = method.attrs.iter().find(|a| {
+        a.path().is_ident("ufunction")
+            || a.path().is_ident("udelegate")
+            || a.path().is_ident("class_defaults")
+    }) {
+        return Err(syn::Error::new_spanned(
+            attr,
+            "the methods of an interface implementation are the interface's functions, \
+             with no #[ufunction], #[udelegate] or #[class_defaults]",
+        ));
+    }
+
+    let signature = crate::uinterface::parse_signature(&method.sig)?;
+    let method_ident = method.sig.ident.clone();
+    let signature_fn = crate::uinterface::signature_fn(&method_ident);
+
+    let name_expr = quote! { <dyn #trait_path>::#signature_fn().0 };
+
+    let param_name_exprs = (0..signature.params.len())
+        .map(|index| quote! { <dyn #trait_path>::#signature_fn().1[#index] })
+        .collect();
+
+    Ok(UFunctionInfo {
+        method_ident,
+        ue_name: signature.ue_name,
+        params: signature.params,
+        return_type: signature.return_type,
+        is_mut: signature.is_mut,
+        kind: FnKind::InterfaceImpl,
+        exec: false,
+        name_expr,
+        param_name_exprs,
+        fallible: false,
     })
 }
 
@@ -795,13 +891,13 @@ fn result_value(ty: &Type) -> Option<Type> {
     is_result.then_some(value)
 }
 
-fn supported_param(ty: &Type) -> bool {
+pub(crate) fn supported_param(ty: &Type) -> bool {
     prop_type::map_type(ty).is_some_and(|info| {
         !matches!(info.kind, prop_type::PropKind::Array { .. }) && !info.kind.property_only()
     })
 }
 
-fn supported_return(ty: &Type) -> bool {
+pub(crate) fn supported_return(ty: &Type) -> bool {
     prop_type::map_type(ty).is_some_and(|info| {
         !matches!(
             info.kind,
@@ -880,8 +976,21 @@ fn parse_ufunction_specifiers(attr: &syn::Attribute) -> syn::Result<(Vec<String>
 fn implementable_event_body(uf: &UFunctionInfo) -> syn::Block {
     let ue_name = &uf.ue_name;
 
-    let sets: Vec<TokenStream> = uf
-        .params
+    dynamic_call_body(
+        quote! { ::rusteal_runtime::runtime::DynamicCall::new(&self.as_ref(), #ue_name) },
+        ue_name,
+        &uf.params,
+        uf.return_type.as_ref().map(|ret| &ret.rust_ty),
+    )
+}
+
+pub(crate) fn dynamic_call_body(
+    new_call: TokenStream,
+    ue_name: &str,
+    params: &[ParamInfo],
+    return_type: Option<&Type>,
+) -> syn::Block {
+    let sets: Vec<TokenStream> = params
         .iter()
         .map(|p| {
             let rust_name = &p.rust_name;
@@ -891,7 +1000,13 @@ fn implementable_event_body(uf: &UFunctionInfo) -> syn::Block {
                 return quote! { call.set_struct(#param, #rust_name)?; };
             }
 
-            let value = match prop_type::map_type(&p.rust_ty).map(|info| info.kind) {
+            let kind = prop_type::map_type(&p.rust_ty).map(|info| info.kind);
+
+            if matches!(kind, Some(prop_type::PropKind::Struct { .. })) {
+                return quote! { call.set_struct_ref(#param, &#rust_name)?; };
+            }
+
+            let value = match kind {
                 Some(prop_type::PropKind::Object { .. }) => quote! { #rust_name.raw() },
                 Some(prop_type::PropKind::Class { .. }) => {
                     quote! { ::rusteal_runtime::ffi::UObjectHandle(#rust_name.raw().0) }
@@ -903,36 +1018,32 @@ fn implementable_event_body(uf: &UFunctionInfo) -> syn::Block {
         })
         .collect();
 
-    let (ret_ty, read, fallback) = match &uf.return_type {
+    let (ret_ty, read, fallback) = match return_type {
         None => (
             quote! { () },
             quote! { let _ = result; Ok(()) },
             TokenStream::new(),
         ),
-        Some(ret) => {
-            let ty = &ret.rust_ty;
-
-            match prop_type::map_type(ty).map(|info| info.kind) {
-                Some(prop_type::PropKind::Object { .. }) => (
-                    quote! { #ty },
-                    quote! {
-                        let h = result.get::<::rusteal_runtime::ffi::UObjectHandle>("ReturnValue")?;
-                        Ok(unsafe { <#ty>::from_raw(h) })
-                    },
-                    quote! { unsafe { <#ty>::from_raw(::rusteal_runtime::ffi::UObjectHandle::null()) } },
-                ),
-                _ => (
-                    quote! { #ty },
-                    quote! { result.get::<#ty>("ReturnValue") },
-                    quote! { <#ty as ::core::default::Default>::default() },
-                ),
-            }
-        }
+        Some(ty) => match prop_type::map_type(ty).map(|info| info.kind) {
+            Some(prop_type::PropKind::Object { .. }) => (
+                quote! { #ty },
+                quote! {
+                    let h = result.get::<::rusteal_runtime::ffi::UObjectHandle>("ReturnValue")?;
+                    Ok(unsafe { <#ty>::from_raw(h) })
+                },
+                quote! { unsafe { <#ty>::from_raw(::rusteal_runtime::ffi::UObjectHandle::null()) } },
+            ),
+            _ => (
+                quote! { #ty },
+                quote! { result.get::<#ty>("ReturnValue") },
+                quote! { <#ty as ::core::default::Default>::default() },
+            ),
+        },
     };
 
     syn::parse_quote! {{
         let __call = || -> ::rusteal_runtime::runtime::RustealResult<#ret_ty> {
-            let mut call = ::rusteal_runtime::runtime::DynamicCall::new(&self.as_ref(), #ue_name)?;
+            let mut call = #new_call?;
 
             #(#sets)*
             let result = call.call()?;
@@ -957,6 +1068,58 @@ mod tests {
 
     fn expand(item: TokenStream) -> syn::Result<String> {
         expand_uclass_impl(TokenStream::new(), item).map(|tokens| tokens.to_string())
+    }
+
+    #[test]
+    fn an_interface_implementation_registers_the_interface_and_its_functions() {
+        let out = expand(quote! {
+            impl Interactable for Door {
+                fn interact(&mut self, instigator: UObjectRef<Actor>) -> bool {
+                    true
+                }
+            }
+        })
+        .unwrap();
+
+        assert!(out.contains("reify_add_interface_class"));
+        assert!(out.contains("< dyn Interactable > :: __rusteal_signature_interact () . 0"));
+        assert!(
+            out.contains("< dyn Interactable > :: __rusteal_signature_interact () . 1 [0usize]")
+        );
+        assert!(out.contains("Interactable :: interact (& mut __this , instigator)"));
+        assert!(out.contains("FUNC_EVENT"));
+        assert!(out.contains("__rusteal_register_door_interactable_functions"));
+    }
+
+    #[test]
+    fn an_interface_implementation_holds_plain_functions() {
+        assert!(
+            expand(quote! {
+                impl Interactable for Door {
+                    #[ufunction]
+                    fn interact(&mut self) {}
+                }
+            })
+            .is_err()
+        );
+
+        assert!(
+            expand(quote! {
+                impl Interactable for Door {
+                    const X: i32 = 1;
+                }
+            })
+            .is_err()
+        );
+
+        assert!(
+            expand(quote! {
+                impl Interactable for Door {
+                    fn interact(&mut self, name: String) {}
+                }
+            })
+            .is_err()
+        );
     }
 
     #[test]

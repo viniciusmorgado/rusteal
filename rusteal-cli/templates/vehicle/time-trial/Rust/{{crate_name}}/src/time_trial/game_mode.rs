@@ -1,4 +1,6 @@
-use bindings::engine::{Actor, Controller, GameModeBase, GameplayStatics, KismetMathLibrary, PlayerStart};
+use bindings::engine::{
+    Actor, Controller, GameModeBase, GameplayStatics, KismetMathLibrary, PlayerStart,
+};
 use rusteal_runtime::runtime::{FName, SubclassOf, UObjectRef};
 use rusteal_runtime::{uclass, uclass_impl};
 

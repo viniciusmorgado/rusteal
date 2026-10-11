@@ -5,9 +5,7 @@ use bindings::enhanced_input::{EnhancedInputLocalPlayerSubsystemExt, InputMappin
 use bindings::prelude::*;
 use bindings::umg::{UserWidget, UserWidgetExt};
 use rusteal_runtime::runtime::input::should_display_touch_interface;
-use rusteal_runtime::runtime::{
-    LOG_ERROR, LOG_WARNING, OwnedStruct, RustealResult, SubclassOf, UObjectRef, UeArray, ulog,
-};
+use rusteal_runtime::runtime::{OwnedStruct, RustealResult, SubclassOf, UObjectRef, UeArray};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use super::character::TwinStickCharacter;
@@ -38,10 +36,7 @@ impl TwinStickPlayerController {
     #[ufunction(Override)]
     fn receive_begin_play(&mut self) {
         if let Err(e) = self.setup_input() {
-            ulog!(
-                LOG_WARNING,
-                "[TwinStick] input mapping contexts failed: {e}"
-            );
+            log::warn!("[TwinStick] input mapping contexts failed: {e}");
         }
     }
 
@@ -59,7 +54,7 @@ impl TwinStickPlayerController {
 
         match bound {
             Ok(binding) => binding.detach(),
-            Err(e) => ulog!(LOG_WARNING, "[TwinStick] cannot watch the pawn: {e}"),
+            Err(e) => log::warn!("[TwinStick] cannot watch the pawn: {e}"),
         }
     }
 }
@@ -67,7 +62,7 @@ impl TwinStickPlayerController {
 impl TwinStickPlayerController {
     fn on_pawn_destroyed(&mut self, _destroyed_actor: UObjectRef<Actor>) {
         if let Err(e) = self.respawn() {
-            ulog!(LOG_WARNING, "[TwinStick] respawn failed: {e}");
+            log::warn!("[TwinStick] respawn failed: {e}");
         }
     }
 
@@ -107,7 +102,7 @@ impl TwinStickPlayerController {
                     widget.checked()?.add_to_player_screen(Some(0));
                     self.set_mobile_controls_widget(widget);
                 }
-                Err(_) => ulog!(LOG_ERROR, "Could not spawn mobile controls widget."),
+                Err(_) => log::error!("Could not spawn mobile controls widget."),
             }
         }
 

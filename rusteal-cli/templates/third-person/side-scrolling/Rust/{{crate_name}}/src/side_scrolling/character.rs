@@ -7,9 +7,7 @@ use bindings::engine::{
 };
 use bindings::enhanced_input::{ETriggerEvent, FInputActionValue, InputAction};
 use bindings::prelude::*;
-use rusteal_runtime::runtime::{
-    LOG_DISPLAY, LOG_WARNING, OwnedStruct, Rotator, RustealResult, UObjectRef, UStructRef, ulog,
-};
+use rusteal_runtime::runtime::{OwnedStruct, Rotator, RustealResult, UObjectRef, UStructRef};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use super::interactable;
@@ -121,10 +119,9 @@ impl SideScrollingCharacter {
     #[ufunction(Override)]
     fn receive_restarted(&mut self) {
         match self.bind_input() {
-            Ok(true) => ulog!(LOG_DISPLAY, "[SideScrolling] {} input bound", self.name()),
+            Ok(true) => log::info!("[SideScrolling] {} input bound", self.name()),
             Ok(false) => {}
-            Err(e) => ulog!(
-                LOG_WARNING,
+            Err(e) => log::warn!(
                 "[SideScrolling] {} failed to bind its input: {e}",
                 self.name()
             ),
@@ -150,7 +147,7 @@ impl SideScrollingCharacter {
         _hit: UStructRef<FHitResult>,
     ) {
         if let Err(e) = self.push(other_comp) {
-            ulog!(LOG_WARNING, "[SideScrolling] push failed: {e}");
+            log::warn!("[SideScrolling] push failed: {e}");
         }
     }
 
@@ -223,7 +220,7 @@ impl SideScrollingCharacter {
     #[ufunction(BlueprintCallable)]
     fn do_jump_start(&mut self) {
         if let Err(e) = self.multi_jump() {
-            ulog!(LOG_WARNING, "[SideScrolling] jump failed: {e}");
+            log::warn!("[SideScrolling] jump failed: {e}");
         }
     }
 
@@ -237,7 +234,7 @@ impl SideScrollingCharacter {
     #[ufunction(BlueprintCallable)]
     fn do_interact(&mut self) {
         if let Err(e) = self.interact() {
-            ulog!(LOG_WARNING, "[SideScrolling] interact failed: {e}");
+            log::warn!("[SideScrolling] interact failed: {e}");
         }
     }
 
@@ -398,7 +395,7 @@ impl SideScrollingCharacter {
 
         match model::air_jump(&state, now, self.max_coyote_time()) {
             AirJump::Coyote => {
-                ulog!(LOG_WARNING, "Coyote Jump");
+                log::warn!("Coyote Jump");
 
                 me.jump();
             }

@@ -7,7 +7,7 @@ use bindings::head_mounted_display::MotionControllerComponent;
 use bindings::head_mounted_display::MotionControllerComponentExt;
 use bindings::input_core::EControllerHand;
 use bindings::prelude::*;
-use rusteal_runtime::runtime::{FName, LOG_ERROR, OwnedStruct, RustealResult, UObjectRef, ulog};
+use rusteal_runtime::runtime::{FName, OwnedStruct, RustealResult, UObjectRef};
 use rusteal_runtime::{uclass, uclass_impl, uenum};
 
 use crate::model;
@@ -75,7 +75,7 @@ impl GrabComponent {
                 self.set_b_is_held(true);
 
                 if let Err(e) = self.snap_to(motion_controller) {
-                    ulog!(LOG_ERROR, "[VR] snap grab failed: {e}");
+                    log::error!("[VR] snap grab failed: {e}");
                 }
             }
             EGrabType::Custom => self.set_b_is_held(true),
@@ -162,10 +162,9 @@ impl GrabComponent {
     pub fn set_primitive_comp_physics(&self, b_simulate: bool) {
         match self.attach_parent() {
             Ok(parent) => parent.set_simulate_physics(b_simulate),
-            Err(_) => ulog!(
-                LOG_ERROR,
-                "GrabComponent->SetSimulatingParent->Cast To PrimitiveComponent FAILED"
-            ),
+            Err(_) => {
+                log::error!("GrabComponent->SetSimulatingParent->Cast To PrimitiveComponent FAILED")
+            }
         }
     }
 }
@@ -204,8 +203,7 @@ impl GrabComponent {
         });
 
         if !attached {
-            ulog!(
-                LOG_ERROR,
+            log::error!(
                 "Attaching the grabbed object to its motion controller FAILED - object not grabbed"
             );
         }

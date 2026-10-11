@@ -26,6 +26,13 @@ pub struct EnumRegistration {
 }
 inventory::collect!(EnumRegistration);
 
+pub struct InterfaceRegistration {
+    pub create: fn(),
+    pub register: fn(),
+    pub finalize: fn(),
+}
+inventory::collect!(InterfaceRegistration);
+
 pub struct ClassFunctionRegistration {
     pub type_id: u64,
     pub shape: u64,
@@ -56,6 +63,10 @@ impl ClassDefaultsOutcome for crate::error::RustealResult<()> {
 pub fn register_all_from_inventory() {
     for ereg in inventory::iter::<EnumRegistration> {
         (ereg.create)();
+    }
+
+    for ireg in inventory::iter::<InterfaceRegistration> {
+        (ireg.create)();
     }
 
     let mut pending: Vec<&ClassRegistration> =
@@ -96,6 +107,11 @@ pub fn register_all_from_inventory() {
 
     for sreg in inventory::iter::<StructRegistration> {
         (sreg.finalize)();
+    }
+
+    for ireg in inventory::iter::<InterfaceRegistration> {
+        (ireg.register)();
+        (ireg.finalize)();
     }
 
     for reg in &ordered {

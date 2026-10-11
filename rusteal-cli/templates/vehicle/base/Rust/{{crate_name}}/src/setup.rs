@@ -92,8 +92,12 @@ pub fn set_transmission(
     fields.set_change_down_rpm(transmission.change_down_rpm);
     fields.set_gear_change_time(transmission.gear_change_time);
     fields.set_transmission_efficiency(transmission.efficiency);
-    fields.forward_gear_ratios().set_all(transmission.forward_gear_ratios)?;
-    fields.reverse_gear_ratios().set_all(transmission.reverse_gear_ratios)?;
+    fields
+        .forward_gear_ratios()
+        .set_all(transmission.forward_gear_ratios)?;
+    fields
+        .reverse_gear_ratios()
+        .set_all(transmission.reverse_gear_ratios)?;
     movement.set_transmission_setup(&config);
 
     Ok(())

@@ -7,7 +7,8 @@ use rusteal_ffi::{UClassHandle, UObjectHandle};
 use crate::error::{RustealError, RustealResult};
 use crate::ffi_dispatch;
 use crate::pinned::Pinned;
-use crate::traits::{HasParent, UeClass, UeHandle, ValidHandle};
+use crate::script_interface::ScriptInterface;
+use crate::traits::{HasParent, UeClass, UeHandle, UeInterface, ValidHandle};
 
 #[repr(transparent)]
 pub struct UObjectRef<T: UeClass> {
@@ -125,9 +126,43 @@ impl<T: UeClass> UObjectRef<T> {
         Ok(unsafe { ffi_dispatch::core_get_outer(h) })
     }
 
+    #[track_caller]
+    pub fn from_handle(handle: UObjectHandle) -> RustealResult<Self> {
+        if !unsafe { ffi_dispatch::core_is_valid(handle) } {
+            return Err(RustealError::object_destroyed());
+        }
+
+        if !unsafe { ffi_dispatch::core_is_a(handle, T::static_class()) } {
+            return Err(RustealError::invalid_cast_to(handle, T::static_class()));
+        }
+
+        Ok(unsafe { Self::from_raw(handle) })
+    }
+
+    #[track_caller]
+    pub fn class(&self) -> RustealResult<crate::subclass_of::SubclassOf<T>> {
+        let class = self.get_class()?;
+
+        Ok(unsafe { crate::subclass_of::SubclassOf::from_raw(class) })
+    }
+
+    #[track_caller]
+    pub fn outer<U: UeClass>(&self) -> RustealResult<UObjectRef<U>> {
+        UObjectRef::from_handle(self.get_outer()?)
+    }
+
     #[inline]
     pub fn is_a<U: UeClass>(&self) -> bool {
         self.is_valid() && unsafe { ffi_dispatch::core_is_a(self.handle, U::static_class()) }
+    }
+
+    #[inline]
+    pub fn implements<I: UeInterface + ?Sized>(&self) -> bool {
+        self.is_valid() && unsafe { ffi_dispatch::core_is_a(self.handle, I::static_class()) }
+    }
+
+    pub fn interface<I: UeInterface + ?Sized>(self) -> RustealResult<ScriptInterface<I>> {
+        ScriptInterface::new(self.checked()?.raw())
     }
 }
 

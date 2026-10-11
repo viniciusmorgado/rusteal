@@ -4,7 +4,7 @@ use bindings::prelude::*;
 use bindings::umg::{Button, ButtonExt, UserWidget};
 use bindings::xr_base::{HeadMountedDisplayFunctionLibrary, XRLoadingScreenFunctionLibrary};
 use glam::{DVec2, DVec3};
-use rusteal_runtime::runtime::{FName, LOG_WARNING, RustealResult, UObjectRef, ulog};
+use rusteal_runtime::runtime::{FName, RustealResult, UObjectRef};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use crate::passthrough::Passthrough;
@@ -38,7 +38,7 @@ impl MenuWidget {
     #[ufunction(Override)]
     fn construct(&mut self) {
         if let Err(e) = self.bind_buttons() {
-            ulog!(LOG_WARNING, "[VR] the menu buttons are not bound: {e}");
+            log::warn!("[VR] the menu buttons are not bound: {e}");
         }
     }
 

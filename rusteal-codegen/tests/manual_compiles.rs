@@ -301,6 +301,8 @@ fn regenerate_fixture() {
 }
 
 const UCLASS_GAME: &str = r#"
+#![deny(unsafe_code)]
+
 use bindings::engine::{
     Actor, ActorExt, Controller, DataTable, FDataTableRowHandle, Pawn, PawnExt, PlayerController,
     SceneComponent,

@@ -10,8 +10,7 @@ use bindings::state_tree::{StateTreeTaskBlueprintBase, StateTreeTaskBlueprintBas
 use bindings::umg::{WidgetComponent, WidgetComponentExt};
 use glam::DVec3;
 use rusteal_runtime::runtime::{
-    FName, LOG_WARNING, OwnedStruct, RustealResult, SubclassOf, UObjectRef, UStructRef, UeArray,
-    ulog,
+    FName, OwnedStruct, RustealResult, SubclassOf, UObjectRef, UStructRef, UeArray,
 };
 use rusteal_runtime::{uclass, uclass_impl};
 
@@ -133,7 +132,7 @@ impl CombatEnemy {
 
         match filled {
             Ok(widget) => widget.set_life_percentage(1.0),
-            Err(e) => ulog!(LOG_WARNING, "[Combat] enemy life bar: {e}"),
+            Err(e) => log::warn!("[Combat] enemy life bar: {e}"),
         }
     }
 
@@ -287,10 +286,7 @@ impl CombatEnemy {
         };
 
         if let Err(e) = self.bind_attack_end(anim_instance) {
-            ulog!(
-                LOG_WARNING,
-                "[Combat] cannot watch the enemy's attack montage: {e}"
-            );
+            log::warn!("[Combat] cannot watch the enemy's attack montage: {e}");
         }
 
         if let Ok(anim_instance) = anim_instance.checked() {

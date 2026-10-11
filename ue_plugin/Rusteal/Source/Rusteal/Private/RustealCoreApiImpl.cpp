@@ -47,7 +47,13 @@ static bool IsAImpl(RustealUObjectHandle Obj, RustealUClassHandle TargetClass) {
     return false;
   }
 
-  return Object->IsA(static_cast<UClass *>(TargetClass.ptr));
+  UClass *Target = static_cast<UClass *>(TargetClass.ptr);
+
+  if (Target->HasAnyClassFlags(CLASS_Interface)) {
+    return Object->GetClass()->ImplementsInterface(Target);
+  }
+
+  return Object->IsA(Target);
 }
 
 static RustealUObjectHandle GetOuterImpl(RustealUObjectHandle Obj) {
@@ -128,6 +134,29 @@ static bool IsWeakValidImpl(RustealFWeakObjectHandle WeakHandle) {
   return Weak.IsValid();
 }
 
+static bool IsChildOfImpl(RustealUClassHandle ClassHandle,
+                          RustealUClassHandle ParentHandle) {
+  UObject *ClassObject = static_cast<UObject *>(ClassHandle.ptr);
+  UObject *ParentObject = static_cast<UObject *>(ParentHandle.ptr);
+
+  if (!::IsValid(ClassObject) || !::IsValid(ParentObject)) {
+    return false;
+  }
+
+  UClass *Class = Cast<UClass>(ClassObject);
+  UClass *Parent = Cast<UClass>(ParentObject);
+
+  if (!Class || !Parent) {
+    return false;
+  }
+
+  if (Parent->HasAnyClassFlags(CLASS_Interface)) {
+    return Class->ImplementsInterface(Parent);
+  }
+
+  return Class->IsChildOf(Parent);
+}
+
 FRustealCoreApi GCoreApi = {
     &IsValidImpl,
     &GetNameImpl,
@@ -140,4 +169,5 @@ FRustealCoreApi GCoreApi = {
     &ResolveWeakImpl,
     &IsWeakValidImpl,
     &RustealTakeErrorMessage,
+    &IsChildOfImpl,
 };

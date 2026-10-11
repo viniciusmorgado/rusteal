@@ -3,7 +3,7 @@ use bindings::engine::{
     MaterialInterface, PrimitiveComponentExt, StaticMeshComponent,
 };
 use bindings::prelude::*;
-use rusteal_runtime::runtime::{FName, LOG_WARNING, LinearColor, RustealResult, UObjectRef, ulog};
+use rusteal_runtime::runtime::{FName, LinearColor, RustealResult, UObjectRef};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use crate::components;
@@ -58,7 +58,7 @@ impl TriggerLight {
     #[ufunction(Override)]
     fn receive_begin_play(&mut self) {
         if let Err(e) = self.begin_play() {
-            ulog!(LOG_WARNING, "[Interactables] light: {e}");
+            log::warn!("[Interactables] light: {e}");
         }
     }
 

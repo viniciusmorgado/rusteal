@@ -16,6 +16,7 @@ rusteal-core = "={{ version }}"
 rusteal-ffi = "={{ version }}"
 {%- endif %}
 glam = "{{ glam_version }}"
+log = "0.4"
 
 # The plugin's library is built with the dev profile while you iterate
 # (`rusteal build`) and with the release profile to ship (`rusteal build

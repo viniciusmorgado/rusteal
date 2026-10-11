@@ -13,8 +13,7 @@ use bindings::prelude::*;
 use bindings::umg::UserWidgetExt;
 use glam::{DVec2, DVec3};
 use rusteal_runtime::runtime::{
-    LOG_WARNING, LinearColor, OwnedStruct, RustealResult, SubclassOf, UObjectRef, UStructRef,
-    UeArray, ulog,
+    LinearColor, OwnedStruct, RustealResult, SubclassOf, UObjectRef, UStructRef, UeArray,
 };
 use rusteal_runtime::{uclass, uclass_impl};
 
@@ -104,14 +103,14 @@ impl ARPawn {
     #[ufunction(Override)]
     fn receive_begin_play(&mut self) {
         if let Err(e) = self.add_main_menu() {
-            ulog!(LOG_WARNING, "[AR] no main menu: {e}");
+            log::warn!("[AR] no main menu: {e}");
         }
     }
 
     #[ufunction(Override)]
     fn receive_tick(&mut self, delta_seconds: f32) {
         if let Err(e) = self.update(f64::from(delta_seconds)) {
-            ulog!(LOG_WARNING, "[AR] pawn update failed: {e}");
+            log::warn!("[AR] pawn update failed: {e}");
         }
     }
 
@@ -124,7 +123,7 @@ impl ARPawn {
         let location = location.to_owned().to_dvec3();
 
         if let Err(e) = self.touch_hit(hit_actor, location) {
-            ulog!(LOG_WARNING, "[AR] touch failed: {e}");
+            log::warn!("[AR] touch failed: {e}");
         }
     }
 

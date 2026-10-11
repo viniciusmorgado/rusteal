@@ -7,9 +7,7 @@ use bindings::engine::{
 };
 use bindings::enhanced_input::{ETriggerEvent, FInputActionValue, InputAction};
 use bindings::prelude::*;
-use rusteal_runtime::runtime::{
-    FName, LOG_DISPLAY, LOG_WARNING, Rotator, RustealResult, UObjectRef, UStructRef, ulog,
-};
+use rusteal_runtime::runtime::{FName, Rotator, RustealResult, UObjectRef, UStructRef};
 use rusteal_runtime::{uclass, uclass_impl};
 
 #[uclass(parent = Character)]
@@ -41,7 +39,7 @@ pub struct FirstPersonCharacter {
 impl FirstPersonCharacter {
     #[ufunction(Override)]
     pub(crate) fn receive_begin_play(&mut self) {
-        ulog!(LOG_DISPLAY, "[FirstPerson] {} ready", self.name());
+        log::info!("[FirstPerson] {} ready", self.name());
     }
 
     #[class_defaults]
@@ -94,10 +92,9 @@ impl FirstPersonCharacter {
     #[ufunction(Override)]
     pub(crate) fn receive_restarted(&mut self) {
         match self.bind_input() {
-            Ok(true) => ulog!(LOG_DISPLAY, "[FirstPerson] {} input bound", self.name()),
+            Ok(true) => log::info!("[FirstPerson] {} input bound", self.name()),
             Ok(false) => {}
-            Err(e) => ulog!(
-                LOG_WARNING,
+            Err(e) => log::warn!(
                 "[FirstPerson] {} failed to bind its input: {e}",
                 self.name()
             ),

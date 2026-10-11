@@ -12,9 +12,7 @@ use bindings::umg::{
     TextBlockExt, UserWidget, UserWidgetExt, Widget, WidgetAnimation, WidgetAnimationExt,
     WidgetExt,
 };
-use rusteal_runtime::runtime::{
-    FName, Inherits, LOG_WARNING, RustealResult, UObjectRef, UStructRef, ulog,
-};
+use rusteal_runtime::runtime::{FName, Inherits, RustealResult, UObjectRef, UStructRef};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use crate::buttons::{CapsuleButton, ToggleButton};
@@ -136,7 +134,7 @@ impl StartMenu {
     #[ufunction(Override)]
     fn on_initialized(&mut self) {
         if let Err(e) = self.init() {
-            ulog!(LOG_WARNING, "[AR] start menu init failed: {e}");
+            log::warn!("[AR] start menu init failed: {e}");
         }
     }
 
@@ -338,7 +336,7 @@ impl BottomMenu {
     #[ufunction(Override)]
     fn on_initialized(&mut self) {
         if let Err(e) = self.init() {
-            ulog!(LOG_WARNING, "[AR] bottom menu init failed: {e}");
+            log::warn!("[AR] bottom menu init failed: {e}");
         }
     }
 
@@ -593,7 +591,7 @@ impl InfoMenu {
             .and_then(|_| bind_style(me, "ChangeStyle"));
 
         if let Err(e) = bound {
-            ulog!(LOG_WARNING, "[AR] info menu init failed: {e}");
+            log::warn!("[AR] info menu init failed: {e}");
         }
     }
 
@@ -704,7 +702,7 @@ impl OptionMenu {
     #[ufunction(Override)]
     fn on_initialized(&mut self) {
         if let Err(e) = self.init() {
-            ulog!(LOG_WARNING, "[AR] option menu init failed: {e}");
+            log::warn!("[AR] option menu init failed: {e}");
         }
     }
 
@@ -866,7 +864,7 @@ impl MainMenu {
     #[ufunction(Override)]
     fn on_initialized(&mut self) {
         if let Err(e) = self.init() {
-            ulog!(LOG_WARNING, "[AR] main menu init failed: {e}");
+            log::warn!("[AR] main menu init failed: {e}");
         }
     }
 

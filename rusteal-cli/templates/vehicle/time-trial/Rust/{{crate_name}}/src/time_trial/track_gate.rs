@@ -32,7 +32,8 @@ impl TimeTrialTrackGate {
         collision_box.set_box_extent(&FVector::from_dvec3(DVec3::splat(1000.0)), Some(false));
         collision_box.set_line_thickness(32.0);
         collision_box.set_hidden_in_game(false, None);
-        collision_box.set_collision_profile_name(FName::new("OverlapAllDynamic").handle(), Some(true));
+        collision_box
+            .set_collision_profile_name(FName::new("OverlapAllDynamic").handle(), Some(true));
 
         Ok(())
     }
@@ -43,7 +44,9 @@ impl TimeTrialTrackGate {
             return;
         };
 
-        let Ok(mut controller) = TimeTrialPlayerController::from_obj(other.get_instigator_controller()) else {
+        let Ok(mut controller) =
+            TimeTrialPlayerController::from_obj(other.get_instigator_controller())
+        else {
             return;
         };
 

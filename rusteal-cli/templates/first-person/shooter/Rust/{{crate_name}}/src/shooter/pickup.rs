@@ -5,7 +5,7 @@ use bindings::engine::{
 };
 use bindings::prelude::*;
 use rusteal_runtime::runtime::{
-    FName, LOG_WARNING, OwnedStruct, RustealResult, SoftObjectRef, SubclassOf, UObjectRef, ulog,
+    FName, OwnedStruct, RustealResult, SoftObjectRef, SubclassOf, UObjectRef,
 };
 use rusteal_runtime::{uclass, uclass_impl, ustruct};
 
@@ -79,7 +79,7 @@ impl ShooterPickup {
         let weapon_type = self.weapon_type();
 
         let Some(weapon_data) = weapon_type.get_row::<WeaponTableRow>() else {
-            ulog!(LOG_WARNING, "[Shooter] pickup without a weapon type");
+            log::warn!("[Shooter] pickup without a weapon type");
             return;
         };
 
@@ -89,7 +89,7 @@ impl ShooterPickup {
                     mesh.set_static_mesh(static_mesh);
                 }
             }
-            Err(e) => ulog!(LOG_WARNING, "[Shooter] pickup mesh: {e}"),
+            Err(e) => log::warn!("[Shooter] pickup mesh: {e}"),
         }
 
         self.set_weapon_class(weapon_data.weapon_to_spawn());

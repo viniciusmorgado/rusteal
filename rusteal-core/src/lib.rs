@@ -19,6 +19,7 @@ pub mod logging;
 pub mod object_ref;
 pub mod pinned;
 pub mod reify_registry;
+pub mod script_interface;
 pub mod soft_ref;
 pub mod struct_ref;
 pub mod subclass_of;
@@ -29,7 +30,7 @@ pub mod widget;
 pub mod world;
 
 pub use api::{api, init_api};
-pub use console::ConsoleVariable;
+pub use console::{CommandContext, ConsoleVariable};
 pub use containers::{ContainerElement, OwnedStruct, UeArray, UeMap, UeSet};
 pub use delegate_registry::DelegateBinding;
 pub use dynamic_call::{DynamicCall, DynamicCallResult};
@@ -41,10 +42,13 @@ pub use ffi_guard::ffi_boundary;
 pub use logging::{LOG_DISPLAY, LOG_ERROR, LOG_WARNING};
 pub use object_ref::{Checked, ObjectPointer, UObjectRef};
 pub use pinned::Pinned;
+pub use script_interface::ScriptInterface;
 pub use soft_ref::SoftObjectRef;
 pub use struct_ref::UStructRef;
 pub use subclass_of::SubclassOf;
-pub use traits::{HasParent, Inherits, UeClass, UeEnum, UeHandle, UeStruct, ValidHandle};
+pub use traits::{
+    HasParent, Inherits, UeClass, UeEnum, UeHandle, UeInterface, UeStruct, ValidHandle,
+};
 
 pub use fname::FName;
 pub use struct_ref::{OutRef, out_ref_from_param, struct_ref_from_param};

@@ -7,7 +7,7 @@ use bindings::engine::{
 use bindings::prelude::*;
 use glam::{DQuat, DVec3};
 use rusteal_runtime::runtime::{
-    LOG_WARNING, OwnedStruct, Rotator, RustealResult, SubclassOf, Transform, UObjectRef, ulog,
+    OwnedStruct, Rotator, RustealResult, SubclassOf, Transform, UObjectRef,
 };
 use rusteal_runtime::{uclass, uclass_impl};
 
@@ -154,7 +154,7 @@ impl UnlockableDoor {
     #[ufunction(Override)]
     fn user_construction_script(&mut self) {
         if let Err(e) = self.build() {
-            ulog!(LOG_WARNING, "[Interactables] door: {e}");
+            log::warn!("[Interactables] door: {e}");
         }
     }
 
@@ -173,7 +173,7 @@ impl UnlockableDoor {
         if let Ok(trigger) = TriggerSwitch::from_obj(self.trigger())
             && let Err(e) = trigger.trigger_add_ufunction(&me, "Unlock")
         {
-            ulog!(LOG_WARNING, "[Interactables] door: {e}");
+            log::warn!("[Interactables] door: {e}");
         }
     }
 

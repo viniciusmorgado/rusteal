@@ -55,6 +55,9 @@ struct FRustealCoreApi {
 
   bool (*take_error_message)(ERustealErrorCode code, uint8 *buf, uint32 buf_len,
                              uint32 *out_len);
+
+  bool (*is_child_of)(RustealUClassHandle class_handle,
+                      RustealUClassHandle parent);
 };
 
 struct FRustealErrorReport {
@@ -396,6 +399,14 @@ struct FRustealReifyApi {
   RustealUClassHandle (*create_enum)(const uint8 *name, uint32 name_len,
                                      const uint8 *entries, uint32 entries_len,
                                      const int64 *values, uint32 count);
+
+  RustealUClassHandle (*create_interface)(const uint8 *name, uint32 name_len,
+                                          uint64 shape);
+
+  ERustealErrorCode (*finalize_interface)(RustealUClassHandle interface);
+
+  ERustealErrorCode (*add_interface_class)(RustealUClassHandle cls,
+                                           RustealUClassHandle interface);
 };
 struct FRustealWidgetApi {
   RustealUObjectHandle (*create_widget)(RustealUObjectHandle owning_object,

@@ -5,7 +5,7 @@ use bindings::engine::{
 };
 use bindings::enhanced_input::{ETriggerEvent, InputAction};
 use bindings::prelude::*;
-use rusteal_runtime::runtime::{LOG_WARNING, Rotator, RustealResult, UObjectRef, ulog};
+use rusteal_runtime::runtime::{Rotator, RustealResult, UObjectRef};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use super::model::{SprintSettings, SprintState, SprintUpdate};
@@ -108,7 +108,7 @@ impl HorrorCharacter {
         }
 
         if let Err(e) = self.bind_sprint() {
-            ulog!(LOG_WARNING, "[Horror] failed to bind the sprint input: {e}");
+            log::warn!("[Horror] failed to bind the sprint input: {e}");
         }
     }
 

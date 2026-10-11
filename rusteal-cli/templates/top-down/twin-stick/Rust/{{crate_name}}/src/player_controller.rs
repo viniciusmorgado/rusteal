@@ -11,9 +11,7 @@ use bindings::input_core::ETouchIndex;
 use bindings::niagara::{ENCPoolMethod, NiagaraFunctionLibrary, NiagaraSystem};
 use bindings::prelude::*;
 use glam::DVec3;
-use rusteal_runtime::runtime::{
-    LOG_DISPLAY, LOG_WARNING, OwnedStruct, Rotator, RustealResult, UObjectRef, ulog,
-};
+use rusteal_runtime::runtime::{OwnedStruct, Rotator, RustealResult, UObjectRef};
 use rusteal_runtime::{uclass, uclass_impl};
 
 #[uclass(parent = PlayerController)]
@@ -57,9 +55,9 @@ impl TopDownPlayerController {
     #[ufunction(Override)]
     fn receive_begin_play(&mut self) {
         match self.setup_input() {
-            Ok(true) => ulog!(LOG_DISPLAY, "[TopDown] input bound"),
+            Ok(true) => log::info!("[TopDown] input bound"),
             Ok(false) => {}
-            Err(e) => ulog!(LOG_WARNING, "[TopDown] input setup failed: {e}"),
+            Err(e) => log::warn!("[TopDown] input setup failed: {e}"),
         }
     }
 
