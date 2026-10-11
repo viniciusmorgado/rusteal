@@ -7,9 +7,7 @@ use bindings::engine::{
 };
 use bindings::enhanced_input::{ETriggerEvent, FInputActionValue, InputAction};
 use bindings::prelude::*;
-use rusteal_runtime::runtime::{
-    LOG_DISPLAY, LOG_WARNING, Rotator, RustealResult, UObjectRef, UStructRef, ulog,
-};
+use rusteal_runtime::runtime::{Rotator, RustealResult, UObjectRef, UStructRef};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use model::{LookInput, MoveInput};
@@ -39,7 +37,7 @@ pub struct ThirdPersonCharacter {
 impl ThirdPersonCharacter {
     #[ufunction(Override)]
     fn receive_begin_play(&mut self) {
-        ulog!(LOG_DISPLAY, "[ThirdPerson] {} ready", self.name());
+        log::info!("[ThirdPerson] {} ready", self.name());
     }
 
     #[class_defaults]
@@ -86,10 +84,9 @@ impl ThirdPersonCharacter {
     #[ufunction(Override)]
     fn receive_restarted(&mut self) {
         match self.bind_input() {
-            Ok(true) => ulog!(LOG_DISPLAY, "[ThirdPerson] {} input bound", self.name()),
+            Ok(true) => log::info!("[ThirdPerson] {} input bound", self.name()),
             Ok(false) => {}
-            Err(e) => ulog!(
-                LOG_WARNING,
+            Err(e) => log::warn!(
                 "[ThirdPerson] {} failed to bind its input: {e}",
                 self.name()
             ),
@@ -111,14 +108,14 @@ impl ThirdPersonCharacter {
     #[ufunction(BlueprintCallable)]
     fn do_move(&mut self, right: f32, forward: f32) {
         if let Err(e) = self.apply_move(MoveInput { right, forward }) {
-            ulog!(LOG_WARNING, "[ThirdPerson] DoMove failed: {e}");
+            log::warn!("[ThirdPerson] DoMove failed: {e}");
         }
     }
 
     #[ufunction(BlueprintCallable)]
     fn do_look(&mut self, yaw: f32, pitch: f32) {
         if let Err(e) = self.apply_look(LookInput { yaw, pitch }) {
-            ulog!(LOG_WARNING, "[ThirdPerson] DoLook failed: {e}");
+            log::warn!("[ThirdPerson] DoLook failed: {e}");
         }
     }
 

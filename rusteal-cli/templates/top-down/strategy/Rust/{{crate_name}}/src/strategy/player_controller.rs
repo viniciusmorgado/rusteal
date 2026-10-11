@@ -13,8 +13,7 @@ use bindings::umg::UserWidgetExt;
 use glam::{DQuat, DVec2, DVec3};
 use rusteal_runtime::runtime::input::should_display_touch_interface;
 use rusteal_runtime::runtime::{
-    LOG_ERROR, LOG_WARNING, OwnedStruct, Rotator, RustealResult, SubclassOf, UObjectRef,
-    UStructRef, ulog,
+    OwnedStruct, Rotator, RustealResult, SubclassOf, UObjectRef, UStructRef,
 };
 use rusteal_runtime::{uclass, uclass_impl};
 
@@ -133,17 +132,14 @@ impl StrategyPlayerController {
     #[ufunction(Override)]
     fn receive_begin_play(&mut self) {
         if let Err(e) = self.setup_input() {
-            ulog!(LOG_WARNING, "[Strategy] input setup failed: {e}");
+            log::warn!("[Strategy] input setup failed: {e}");
         }
     }
 
     #[ufunction(Override)]
     fn receive_possess(&mut self, possessed_pawn: UObjectRef<Pawn>) {
         let Ok(camera_pawn) = StrategyPawn::from_obj(possessed_pawn) else {
-            ulog!(
-                LOG_ERROR,
-                "[Strategy] the possessed pawn is not a StrategyPawn"
-            );
+            log::error!("[Strategy] the possessed pawn is not a StrategyPawn");
 
             return;
         };
@@ -623,7 +619,7 @@ impl StrategyPlayerController {
                     mobile_controls.set_player_controller(self.as_ref().cast()?);
                     self.set_mobile_controls_widget(widget);
                 }
-                Err(_) => ulog!(LOG_ERROR, "Could not spawn mobile controls widget."),
+                Err(_) => log::error!("Could not spawn mobile controls widget."),
             }
         }
 

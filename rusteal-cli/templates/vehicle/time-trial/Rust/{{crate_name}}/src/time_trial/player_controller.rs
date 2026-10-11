@@ -4,9 +4,7 @@ use bindings::enhanced_input::{EnhancedInputLocalPlayerSubsystemExt, InputMappin
 use bindings::prelude::*;
 use bindings::umg::{UserWidget, UserWidgetExt};
 use rusteal_runtime::runtime::input::should_display_touch_interface;
-use rusteal_runtime::runtime::{
-    LOG_ERROR, LOG_WARNING, OwnedStruct, RustealResult, SubclassOf, UObjectRef, UeArray, ulog,
-};
+use rusteal_runtime::runtime::{OwnedStruct, RustealResult, SubclassOf, UObjectRef, UeArray};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use super::game_mode::TimeTrialGameMode;
@@ -29,10 +27,19 @@ pub struct TimeTrialPlayerController {
     #[uproperty]
     mobile_controls_widget: UObjectRef<UserWidget>,
 
-    #[uproperty(EditAnywhere, Config, category = "Input|Touch Controls", default = false)]
+    #[uproperty(
+        EditAnywhere,
+        Config,
+        category = "Input|Touch Controls",
+        default = false
+    )]
     b_force_touch_controls: bool,
 
-    #[uproperty(EditAnywhere, category = "Input|Steering Wheel Controls", default = false)]
+    #[uproperty(
+        EditAnywhere,
+        category = "Input|Steering Wheel Controls",
+        default = false
+    )]
     b_use_steering_wheel_controls: bool,
 
     #[uproperty(EditAnywhere, category = "Input|Steering Wheel Controls")]
@@ -68,7 +75,7 @@ impl TimeTrialPlayerController {
     #[ufunction(Override)]
     fn receive_begin_play(&mut self) {
         if let Err(e) = self.setup_input() {
-            ulog!(LOG_WARNING, "[TimeTrial] input setup failed: {e}");
+            log::warn!("[TimeTrial] input setup failed: {e}");
         }
     }
 
@@ -102,14 +109,14 @@ impl TimeTrialPlayerController {
                 if let Ok(mut me) = TimeTrialPlayerController::from_obj(controller)
                     && let Err(e) = me.respawn()
                 {
-                    ulog!(LOG_WARNING, "[TimeTrial] respawn failed: {e}");
+                    log::warn!("[TimeTrial] respawn failed: {e}");
                 }
             })
         });
 
         match bound {
             Ok(binding) => binding.detach(),
-            Err(e) => ulog!(LOG_WARNING, "[TimeTrial] cannot watch the vehicle: {e}"),
+            Err(e) => log::warn!("[TimeTrial] cannot watch the vehicle: {e}"),
         }
 
         if !self.race_started()
@@ -135,7 +142,10 @@ impl TimeTrialPlayerController {
 
         let me: UObjectRef<PlayerController> = self.as_ref();
 
-        if let Ok(pawn) = me.checked().and_then(|controller| controller.k2_get_pawn().checked()) {
+        if let Ok(pawn) = me
+            .checked()
+            .and_then(|controller| controller.k2_get_pawn().checked())
+        {
             pawn.enable_input(me);
         }
     }
@@ -180,25 +190,31 @@ impl TimeTrialPlayerController {
                     widget.checked()?.add_to_player_screen(Some(0));
                     self.set_mobile_controls_widget(widget);
                 }
-                Err(_) => ulog!(LOG_ERROR, "Could not spawn mobile controls widget."),
+                Err(_) => log::error!("Could not spawn mobile controls widget."),
             }
         }
 
         match create_widget_of_class(&me, self.ui_widget_class()) {
             Ok(widget) => {
-                widget.upcast_to::<UserWidget>().checked()?.add_to_player_screen(Some(0));
+                widget
+                    .upcast_to::<UserWidget>()
+                    .checked()?
+                    .add_to_player_screen(Some(0));
                 self.set_ui_widget(widget);
                 TimeTrialUI::from_obj(widget)?.on_race_start_add_ufunction(&me, "StartRace")?;
             }
-            Err(_) => ulog!(LOG_ERROR, "Could not spawn Time Trial UI widget."),
+            Err(_) => log::error!("Could not spawn Time Trial UI widget."),
         }
 
         match create_widget_of_class(&me, self.vehicle_ui_class()) {
             Ok(widget) => {
-                widget.upcast_to::<UserWidget>().checked()?.add_to_player_screen(Some(0));
+                widget
+                    .upcast_to::<UserWidget>()
+                    .checked()?
+                    .add_to_player_screen(Some(0));
                 self.set_vehicle_ui(widget);
             }
-            Err(_) => ulog!(LOG_ERROR, "Could not spawn vehicle UI widget."),
+            Err(_) => log::error!("Could not spawn vehicle UI widget."),
         }
 
         Ok(())
@@ -217,7 +233,9 @@ impl TimeTrialPlayerController {
         };
 
         let transform = start.checked()?.get_transform();
-        let vehicle = me.get_world()?.spawn_actor_of_class(self.vehicle_pawn_class(), &transform)?;
+        let vehicle = me
+            .get_world()?
+            .spawn_actor_of_class(self.vehicle_pawn_class(), &transform)?;
         me.checked()?.possess(vehicle.upcast_to());
 
         Ok(())

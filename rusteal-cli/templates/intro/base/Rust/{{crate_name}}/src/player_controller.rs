@@ -4,10 +4,7 @@ use bindings::prelude::*;
 use bindings::umg::UserWidget;
 use bindings::umg::UserWidgetExt;
 use rusteal_runtime::runtime::input::should_display_touch_interface;
-use rusteal_runtime::runtime::{
-    LOG_DISPLAY, LOG_ERROR, LOG_WARNING, OwnedStruct, RustealResult, SubclassOf, UObjectRef,
-    UeArray, ulog,
-};
+use rusteal_runtime::runtime::{OwnedStruct, RustealResult, SubclassOf, UObjectRef, UeArray};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use crate::camera_manager::FirstPersonCameraManager;
@@ -45,28 +42,18 @@ impl FirstPersonPlayerController {
     fn receive_begin_play(&mut self) {
         match self.add_mapping_contexts() {
             Ok(None) => {}
-            Ok(Some(0)) => ulog!(
-                LOG_WARNING,
+            Ok(Some(0)) => log::warn!(
                 "[Intro] no input mapping contexts to add: list them in a Blueprint child \
                  (BP_FirstPersonPlayerController) and select it as the game mode's Player Controller Class"
             ),
             Ok(Some(count)) => {
-                ulog!(
-                    LOG_DISPLAY,
-                    "[Intro] {count} input mapping contexts added"
-                )
+                log::info!("[Intro] {count} input mapping contexts added")
             }
-            Err(e) => ulog!(
-                LOG_WARNING,
-                "[Intro] input mapping contexts failed: {e}"
-            ),
+            Err(e) => log::warn!("[Intro] input mapping contexts failed: {e}"),
         }
 
         if let Err(e) = self.spawn_mobile_controls() {
-            ulog!(
-                LOG_ERROR,
-                "[Intro] Could not spawn mobile controls widget: {e}"
-            );
+            log::error!("[Intro] Could not spawn mobile controls widget: {e}");
         }
     }
 }

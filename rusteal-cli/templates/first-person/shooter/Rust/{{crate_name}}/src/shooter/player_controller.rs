@@ -7,8 +7,7 @@ use bindings::prelude::*;
 use bindings::umg::{UserWidget, UserWidgetExt};
 use rusteal_runtime::runtime::input::should_display_touch_interface;
 use rusteal_runtime::runtime::{
-    FName, LOG_ERROR, LOG_WARNING, OwnedStruct, RustealResult, SubclassOf, UObjectRef, UeArray,
-    ulog,
+    FName, OwnedStruct, RustealResult, SubclassOf, UObjectRef, UeArray,
 };
 use rusteal_runtime::{uclass, uclass_impl};
 
@@ -60,14 +59,14 @@ impl ShooterPlayerController {
     #[ufunction(Override)]
     fn receive_begin_play(&mut self) {
         if let Err(e) = self.setup_input() {
-            ulog!(LOG_WARNING, "[Shooter] input mapping contexts failed: {e}");
+            log::warn!("[Shooter] input mapping contexts failed: {e}");
         }
     }
 
     #[ufunction(Override)]
     fn receive_possess(&mut self, possessed_pawn: UObjectRef<Pawn>) {
         if let Err(e) = self.possess_pawn(possessed_pawn) {
-            ulog!(LOG_WARNING, "[Shooter] possession failed: {e}");
+            log::warn!("[Shooter] possession failed: {e}");
         }
     }
 }
@@ -114,7 +113,7 @@ impl ShooterPlayerController {
                 ShooterBulletCounterUI::from_obj(ui).ok()
             }
             Err(_) => {
-                ulog!(LOG_ERROR, "Could not spawn bullet counter widget.");
+                log::error!("Could not spawn bullet counter widget.");
 
                 None
             }
@@ -145,7 +144,7 @@ impl ShooterPlayerController {
                     widget.checked()?.add_to_player_screen(Some(0));
                     self.set_mobile_controls_widget(widget);
                 }
-                Err(_) => ulog!(LOG_ERROR, "Could not spawn mobile controls widget."),
+                Err(_) => log::error!("Could not spawn mobile controls widget."),
             }
         }
 
@@ -187,7 +186,7 @@ impl ShooterPlayerController {
         }
 
         if let Err(e) = self.respawn() {
-            ulog!(LOG_WARNING, "[Shooter] respawn failed: {e}");
+            log::warn!("[Shooter] respawn failed: {e}");
         }
     }
 

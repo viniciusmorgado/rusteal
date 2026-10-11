@@ -48,16 +48,19 @@ impl VehicleAdvOffroadCar {
         }
 
         for tire in [self.tire_front_right()?, self.tire_rear_right()?] {
-            tire.checked()?.k2_set_relative_rotation(&turned, false, false);
+            tire.checked()?
+                .k2_set_relative_rotation(&turned, false, false);
         }
 
         let pawn = VehicleAdvPawn::from_obj(self.as_ref())?;
 
-        pawn.front_spring_arm()?.checked()?.k2_set_relative_location(
-            &FVector::from_dvec3(DVec3::new(-5.0, -30.0, 135.0)),
-            false,
-            false,
-        );
+        pawn.front_spring_arm()?
+            .checked()?
+            .k2_set_relative_location(
+                &FVector::from_dvec3(DVec3::new(-5.0, -30.0, 135.0)),
+                false,
+                false,
+            );
 
         pawn.back_spring_arm()?.checked()?.k2_set_relative_location(
             &FVector::from_dvec3(DVec3::new(0.0, 0.0, 75.0)),
@@ -73,8 +76,10 @@ impl VehicleAdvOffroadCar {
         movement.set_enable_center_of_mass_override(true);
         movement.set_legacy_wheel_friction_position(false);
 
-        let front = SubclassOf::<VehicleAdvOffroadWheelFront>::base().upcast_to::<ChaosVehicleWheel>();
-        let rear = SubclassOf::<VehicleAdvOffroadWheelRear>::base().upcast_to::<ChaosVehicleWheel>();
+        let front =
+            SubclassOf::<VehicleAdvOffroadWheelFront>::base().upcast_to::<ChaosVehicleWheel>();
+        let rear =
+            SubclassOf::<VehicleAdvOffroadWheelRear>::base().upcast_to::<ChaosVehicleWheel>();
 
         setup::set_wheels(
             &movement,

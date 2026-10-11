@@ -20,8 +20,7 @@ use bindings::xr_base::{
 };
 use glam::DVec3;
 use rusteal_runtime::runtime::{
-    FName, LOG_WARNING, OwnedStruct, Rotator, RustealResult, SubclassOf, UObjectRef, UStructRef,
-    ulog,
+    FName, OwnedStruct, Rotator, RustealResult, SubclassOf, UObjectRef, UStructRef,
 };
 use rusteal_runtime::{uclass, uclass_impl};
 
@@ -239,14 +238,14 @@ impl XRPawn {
     #[ufunction(Override)]
     fn receive_begin_play(&mut self) {
         if let Err(e) = self.begin_play() {
-            ulog!(LOG_WARNING, "[VR] begin play failed: {e}");
+            log::warn!("[VR] begin play failed: {e}");
         }
     }
 
     #[ufunction(Override)]
     fn receive_restarted(&mut self) {
         if let Err(e) = self.bind_input() {
-            ulog!(LOG_WARNING, "[VR] failed to bind the input: {e}");
+            log::warn!("[VR] failed to bind the input: {e}");
         }
     }
 
@@ -487,7 +486,7 @@ impl XRPawn {
 
         match self.spawn_teleport_visualizer() {
             Ok(visualizer) => self.set_teleport_visualizer_reference(visualizer),
-            Err(e) => ulog!(LOG_WARNING, "[VR] no teleport visualizer: {e}"),
+            Err(e) => log::warn!("[VR] no teleport visualizer: {e}"),
         }
     }
 
@@ -501,7 +500,7 @@ impl XRPawn {
             start_pos.to_owned().to_dvec3(),
             forward_vector.to_owned().to_dvec3(),
         ) {
-            ulog!(LOG_WARNING, "[VR] teleport trace failed: {e}");
+            log::warn!("[VR] teleport trace failed: {e}");
         }
     }
 
@@ -552,7 +551,7 @@ impl XRPawn {
     #[ufunction(BlueprintCallable)]
     pub fn snap_turn(&mut self, b_right_turn: bool) {
         if let Err(e) = self.turn(b_right_turn) {
-            ulog!(LOG_WARNING, "[VR] snap turn failed: {e}");
+            log::warn!("[VR] snap turn failed: {e}");
         }
     }
 
@@ -569,7 +568,7 @@ impl XRPawn {
             b_active_menu_hand_right,
         ) {
             Ok(menu) => self.set_menu_reference(menu),
-            Err(e) => ulog!(LOG_WARNING, "[VR] could not open the menu: {e}"),
+            Err(e) => log::warn!("[VR] could not open the menu: {e}"),
         }
     }
 

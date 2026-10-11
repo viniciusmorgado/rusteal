@@ -4,7 +4,7 @@ use bindings::engine::{
     ProjectileMovementComponentExt, SphereComponent, SphereComponentExt, StaticMeshComponent,
 };
 use bindings::prelude::*;
-use rusteal_runtime::runtime::{FName, LOG_WARNING, RustealResult, UObjectRef, UStructRef, ulog};
+use rusteal_runtime::runtime::{FName, RustealResult, UObjectRef, UStructRef};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use super::npc::TwinStickNPC;
@@ -58,7 +58,7 @@ impl TwinStickProjectile {
     #[ufunction(Override)]
     fn receive_begin_play(&mut self) {
         if let Err(e) = self.bind_stop() {
-            ulog!(LOG_WARNING, "[TwinStick] projectile stop: {e}");
+            log::warn!("[TwinStick] projectile stop: {e}");
         }
     }
 

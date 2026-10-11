@@ -6,7 +6,7 @@ use bindings::niagara::{NiagaraComponent, NiagaraComponentExt};
 use bindings::prelude::*;
 use bindings::xr_base::HeadMountedDisplayFunctionLibrary;
 use glam::DVec3;
-use rusteal_runtime::runtime::{FName, LOG_WARNING, RustealResult, ulog};
+use rusteal_runtime::runtime::{FName, RustealResult};
 use rusteal_runtime::{uclass, uclass_impl};
 
 #[uclass(parent = Actor)]
@@ -41,7 +41,7 @@ impl TeleportVisualizer {
     #[ufunction(Override)]
     fn receive_tick(&mut self, _delta_seconds: f32) {
         if let Err(e) = self.follow_player() {
-            ulog!(LOG_WARNING, "[VR] teleport visualizer update failed: {e}");
+            log::warn!("[VR] teleport visualizer update failed: {e}");
         }
     }
 }

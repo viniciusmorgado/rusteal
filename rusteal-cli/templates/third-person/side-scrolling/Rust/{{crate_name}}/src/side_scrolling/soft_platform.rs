@@ -4,7 +4,7 @@ use bindings::engine::{
     StaticMeshComponent,
 };
 use bindings::prelude::*;
-use rusteal_runtime::runtime::{LOG_WARNING, RustealResult, UObjectRef, UStructRef, ulog};
+use rusteal_runtime::runtime::{RustealResult, UObjectRef, UStructRef};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use super::character::SideScrollingCharacter;
@@ -63,7 +63,7 @@ impl SideScrollingSoftPlatform {
         });
 
         if let Err(e) = bound {
-            ulog!(LOG_WARNING, "[SideScrolling] soft platform overlap: {e}");
+            log::warn!("[SideScrolling] soft platform overlap: {e}");
         }
     }
 

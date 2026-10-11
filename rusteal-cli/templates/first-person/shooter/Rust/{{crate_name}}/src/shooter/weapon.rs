@@ -6,9 +6,7 @@ use bindings::engine::{
 };
 use bindings::prelude::*;
 use glam::DVec3;
-use rusteal_runtime::runtime::{
-    FName, LOG_WARNING, OwnedStruct, RustealResult, SubclassOf, UObjectRef, ulog,
-};
+use rusteal_runtime::runtime::{FName, OwnedStruct, RustealResult, SubclassOf, UObjectRef};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use super::model::{self, TriggerPull};
@@ -101,7 +99,7 @@ impl ShooterWeapon {
     #[ufunction(Override)]
     fn receive_begin_play(&mut self) {
         if let Err(e) = self.begin_play() {
-            ulog!(LOG_WARNING, "[Shooter] weapon BeginPlay failed: {e}");
+            log::warn!("[Shooter] weapon BeginPlay failed: {e}");
         }
     }
 
@@ -123,7 +121,7 @@ impl ShooterWeapon {
         let target = holder.get_weapon_target_location();
 
         if let Err(e) = self.fire_projectile(holder.as_mut(), target) {
-            ulog!(LOG_WARNING, "[Shooter] firing failed: {e}");
+            log::warn!("[Shooter] firing failed: {e}");
         }
 
         let world = self.as_ref().upcast_to();

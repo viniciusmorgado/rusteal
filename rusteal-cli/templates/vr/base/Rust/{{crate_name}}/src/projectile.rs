@@ -6,9 +6,7 @@ use bindings::engine::{
 };
 use bindings::prelude::*;
 use glam::DVec3;
-use rusteal_runtime::runtime::{
-    FName, LOG_WARNING, OwnedStruct, Rotator, RustealResult, UObjectRef, ulog,
-};
+use rusteal_runtime::runtime::{FName, OwnedStruct, Rotator, RustealResult, UObjectRef};
 use rusteal_runtime::{uclass, uclass_impl};
 
 #[uclass(parent = Actor)]
@@ -81,7 +79,7 @@ impl Projectile {
                         if let Ok(projectile) = Projectile::from_obj(me)
                             && let Err(e) = projectile.hit(other_comp, &sweep_result)
                         {
-                            ulog!(LOG_WARNING, "[VR] projectile hit failed: {e}");
+                            log::warn!("[VR] projectile hit failed: {e}");
                         }
                     },
                 )

@@ -1,6 +1,6 @@
 use bindings::engine::{Actor, ActorComponentExt, KismetSystemLibrary};
 use bindings::niagara::NiagaraComponent;
-use rusteal_runtime::runtime::{LOG_WARNING, RustealResult, UObjectRef, ulog};
+use rusteal_runtime::runtime::{RustealResult, UObjectRef};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use crate::components;
@@ -41,7 +41,7 @@ impl ConfettiTrigger {
         if let Ok(trigger) = TriggerSwitch::from_obj(self.trigger_ref())
             && let Err(e) = trigger.trigger_add_ufunction(&me, "TriggerConfetti")
         {
-            ulog!(LOG_WARNING, "[Interactables] confetti: {e}");
+            log::warn!("[Interactables] confetti: {e}");
         }
     }
 

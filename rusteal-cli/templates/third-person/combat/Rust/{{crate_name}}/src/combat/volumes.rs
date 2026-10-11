@@ -3,9 +3,7 @@ use bindings::engine::{
     PrimitiveComponent, PrimitiveComponentExt,
 };
 use bindings::prelude::*;
-use rusteal_runtime::runtime::{
-    FName, LOG_WARNING, RustealResult, UObjectRef, UStructRef, UeArray, ulog,
-};
+use rusteal_runtime::runtime::{FName, RustealResult, UObjectRef, UStructRef, UeArray};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use super::character::CombatCharacter;
@@ -28,7 +26,7 @@ fn bind_overlap(volume: UObjectRef<Actor>, volume_box: RustealResult<UObjectRef<
     });
 
     if let Err(e) = bound {
-        ulog!(LOG_WARNING, "[Combat] volume overlap: {e}");
+        log::warn!("[Combat] volume overlap: {e}");
     }
 }
 

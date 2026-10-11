@@ -4,7 +4,7 @@ use bindings::engine::{
 };
 use bindings::prelude::*;
 use glam::DVec3;
-use rusteal_runtime::runtime::{LOG_WARNING, UObjectRef, UStructRef, ulog};
+use rusteal_runtime::runtime::{UObjectRef, UStructRef};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use super::interfaces;
@@ -32,7 +32,7 @@ impl CombatLavaFloor {
         });
 
         if let Err(e) = bound {
-            ulog!(LOG_WARNING, "[Combat] lava floor hit: {e}");
+            log::warn!("[Combat] lava floor hit: {e}");
         }
     }
 

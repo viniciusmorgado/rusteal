@@ -3,7 +3,7 @@ use bindings::engine::{
     GameplayStatics, PawnExt, PrimitiveComponentExt, SceneComponent, SphereComponent,
     SphereComponentExt,
 };
-use rusteal_runtime::runtime::{LOG_WARNING, RustealResult, UObjectRef, ulog};
+use rusteal_runtime::runtime::{RustealResult, UObjectRef};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use super::game_mode::SideScrollingGameMode;
@@ -45,7 +45,7 @@ impl SideScrollingPickup {
                 .on_actor_begin_overlap()
                 .add_ufunction(&me, "BeginOverlap")
         }) {
-            ulog!(LOG_WARNING, "[SideScrolling] pickup overlap: {e}");
+            log::warn!("[SideScrolling] pickup overlap: {e}");
         }
     }
 
@@ -56,7 +56,7 @@ impl SideScrollingPickup {
         other_actor: UObjectRef<Actor>,
     ) {
         if let Err(e) = self.pick_up(other_actor) {
-            ulog!(LOG_WARNING, "[SideScrolling] pickup failed: {e}");
+            log::warn!("[SideScrolling] pickup failed: {e}");
         }
     }
 

@@ -23,7 +23,8 @@ impl VehicleAdvSportsCar {
         movement.set_drag_coefficient(0.31);
         movement.set_legacy_wheel_friction_position(true);
 
-        let front = SubclassOf::<VehicleAdvSportsWheelFront>::base().upcast_to::<ChaosVehicleWheel>();
+        let front =
+            SubclassOf::<VehicleAdvSportsWheelFront>::base().upcast_to::<ChaosVehicleWheel>();
         let rear = SubclassOf::<VehicleAdvSportsWheelRear>::base().upcast_to::<ChaosVehicleWheel>();
 
         setup::set_wheels(

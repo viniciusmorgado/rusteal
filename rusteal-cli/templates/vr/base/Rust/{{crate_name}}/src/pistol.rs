@@ -10,8 +10,7 @@ use bindings::input_core::EControllerHand;
 use bindings::prelude::*;
 use glam::DVec3;
 use rusteal_runtime::runtime::{
-    DynamicCall, FName, LOG_WARNING, OwnedStruct, Rotator, RustealResult, SubclassOf, UObjectRef,
-    ulog,
+    DynamicCall, FName, OwnedStruct, Rotator, RustealResult, SubclassOf, UObjectRef,
 };
 use rusteal_runtime::{uclass, uclass_impl};
 
@@ -94,7 +93,7 @@ impl Pistol {
             if let Ok(mut pistol) = Pistol::from_obj(me)
                 && let Err(e) = pistol.grabbed()
             {
-                ulog!(LOG_WARNING, "[VR] pistol grab failed: {e}");
+                log::warn!("[VR] pistol grab failed: {e}");
             }
         });
 
@@ -102,17 +101,14 @@ impl Pistol {
             if let Ok(pistol) = Pistol::from_obj(me)
                 && let Err(e) = pistol.dropped()
             {
-                ulog!(LOG_WARNING, "[VR] pistol drop failed: {e}");
+                log::warn!("[VR] pistol drop failed: {e}");
             }
         });
 
         for binding in [grabbed, dropped] {
             match binding {
                 Ok(binding) => binding.detach(),
-                Err(e) => ulog!(
-                    LOG_WARNING,
-                    "[VR] pistol cannot watch its grab component: {e}"
-                ),
+                Err(e) => log::warn!("[VR] pistol cannot watch its grab component: {e}"),
             }
         }
     }
@@ -130,7 +126,7 @@ impl Pistol {
     #[ufunction(BlueprintCallable)]
     pub fn fire(&mut self) {
         if let Err(e) = self.spawn_projectile() {
-            ulog!(LOG_WARNING, "[VR] the pistol did not fire: {e}");
+            log::warn!("[VR] the pistol did not fire: {e}");
         }
     }
 }
@@ -226,17 +222,16 @@ impl Pistol {
         let pawn = GameplayStatics::get_player_pawn(me.upcast_to(), 0);
         let world = me.get_world()?;
 
-        let handle = rusteal_runtime::runtime::world::spawn_actor_deferred_raw(
-            world.checked()?.raw(),
-            self.projectile_class().raw(),
-            &transform.to_bytes(),
-            me.checked()?.raw(),
-            pawn.raw(),
-            0,
-        )?;
+        let params = SpawnParams {
+            owner: Some(me.upcast_to()),
+            instigator: Some(pawn),
+            ..SpawnParams::default()
+        };
 
-        let projectile: UObjectRef<Actor> = unsafe { UObjectRef::from_raw(handle) };
-        world.finish_spawning(&projectile, &transform)?;
+        let projectile =
+            world.spawn_actor_deferred_of_class(self.projectile_class(), &transform, params)?;
+
+        world.finish_spawning(&projectile.upcast_to(), &transform)?;
 
         let controller = GameplayStatics::get_player_controller(me.upcast_to(), 0);
 

@@ -4,7 +4,7 @@ use bindings::ai::{
 };
 use bindings::engine::{Actor, ActorExt, ControllerExt, Pawn};
 use bindings::gameplay_state_tree::{StateTreeAIComponent, StateTreeComponentExt};
-use rusteal_runtime::runtime::{FName, LOG_WARNING, OwnedStruct, RustealResult, UObjectRef, ulog};
+use rusteal_runtime::runtime::{FName, OwnedStruct, RustealResult, UObjectRef};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use super::npc::ShooterNPC;
@@ -44,7 +44,7 @@ impl ShooterAIController {
     #[ufunction(Override)]
     fn receive_possess(&mut self, possessed_pawn: UObjectRef<Pawn>) {
         if let Err(e) = self.bind_perception() {
-            ulog!(LOG_WARNING, "[Shooter] AI perception: {e}");
+            log::warn!("[Shooter] AI perception: {e}");
         }
 
         if ShooterNPC::from_obj(possessed_pawn).is_err() {

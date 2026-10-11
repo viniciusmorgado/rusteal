@@ -4,10 +4,7 @@ use bindings::prelude::*;
 use bindings::umg::UserWidget;
 use bindings::umg::UserWidgetExt;
 use rusteal_runtime::runtime::input::should_display_touch_interface;
-use rusteal_runtime::runtime::{
-    LOG_DISPLAY, LOG_ERROR, LOG_WARNING, OwnedStruct, RustealResult, SubclassOf, UObjectRef,
-    UeArray, ulog,
-};
+use rusteal_runtime::runtime::{OwnedStruct, RustealResult, SubclassOf, UObjectRef, UeArray};
 use rusteal_runtime::{uclass, uclass_impl};
 
 #[uclass(parent = PlayerController)]
@@ -34,28 +31,18 @@ impl ThirdPersonPlayerController {
     fn receive_begin_play(&mut self) {
         match self.add_mapping_contexts() {
             Ok(None) => {}
-            Ok(Some(0)) => ulog!(
-                LOG_WARNING,
+            Ok(Some(0)) => log::warn!(
                 "[ThirdPerson] no input mapping contexts to add: list them in a Blueprint child \
                  (BP_ThirdPersonPlayerController) and select it as the game mode's Player Controller Class"
             ),
             Ok(Some(count)) => {
-                ulog!(
-                    LOG_DISPLAY,
-                    "[ThirdPerson] {count} input mapping contexts added"
-                )
+                log::info!("[ThirdPerson] {count} input mapping contexts added")
             }
-            Err(e) => ulog!(
-                LOG_WARNING,
-                "[ThirdPerson] input mapping contexts failed: {e}"
-            ),
+            Err(e) => log::warn!("[ThirdPerson] input mapping contexts failed: {e}"),
         }
 
         if let Err(e) = self.spawn_mobile_controls() {
-            ulog!(
-                LOG_ERROR,
-                "[ThirdPerson] Could not spawn mobile controls widget: {e}"
-            );
+            log::error!("[ThirdPerson] Could not spawn mobile controls widget: {e}");
         }
     }
 }

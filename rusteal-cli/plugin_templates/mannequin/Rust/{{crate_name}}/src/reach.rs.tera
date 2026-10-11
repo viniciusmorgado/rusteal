@@ -1,14 +1,13 @@
-use bindings::core_ue::Object;
-use bindings::core_ue::{Class, FTransform};
+use bindings::core_ue::FTransform;
 use bindings::engine::{
-    Actor, ActorExt, AnimSequence, EBoneSpaces, ECollisionEnabled, EVisibilityBasedAnimTickOption,
+    Actor, ActorExt, AnimInstance, AnimSequence, EBoneSpaces, ECollisionEnabled, EVisibilityBasedAnimTickOption,
     PoseableMeshComponent, PoseableMeshComponentExt, PrimitiveComponentExt, SceneComponent,
     SceneComponentExt, SkeletalMesh, SkeletalMeshComponent, SkeletalMeshComponentExt,
     SkinnedMeshComponentExt, StaticMesh, StaticMeshComponent, StaticMeshComponentExt,
 };
 use bindings::prelude::*;
 use glam::{DQuat, DVec3};
-use rusteal_runtime::runtime::{FName, RustealResult, SubclassOf, Transform, UObjectRef};
+use rusteal_runtime::runtime::{FName, RustealResult, Transform, UObjectRef};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use crate::components;
@@ -47,11 +46,9 @@ impl CopycatMannequin {
         }
 
         if mesh.get_anim_class().is_null()
-            && let Ok(class) = load_object::<Class>(COPYCAT_ANIMATION)
+            && let Ok(class) = load_class::<AnimInstance>(COPYCAT_ANIMATION)
         {
-            mesh.set_anim_instance_class(unsafe {
-                SubclassOf::<Object>::from_raw(rusteal_runtime::ffi::UClassHandle(class.raw().0))
-            });
+            mesh.set_anim_instance_class(class.upcast_to());
         }
     }
 }

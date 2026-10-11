@@ -15,9 +15,7 @@ use bindings::umg::{
     WidgetInteractionComponent, WidgetInteractionComponentExt,
 };
 use glam::{DVec2, DVec3};
-use rusteal_runtime::runtime::{
-    FName, LOG_WARNING, OwnedStruct, RustealResult, SubclassOf, UObjectRef, ulog,
-};
+use rusteal_runtime::runtime::{FName, OwnedStruct, RustealResult, SubclassOf, UObjectRef};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use crate::model;
@@ -101,7 +99,7 @@ impl Menu {
     #[ufunction(Override)]
     fn receive_begin_play(&mut self) {
         if let Err(e) = self.open() {
-            ulog!(LOG_WARNING, "[VR] the menu did not open: {e}");
+            log::warn!("[VR] the menu did not open: {e}");
         }
     }
 
@@ -114,7 +112,7 @@ impl Menu {
         }
 
         if let Err(e) = self.update_pointer() {
-            ulog!(LOG_WARNING, "[VR] menu update failed: {e}");
+            log::warn!("[VR] menu update failed: {e}");
         }
     }
 
@@ -182,16 +180,12 @@ impl Menu {
             DVec3::ONE,
         ));
 
-        let handle = rusteal_runtime::runtime::world::spawn_actor_deferred_raw(
-            world.checked()?.raw(),
-            class.raw(),
-            &transform.to_bytes(),
-            rusteal_runtime::ffi::UObjectHandle::null(),
-            owner.checked()?.raw(),
-            0,
-        )?;
+        let params = SpawnParams {
+            instigator: Some(owner),
+            ..SpawnParams::default()
+        };
 
-        let menu: UObjectRef<Menu> = unsafe { UObjectRef::from_raw(handle) };
+        let menu = world.spawn_actor_deferred_of_class(class, &transform, params)?;
         Menu::from_obj(menu)?.set_b_active_menu_hand_right(right_hand);
         world.finish_spawning(&menu.upcast_to(), &transform)?;
         Ok(menu)
@@ -266,8 +260,7 @@ impl Menu {
         );
 
         if components.is_empty() {
-            ulog!(
-                LOG_WARNING,
+            log::warn!(
                 "Warning: No WidgetInteractionComponent was found. Menu interaction will FAIL"
             );
         }
@@ -298,8 +291,7 @@ impl Menu {
         );
 
         if components.is_empty() {
-            ulog!(
-                LOG_WARNING,
+            log::warn!(
                 "Warning: No WidgetInteractionComponent was found. Menu interaction will FAIL"
             );
         }
@@ -328,11 +320,11 @@ impl Menu {
         self.set_open_animation(Some(timeline));
 
         if let Err(e) = self.apply_open_alpha(timeline.alpha()) {
-            ulog!(LOG_WARNING, "[VR] menu animation failed: {e}");
+            log::warn!("[VR] menu animation failed: {e}");
         }
 
         if finished && let Err(e) = self.animation_finished(timeline.forward) {
-            ulog!(LOG_WARNING, "[VR] menu animation failed: {e}");
+            log::warn!("[VR] menu animation failed: {e}");
         }
     }
 

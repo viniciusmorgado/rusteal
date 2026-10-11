@@ -8,9 +8,7 @@ use bindings::slate_core::{
     ESlateColorStylingMode, FSlateColor, FSlateColorExt, FSlateFontInfo, FSlateFontInfoExt,
 };
 use bindings::umg::{Image, ImageExt, TextBlock, TextBlockExt, UserWidget};
-use rusteal_runtime::runtime::{
-    FName, LOG_WARNING, LinearColor, OwnedStruct, UObjectRef, UeArray, ulog,
-};
+use rusteal_runtime::runtime::{FName, LinearColor, OwnedStruct, UObjectRef, UeArray};
 use rusteal_runtime::{uclass, uclass_impl, ustruct};
 
 use crate::buttons::{CapsuleButton, ToggleButton};
@@ -149,7 +147,7 @@ impl StylizedUI {
             };
         }
 
-        ulog!(LOG_WARNING, "Style not found...");
+        log::warn!("Style not found...");
         StyleData::default()
     }
 }

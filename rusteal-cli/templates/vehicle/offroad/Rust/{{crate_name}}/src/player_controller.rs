@@ -4,9 +4,7 @@ use bindings::enhanced_input::{EnhancedInputLocalPlayerSubsystemExt, InputMappin
 use bindings::prelude::*;
 use bindings::umg::{UserWidget, UserWidgetExt};
 use rusteal_runtime::runtime::input::should_display_touch_interface;
-use rusteal_runtime::runtime::{
-    LOG_ERROR, LOG_WARNING, OwnedStruct, RustealResult, SubclassOf, UObjectRef, UeArray, ulog,
-};
+use rusteal_runtime::runtime::{OwnedStruct, RustealResult, SubclassOf, UObjectRef, UeArray};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use crate::pawn::VehicleAdvPawn;
@@ -26,10 +24,19 @@ pub struct VehicleAdvPlayerController {
     #[uproperty]
     mobile_controls_widget: UObjectRef<UserWidget>,
 
-    #[uproperty(EditAnywhere, Config, category = "Input|Touch Controls", default = false)]
+    #[uproperty(
+        EditAnywhere,
+        Config,
+        category = "Input|Touch Controls",
+        default = false
+    )]
     b_force_touch_controls: bool,
 
-    #[uproperty(EditAnywhere, category = "Input|Steering Wheel Controls", default = false)]
+    #[uproperty(
+        EditAnywhere,
+        category = "Input|Steering Wheel Controls",
+        default = false
+    )]
     b_use_steering_wheel_controls: bool,
 
     #[uproperty(EditAnywhere, category = "Input|Steering Wheel Controls")]
@@ -57,7 +64,7 @@ impl VehicleAdvPlayerController {
         }
 
         if let Err(e) = self.setup_input() {
-            ulog!(LOG_WARNING, "[Vehicle] input setup failed: {e}");
+            log::warn!("[Vehicle] input setup failed: {e}");
         }
     }
 
@@ -91,14 +98,14 @@ impl VehicleAdvPlayerController {
                 if let Ok(mut me) = VehicleAdvPlayerController::from_obj(controller)
                     && let Err(e) = me.respawn()
                 {
-                    ulog!(LOG_WARNING, "[Vehicle] respawn failed: {e}");
+                    log::warn!("[Vehicle] respawn failed: {e}");
                 }
             })
         });
 
         match bound {
             Ok(binding) => binding.detach(),
-            Err(e) => ulog!(LOG_WARNING, "[Vehicle] cannot watch the vehicle: {e}"),
+            Err(e) => log::warn!("[Vehicle] cannot watch the vehicle: {e}"),
         }
     }
 }
@@ -132,16 +139,19 @@ impl VehicleAdvPlayerController {
                     widget.checked()?.add_to_player_screen(Some(0));
                     self.set_mobile_controls_widget(widget);
                 }
-                Err(_) => ulog!(LOG_ERROR, "Could not spawn mobile controls widget."),
+                Err(_) => log::error!("Could not spawn mobile controls widget."),
             }
         }
 
         match create_widget_of_class(&me, self.vehicle_ui_class()) {
             Ok(widget) => {
-                widget.upcast_to::<UserWidget>().checked()?.add_to_player_screen(Some(0));
+                widget
+                    .upcast_to::<UserWidget>()
+                    .checked()?
+                    .add_to_player_screen(Some(0));
                 self.set_vehicle_ui(widget);
             }
-            Err(_) => ulog!(LOG_ERROR, "Could not spawn vehicle UI widget."),
+            Err(_) => log::error!("Could not spawn vehicle UI widget."),
         }
 
         Ok(())
@@ -160,7 +170,9 @@ impl VehicleAdvPlayerController {
         };
 
         let transform = start.checked()?.get_transform();
-        let vehicle = me.get_world()?.spawn_actor_of_class(self.vehicle_pawn_class(), &transform)?;
+        let vehicle = me
+            .get_world()?
+            .spawn_actor_of_class(self.vehicle_pawn_class(), &transform)?;
         me.checked()?.possess(vehicle.upcast_to());
 
         Ok(())

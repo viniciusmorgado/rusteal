@@ -2,9 +2,7 @@ use bindings::engine::{ActorExt, HUD, HUDExt, PlayerControllerExt};
 use bindings::prelude::*;
 use bindings::umg::UserWidgetExt;
 use glam::DVec2;
-use rusteal_runtime::runtime::{
-    LOG_ERROR, LinearColor, OwnedStruct, RustealResult, SubclassOf, UObjectRef, ulog,
-};
+use rusteal_runtime::runtime::{LinearColor, OwnedStruct, RustealResult, SubclassOf, UObjectRef};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use super::player_controller::StrategyPlayerController;
@@ -40,7 +38,7 @@ impl StrategyHUD {
     #[ufunction(Override)]
     fn receive_begin_play(&mut self) {
         if let Err(e) = self.spawn_ui() {
-            ulog!(LOG_ERROR, "[Strategy] could not spawn the UI widget: {e}");
+            log::error!("[Strategy] could not spawn the UI widget: {e}");
         }
     }
 

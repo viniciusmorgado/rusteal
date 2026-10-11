@@ -5,7 +5,13 @@ use crate::model;
 
 #[uclass(parent = UserWidget)]
 pub struct VehicleAdvUI {
-    #[uproperty(EditAnywhere, BlueprintReadOnly, name = "bIsMPH", category = "Vehicle", default = false)]
+    #[uproperty(
+        EditAnywhere,
+        BlueprintReadOnly,
+        name = "bIsMPH",
+        category = "Vehicle",
+        default = false
+    )]
     b_is_mph: bool,
 }
 

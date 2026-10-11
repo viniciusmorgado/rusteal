@@ -75,13 +75,31 @@ mod tests {
     #[test]
     fn a_car_is_reset_on_the_second_flipped_check_in_a_row() {
         let first = flip_check(false, -0.9, -0.2);
-        assert_eq!(first, FlipCheck { reset: false, flipped: true });
+        assert_eq!(
+            first,
+            FlipCheck {
+                reset: false,
+                flipped: true
+            }
+        );
 
         let second = flip_check(first.flipped, -0.9, -0.2);
-        assert_eq!(second, FlipCheck { reset: true, flipped: true });
+        assert_eq!(
+            second,
+            FlipCheck {
+                reset: true,
+                flipped: true
+            }
+        );
 
         let upright = flip_check(second.flipped, 1.0, -0.2);
-        assert_eq!(upright, FlipCheck { reset: false, flipped: false });
+        assert_eq!(
+            upright,
+            FlipCheck {
+                reset: false,
+                flipped: false
+            }
+        );
     }
 
     #[test]

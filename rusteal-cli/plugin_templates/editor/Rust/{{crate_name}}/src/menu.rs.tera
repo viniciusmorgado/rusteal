@@ -1,6 +1,6 @@
 use bindings::tool_menus::{FToolMenuContext, ToolMenuEntryScript};
 use bindings::unreal_ed::{EditorAssetSubsystem, EditorAssetSubsystemExt};
-use rusteal_runtime::runtime::{LOG_DISPLAY, LOG_ERROR, UStructRef, console, task, ulog};
+use rusteal_runtime::runtime::{UStructRef, console, task};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use crate::editor_subsystem;
@@ -20,7 +20,7 @@ pub fn count_assets(path: &str) {
     let assets = match editor_subsystem::<EditorAssetSubsystem>().and_then(|s| s.checked()) {
         Ok(subsystem) => subsystem.list_assets(path, Some(true), Some(false)),
         Err(e) => {
-            ulog!(LOG_ERROR, "[{{ plugin }}] no asset subsystem: {e:?}");
+            log::error!("[{{ plugin }}] no asset subsystem: {e:?}");
             return;
         }
     };
@@ -40,10 +40,10 @@ pub fn count_assets(path: &str) {
             (assets.len(), by_prefix)
         },
         move |(total, by_prefix)| {
-            ulog!(LOG_DISPLAY, "[{{ plugin }}] {total} assets under {path}");
+            log::info!("[{{ plugin }}] {total} assets under {path}");
 
             for (prefix, count) in by_prefix {
-                ulog!(LOG_DISPLAY, "[{{ plugin }}]   {prefix}: {count}");
+                log::info!("[{{ plugin }}]   {prefix}: {count}");
             }
         },
     );
@@ -57,7 +57,7 @@ fn startup() {
     );
 
     if let Err(e) = result {
-        ulog!(LOG_ERROR, "[{{ plugin }}] no console command: {e:?}");
+        log::error!("[{{ plugin }}] no console command: {e:?}");
     }
 }
 rusteal_runtime::on_load!(startup);

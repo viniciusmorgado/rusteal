@@ -3,9 +3,7 @@ use bindings::engine::{
     Actor, ActorExt, ControllerExt, GameplayStatics, SubsystemBlueprintLibrary, WorldSubsystem,
 };
 use bindings::rusteal::RustealWorldSubsystem;
-use rusteal_runtime::runtime::{
-    LOG_DISPLAY, LOG_WARNING, RustealResult, SubclassOf, UObjectRef, UeClass, ulog,
-};
+use rusteal_runtime::runtime::{RustealResult, SubclassOf, UObjectRef, UeClass};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use crate::save_data::CheckpointSaveData;
@@ -28,19 +26,13 @@ impl CheckpointSubsystem {
             return;
         }
 
-        ulog!(
-            LOG_DISPLAY,
-            "[Checkpoints] the player starts at the last spawn point"
-        );
+        log::info!("[Checkpoints] the player starts at the last spawn point");
     }
 
     #[ufunction(BlueprintCallable)]
     pub fn update_spawn_point(&mut self, spawn_point: UObjectRef<Actor>) {
         if let Err(e) = self.save_spawn_point(spawn_point) {
-            ulog!(
-                LOG_WARNING,
-                "[Checkpoints] cannot save the spawn point: {e}"
-            );
+            log::warn!("[Checkpoints] cannot save the spawn point: {e}");
         }
     }
 
@@ -67,7 +59,7 @@ impl CheckpointSubsystem {
 
 impl CheckpointSubsystem {
     pub fn get(context: UObjectRef<Object>) -> RustealResult<Self> {
-        let class = unsafe { SubclassOf::<WorldSubsystem>::from_raw(Self::static_class()) };
+        let class = SubclassOf::<Self>::base().upcast_to::<WorldSubsystem>();
         Self::from_obj(SubsystemBlueprintLibrary::get_world_subsystem(
             context, class,
         ))
