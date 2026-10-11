@@ -8,9 +8,7 @@ use bindings::engine::{
 use bindings::enhanced_input::{ETriggerEvent, FInputActionValue, InputAction};
 use bindings::prelude::*;
 use glam::DVec2;
-use rusteal_runtime::runtime::{
-    LOG_WARNING, Rotator, RustealResult, SubclassOf, UObjectRef, UStructRef, ulog,
-};
+use rusteal_runtime::runtime::{Rotator, RustealResult, SubclassOf, UObjectRef, UStructRef};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use super::aoe_attack::TwinStickAoEAttack;
@@ -197,7 +195,7 @@ impl TwinStickCharacter {
     #[ufunction(Override)]
     fn receive_restarted(&mut self) {
         if let Err(e) = self.bind_input() {
-            ulog!(LOG_WARNING, "[TwinStick] failed to bind the input: {e}");
+            log::warn!("[TwinStick] failed to bind the input: {e}");
         }
     }
 
@@ -298,7 +296,7 @@ impl TwinStickCharacter {
     #[ufunction(BlueprintCallable)]
     fn do_shoot(&mut self) {
         if let Err(e) = self.spawn_projectile() {
-            ulog!(LOG_WARNING, "[TwinStick] shooting failed: {e}");
+            log::warn!("[TwinStick] shooting failed: {e}");
         }
     }
 

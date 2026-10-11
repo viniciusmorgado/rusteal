@@ -1,6 +1,6 @@
-use bindings::umg::{UserWidget, UserWidgetExt, WidgetExt};
 use bindings::prelude::*;
-use rusteal_runtime::runtime::{LOG_ERROR, RustealResult, SubclassOf, UObjectRef, ulog};
+use bindings::umg::{UserWidget, UserWidgetExt, WidgetExt};
+use rusteal_runtime::runtime::{RustealResult, SubclassOf, UObjectRef};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use super::model::LapTimes;
@@ -24,7 +24,7 @@ impl TimeTrialUI {
     #[ufunction(Override)]
     fn construct(&mut self) {
         if let Err(e) = self.start_countdown() {
-            ulog!(LOG_ERROR, "[TimeTrial] could not start the countdown: {e}");
+            log::error!("[TimeTrial] could not start the countdown: {e}");
         }
     }
 
@@ -62,7 +62,10 @@ impl TimeTrialUI {
         let owning_player = self.as_ref().checked()?.get_owning_player();
         let start_ui = create_widget_of_class(&owning_player, self.start_ui_class())?;
 
-        start_ui.upcast_to::<UserWidget>().checked()?.add_to_viewport(Some(0));
+        start_ui
+            .upcast_to::<UserWidget>()
+            .checked()?
+            .add_to_viewport(Some(0));
         self.set_start_ui(start_ui);
 
         let countdown = TimeTrialStartUI::from_obj(start_ui)?;

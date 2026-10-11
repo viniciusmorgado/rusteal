@@ -3,7 +3,7 @@ use bindings::engine::{
     PrimitiveComponentExt, SceneComponent, SphereComponent, SphereComponentExt,
     StaticMeshComponent,
 };
-use rusteal_runtime::runtime::{FName, LOG_WARNING, RustealResult, SubclassOf, UObjectRef, ulog};
+use rusteal_runtime::runtime::{FName, RustealResult, SubclassOf, UObjectRef};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use super::npc::TwinStickNPC;
@@ -66,7 +66,7 @@ impl TwinStickAoEAttack {
     #[ufunction(Override)]
     fn receive_begin_play(&mut self) {
         if let Err(e) = self.bind_overlap() {
-            ulog!(LOG_WARNING, "[TwinStick] AoE overlap: {e}");
+            log::warn!("[TwinStick] AoE overlap: {e}");
         }
 
         let me = self.as_ref().upcast_to();

@@ -3,9 +3,7 @@ use bindings::enhanced_input::{EnhancedInputLocalPlayerSubsystemExt, InputMappin
 use bindings::prelude::*;
 use bindings::umg::{UserWidget, UserWidgetExt};
 use rusteal_runtime::runtime::input::should_display_touch_interface;
-use rusteal_runtime::runtime::{
-    LOG_ERROR, LOG_WARNING, OwnedStruct, RustealResult, SubclassOf, UObjectRef, UeArray, ulog,
-};
+use rusteal_runtime::runtime::{OwnedStruct, RustealResult, SubclassOf, UObjectRef, UeArray};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use super::character::HorrorCharacter;
@@ -50,14 +48,14 @@ impl HorrorPlayerController {
     #[ufunction(Override)]
     fn receive_begin_play(&mut self) {
         if let Err(e) = self.setup_input() {
-            ulog!(LOG_WARNING, "[Horror] input mapping contexts failed: {e}");
+            log::warn!("[Horror] input mapping contexts failed: {e}");
         }
     }
 
     #[ufunction(Override)]
     fn receive_possess(&mut self, possessed_pawn: UObjectRef<Pawn>) {
         if let Err(e) = self.setup_ui(possessed_pawn) {
-            ulog!(LOG_WARNING, "[Horror] the UI failed: {e}");
+            log::warn!("[Horror] the UI failed: {e}");
         }
     }
 }
@@ -107,7 +105,7 @@ impl HorrorPlayerController {
                     widget.checked()?.add_to_player_screen(Some(0));
                     self.set_mobile_controls_widget(widget);
                 }
-                Err(_) => ulog!(LOG_ERROR, "Could not spawn mobile controls widget."),
+                Err(_) => log::error!("Could not spawn mobile controls widget."),
             }
         }
 

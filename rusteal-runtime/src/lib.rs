@@ -9,6 +9,7 @@ pub use rusteal_ue_flags as ue_flags;
 pub extern crate inventory as __inventory;
 
 pub mod prelude;
+mod ue_log;
 
 pub use glam;
 
@@ -89,6 +90,7 @@ pub unsafe fn init(api_table: *const ffi::RustealApiTable) -> *const ffi::Rustea
         runtime::init_api(api_table);
         runtime::task::mark_game_thread();
         runtime::ffi_guard::install_panic_hook();
+        ue_log::install();
 
         log_greeting();
         register_all_classes();

@@ -1,7 +1,7 @@
 use bindings::manual::world_ext::new_object;
 use bindings::rusteal_editor::RustealEditorSubsystem;
 use bindings::tool_menus::{ToolMenuEntryScript, ToolMenuEntryScriptExt};
-use rusteal_runtime::runtime::{FName, LOG_DISPLAY, LOG_WARNING, RustealResult, UObjectRef, ulog};
+use rusteal_runtime::runtime::{FName, RustealResult, UObjectRef};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use crate::menu::{{ plugin }}MenuEntry;
@@ -16,10 +16,10 @@ pub struct {{ plugin }}EditorSubsystem {
 impl {{ plugin }}EditorSubsystem {
     #[ufunction(Override)]
     fn receive_initialize(&mut self) {
-        ulog!(LOG_DISPLAY, "[{{ plugin }}] Hello from the editor");
+        log::info!("[{{ plugin }}] Hello from the editor");
 
         if let Err(e) = self.add_menu_entry() {
-            ulog!(LOG_WARNING, "[{{ plugin }}] no menu entry: {e:?}");
+            log::warn!("[{{ plugin }}] no menu entry: {e:?}");
         }
     }
 

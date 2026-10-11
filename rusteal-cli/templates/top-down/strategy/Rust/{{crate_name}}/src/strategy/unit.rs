@@ -10,9 +10,7 @@ use bindings::engine::{
 };
 use bindings::prelude::*;
 use glam::DVec3;
-use rusteal_runtime::runtime::{
-    FName, LOG_WARNING, Rotator, RustealResult, SubclassOf, UObjectRef, ulog,
-};
+use rusteal_runtime::runtime::{FName, Rotator, RustealResult, SubclassOf, UObjectRef};
 use rusteal_runtime::{uclass, uclass_impl};
 
 const INTERACTION_RANGE_RADIUS: f32 = 100.0;
@@ -128,7 +126,7 @@ impl StrategyUnit {
 
         match bound {
             Ok(binding) => binding.detach(),
-            Err(e) => ulog!(LOG_WARNING, "[Strategy] cannot watch the unit's moves: {e}"),
+            Err(e) => log::warn!("[Strategy] cannot watch the unit's moves: {e}"),
         }
     }
 
@@ -236,7 +234,7 @@ impl StrategyUnit {
 
             match bound {
                 Ok(binding) => binding.detach(),
-                Err(e) => ulog!(LOG_WARNING, "[Strategy] cannot watch the move query: {e}"),
+                Err(e) => log::warn!("[Strategy] cannot watch the move query: {e}"),
             }
         }
     }

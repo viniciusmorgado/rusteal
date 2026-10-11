@@ -4,7 +4,7 @@ use bindings::engine::{
     SceneComponentExt,
 };
 use bindings::prelude::*;
-use rusteal_runtime::runtime::{LOG_WARNING, RustealResult, UObjectRef, ulog};
+use rusteal_runtime::runtime::{RustealResult, UObjectRef};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use super::model;
@@ -59,7 +59,7 @@ impl SideScrollingJumpPad {
                 .on_actor_begin_overlap()
                 .add_ufunction(&me, "BeginOverlap")
         }) {
-            ulog!(LOG_WARNING, "[SideScrolling] jump pad overlap: {e}");
+            log::warn!("[SideScrolling] jump pad overlap: {e}");
         }
     }
 

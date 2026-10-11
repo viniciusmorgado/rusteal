@@ -1,6 +1,6 @@
 use bindings::engine::{Actor, ActorExt, GameplayStatics, SceneComponent};
 use bindings::openxr::{EOpenXREnvironmentBlendMode, OpenXRBlueprintFunctionLibrary};
-use rusteal_runtime::runtime::{FName, LOG_DISPLAY, ulog};
+use rusteal_runtime::runtime::FName;
 use rusteal_runtime::{uclass, uclass_impl};
 
 #[uclass(parent = Actor)]
@@ -71,13 +71,9 @@ fn is_alpha_blend_supported() -> bool {
         .contains(&EOpenXREnvironmentBlendMode::AlphaBlend);
 
     if supported {
-        ulog!(
-            LOG_DISPLAY,
-            "Environment Blend Mode Alpha Blend Supported: true"
-        );
+        log::info!("Environment Blend Mode Alpha Blend Supported: true");
     } else {
-        ulog!(
-            LOG_DISPLAY,
+        log::info!(
             "The Active OpenXR runtime does NOT support the Environment Blend Mode Alpha Blend. Passthrough support may be available through the use of an OpenXR Vendor Plugin."
         );
     }

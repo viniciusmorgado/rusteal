@@ -4,15 +4,13 @@ use bindings::chaos_vehicles::{
 };
 use bindings::engine::{
     ActorComponentExt, CameraComponent, KismetMathLibrary, KismetSystemLibrary,
-    NavMovementComponentExt, PawnExt, PrimitiveComponentExt, SceneComponentExt,
-    SpringArmComponent, SpringArmComponentExt,
+    NavMovementComponentExt, PawnExt, PrimitiveComponentExt, SceneComponentExt, SpringArmComponent,
+    SpringArmComponentExt,
 };
 use bindings::enhanced_input::{ETriggerEvent, FInputActionValue, InputAction};
 use bindings::prelude::*;
 use glam::DVec3;
-use rusteal_runtime::runtime::{
-    FName, LOG_WARNING, Rotator, RustealResult, UObjectRef, UStructRef, ulog,
-};
+use rusteal_runtime::runtime::{FName, Rotator, RustealResult, UObjectRef, UStructRef};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use crate::model;
@@ -100,7 +98,7 @@ impl VehicleAdvPawn {
     #[ufunction(Override)]
     pub(crate) fn receive_restarted(&mut self) {
         if let Err(e) = self.bind_input() {
-            ulog!(LOG_WARNING, "[Vehicle] failed to bind the input: {e}");
+            log::warn!("[Vehicle] failed to bind the input: {e}");
         }
     }
 
@@ -125,7 +123,7 @@ impl VehicleAdvPawn {
     #[ufunction(Override)]
     pub(crate) fn receive_tick(&mut self, delta_seconds: f32) {
         if let Err(e) = self.update(delta_seconds) {
-            ulog!(LOG_WARNING, "[Vehicle] update failed: {e}");
+            log::warn!("[Vehicle] update failed: {e}");
         }
     }
 
@@ -262,7 +260,7 @@ impl VehicleAdvPawn {
     #[ufunction(BlueprintCallable)]
     pub(crate) fn do_reset_vehicle(&mut self) {
         if let Err(e) = self.reset() {
-            ulog!(LOG_WARNING, "[Vehicle] reset failed: {e}");
+            log::warn!("[Vehicle] reset failed: {e}");
         }
     }
 
@@ -271,12 +269,20 @@ impl VehicleAdvPawn {
 
     #[ufunction]
     fn flipped_check(&mut self) {
-        let Ok(mesh) = self.as_ref().checked().and_then(|me| me.get_mesh().checked()) else {
+        let Ok(mesh) = self
+            .as_ref()
+            .checked()
+            .and_then(|me| me.get_mesh().checked())
+        else {
             return;
         };
 
         let up_dot = DVec3::Z.dot(mesh.get_up_vector().to_dvec3()) as f32;
-        let check = model::flip_check(self.previous_flip_check(), up_dot, self.flip_check_min_dot());
+        let check = model::flip_check(
+            self.previous_flip_check(),
+            up_dot,
+            self.flip_check_min_dot(),
+        );
 
         if check.reset {
             self.do_reset_vehicle();
@@ -287,7 +293,10 @@ impl VehicleAdvPawn {
 }
 
 impl VehicleAdvPawn {
-    pub fn movement(&self) -> RustealResult<rusteal_runtime::runtime::Checked<ChaosWheeledVehicleMovementComponent>> {
+    pub fn movement(
+        &self,
+    ) -> RustealResult<rusteal_runtime::runtime::Checked<ChaosWheeledVehicleMovementComponent>>
+    {
         self.as_ref()
             .checked()?
             .get_vehicle_movement_component()
@@ -303,18 +312,73 @@ impl VehicleAdvPawn {
             return Ok(());
         }
 
-        bind_action(&me, self.steering_action(), ETriggerEvent::Triggered, "Steering")?;
-        bind_action(&me, self.steering_action(), ETriggerEvent::Completed, "Steering")?;
-        bind_action(&me, self.throttle_action(), ETriggerEvent::Triggered, "Throttle")?;
-        bind_action(&me, self.throttle_action(), ETriggerEvent::Completed, "Throttle")?;
+        bind_action(
+            &me,
+            self.steering_action(),
+            ETriggerEvent::Triggered,
+            "Steering",
+        )?;
+        bind_action(
+            &me,
+            self.steering_action(),
+            ETriggerEvent::Completed,
+            "Steering",
+        )?;
+        bind_action(
+            &me,
+            self.throttle_action(),
+            ETriggerEvent::Triggered,
+            "Throttle",
+        )?;
+        bind_action(
+            &me,
+            self.throttle_action(),
+            ETriggerEvent::Completed,
+            "Throttle",
+        )?;
         bind_action(&me, self.brake_action(), ETriggerEvent::Triggered, "Brake")?;
-        bind_action(&me, self.brake_action(), ETriggerEvent::Started, "StartBrake")?;
-        bind_action(&me, self.brake_action(), ETriggerEvent::Completed, "StopBrake")?;
-        bind_action(&me, self.handbrake_action(), ETriggerEvent::Started, "StartHandbrake")?;
-        bind_action(&me, self.handbrake_action(), ETriggerEvent::Completed, "StopHandbrake")?;
-        bind_action(&me, self.look_around_action(), ETriggerEvent::Triggered, "LookAround")?;
-        bind_action(&me, self.toggle_camera_action(), ETriggerEvent::Triggered, "ToggleCamera")?;
-        bind_action(&me, self.reset_vehicle_action(), ETriggerEvent::Triggered, "ResetVehicle")?;
+        bind_action(
+            &me,
+            self.brake_action(),
+            ETriggerEvent::Started,
+            "StartBrake",
+        )?;
+        bind_action(
+            &me,
+            self.brake_action(),
+            ETriggerEvent::Completed,
+            "StopBrake",
+        )?;
+        bind_action(
+            &me,
+            self.handbrake_action(),
+            ETriggerEvent::Started,
+            "StartHandbrake",
+        )?;
+        bind_action(
+            &me,
+            self.handbrake_action(),
+            ETriggerEvent::Completed,
+            "StopHandbrake",
+        )?;
+        bind_action(
+            &me,
+            self.look_around_action(),
+            ETriggerEvent::Triggered,
+            "LookAround",
+        )?;
+        bind_action(
+            &me,
+            self.toggle_camera_action(),
+            ETriggerEvent::Triggered,
+            "ToggleCamera",
+        )?;
+        bind_action(
+            &me,
+            self.reset_vehicle_action(),
+            ETriggerEvent::Triggered,
+            "ResetVehicle",
+        )?;
 
         Ok(())
     }

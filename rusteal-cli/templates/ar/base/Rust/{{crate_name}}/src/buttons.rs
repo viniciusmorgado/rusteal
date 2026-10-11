@@ -10,9 +10,7 @@ use bindings::umg::{
     Button, ButtonExt, ESlateVisibility, Image, ImageExt, TextBlock, TextBlockExt, UserWidget,
     WidgetBlueprintLibrary, WidgetExt,
 };
-use rusteal_runtime::runtime::{
-    FName, LOG_WARNING, LinearColor, OwnedStruct, RustealResult, UObjectRef, ulog,
-};
+use rusteal_runtime::runtime::{FName, LinearColor, OwnedStruct, RustealResult, UObjectRef};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use crate::enums::{EIconType, EUIStyle};
@@ -94,7 +92,7 @@ impl CapsuleButton {
     #[ufunction(Override)]
     fn on_initialized(&mut self) {
         if let Err(e) = self.init() {
-            ulog!(LOG_WARNING, "[AR] capsule button init failed: {e}");
+            log::warn!("[AR] capsule button init failed: {e}");
         }
     }
 
@@ -244,7 +242,7 @@ impl ToggleButton {
     #[ufunction(Override)]
     fn on_initialized(&mut self) {
         if let Err(e) = self.init_button() {
-            ulog!(LOG_WARNING, "[AR] toggle button init failed: {e}");
+            log::warn!("[AR] toggle button init failed: {e}");
         }
     }
 

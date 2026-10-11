@@ -3,9 +3,7 @@ use bindings::enhanced_input::{EnhancedInputLocalPlayerSubsystemExt, InputMappin
 use bindings::prelude::*;
 use bindings::umg::{UserWidget, UserWidgetExt};
 use rusteal_runtime::runtime::input::should_display_touch_interface;
-use rusteal_runtime::runtime::{
-    LOG_ERROR, LOG_WARNING, OwnedStruct, RustealResult, SubclassOf, UObjectRef, UeArray, ulog,
-};
+use rusteal_runtime::runtime::{OwnedStruct, RustealResult, SubclassOf, UObjectRef, UeArray};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use super::character::CombatCharacter;
@@ -39,7 +37,7 @@ impl CombatPlayerController {
     #[ufunction(Override)]
     fn receive_begin_play(&mut self) {
         if let Err(e) = self.setup_input() {
-            ulog!(LOG_WARNING, "[Combat] input mapping contexts failed: {e}");
+            log::warn!("[Combat] input mapping contexts failed: {e}");
         }
     }
 
@@ -57,7 +55,7 @@ impl CombatPlayerController {
 
         match bound {
             Ok(binding) => binding.detach(),
-            Err(e) => ulog!(LOG_WARNING, "[Combat] cannot watch the pawn: {e}"),
+            Err(e) => log::warn!("[Combat] cannot watch the pawn: {e}"),
         }
     }
 }
@@ -65,7 +63,7 @@ impl CombatPlayerController {
 impl CombatPlayerController {
     fn on_pawn_destroyed(&mut self, _destroyed_actor: UObjectRef<Actor>) {
         if let Err(e) = self.respawn() {
-            ulog!(LOG_WARNING, "[Combat] respawn failed: {e}");
+            log::warn!("[Combat] respawn failed: {e}");
         }
     }
 
@@ -106,7 +104,7 @@ impl CombatPlayerController {
                     widget.checked()?.add_to_player_screen(Some(0));
                     self.set_mobile_controls_widget(widget);
                 }
-                Err(_) => ulog!(LOG_ERROR, "Could not spawn mobile controls widget."),
+                Err(_) => log::error!("Could not spawn mobile controls widget."),
             }
         }
 

@@ -4,9 +4,7 @@ use bindings::engine::{
     PrimitiveComponentExt, SceneComponent, SceneComponentExt,
 };
 use bindings::prelude::*;
-use rusteal_runtime::runtime::{
-    FName, LOG_WARNING, RustealResult, SubclassOf, UObjectRef, UeArray, ulog,
-};
+use rusteal_runtime::runtime::{FName, RustealResult, SubclassOf, UObjectRef, UeArray};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use super::enemy::CombatEnemy;
@@ -88,7 +86,7 @@ impl CombatEnemySpawner {
     #[ufunction(BlueprintCallable)]
     fn spawn_enemy(&mut self) {
         if let Err(e) = self.spawn() {
-            ulog!(LOG_WARNING, "[Combat] cannot spawn an enemy: {e}");
+            log::warn!("[Combat] cannot spawn an enemy: {e}");
         }
     }
 

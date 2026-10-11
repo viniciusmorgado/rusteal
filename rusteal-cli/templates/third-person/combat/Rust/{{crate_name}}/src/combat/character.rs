@@ -11,8 +11,7 @@ use bindings::prelude::*;
 use bindings::umg::{WidgetComponent, WidgetComponentExt};
 use glam::DVec3;
 use rusteal_runtime::runtime::{
-    FName, LOG_DISPLAY, LOG_WARNING, OwnedStruct, RustealResult, UObjectRef, UStructRef, UeArray,
-    ulog,
+    FName, OwnedStruct, RustealResult, UObjectRef, UStructRef, UeArray,
 };
 use rusteal_runtime::{uclass, uclass_impl};
 
@@ -158,11 +157,7 @@ impl CombatCharacter {
     #[ufunction(Override)]
     fn receive_begin_play(&mut self) {
         if let Err(e) = self.begin_play() {
-            ulog!(
-                LOG_WARNING,
-                "[Combat] {} BeginPlay failed: {e}",
-                self.name()
-            );
+            log::warn!("[Combat] {} BeginPlay failed: {e}", self.name());
         }
     }
 
@@ -174,13 +169,9 @@ impl CombatCharacter {
     #[ufunction(Override)]
     fn receive_restarted(&mut self) {
         match self.bind_input() {
-            Ok(true) => ulog!(LOG_DISPLAY, "[Combat] {} input bound", self.name()),
+            Ok(true) => log::info!("[Combat] {} input bound", self.name()),
             Ok(false) => {}
-            Err(e) => ulog!(
-                LOG_WARNING,
-                "[Combat] {} failed to bind its input: {e}",
-                self.name()
-            ),
+            Err(e) => log::warn!("[Combat] {} failed to bind its input: {e}", self.name()),
         }
     }
 
@@ -250,7 +241,7 @@ impl CombatCharacter {
     #[ufunction(BlueprintCallable)]
     fn do_move(&mut self, right: f32, forward: f32) {
         if let Err(e) = self.apply_move(right, forward) {
-            ulog!(LOG_WARNING, "[Combat] DoMove failed: {e}");
+            log::warn!("[Combat] DoMove failed: {e}");
         }
     }
 
@@ -485,7 +476,7 @@ impl CombatCharacter {
         };
 
         if let Err(e) = self.bind_attack_end(anim_instance) {
-            ulog!(LOG_WARNING, "[Combat] cannot watch the attack montage: {e}");
+            log::warn!("[Combat] cannot watch the attack montage: {e}");
         }
 
         if let Ok(anim_instance) = anim_instance.checked() {

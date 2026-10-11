@@ -6,9 +6,7 @@ use bindings::engine::{
 };
 use bindings::prelude::*;
 use glam::DVec3;
-use rusteal_runtime::runtime::{
-    FName, LOG_WARNING, Rotator, RustealResult, SubclassOf, Transform, UObjectRef, ulog,
-};
+use rusteal_runtime::runtime::{FName, Rotator, RustealResult, SubclassOf, Transform, UObjectRef};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use crate::components;
@@ -58,7 +56,7 @@ impl SplinePath {
     #[ufunction(Override)]
     fn user_construction_script(&mut self) {
         if let Err(e) = self.build() {
-            ulog!(LOG_WARNING, "[Tour] spline path: {e}");
+            log::warn!("[Tour] spline path: {e}");
         }
     }
 }

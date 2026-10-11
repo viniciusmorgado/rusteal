@@ -3,7 +3,7 @@ use bindings::engine::{
 };
 use bindings::prelude::*;
 use bindings::umg::UserWidgetExt;
-use rusteal_runtime::runtime::{FName, LOG_WARNING, RustealResult, SubclassOf, UObjectRef, ulog};
+use rusteal_runtime::runtime::{FName, RustealResult, SubclassOf, UObjectRef};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use super::ui::SideScrollingUI;
@@ -30,10 +30,7 @@ impl SideScrollingGameMode {
     #[ufunction(Override)]
     fn receive_begin_play(&mut self) {
         if let Err(e) = self.create_user_interface() {
-            ulog!(
-                LOG_WARNING,
-                "[SideScrolling] cannot create the game UI: {e}"
-            );
+            log::warn!("[SideScrolling] cannot create the game UI: {e}");
         }
 
         for _ in 2..=self.number_of_local_players() {

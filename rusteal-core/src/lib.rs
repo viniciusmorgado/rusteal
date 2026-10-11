@@ -30,7 +30,7 @@ pub mod widget;
 pub mod world;
 
 pub use api::{api, init_api};
-pub use console::ConsoleVariable;
+pub use console::{CommandContext, ConsoleVariable};
 pub use containers::{ContainerElement, OwnedStruct, UeArray, UeMap, UeSet};
 pub use delegate_registry::DelegateBinding;
 pub use dynamic_call::{DynamicCall, DynamicCallResult};

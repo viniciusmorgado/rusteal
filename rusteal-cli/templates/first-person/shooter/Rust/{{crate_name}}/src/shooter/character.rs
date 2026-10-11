@@ -8,9 +8,7 @@ use bindings::engine::{
 use bindings::enhanced_input::{ETriggerEvent, InputAction};
 use bindings::prelude::*;
 use glam::DVec3;
-use rusteal_runtime::runtime::{
-    FName, LOG_WARNING, Rotator, RustealResult, SubclassOf, UObjectRef, UeArray, ulog,
-};
+use rusteal_runtime::runtime::{FName, Rotator, RustealResult, SubclassOf, UObjectRef, UeArray};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use super::game_mode::ShooterGameMode;
@@ -114,10 +112,7 @@ impl ShooterCharacter {
         }
 
         if let Err(e) = self.bind_weapon_input() {
-            ulog!(
-                LOG_WARNING,
-                "[Shooter] failed to bind the weapon input: {e}"
-            );
+            log::warn!("[Shooter] failed to bind the weapon input: {e}");
         }
     }
 

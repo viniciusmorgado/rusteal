@@ -9,8 +9,7 @@ use bindings::prelude::*;
 use bindings::umg::{WidgetComponent, WidgetComponentExt};
 use glam::{DVec2, DVec3};
 use rusteal_runtime::runtime::{
-    FName, LOG_WARNING, LinearColor, OwnedStruct, Rotator, RustealResult, UObjectRef, UStructRef,
-    ulog,
+    FName, LinearColor, OwnedStruct, Rotator, RustealResult, UObjectRef, UStructRef,
 };
 use rusteal_runtime::{uclass, uclass_impl};
 
@@ -164,7 +163,7 @@ impl Placeable {
     #[ufunction(Override)]
     fn receive_begin_play(&mut self) {
         if let Err(e) = self.begin_play() {
-            ulog!(LOG_WARNING, "[AR] placeable begin play failed: {e}");
+            log::warn!("[AR] placeable begin play failed: {e}");
         }
     }
 

@@ -11,3 +11,4 @@ crate-type = ["cdylib"]
 rusteal-runtime = { workspace = true }
 bindings = { path = "../bindings" }
 glam = { workspace = true }
+log = { workspace = true }

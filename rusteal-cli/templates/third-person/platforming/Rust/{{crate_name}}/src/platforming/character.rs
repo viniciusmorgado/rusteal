@@ -8,9 +8,7 @@ use bindings::engine::{
 use bindings::engine::{FNavAgentPropertiesExt, MovementComponentExt};
 use bindings::enhanced_input::{ETriggerEvent, FInputActionValue, InputAction};
 use bindings::prelude::*;
-use rusteal_runtime::runtime::{
-    LOG_DISPLAY, LOG_WARNING, OwnedStruct, Rotator, RustealResult, UObjectRef, UStructRef, ulog,
-};
+use rusteal_runtime::runtime::{OwnedStruct, Rotator, RustealResult, UObjectRef, UStructRef};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use super::model::{self, AirJump, JumpPress, MoveState, ground_axes};
@@ -128,10 +126,9 @@ impl PlatformingCharacter {
     #[ufunction(Override)]
     fn receive_restarted(&mut self) {
         match self.bind_input() {
-            Ok(true) => ulog!(LOG_DISPLAY, "[Platforming] {} input bound", self.name()),
+            Ok(true) => log::info!("[Platforming] {} input bound", self.name()),
             Ok(false) => {}
-            Err(e) => ulog!(
-                LOG_WARNING,
+            Err(e) => log::warn!(
                 "[Platforming] {} failed to bind its input: {e}",
                 self.name()
             ),
@@ -160,7 +157,7 @@ impl PlatformingCharacter {
     #[ufunction(BlueprintCallable)]
     fn do_move(&mut self, right: f32, forward: f32) {
         if let Err(e) = self.apply_move(right, forward) {
-            ulog!(LOG_WARNING, "[Platforming] DoMove failed: {e}");
+            log::warn!("[Platforming] DoMove failed: {e}");
         }
     }
 
@@ -179,14 +176,14 @@ impl PlatformingCharacter {
     #[ufunction(BlueprintCallable)]
     fn do_dash(&mut self) {
         if let Err(e) = self.start_dash() {
-            ulog!(LOG_WARNING, "[Platforming] DoDash failed: {e}");
+            log::warn!("[Platforming] DoDash failed: {e}");
         }
     }
 
     #[ufunction(BlueprintCallable)]
     fn do_jump_start(&mut self) {
         if let Err(e) = self.multi_jump() {
-            ulog!(LOG_WARNING, "[Platforming] jump failed: {e}");
+            log::warn!("[Platforming] jump failed: {e}");
         }
     }
 
@@ -340,7 +337,7 @@ impl PlatformingCharacter {
 
                 match model::air_jump(&state, now, self.max_coyote_time()) {
                     AirJump::Coyote => {
-                        ulog!(LOG_WARNING, "Coyote Jump");
+                        log::warn!("Coyote Jump");
 
                         me.jump();
 

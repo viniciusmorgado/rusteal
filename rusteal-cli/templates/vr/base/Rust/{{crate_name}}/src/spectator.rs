@@ -12,9 +12,7 @@ use bindings::head_mounted_display::ESpectatorScreenMode;
 use bindings::prelude::*;
 use bindings::xr_base::HeadMountedDisplayFunctionLibrary;
 use glam::DVec3;
-use rusteal_runtime::runtime::{
-    LOG_WARNING, OwnedStruct, Rotator, RustealResult, SubclassOf, UObjectRef, ulog,
-};
+use rusteal_runtime::runtime::{OwnedStruct, Rotator, RustealResult, SubclassOf, UObjectRef};
 use rusteal_runtime::{uclass, uclass_impl, uenum};
 
 use crate::model;
@@ -145,7 +143,7 @@ impl VRSpectator {
         }
 
         if let Err(e) = self.initialize_input() {
-            ulog!(LOG_WARNING, "[VR] spectator input failed: {e}");
+            log::warn!("[VR] spectator input failed: {e}");
         }
 
         self.initialize_field_of_view();
@@ -163,7 +161,7 @@ impl VRSpectator {
     #[ufunction(Override)]
     fn receive_tick(&mut self, delta_seconds: f32) {
         if let Err(e) = self.update(f64::from(delta_seconds)) {
-            ulog!(LOG_WARNING, "[VR] spectator update failed: {e}");
+            log::warn!("[VR] spectator update failed: {e}");
         }
     }
 
@@ -308,8 +306,7 @@ impl VRSpectator {
                 for child in camera.get_children_components(true) {
                     match child.cast::<PrimitiveComponent>() {
                         Ok(primitive) => capture.hide_component(primitive),
-                        Err(_) => ulog!(
-                            LOG_WARNING,
+                        Err(_) => log::warn!(
                             "Cast Failed: Camera Child Component was NOT a Primitive Component and won't be hidden"
                         ),
                     }

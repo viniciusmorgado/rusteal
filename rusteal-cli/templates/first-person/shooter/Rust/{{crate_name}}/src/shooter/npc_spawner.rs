@@ -4,7 +4,7 @@ use bindings::engine::{
     PrimitiveComponentExt, SceneComponent, SceneComponentExt,
 };
 use bindings::prelude::*;
-use rusteal_runtime::runtime::{FName, LOG_WARNING, RustealResult, SubclassOf, ulog};
+use rusteal_runtime::runtime::{FName, RustealResult, SubclassOf};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use super::game_mode::ShooterGameMode;
@@ -94,7 +94,7 @@ impl ShooterNPCSpawner {
     #[ufunction(name = "SpawnNPC")]
     fn spawn_npc(&mut self) {
         if let Err(e) = self.spawn() {
-            ulog!(LOG_WARNING, "[Shooter] NPC spawn failed: {e}");
+            log::warn!("[Shooter] NPC spawn failed: {e}");
         }
     }
 }

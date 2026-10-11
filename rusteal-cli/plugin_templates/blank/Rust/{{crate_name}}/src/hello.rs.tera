@@ -1,5 +1,4 @@
 use bindings::engine::ActorComponent;
-use rusteal_runtime::runtime::{LOG_DISPLAY, ulog};
 use rusteal_runtime::{uclass, uclass_impl};
 
 #[uclass(parent = ActorComponent)]
@@ -9,9 +8,6 @@ pub struct HelloComponent {}
 impl HelloComponent {
     #[ufunction(Override)]
     fn receive_begin_play(&mut self) {
-        ulog!(
-            LOG_DISPLAY,
-            "[{{ plugin }}] Hello from the plugin's Rust library"
-        );
+        log::info!("[{{ plugin }}] Hello from the plugin's Rust library");
     }
 }

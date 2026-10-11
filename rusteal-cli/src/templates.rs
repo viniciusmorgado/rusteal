@@ -425,6 +425,42 @@ mod tests {
     use super::*;
 
     #[test]
+    fn game_developers_never_write_unsafe_code() {
+        let sources: Vec<_> = TEMPLATE_FILES
+            .iter()
+            .chain(PLUGIN_TEMPLATE_FILES)
+            .filter(|(path, _)| path.ends_with(".rs") || path.ends_with(".rs.tera"))
+            .collect();
+
+        assert!(!sources.is_empty());
+
+        for (path, contents) in &sources {
+            let text = std::str::from_utf8(contents).unwrap();
+            let code = text.replace("#![deny(unsafe_code)]", "");
+
+            for forbidden in [
+                "unsafe",
+                "from_raw",
+                "ulog!",
+                "UObjectHandle",
+                "UClassHandle",
+            ] {
+                assert!(
+                    !code.contains(forbidden),
+                    "{path}: game code uses `{forbidden}`, which Rusteal's safe API replaces"
+                );
+            }
+
+            if path.ends_with("/src/lib.rs") || path.ends_with("/src/lib.rs.tera") {
+                assert!(
+                    text.starts_with("#![deny(unsafe_code)]"),
+                    "{path}: a game or plugin crate starts with #![deny(unsafe_code)]"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn every_template_carries_the_default_optimizations() {
         let configs: Vec<_> = TEMPLATE_FILES
             .iter()

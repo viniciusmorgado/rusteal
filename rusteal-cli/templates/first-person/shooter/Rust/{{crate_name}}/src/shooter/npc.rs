@@ -6,7 +6,7 @@ use bindings::engine::{
 };
 use bindings::prelude::*;
 use glam::DVec3;
-use rusteal_runtime::runtime::{FName, LOG_WARNING, RustealResult, SubclassOf, UObjectRef, ulog};
+use rusteal_runtime::runtime::{FName, RustealResult, SubclassOf, UObjectRef};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use super::ai_controller::ShooterAIController;
@@ -92,7 +92,7 @@ impl ShooterNPC {
 
         match ShooterWeapon::spawn_for(self.as_ref().upcast_to(), self.weapon_class()) {
             Ok(weapon) => self.set_weapon(weapon),
-            Err(e) => ulog!(LOG_WARNING, "[Shooter] NPC weapon: {e}"),
+            Err(e) => log::warn!("[Shooter] NPC weapon: {e}"),
         }
     }
 

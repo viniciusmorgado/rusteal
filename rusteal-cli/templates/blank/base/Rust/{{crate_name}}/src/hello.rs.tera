@@ -1,5 +1,4 @@
 use bindings::prelude::*;
-use rusteal_runtime::runtime::{LOG_DISPLAY, ulog};
 use rusteal_runtime::{uclass, uclass_impl};
 
 #[uclass(parent = Actor)]
@@ -9,6 +8,6 @@ pub struct HelloActor {}
 impl HelloActor {
     #[ufunction(Override)]
     fn receive_begin_play(&mut self) {
-        ulog!(LOG_DISPLAY, "[{{ project }}] Hello from Rust");
+        log::info!("[{{ project }}] Hello from Rust");
     }
 }

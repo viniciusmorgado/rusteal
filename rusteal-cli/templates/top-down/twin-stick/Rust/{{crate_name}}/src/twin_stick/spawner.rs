@@ -1,7 +1,7 @@
 use bindings::engine::{Actor, ActorExt, GameplayStatics, KismetMathLibrary, KismetSystemLibrary};
 use bindings::navigation::{NavigationSystemV1, RecastNavMesh};
 use bindings::prelude::*;
-use rusteal_runtime::runtime::{LOG_DISPLAY, Rotator, SubclassOf, UObjectRef, ulog};
+use rusteal_runtime::runtime::{Rotator, SubclassOf, UObjectRef};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use super::game_mode::TwinStickGameMode;
@@ -46,7 +46,7 @@ impl TwinStickSpawner {
 
         match nav_meshes.first() {
             Some(nav_mesh) => self.set_nav_data(nav_mesh.cast().unwrap_or_default()),
-            None => ulog!(LOG_DISPLAY, "Could not find recast navmesh"),
+            None => log::info!("Could not find recast navmesh"),
         }
 
         KismetSystemLibrary::k2_set_timer(
