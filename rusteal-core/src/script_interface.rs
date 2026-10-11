@@ -67,6 +67,7 @@ impl<I: UeInterface + ?Sized> ScriptInterface<I> {
         unsafe { ffi_dispatch::core_is_valid(self.handle) }
     }
 
+    #[track_caller]
     pub fn object<T: UeClass>(&self) -> RustealResult<UObjectRef<T>> {
         unsafe { UObjectRef::<T>::from_raw(self.handle) }.cast()
     }

@@ -21,6 +21,7 @@ impl DynamicCall {
         Self::on_object(obj.checked()?.raw(), func_name)
     }
 
+    #[track_caller]
     pub(crate) fn on_object(h: UObjectHandle, func_name: &str) -> RustealResult<Self> {
         let func = unsafe {
             ffi_dispatch::reflection_find_function(h, func_name.as_ptr(), func_name.len() as u32)
