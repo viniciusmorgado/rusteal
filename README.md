@@ -88,148 +88,44 @@ questions are tracked in the
 
 ## Getting started
 
-Making a game or a plugin? Read the Rusteal game developer's handbook:
+### Making a game or a plugin
 
-**[The game developer's handbook](https://viniciusmorgado.github.io/game.rusteal.github.io/)** — making games and plugins with Rusteal: installing it, the templates, writing gameplay in Rust, iterating with hot reload, packaging.
-
-Want to contribute to Rusteal itself? Read the Rusteal developer's handbook:
-
-**[The developer's handbook](https://viniciusmorgado.github.io/dev.rusteal.github.io/)** — how Rusteal works inside, and working on it: setting up a checkout, testing a change, templates, releases.
-
-## Acknowledgments
-
-Rusteal is a hard fork of [**uika**](https://github.com/VioletHelianthus/uika) by [**VioletHelianthus**](https://github.com/VioletHelianthus), who designed and wrote the foundation this project stands on: the reflection-driven code generator, the UHT exporter plugin, the reification of Rust structs as `UClass`es, and the runtime. Thank you.
-
-Rusteal does not intend to stay compatible with the original uika, unless its author wants to port the improvements back. From here on it develops the Unreal bindings independently.
-
-## Making a game
-
-Rusteal needs Rust 1.88 or newer and Unreal Engine 5.8, on Linux or Windows ([Prerequisites](https://viniciusmorgado.github.io/game.rusteal.github.io/getting_started/prerequisites.html)). The CLI carries the engine plugins and the templates:
+<a href="https://viniciusmorgado.github.io/game.rusteal.github.io/"><b>The Rusteal game developer's handbook</b></a> is where everything about using Rusteal lives, from installing the CLI to shipping the game:
 
 ```bash
 cargo install rusteal
 rusteal new MyGame --template third-person
 ```
 
-`rusteal new` creates the project, installs the plugins, writes the Rust workspace and builds it all; open `MyGame.uproject` and press Play ([Your first project](https://viniciusmorgado.github.io/game.rusteal.github.io/getting_started/first_project.html), [Installing the CLI](https://viniciusmorgado.github.io/game.rusteal.github.io/getting_started/install.html), [Adding Rusteal to an existing project](https://viniciusmorgado.github.io/game.rusteal.github.io/getting_started/existing_project.html)).
-
-### Templates
-
-Each of the engine's templates, with its gameplay written in Rust. `--variant` picks one of a template's genre starting points ([Starting from a template](https://viniciusmorgado.github.io/game.rusteal.github.io/getting_started/templates.html)).
-
-#### `blank`
-
-The engine's Blank template and a `HelloActor` in Rust, the default. [Read more](https://viniciusmorgado.github.io/game.rusteal.github.io/templates/blank.html).
-
-#### `first-person`
-
-The First Person template: its character, camera manager, game mode and player controller in Rust, playable with keyboard, mouse, gamepad or touch. [Read more](https://viniciusmorgado.github.io/game.rusteal.github.io/templates/first-person.html).
-
-<img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/templates/first-person.png" alt="The first-person template in play" width="800">
-
-#### `first-person` `horror`
-
-A dark level explored with a flashlight, and a sprint that runs on stamina, its meter on screen. [Read more](https://viniciusmorgado.github.io/game.rusteal.github.io/templates/first-person.html#horror).
-
-<img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/templates/first-person-horror.png" alt="The first-person template's horror variant in play" width="800">
-
-#### `first-person` `shooter`
-
-An arena shooter: weapon pickups from a data table, projectiles and grenades, team scores, and NPCs run by a StateTree that sense, snipe and shoot. [Read more](https://viniciusmorgado.github.io/game.rusteal.github.io/templates/first-person.html#shooter).
-
-<img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/templates/first-person-shooter.png" alt="The first-person template's shooter variant in play" width="800">
-
-#### `third-person`
-
-The Third Person template: its character, game mode and player controller in Rust, playable with keyboard, mouse, gamepad or touch. [Read more](https://viniciusmorgado.github.io/game.rusteal.github.io/templates/third-person.html).
-
-<img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/templates/third-person.png" alt="The third-person template in play" width="800">
-
-#### `third-person` `combat`
-
-Melee combat: combo and charged attacks, enemies run by a StateTree, spawners, checkpoints, damageable props. [Read more](https://viniciusmorgado.github.io/game.rusteal.github.io/templates/third-person.html#combat).
-
-<img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/templates/third-person-combat.png" alt="The third-person template's combat variant in play" width="800">
-
-#### `third-person` `platforming`
-
-Double jump, wall jump, coyote time, a dash, local multiplayer and respawn. [Read more](https://viniciusmorgado.github.io/game.rusteal.github.io/templates/third-person.html#platforming).
-
-<img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/templates/third-person-platforming.png" alt="The third-person template's platforming variant in play" width="800">
-
-#### `third-person` `side-scrolling`
-
-A side view platformer: soft platforms, jump pads, moving platforms, pickups with a counter and an NPC run by a StateTree. [Read more](https://viniciusmorgado.github.io/game.rusteal.github.io/templates/third-person.html#side-scrolling).
-
-<img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/templates/third-person-sidescrolling.png" alt="The third-person template's side-scrolling variant in play" width="800">
-
-#### `top-down`
-
-The Top Down template: its character, game mode and point and click player controller in Rust, playable with mouse or touch. [Read more](https://viniciusmorgado.github.io/game.rusteal.github.io/templates/top-down.html).
-
-<img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/templates/topdown.png" alt="The top-down template in play" width="800">
-
-#### `top-down` `strategy`
-
-A real-time strategy start: units selected with clicks, boxes and touches, sent along the navigation mesh by EnvQueries. [Read more](https://viniciusmorgado.github.io/game.rusteal.github.io/templates/top-down.html#strategy).
-
-<img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/templates/topdown-strategy.png" alt="The top-down template's strategy variant in play" width="800">
-
-#### `top-down` `twin-stick`
-
-A twin stick shooter: projectiles, dashes and area attacks against waves of enemies run by a StateTree, pickups and a combo score. [Read more](https://viniciusmorgado.github.io/game.rusteal.github.io/templates/top-down.html#twin-stick).
-
-<img src="https://raw.githubusercontent.com/viniciusmorgado/rusteal/HEAD/assets/templates/topdown-twinstick.png" alt="The top-down template's twin-stick variant in play" width="800">
-
-#### `vehicle`
-
-The Vehicle template: a sports car and an offroad car on Chaos Vehicles, with their game mode, player controller and HUD in Rust; variants `offroad` and `time-trial`. [Read more](https://viniciusmorgado.github.io/game.rusteal.github.io/templates/vehicle.html).
-
-#### `intro`
-
-The Intro To Unreal template: its guided tour level, made of the four gameplay features below, and its first person character in Rust. [Read more](https://viniciusmorgado.github.io/game.rusteal.github.io/templates/intro.html).
-
-#### `ar`
-
-The Handheld AR template: touch gestures to place an object on a detected plane, then move, rotate and scale it, and its styled menus in Rust. It runs in the editor. [Read more](https://viniciusmorgado.github.io/game.rusteal.github.io/templates/ar.html).
-
-#### `vr`
-
-The Virtual Reality template on OpenXR: teleport, snap turn, hand poses, grabbing, a pistol, a 3D menu, passthrough and a spectator camera in Rust. [Read more](https://viniciusmorgado.github.io/game.rusteal.github.io/templates/vr.html).
-
-### Features
-
-Gameplay any template can take, added with `--feature` as a Rusteal plugin, or as project files for a tool ([Adding features](https://viniciusmorgado.github.io/game.rusteal.github.io/getting_started/features.html)):
-
-```bash
-rusteal new MyGame --template third-person --feature mannequin --feature rustrover
-```
-
-- **[`mannequin`](https://viniciusmorgado.github.io/game.rusteal.github.io/features/mannequin.html)**: mannequins that copy a character's movement, and one whose hand reaches for a target.
-- **[`checkpoints`](https://viniciusmorgado.github.io/game.rusteal.github.io/features/checkpoints.html)**: spawn points that save the player's progress and bring them back to the last one.
-- **[`interactables`](https://viniciusmorgado.github.io/game.rusteal.github.io/features/interactables.html)**: a trigger and what it drives (lights, a door it unlocks, confetti), a level sequence trigger, a seeded MetaSound and dangling physics blocks.
-- **[`tour`](https://viniciusmorgado.github.io/game.rusteal.github.io/features/tour.html)**: the Intro To Unreal tour pieces: changing texts, station titles, animated keys, gizmo demos, spline paths and editor hints.
-- **[`rustrover`](https://viniciusmorgado.github.io/game.rusteal.github.io/features/rustrover.html)**: the **Rusteal Watch** and **Rusteal Test** RustRover run configurations, as project files.
-
-### Everything else
-
-| Topic | In the handbook |
+| Chapter | What you find there |
 |---|---|
-| The project's files, its `rusteal.toml` and its version | [Project layout](https://viniciusmorgado.github.io/game.rusteal.github.io/getting_started/layout.html), [Versions and upgrades](https://viniciusmorgado.github.io/game.rusteal.github.io/getting_started/versions.html), [Binding more of the engine](https://viniciusmorgado.github.io/game.rusteal.github.io/cli/rusteal_toml.html) |
-| The build pipeline and its profiles | [Building](https://viniciusmorgado.github.io/game.rusteal.github.io/cli/build.html), [Development and release builds](https://viniciusmorgado.github.io/game.rusteal.github.io/cli/profiles.html) |
-| Classes, properties, components, events, functions, interfaces | [Declaring a class](https://viniciusmorgado.github.io/game.rusteal.github.io/classes/uclass.html) and the *Classes* chapter |
-| Structs, data tables and enums | [Structs and data tables](https://viniciusmorgado.github.io/game.rusteal.github.io/classes/structs.html), [Enums](https://viniciusmorgado.github.io/game.rusteal.github.io/classes/enums.html) |
-| Object references, calling the engine, delegates, dynamic calls | [Object references](https://viniciusmorgado.github.io/game.rusteal.github.io/engine_api/object_refs.html) and the *Engine API* chapter |
-| Errors across Rust and Unreal | [Errors](https://viniciusmorgado.github.io/game.rusteal.github.io/engine_api/errors.html) |
-| Widgets, input, cameras, AI, vehicles, VR, AR... | [Gameplay recipes](https://viniciusmorgado.github.io/game.rusteal.github.io/recipes/index.html) |
-| Hot reload, `rusteal watch`, console commands, tests | [Hot reload](https://viniciusmorgado.github.io/game.rusteal.github.io/iteration/hot_reload.html), [rusteal watch](https://viniciusmorgado.github.io/game.rusteal.github.io/iteration/watch.html), [Testing without the engine](https://viniciusmorgado.github.io/game.rusteal.github.io/iteration/testing.html) |
-| Subsystems, project settings, console variables, background work, data assets | [Subsystems](https://viniciusmorgado.github.io/game.rusteal.github.io/systems/subsystems.html) and the *Systems* chapter |
-| Packaging a game, per-platform engine settings | [Packaging a game](https://viniciusmorgado.github.io/game.rusteal.github.io/shipping/packaging.html), [Platform optimizations](https://viniciusmorgado.github.io/game.rusteal.github.io/cli/optimizations.html) |
-| Every command and attribute | [CLI reference](https://viniciusmorgado.github.io/game.rusteal.github.io/reference/cli.html), [Attributes](https://viniciusmorgado.github.io/game.rusteal.github.io/reference/attributes.html) |
+| [Getting started](https://viniciusmorgado.github.io/game.rusteal.github.io/getting_started/prerequisites.html) | The prerequisites on Linux and Windows, installing the CLI, your first project, its layout, upgrades, and adding Rusteal to an existing project. |
+| [Templates](https://viniciusmorgado.github.io/game.rusteal.github.io/getting_started/templates.html) | Every engine template with its gameplay written in Rust (`first-person`, `third-person`, `top-down`, `vehicle`, `vr`, `ar`, `intro`), each variant with its screenshot, controls and classes. |
+| [Features](https://viniciusmorgado.github.io/game.rusteal.github.io/getting_started/features.html) | Gameplay any template can take with `--feature`: copycat mannequins, checkpoints, triggers and doors, the tour pieces, and the RustRover setup. |
+| [The rusteal CLI](https://viniciusmorgado.github.io/game.rusteal.github.io/cli/overview.html) | The build pipeline, binding more of the engine, development and release builds, platform optimizations. |
+| [The iteration loop](https://viniciusmorgado.github.io/game.rusteal.github.io/iteration/hot_reload.html) | Hot reload, `rusteal watch`, console commands, logging and tests without the engine. |
+| [Classes](https://viniciusmorgado.github.io/game.rusteal.github.io/classes/uclass.html) and [the engine API](https://viniciusmorgado.github.io/game.rusteal.github.io/engine_api/object_refs.html) | Declaring classes, properties, components, events, functions, interfaces, structs and enums; calling the engine, spawning, assets, timers, traces, delegates and errors. |
+| [Gameplay recipes](https://viniciusmorgado.github.io/game.rusteal.github.io/recipes/index.html) | Movement, cameras, animation, combat, projectiles, pickups, physics, UI, AI, vehicles, VR, AR, saving and more, taken from the templates. |
+| [Systems](https://viniciusmorgado.github.io/game.rusteal.github.io/systems/subsystems.html) and [plugins](https://viniciusmorgado.github.io/game.rusteal.github.io/plugins/overview.html) | Subsystems, project settings, console variables, background work, data assets; gameplay plugins, editor tools and packaging them. |
+| [Shipping](https://viniciusmorgado.github.io/game.rusteal.github.io/shipping/packaging.html) and [reference](https://viniciusmorgado.github.io/game.rusteal.github.io/reference/cli.html) | Packaging the game; every command, attribute and type, the known limits and troubleshooting. |
 
-## Making a plugin
+### Contributing to Rusteal
 
-A plugin is a Rust library of its own inside a project's `Plugins/`: a gameplay system, or an editor tool (an editor subsystem, menu entries, asset validators). `rusteal plugin new <Name> --template <blank|editor|inventory|feature>` creates one, and `rusteal plugin package` ships it to other projects ([Plugins](https://viniciusmorgado.github.io/game.rusteal.github.io/plugins/overview.html), [A new plugin](https://viniciusmorgado.github.io/game.rusteal.github.io/plugins/new_plugin.html), [Editor tools](https://viniciusmorgado.github.io/game.rusteal.github.io/plugins/editor_tools.html), [Packaging a plugin](https://viniciusmorgado.github.io/game.rusteal.github.io/plugins/packaging.html)).
+<a href="https://viniciusmorgado.github.io/dev.rusteal.github.io/"><b>The Rusteal developer's handbook</b></a> explains how Rusteal works inside and how to change it: its crates, the `rusteal` CLI and the Unreal Engine plugins.
+
+| Chapter | What you find there |
+|---|---|
+| [How Rusteal works](https://viniciusmorgado.github.io/dev.rusteal.github.io/intro/introduction.html) | From the engine's reflection to the bindings, the boundary between Rust and C++, Rust classes the engine sees, hot reload, games and plugins. |
+| [Setting up a checkout](https://viniciusmorgado.github.io/dev.rusteal.github.io/contributing/environment.html) | The prerequisites, `.env` and `cargo xtask dev-setup` for clangd and the C# exporter. |
+| [Testing a change](https://viniciusmorgado.github.io/dev.rusteal.github.io/contributing/testing.html) | The workspace checks, a test project on the checkout, and `--runtime-path`. |
+| [Templates](https://viniciusmorgado.github.io/dev.rusteal.github.io/templates/porting.html) | Porting an engine template to Rust, the template directories, features. |
+| [Releases and versions](https://viniciusmorgado.github.io/dev.rusteal.github.io/contributing/releases.html) | One version for everything, where it comes from, and the pipeline that publishes it. |
+
+## Acknowledgments
+
+Rusteal is a hard fork of [**uika**](https://github.com/VioletHelianthus/uika) by [**VioletHelianthus**](https://github.com/VioletHelianthus), who designed and wrote the foundation this project stands on: the reflection-driven code generator, the UHT exporter plugin, the reification of Rust structs as `UClass`es, and the runtime. Thank you.
+
+Rusteal does not intend to stay compatible with the original uika, unless its author wants to port the improvements back. From here on it develops the Unreal bindings independently.
 
 ## Platform support
 
@@ -240,10 +136,6 @@ A plugin is a Rust library of its own inside a project's `Plugins/`: a gameplay 
 | macOS | Not yet tested |
 
 Rusteal does not build for Android, iOS or consoles yet; that work is under way ([Known limits](https://viniciusmorgado.github.io/game.rusteal.github.io/reference/limits.html)).
-
-## Working on Rusteal
-
-Changing Rusteal itself, its crates, the CLI or the UE plugins, takes a clone of this repository: [Setting up a checkout](https://viniciusmorgado.github.io/dev.rusteal.github.io/contributing/environment.html), [Testing a change](https://viniciusmorgado.github.io/dev.rusteal.github.io/contributing/testing.html), [How Rusteal works](https://viniciusmorgado.github.io/dev.rusteal.github.io/intro/introduction.html), [Template directories](https://viniciusmorgado.github.io/dev.rusteal.github.io/templates/directories.html) and [Releases and versions](https://viniciusmorgado.github.io/dev.rusteal.github.io/contributing/releases.html) are in the developer's handbook.
 
 ## License
 
