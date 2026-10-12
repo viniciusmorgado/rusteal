@@ -67,3 +67,12 @@ static_assert(offsetof(FRustealApiTable, func_count) == 112,
               "FRustealApiTable::func_count at offset 112");
 static_assert(offsetof(FRustealApiTable, func_fingerprint) == 120,
               "FRustealApiTable::func_fingerprint at offset 120");
+
+static_assert(sizeof(FRustealModuleExports) == 32,
+              "FRustealModuleExports must be 32 bytes");
+static_assert(offsetof(FRustealModuleExports, init) == 8,
+              "FRustealModuleExports::init at offset 8");
+static_assert(sizeof(FRustealStaticModule) == 24,
+              "FRustealStaticModule must be 24 bytes");
+static_assert(offsetof(FRustealStaticModule, exports) == 16,
+              "FRustealStaticModule::exports at offset 16");

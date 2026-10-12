@@ -528,6 +528,19 @@ struct FRustealRustCallbacks {
   void (*on_tick)(float delta_seconds);
 };
 
+struct FRustealModuleExports {
+  uint32 version;
+  const FRustealRustCallbacks *(*init)(const FRustealApiTable *api_table);
+  void (*shutdown)();
+  const FRustealRustCallbacks *(*callbacks)();
+};
+
+struct FRustealStaticModule {
+  const uint8 *name;
+  uint32 name_len;
+  const FRustealModuleExports *exports;
+};
+
 using FRustealInitFn =
     const FRustealRustCallbacks *(*)(const FRustealApiTable *api_table);
 using FRustealShutdownFn = void (*)();

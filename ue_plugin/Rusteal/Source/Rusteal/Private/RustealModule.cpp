@@ -17,6 +17,10 @@
 #include <unistd.h>
 #endif
 
+#ifndef RUSTEAL_STATIC
+#define RUSTEAL_STATIC 0
+#endif
+
 DEFINE_LOG_CATEGORY(LogRusteal);
 
 extern FRustealCoreApi GCoreApi;
@@ -168,6 +172,7 @@ FString RustealLibraryFileName(const FString &Stem) {
                          *Stem, FPlatformProcess::GetModuleExtension());
 }
 
+#if !RUSTEAL_STATIC
 static FString HotCopyPath(const FRustealLibrary &Library) {
   return FPaths::Combine(
       FPaths::GetPath(Library.SourcePath),
@@ -175,6 +180,7 @@ static FString HotCopyPath(const FRustealLibrary &Library) {
           TEXT("%s_hot_%d.%s"), *FPaths::GetBaseFilename(Library.SourcePath),
           Library.ReloadCount, FPlatformProcess::GetModuleExtension()));
 }
+#endif
 
 static void DeleteStaleLoadCopies(const FRustealLibrary &Library) {
   const FString Directory = FPaths::GetPath(Library.SourcePath);
@@ -199,6 +205,7 @@ static void FreeHandle(FRustealLibrary &Library) {
   Library.Handle = nullptr;
 }
 
+#if !RUSTEAL_STATIC
 static bool LoadLibraryFile(FRustealLibrary &Library, const FString &LoadPath) {
   Library.Handle = FPlatformProcess::GetDllHandle(*LoadPath);
 
@@ -265,7 +272,77 @@ static bool LoadLibraryFile(FRustealLibrary &Library, const FString &LoadPath) {
   Library.Callbacks = Callbacks;
   return true;
 }
+#endif
 
+#if RUSTEAL_STATIC
+extern "C" const FRustealStaticModule *rusteal_static_modules(uint32 *Count);
+
+static const FRustealModuleExports *FindStaticModule(FName Name) {
+  uint32 Count = 0;
+  const FRustealStaticModule *Modules = rusteal_static_modules(&Count);
+
+  for (uint32 Index = 0; Index < Count; ++Index) {
+    const FUTF8ToTCHAR Converted(
+        reinterpret_cast<const ANSICHAR *>(Modules[Index].name),
+        Modules[Index].name_len);
+
+    if (FName(FString(Converted.Length(), Converted.Get())) == Name) {
+      return Modules[Index].exports;
+    }
+  }
+
+  return nullptr;
+}
+
+static bool LoadStaticLibrary(FRustealLibrary &Library) {
+  const FRustealModuleExports *Exports = FindStaticModule(Library.Name);
+
+  if (!Exports) {
+    UE_LOG(LogRusteal, Error,
+           TEXT("[Rusteal] %s: no Rust module of that name is linked into "
+                "the game. Package it again with `rusteal package --static`."),
+           *Library.Name.ToString());
+
+    return false;
+  }
+
+  if (Exports->version != GApiTable.version) {
+    UE_LOG(LogRusteal, Error,
+           TEXT("[Rusteal] %s: version mismatch: plugin %s, Rust module %s."),
+           *Library.Name.ToString(), *RustealVersionString(GApiTable.version),
+           *RustealVersionString(Exports->version));
+
+    return false;
+  }
+
+  Library.Exports = Exports;
+  Library.Callbacks = Exports->callbacks();
+  const FRustealRustCallbacks *Callbacks = nullptr;
+
+  {
+    FRustealLibraryScope Scope(&Library);
+    Callbacks = Exports->init(&Library.Table);
+  }
+
+  Library.Callbacks = Callbacks;
+
+  if (!Callbacks) {
+    UE_LOG(LogRusteal, Error, TEXT("[Rusteal] %s: rusteal_init returned null"),
+           *Library.Name.ToString());
+
+    Library.Exports = nullptr;
+    return false;
+  }
+
+  UE_LOG(LogRusteal, Display,
+         TEXT("[Rusteal] %s: Rust module started, linked into the game."),
+         *Library.Name.ToString());
+
+  return true;
+}
+#endif
+
+#if !RUSTEAL_STATIC
 static bool MakeLoadCopy(const FString &Source, const FString &Copy) {
 #if PLATFORM_LINUX || PLATFORM_MAC
   IFileManager::Get().Delete(*Copy, false, true, true);
@@ -277,8 +354,13 @@ static bool MakeLoadCopy(const FString &Source, const FString &Copy) {
 #endif
   return IFileManager::Get().Copy(*Copy, *Source) == COPY_OK;
 }
+#endif
 
 static bool LoadLibrary(FRustealLibrary &Library) {
+#if RUSTEAL_STATIC
+  return LoadStaticLibrary(Library);
+#else
+
   if (!FPaths::FileExists(Library.SourcePath)) {
     UE_LOG(LogRusteal, Warning,
            TEXT("[Rusteal] %s: no Rust library at %s, its Rust side will not "
@@ -308,10 +390,11 @@ static bool LoadLibrary(FRustealLibrary &Library) {
   }
 
   return bLoaded;
+#endif
 }
 
 static void UnloadLibrary(FRustealLibrary &Library) {
-  if (!Library.Handle) {
+  if (!Library.Handle && !Library.Exports) {
     return;
   }
 
@@ -321,8 +404,11 @@ static void UnloadLibrary(FRustealLibrary &Library) {
     }
   });
 
-  auto ShutdownFn = reinterpret_cast<FRustealShutdownFn>(
-      FPlatformProcess::GetDllExport(Library.Handle, TEXT("rusteal_shutdown")));
+  auto ShutdownFn =
+      Library.Exports
+          ? Library.Exports->shutdown
+          : reinterpret_cast<FRustealShutdownFn>(FPlatformProcess::GetDllExport(
+                Library.Handle, TEXT("rusteal_shutdown")));
 
   if (ShutdownFn) {
     FRustealLibraryScope Scope(&Library);
@@ -330,9 +416,13 @@ static void UnloadLibrary(FRustealLibrary &Library) {
   }
 
   Library.Callbacks = nullptr;
+  Library.Exports = nullptr;
   RustealPinnedForgetLibrary(&Library);
   RustealConsoleForgetLibrary(&Library);
-  FreeHandle(Library);
+
+  if (Library.Handle) {
+    FreeHandle(Library);
+  }
 
   if (!Library.LoadedPath.IsEmpty() &&
       Library.LoadedPath != Library.SourcePath) {
@@ -345,12 +435,22 @@ static void UnloadLibrary(FRustealLibrary &Library) {
          *Library.Name.ToString());
 }
 
+#if !RUSTEAL_STATIC
 static bool ClassBelongsTo(const URustealReifiedClass *Class,
                            const FRustealLibrary *Library) {
   return Class->Library == Library;
 }
+#endif
 
 static bool ReloadLibrary(FRustealLibrary &Library) {
+#if RUSTEAL_STATIC
+  UE_LOG(LogRusteal, Warning,
+         TEXT("[Rusteal] %s is linked into the game: it cannot be reloaded."),
+         *Library.Name.ToString());
+
+  return false;
+#else
+
   UE_LOG(LogRusteal, Display, TEXT("[Rusteal] === Hot reload of %s ==="),
          *Library.Name.ToString());
 
@@ -435,6 +535,7 @@ static bool ReloadLibrary(FRustealLibrary &Library) {
          ReinstanceMs, ConstructMs);
 
   return true;
+#endif
 }
 
 static bool RegisterLibrary(FName Name, const FString &PackagePath,

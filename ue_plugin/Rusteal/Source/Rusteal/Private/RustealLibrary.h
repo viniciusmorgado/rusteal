@@ -13,6 +13,7 @@ struct FRustealLibrary {
   int32 ReloadCount = 0;
 
   void *Handle = nullptr;
+  const FRustealModuleExports *Exports = nullptr;
   const FRustealRustCallbacks *Callbacks = nullptr;
 
   FRustealApiTable Table;
