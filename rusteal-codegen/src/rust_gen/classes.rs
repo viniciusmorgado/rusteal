@@ -509,7 +509,7 @@ fn generate_scalar_function(
     out.push_str(&format!(
         "        const FN_ID: u32 = {func_id};\n\
          \x20       type Fn = unsafe extern \"C\" fn({ffi_params}) -> rusteal_core::RustealErrorCode;\n\
-         \x20       let __rusteal_fn: Fn = unsafe {{ std::mem::transmute(*(rusteal_core::api().func_table.add(FN_ID as usize))) }};\n"
+         \x20       let __rusteal_fn: Fn = unsafe {{ std::mem::transmute(crate::__RUSTEAL_FUNCS.get(FN_ID)) }};\n"
     ));
 
     if !is_static {
@@ -1046,7 +1046,7 @@ fn generate_container_function(
 
     out.push_str(&format!(
         "        type Fn = unsafe extern \"C\" fn({ffi_params}) -> rusteal_core::RustealErrorCode;\n\
-         \x20       let __rusteal_fn: Fn = unsafe {{ std::mem::transmute(*(rusteal_core::api().func_table.add(FN_ID as usize))) }};\n"
+         \x20       let __rusteal_fn: Fn = unsafe {{ std::mem::transmute(crate::__RUSTEAL_FUNCS.get(FN_ID)) }};\n"
     ));
 
     if !is_static {

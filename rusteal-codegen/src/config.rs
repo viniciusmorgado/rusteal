@@ -189,8 +189,13 @@ impl ProjectLayout {
     }
 }
 
+pub fn bindings_package(crate_name: &str) -> String {
+    format!("{crate_name}-bindings")
+}
+
 pub struct LibraryOutput {
     pub bindings_crate: PathBuf,
+    pub bindings_package: String,
     pub cpp_generated: PathBuf,
     pub plugin_descriptor: PathBuf,
     pub host_module: String,
@@ -199,9 +204,10 @@ pub struct LibraryOutput {
 }
 
 impl ProjectLayout {
-    pub fn game_output(&self) -> LibraryOutput {
+    pub fn game_output(&self, crate_name: &str) -> LibraryOutput {
         LibraryOutput {
             bindings_crate: self.bindings_crate(),
+            bindings_package: bindings_package(crate_name),
             cpp_generated: self.cpp_generated(),
             plugin_descriptor: self.plugin_descriptor(),
             host_module: "Rusteal".to_string(),
@@ -253,9 +259,10 @@ impl PluginLayout {
         format!("rusteal_{}", self.name)
     }
 
-    pub fn output(&self, kind: LibraryKind) -> LibraryOutput {
+    pub fn output(&self, kind: LibraryKind, crate_name: &str) -> LibraryOutput {
         LibraryOutput {
             bindings_crate: self.rust_workspace().join("bindings"),
+            bindings_package: bindings_package(crate_name),
             cpp_generated: self.module_dir().join("Generated"),
             plugin_descriptor: self.descriptor(),
             host_module: self.name.clone(),

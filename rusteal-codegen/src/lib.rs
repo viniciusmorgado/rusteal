@@ -31,7 +31,11 @@ pub fn run_generate(project_root: &Path) {
     });
 
     let layout = ProjectLayout::new(project_root);
-    generate_library(&layout.uht_json(), &config.codegen, &layout.game_output());
+    generate_library(
+        &layout.uht_json(),
+        &config.codegen,
+        &layout.game_output(&config.project.crate_name),
+    );
 }
 
 pub fn run_generate_plugin(project_root: &Path, plugin: &PluginLayout) {
@@ -46,7 +50,7 @@ pub fn run_generate_plugin(project_root: &Path, plugin: &PluginLayout) {
     generate_library(
         &layout.uht_json(),
         &config.codegen,
-        &plugin.output(config.plugin.kind),
+        &plugin.output(config.plugin.kind, &config.plugin.crate_name),
     );
 }
 
@@ -128,7 +132,7 @@ pub fn generate_library(uht_input: &Path, codegen: &CodegenConfig, output: &Libr
     rust_gen::generate(&ctx, &rust_src);
     rust_gen::manual::write_manual_module(&rust_src);
     rust_gen::prelude::write_prelude(&rust_src, &ctx);
-    rust_gen::cargo_toml::write_crate_files(&rust_out, &ctx, codegen);
+    rust_gen::cargo_toml::write_crate_files(&rust_out, &output.bindings_package, &ctx, codegen);
 
     eprintln!("rusteal-codegen: generating C++ code...");
     cpp_gen::generate(&ctx, &cpp_out);
