@@ -191,6 +191,58 @@ pub fn register_module(module: &Module) {
     }
 }
 
+pub fn manifest(owned: impl Fn(&str) -> bool) -> Vec<String> {
+    let mut entries = Vec::new();
+
+    for reg in inventory::iter::<ClassRegistration> {
+        if owned(reg.krate) {
+            entries.push(format!("class:{}:{}", reg.krate, reg.name));
+        }
+    }
+
+    for reg in inventory::iter::<ClassFunctionRegistration> {
+        if owned(reg.krate) {
+            entries.push(format!("impl:{}:{:016x}", reg.krate, reg.type_id));
+        }
+    }
+
+    for reg in inventory::iter::<StructRegistration> {
+        if owned(reg.krate) {
+            entries.push(format!("struct:{}:{}", reg.krate, reg.name));
+        }
+    }
+
+    for reg in inventory::iter::<EnumRegistration> {
+        if owned(reg.krate) {
+            entries.push(format!("enum:{}:{}", reg.krate, reg.name));
+        }
+    }
+
+    for reg in inventory::iter::<InterfaceRegistration> {
+        if owned(reg.krate) {
+            entries.push(format!("interface:{}:{}", reg.krate, reg.name));
+        }
+    }
+
+    entries
+}
+
+pub fn missing(expected: &[&str], linked: &[String]) -> Vec<String> {
+    let mut linked: Vec<&str> = linked.iter().map(String::as_str).collect();
+    let mut missing = Vec::new();
+
+    for entry in expected {
+        match linked.iter().position(|seen| seen == entry) {
+            Some(found) => {
+                linked.swap_remove(found);
+            }
+            None => missing.push(entry.to_string()),
+        }
+    }
+
+    missing
+}
+
 fn dependency_order<'a>(classes: &[&'a ClassRegistration]) -> Vec<&'a ClassRegistration> {
     let ids: Vec<u64> = classes.iter().map(|class| class.type_id).collect();
     let mut state = vec![0u8; classes.len()];
@@ -569,6 +621,31 @@ mod order_tests {
         static B: ClassRegistration = class(2, &[1]);
 
         assert_eq!(dependency_order(&[&A, &B]).len(), 2);
+    }
+}
+
+#[cfg(test)]
+mod manifest_tests {
+    use super::missing;
+
+    #[test]
+    fn missing_registrations_are_counted() {
+        let linked = vec!["class:game:Item".to_string(), "impl:game:01".to_string()];
+
+        assert!(missing(&["class:game:Item", "impl:game:01"], &linked).is_empty());
+
+        assert_eq!(
+            missing(
+                &[
+                    "class:game:Item",
+                    "impl:game:01",
+                    "impl:game:01",
+                    "enum:game:E"
+                ],
+                &linked
+            ),
+            ["impl:game:01", "enum:game:E"]
+        );
     }
 }
 

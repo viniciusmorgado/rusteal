@@ -14,3 +14,6 @@ rusteal-ue-flags = { workspace = true }
 glam = { workspace = true }
 log = { workspace = true }
 inventory = { workspace = true }
+
+[features]
+static-link = []

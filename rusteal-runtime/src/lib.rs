@@ -155,9 +155,46 @@ unsafe fn start(module: &'static Module, api_table: *const ffi::RustealApiTable)
 
     runtime::reify_registry::register_module(module);
     run_load_hooks(module);
+
+    if let Some(expected) = module.expected() {
+        let linked = manifest_of(|krate| module.owns(krate));
+        let missing = runtime::reify_registry::missing(expected, &linked);
+
+        if !missing.is_empty() {
+            log(
+                runtime::LOG_ERROR,
+                &format!(
+                    "[Rusteal] {}: {} of its registrations were not linked into the game: {}",
+                    module.krate(),
+                    missing.len(),
+                    missing.join(", ")
+                ),
+            );
+
+            return Start::Failed;
+        }
+    }
+
     module.finish_start();
 
     Start::Started
+}
+
+fn manifest_of(owned: impl Fn(&str) -> bool) -> Vec<String> {
+    let mut entries = runtime::reify_registry::manifest(&owned);
+
+    for hook in inventory::iter::<LoadHook> {
+        if owned(hook.krate) {
+            entries.push(format!("hook:{}", hook.krate));
+        }
+    }
+
+    entries
+}
+
+#[doc(hidden)]
+pub fn manifest() -> Vec<String> {
+    manifest_of(|_| true)
 }
 
 fn log(level: u8, msg: &str) {
@@ -305,6 +342,48 @@ macro_rules! entry {
     };
 }
 
+#[cfg(feature = "static-link")]
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __native_exports {
+    () => {};
+}
+
+#[macro_export]
+macro_rules! static_modules {
+    ($(
+        $name:literal => $krate:ident {
+            crates: [$($owned:literal),* $(,)?],
+            expected: [$($entry:literal),* $(,)?] $(,)?
+        }
+    ),* $(,)?) => {
+        #[unsafe(no_mangle)]
+        pub extern "C" fn rusteal_static_modules(
+            count: *mut u32,
+        ) -> *const $crate::ffi::RustealStaticModule {
+            static MODULES: &[$crate::ffi::RustealStaticModule] = &[$(
+                $crate::ffi::RustealStaticModule {
+                    name: $name.as_ptr(),
+                    name_len: $name.len() as u32,
+                    exports: &$krate::__RUSTEAL_EXPORTS,
+                }
+            ),*];
+
+            $(
+                $krate::__RUSTEAL_MODULE.claim_crates(&[$($owned),*]);
+                $krate::__RUSTEAL_MODULE.expect(&[$($entry),*]);
+            )*
+
+            if !count.is_null() {
+                unsafe { *count = MODULES.len() as u32 };
+            }
+
+            MODULES.as_ptr()
+        }
+    };
+}
+
+#[cfg(not(feature = "static-link"))]
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __native_exports {

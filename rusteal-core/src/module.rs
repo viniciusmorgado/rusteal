@@ -94,6 +94,7 @@ pub struct Module {
     funcs: &'static FuncTable,
     id: OnceLock<ModuleId>,
     crates: OnceLock<&'static [&'static str]>,
+    expected: OnceLock<&'static [&'static str]>,
     state: AtomicU8,
 }
 
@@ -109,6 +110,7 @@ impl Module {
             funcs,
             id: OnceLock::new(),
             crates: OnceLock::new(),
+            expected: OnceLock::new(),
             state: AtomicU8::new(IDLE),
         }
     }
@@ -136,6 +138,14 @@ impl Module {
 
     pub fn claim_crates(&self, crates: &'static [&'static str]) {
         let _ = self.crates.set(crates);
+    }
+
+    pub fn expect(&self, registrations: &'static [&'static str]) {
+        let _ = self.expected.set(registrations);
+    }
+
+    pub fn expected(&self) -> Option<&'static [&'static str]> {
+        self.expected.get().copied()
     }
 
     pub fn owns(&self, krate: &str) -> bool {
