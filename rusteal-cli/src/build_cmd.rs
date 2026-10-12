@@ -377,6 +377,8 @@ impl BuildContext {
                 None => rusteal_codegen::run_generate(&self.layout.root),
                 Some(plugin) => rusteal_codegen::run_generate_plugin(&self.layout.root, plugin),
             }
+
+            crate::migrate::bindings_dependency(&library.rust_workspace, &library.crate_name);
         }
     }
 
@@ -400,6 +402,7 @@ impl BuildContext {
                 std::process::exit(1);
             }
 
+            crate::migrate::bindings_dependency(&library.rust_workspace, &library.crate_name);
             eprintln!("  {}: {}", library.label, library.crate_name);
 
             let member = library

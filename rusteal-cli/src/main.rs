@@ -1,5 +1,6 @@
 mod build_cmd;
 mod global_config;
+mod migrate;
 mod new_cmd;
 mod optimizations;
 mod package_cmd;
