@@ -26,6 +26,16 @@ pub struct RustealApiTable {
     pub func_table: *const *const c_void,
     pub func_count: u32,
     pub func_fingerprint: u64,
+
+    pub platform: *const RustealPlatformApi,
+}
+
+#[repr(C)]
+pub struct RustealPlatformApi {
+    pub launch_task: unsafe extern "C" fn(run: *const c_void, data: *mut u8) -> bool,
+    pub seconds: unsafe extern "C" fn() -> f64,
+    pub sleep: unsafe extern "C" fn(seconds: f32),
+    pub is_game_thread: unsafe extern "C" fn() -> bool,
 }
 
 unsafe impl Send for RustealApiTable {}

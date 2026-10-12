@@ -26,7 +26,8 @@ const _: () = assert!(offset_of!(crate::api_table::RustealErrorReport, object) =
 const _: () = assert!(offset_of!(crate::api_table::RustealErrorReport, file) == 48);
 const _: () = assert!(offset_of!(crate::api_table::RustealErrorReport, column) == 64);
 
-const _: () = assert!(size_of::<crate::api_table::RustealApiTable>() == 128);
+const _: () = assert!(size_of::<crate::api_table::RustealApiTable>() == 136);
+const _: () = assert!(offset_of!(crate::api_table::RustealApiTable, platform) == 128);
 const _: () = assert!(offset_of!(crate::api_table::RustealApiTable, func_table) == 104);
 const _: () = assert!(offset_of!(crate::api_table::RustealApiTable, func_count) == 112);
 const _: () = assert!(offset_of!(crate::api_table::RustealApiTable, func_fingerprint) == 120);
