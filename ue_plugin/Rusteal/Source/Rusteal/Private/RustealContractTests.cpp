@@ -58,3 +58,12 @@ static_assert(offsetof(FRustealErrorReport, file) == 48,
               "FRustealErrorReport::file at offset 48");
 static_assert(offsetof(FRustealErrorReport, column) == 64,
               "FRustealErrorReport::column at offset 64");
+
+static_assert(sizeof(FRustealApiTable) == 128,
+              "FRustealApiTable must be 128 bytes");
+static_assert(offsetof(FRustealApiTable, func_table) == 104,
+              "FRustealApiTable::func_table at offset 104");
+static_assert(offsetof(FRustealApiTable, func_count) == 112,
+              "FRustealApiTable::func_count at offset 112");
+static_assert(offsetof(FRustealApiTable, func_fingerprint) == 120,
+              "FRustealApiTable::func_fingerprint at offset 120");

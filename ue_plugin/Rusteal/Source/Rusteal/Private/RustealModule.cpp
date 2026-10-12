@@ -49,6 +49,7 @@ extern void RustealPinnedShutdown();
 extern void RustealFillFuncTable();
 extern void **RustealGetFuncTable();
 extern uint32_t RustealGetFuncCount();
+extern uint64_t RustealGetFuncFingerprint();
 
 #define LOCTEXT_NAMESPACE "FRustealModule"
 
@@ -438,7 +439,7 @@ static bool ReloadLibrary(FRustealLibrary &Library) {
 
 static bool RegisterLibrary(FName Name, const FString &PackagePath,
                             const FString &LibraryPath, void *const *FuncTable,
-                            uint32 FuncCount) {
+                            uint32 FuncCount, uint64 FuncFingerprint) {
   FRustealLibrary *Library = FindLibrary(Name);
 
   if (Library && Library->IsLoaded()) {
@@ -461,6 +462,7 @@ static bool RegisterLibrary(FName Name, const FString &PackagePath,
   Library->Table = GApiTable;
   Library->Table.func_table = reinterpret_cast<const void *const *>(FuncTable);
   Library->Table.func_count = FuncCount;
+  Library->Table.func_fingerprint = FuncFingerprint;
   const bool bLoaded = LoadLibrary(*Library);
   RustealOnLibraryRegistered().Broadcast(Name, LibraryPath);
   return bLoaded;
@@ -468,14 +470,29 @@ static bool RegisterLibrary(FName Name, const FString &PackagePath,
 
 bool RustealRegisterLibrary(FName Name, const FString &LibraryPath,
                             void *const *FuncTable, uint32 FuncCount) {
+  return RustealRegisterLibraryChecked(Name, LibraryPath, FuncTable, FuncCount,
+                                       0);
+}
+
+bool RustealRegisterLibraryChecked(FName Name, const FString &LibraryPath,
+                                   void *const *FuncTable, uint32 FuncCount,
+                                   uint64 FuncFingerprint) {
   FModuleManager::Get().LoadModuleChecked<IModuleInterface>(TEXT("Rusteal"));
 
   return RegisterLibrary(Name, TEXT("/Script/") + Name.ToString(), LibraryPath,
-                         FuncTable, FuncCount);
+                         FuncTable, FuncCount, FuncFingerprint);
 }
 
 bool RustealRegisterPluginLibrary(const FString &PluginName,
                                   void *const *FuncTable, uint32 FuncCount) {
+  return RustealRegisterPluginLibraryChecked(PluginName, FuncTable, FuncCount,
+                                             0);
+}
+
+bool RustealRegisterPluginLibraryChecked(const FString &PluginName,
+                                         void *const *FuncTable,
+                                         uint32 FuncCount,
+                                         uint64 FuncFingerprint) {
   TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(PluginName);
 
   if (!Plugin.IsValid()) {
@@ -492,7 +509,8 @@ bool RustealRegisterPluginLibrary(const FString &PluginName,
                       FPlatformProcess::GetBinariesSubdirectory(),
                       RustealLibraryFileName(TEXT("rusteal_") + PluginName));
 
-  return RustealRegisterLibrary(FName(*PluginName), Path, FuncTable, FuncCount);
+  return RustealRegisterLibraryChecked(FName(*PluginName), Path, FuncTable,
+                                       FuncCount, FuncFingerprint);
 }
 
 void RustealUnregisterLibrary(FName Name) {
@@ -561,7 +579,8 @@ void FRustealModule::StartupModule() {
       RustealLibraryFileName(TEXT("rusteal")));
 
   RegisterLibrary(FName(FApp::GetProjectName()), TEXT("/Script/Rusteal"),
-                  GamePath, RustealGetFuncTable(), RustealGetFuncCount());
+                  GamePath, RustealGetFuncTable(), RustealGetFuncCount(),
+                  RustealGetFuncFingerprint());
 }
 
 void FRustealModule::ShutdownModule() {

@@ -512,6 +512,7 @@ struct FRustealApiTable {
 
   const void *const *func_table;
   uint32 func_count;
+  uint64 func_fingerprint;
 };
 
 struct FRustealRustCallbacks {
