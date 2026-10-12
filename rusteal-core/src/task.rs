@@ -1,9 +1,9 @@
 use std::collections::BTreeMap;
+use std::ffi::c_void;
 use std::panic::AssertUnwindSafe;
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Mutex, OnceLock};
-use std::thread::ThreadId;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use crate::lock_or_recover;
 use crate::module::{self, ModuleId};
@@ -21,7 +21,6 @@ struct ModuleTasks {
 
 static TASKS: Mutex<BTreeMap<ModuleId, ModuleTasks>> = Mutex::new(BTreeMap::new());
 static NEXT_TICKER: AtomicU64 = AtomicU64::new(1);
-static GAME_THREAD: OnceLock<ThreadId> = OnceLock::new();
 
 fn with_tasks<R>(module: ModuleId, f: impl FnOnce(&mut ModuleTasks) -> R) -> R {
     f(lock_or_recover(&TASKS).entry(module).or_default())
@@ -35,10 +34,37 @@ fn log(level: u8, message: &str) {
     }
 }
 
+fn engine() -> bool {
+    crate::api::is_api_initialized() && !crate::api::api().platform.is_null()
+}
+
 pub fn is_game_thread() -> bool {
-    GAME_THREAD
-        .get()
-        .is_some_and(|id| *id == std::thread::current().id())
+    if engine() {
+        unsafe { crate::ffi_dispatch::platform_is_game_thread() }
+    } else {
+        crate::std_fallback::is_game_thread()
+    }
+}
+
+extern "C" fn run_job(data: *mut u8) {
+    let job = unsafe { Box::from_raw(data as *mut Job) };
+    let _ = std::panic::catch_unwind(AssertUnwindSafe(job));
+}
+
+fn launch(job: Job) -> bool {
+    if !engine() {
+        return crate::std_fallback::spawn(job);
+    }
+
+    let data = Box::into_raw(Box::new(job));
+    let run = run_job as extern "C" fn(*mut u8) as *const c_void;
+    let launched = unsafe { crate::ffi_dispatch::platform_launch_task(run, data as *mut u8) };
+
+    if !launched {
+        drop(unsafe { Box::from_raw(data) });
+    }
+
+    launched
 }
 
 pub fn run_on_game_thread(f: impl FnOnce() + Send + 'static) {
@@ -56,29 +82,27 @@ pub fn spawn<T: Send + 'static>(
     let owner = module::current();
     with_tasks(owner, |tasks| tasks.running += 1);
 
-    let started = std::thread::Builder::new()
-        .name("rusteal-task".into())
-        .spawn(move || {
-            let _scope = module::scope(owner);
-            let result = std::panic::catch_unwind(AssertUnwindSafe(work));
+    let started = launch(Box::new(move || {
+        let _scope = module::scope(owner);
+        let result = std::panic::catch_unwind(AssertUnwindSafe(work));
 
-            match result {
-                Ok(value) => queue_for(owner, Box::new(move || done(value))),
-                Err(_) => queue_for(
-                    owner,
-                    Box::new(|| log(crate::LOG_ERROR, "[Rusteal] task::spawn: the work panicked")),
-                ),
-            }
+        match result {
+            Ok(value) => queue_for(owner, Box::new(move || done(value))),
+            Err(_) => queue_for(
+                owner,
+                Box::new(|| log(crate::LOG_ERROR, "[Rusteal] task::spawn: the work panicked")),
+            ),
+        }
 
-            with_tasks(owner, |tasks| tasks.running -= 1);
-        });
+        with_tasks(owner, |tasks| tasks.running -= 1);
+    }));
 
-    if started.is_err() {
+    if !started {
         with_tasks(owner, |tasks| tasks.running -= 1);
 
         log(
             crate::LOG_ERROR,
-            "[Rusteal] task::spawn: could not start a thread",
+            "[Rusteal] task::spawn: the engine could not start the task",
         );
     }
 }
@@ -112,7 +136,7 @@ pub fn on_tick(f: impl FnMut(f32) + Send + 'static) -> TickHandle {
 
 #[doc(hidden)]
 pub fn mark_game_thread() {
-    let _ = GAME_THREAD.set(std::thread::current().id());
+    crate::std_fallback::mark_game_thread();
 }
 
 #[doc(hidden)]
@@ -150,7 +174,7 @@ pub fn tick(delta_seconds: f32) {
 #[doc(hidden)]
 pub fn shutdown() {
     let module = module::current();
-    let started = Instant::now();
+    let started = crate::time::Instant::now();
     let mut warned = false;
 
     loop {
@@ -169,7 +193,7 @@ pub fn shutdown() {
             );
         }
 
-        std::thread::sleep(Duration::from_millis(1));
+        crate::time::sleep(Duration::from_millis(1));
     }
 
     let finished = lock_or_recover(&TASKS).remove(&module);
@@ -181,6 +205,7 @@ mod tests {
     use super::*;
     use crate::module::{FuncTable, Module};
     use std::sync::Arc;
+    use std::time::Instant;
 
     static FUNCS: FuncTable = FuncTable::new(0, 0);
     static SOLO: Module = Module::new("task_solo", "", &FUNCS);

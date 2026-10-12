@@ -337,6 +337,7 @@ mod tests {
             func_table: funcs,
             func_count: count,
             func_fingerprint: fingerprint,
+            platform: std::ptr::null(),
         }
     }
 
