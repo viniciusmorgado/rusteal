@@ -25,6 +25,7 @@ pub struct RustealApiTable {
 
     pub func_table: *const *const c_void,
     pub func_count: u32,
+    pub func_fingerprint: u64,
 }
 
 unsafe impl Send for RustealApiTable {}

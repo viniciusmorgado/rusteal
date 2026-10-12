@@ -1,3 +1,4 @@
+use crate::api_table::RustealApiTable;
 use crate::handles::UObjectHandle;
 
 #[repr(C)]
@@ -15,4 +16,12 @@ pub struct RustealRustCallbacks {
     pub notify_pinned_destroyed: extern "C" fn(handle: UObjectHandle),
 
     pub on_tick: extern "C" fn(delta_seconds: f32),
+}
+
+#[repr(C)]
+pub struct RustealModuleExports {
+    pub version: u32,
+    pub init: extern "C" fn(api_table: *const RustealApiTable) -> *const RustealRustCallbacks,
+    pub shutdown: extern "C" fn(),
+    pub callbacks: extern "C" fn() -> *const RustealRustCallbacks,
 }
