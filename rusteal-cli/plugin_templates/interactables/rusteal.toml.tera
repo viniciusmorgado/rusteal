@@ -10,7 +10,7 @@
 
 [plugin]
 # The cdylib package in Rust/ deployed as the plugin's Rust library
-# (Binaries/<Platform>/librusteal_{{ plugin }}.so, rusteal_{{ plugin }}.dll).
+# (Binaries/<Platform>/librusteal_{{ plugin }}.so or .dylib, rusteal_{{ plugin }}.dll).
 crate = "{{ crate_name }}"
 # Where the library runs: "runtime" (games and the editor, a Runtime module)
 # or "editor" (the editor only, an Editor module).
