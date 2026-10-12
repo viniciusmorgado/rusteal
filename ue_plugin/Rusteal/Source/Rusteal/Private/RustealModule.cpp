@@ -162,9 +162,12 @@ static FRustealLibrary *FindLibrary(FName Name) {
   return nullptr;
 }
 
+// The name `rusteal build` deploys: lib<stem> everywhere but Windows. Not
+// FPlatformProcess::GetModulePrefix(), which is empty on Mac.
 FString RustealLibraryFileName(const FString &Stem) {
-  return FString::Printf(TEXT("%s%s.%s"), FPlatformProcess::GetModulePrefix(),
-                         *Stem, FPlatformProcess::GetModuleExtension());
+  return FString::Printf(TEXT("%s%s.%s"),
+                         PLATFORM_WINDOWS ? TEXT("") : TEXT("lib"), *Stem,
+                         FPlatformProcess::GetModuleExtension());
 }
 
 static FString HotCopyPath(const FRustealLibrary &Library) {
