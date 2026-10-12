@@ -13,7 +13,7 @@
 #include "RustealLibrary.h"
 #include "URustealReifiedClass.h"
 
-#if PLATFORM_LINUX || PLATFORM_MAC
+#if PLATFORM_LINUX
 #include <unistd.h>
 #endif
 
@@ -162,9 +162,12 @@ static FRustealLibrary *FindLibrary(FName Name) {
   return nullptr;
 }
 
+// The name `rusteal build` deploys: lib<stem> everywhere but Windows. Not
+// FPlatformProcess::GetModulePrefix(), which is empty on Mac.
 FString RustealLibraryFileName(const FString &Stem) {
-  return FString::Printf(TEXT("%s%s.%s"), FPlatformProcess::GetModulePrefix(),
-                         *Stem, FPlatformProcess::GetModuleExtension());
+  return FString::Printf(TEXT("%s%s.%s"),
+                         PLATFORM_WINDOWS ? TEXT("") : TEXT("lib"), *Stem,
+                         FPlatformProcess::GetModuleExtension());
 }
 
 static FString HotCopyPath(const FRustealLibrary &Library) {
@@ -265,8 +268,10 @@ static bool LoadLibraryFile(FRustealLibrary &Library, const FString &LoadPath) {
   return true;
 }
 
+// Not a hard link on Mac: dlclose never unloads a Rust library there, and
+// dlopen returns the library still loaded from the same file (inode).
 static bool MakeLoadCopy(const FString &Source, const FString &Copy) {
-#if PLATFORM_LINUX || PLATFORM_MAC
+#if PLATFORM_LINUX
   IFileManager::Get().Delete(*Copy, false, true, true);
 
   if (link(TCHAR_TO_UTF8(*Source), TCHAR_TO_UTF8(*Copy)) == 0) {

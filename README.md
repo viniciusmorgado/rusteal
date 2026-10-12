@@ -50,7 +50,7 @@ questions are tracked in the
 
 | Chapter | What you find there |
 |---|---|
-| [Getting started](https://viniciusmorgado.github.io/game.rusteal.github.io/getting_started/prerequisites.html) | The prerequisites on Linux and Windows, installing the CLI, your first project, its layout, upgrades, and adding Rusteal to an existing project. |
+| [Getting started](https://viniciusmorgado.github.io/game.rusteal.github.io/getting_started/prerequisites.html) | The prerequisites on Linux, Windows and macOS, installing the CLI, your first project, its layout, upgrades, and adding Rusteal to an existing project. |
 | [Templates](https://viniciusmorgado.github.io/game.rusteal.github.io/getting_started/templates.html) | Every engine template with its gameplay written in Rust (`first-person`, `third-person`, `top-down`, `vehicle`, `vr`, `ar`, `intro`), each variant with its screenshot, controls and classes. |
 | [Features](https://viniciusmorgado.github.io/game.rusteal.github.io/getting_started/features.html) | Gameplay any template can take with `--feature`: copycat mannequins, checkpoints, triggers and doors, the tour pieces, and the RustRover setup. |
 | [The rusteal CLI](https://viniciusmorgado.github.io/game.rusteal.github.io/cli/overview.html) | The build pipeline, binding more of the engine, development and release builds, platform optimizations. |
@@ -84,7 +84,9 @@ Rusteal does not intend to stay compatible with the original uika, unless its au
 |----------|--------|
 | Linux (x64) | Supported |
 | Windows (x64) | Supported |
-| macOS | Not yet tested |
+| macOS (Apple silicon) | Supported |
+
+macOS on Intel processors has not been tested, and packaging a game on macOS is not verified yet ([Known limits](https://viniciusmorgado.github.io/game.rusteal.github.io/reference/limits.html)).
 
 Rusteal does not build for Android, iOS or consoles yet; that work is under way ([Known limits](https://viniciusmorgado.github.io/game.rusteal.github.io/reference/limits.html)).
 
