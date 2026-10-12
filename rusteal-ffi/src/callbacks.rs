@@ -25,3 +25,12 @@ pub struct RustealModuleExports {
     pub shutdown: extern "C" fn(),
     pub callbacks: extern "C" fn() -> *const RustealRustCallbacks,
 }
+
+#[repr(C)]
+pub struct RustealStaticModule {
+    pub name: *const u8,
+    pub name_len: u32,
+    pub exports: *const RustealModuleExports,
+}
+
+unsafe impl Sync for RustealStaticModule {}
