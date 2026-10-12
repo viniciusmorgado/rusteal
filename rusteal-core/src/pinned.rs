@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::lock_or_recover;
+use crate::module::{self, ModuleId};
 
 use rusteal_ffi::UObjectHandle;
 
@@ -13,22 +14,24 @@ use crate::ffi_dispatch;
 use crate::object_ref::{Checked, UObjectRef};
 use crate::traits::{HasParent, UeClass, UeHandle, ValidHandle};
 
-fn alive_registry() -> &'static Mutex<HashMap<u64, Arc<AtomicBool>>> {
-    static REGISTRY: OnceLock<Mutex<HashMap<u64, Arc<AtomicBool>>>> = OnceLock::new();
+type AliveRegistry = HashMap<u64, (ModuleId, Arc<AtomicBool>)>;
+
+fn alive_registry() -> &'static Mutex<AliveRegistry> {
+    static REGISTRY: OnceLock<Mutex<AliveRegistry>> = OnceLock::new();
     REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
 pub fn notify_pinned_destroyed(handle: UObjectHandle) {
     if let Ok(registry) = alive_registry().lock()
-        && let Some(flag) = registry.get(&handle.to_addr())
+        && let Some((_, flag)) = registry.get(&handle.to_addr())
     {
         flag.store(false, Ordering::Relaxed);
     }
 }
 
-pub fn clear_all() {
+pub fn clear_module(module: ModuleId) {
     if let Ok(mut registry) = alive_registry().lock() {
-        registry.clear();
+        registry.retain(|_, (owner, _)| *owner != module);
     }
 }
 
@@ -50,7 +53,8 @@ impl<T: UeClass> Pinned<T> {
 
         let alive = Arc::new(AtomicBool::new(true));
 
-        lock_or_recover(alive_registry()).insert(obj.raw().to_addr(), alive.clone());
+        lock_or_recover(alive_registry())
+            .insert(obj.raw().to_addr(), (module::current(), alive.clone()));
 
         unsafe {
             ffi_dispatch::lifecycle_add_gc_root(obj.raw());

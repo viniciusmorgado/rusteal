@@ -15,18 +15,22 @@ thread_local! {
 }
 
 pub fn install_panic_hook() {
-    let previous = std::panic::take_hook();
+    static INSTALLED: std::sync::Once = std::sync::Once::new();
 
-    std::panic::set_hook(Box::new(move |info| {
-        let site = info.location().map(|location| PanicSite {
-            file: location.file().to_owned(),
-            line: location.line(),
-            column: location.column(),
-        });
+    INSTALLED.call_once(|| {
+        let previous = std::panic::take_hook();
 
-        PANIC_SITE.with(|slot| *slot.borrow_mut() = site);
-        previous(info);
-    }));
+        std::panic::set_hook(Box::new(move |info| {
+            let site = info.location().map(|location| PanicSite {
+                file: location.file().to_owned(),
+                line: location.line(),
+                column: location.column(),
+            });
+
+            PANIC_SITE.with(|slot| *slot.borrow_mut() = site);
+            previous(info);
+        }));
+    });
 }
 
 pub fn ffi_boundary<F, R>(default: R, f: F) -> R

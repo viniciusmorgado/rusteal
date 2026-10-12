@@ -16,6 +16,7 @@ pub mod ffi_guard;
 pub mod fname;
 pub mod input;
 pub mod logging;
+pub mod module;
 pub mod object_ref;
 pub mod pinned;
 pub mod reify_registry;
@@ -40,6 +41,7 @@ pub use error::{
 };
 pub use ffi_guard::ffi_boundary;
 pub use logging::{LOG_DISPLAY, LOG_ERROR, LOG_WARNING};
+pub use module::{FuncTable, Module, ModuleId, type_id};
 pub use object_ref::{Checked, ObjectPointer, UObjectRef};
 pub use pinned::Pinned;
 pub use script_interface::ScriptInterface;
