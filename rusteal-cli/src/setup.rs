@@ -260,6 +260,12 @@ fn generate_cpp_stubs(project_path: &Path) {
         &project_path.join("Plugins/Rusteal/Source/Rusteal/Generated"),
         "",
     );
+
+    let switch = project_path.join(crate::static_link::SWITCH);
+
+    if !switch.exists() {
+        crate::static_link::set_switch(project_path, false).unwrap_or_else(|e| panic!("{e}"));
+    }
 }
 
 pub fn write_cpp_stubs(generated_dir: &Path, prefix: &str) {

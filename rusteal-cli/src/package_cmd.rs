@@ -5,8 +5,16 @@ use rusteal_codegen::config::{find_plugins, find_uproject};
 
 use crate::build_cmd::{self, HostPlatform};
 use crate::optimizations::{self, Snapshot, Switch};
+use crate::static_link;
 
-pub fn run_package(root: &Path, engine: &Path, output: &Path, configuration: &str, switch: Switch) {
+pub fn run_package(
+    root: &Path,
+    engine: &Path,
+    output: &Path,
+    configuration: &str,
+    switch: Switch,
+    link_statically: bool,
+) {
     eprintln!("rusteal package: the libraries, release profile");
     build_cmd::run_build(root, engine, None, 1, true, None);
 
@@ -31,6 +39,35 @@ pub fn run_package(root: &Path, engine: &Path, output: &Path, configuration: &st
         platform.ubt_platform
     );
 
+    if link_statically {
+        let archive_name = platform.static_archive_filename("rusteal_static");
+
+        let target = static_link::Target {
+            rust_target: None,
+            archive_name: &archive_name,
+            cargo_args: &[],
+            rustflags: &[],
+            toolchain: None,
+        };
+
+        let artifact = static_link::build(root, &target).unwrap_or_else(|e| fail(&e));
+
+        let installed = static_link::install(root, &artifact, platform.ubt_platform)
+            .unwrap_or_else(|e| fail(&e));
+
+        eprintln!(
+            "rusteal package: the Rust libraries are linked into the game from {}{}",
+            installed.display(),
+            if artifact.system_libraries.is_empty() {
+                String::new()
+            } else {
+                format!(" (with {})", artifact.system_libraries.join(", "))
+            }
+        );
+
+        static_link::set_switch(root, true).unwrap_or_else(|e| fail(&e));
+    }
+
     let snapshot = Snapshot::take(root);
     optimizations::report("package", root, switch);
 
@@ -53,8 +90,24 @@ pub fn run_package(root: &Path, engine: &Path, output: &Path, configuration: &st
 
     snapshot.restore();
 
+    if link_statically {
+        static_link::set_switch(root, false).unwrap_or_else(|e| fail(&e));
+    }
+
     if code != 0 {
         std::process::exit(code);
+    }
+
+    if link_statically {
+        let staged = static_link::staged_dynamic_libraries(&output);
+
+        for library in &staged {
+            eprintln!(
+                "Warning: {} was staged, though the game links the Rust code statically: its \
+                 plugin's Build.cs still adds it (see `Rusteal.AddRustLibrary`)",
+                library.display()
+            );
+        }
     }
 
     eprintln!(

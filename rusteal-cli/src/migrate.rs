@@ -44,6 +44,50 @@ pub fn bindings_dependency(workspace: &Path, crate_name: &str) -> Vec<PathBuf> {
     changed
 }
 
+pub fn crate_types(manifest: &Path) -> bool {
+    let Ok(text) = std::fs::read_to_string(manifest) else {
+        return false;
+    };
+
+    let Some(new) = rewrite_crate_types(&text) else {
+        return false;
+    };
+
+    std::fs::write(manifest, new)
+        .unwrap_or_else(|e| panic!("Failed to write {}: {e}", manifest.display()));
+
+    eprintln!(
+        "  {}: the library is also built as an rlib, for the static build",
+        manifest.display()
+    );
+
+    true
+}
+
+fn rewrite_crate_types(text: &str) -> Option<String> {
+    let mut changed = false;
+
+    let lines: Vec<String> = text
+        .lines()
+        .map(|line| {
+            let trimmed = line.trim();
+
+            if trimmed.starts_with("crate-type")
+                && trimmed.contains("\"cdylib\"")
+                && !trimmed.contains("\"rlib\"")
+                && let Some(close) = line.rfind(']')
+            {
+                changed = true;
+                format!("{}, \"rlib\"{}", &line[..close], &line[close..])
+            } else {
+                line.to_string()
+            }
+        })
+        .collect();
+
+    changed.then(|| join(text, lines))
+}
+
 fn rewrite_dependency(text: &str, package: &str) -> Option<String> {
     let mut changed = false;
 
@@ -128,6 +172,17 @@ mod tests {
             "migrating twice"
         );
         assert!(rewrite_dependency("[dependencies]\nbindings-extra = \"1\"\n", "x").is_none());
+    }
+
+    #[test]
+    fn a_dynamic_library_is_also_an_rlib() {
+        assert_eq!(
+            rewrite_crate_types("[lib]\ncrate-type = [\"cdylib\"]\n").unwrap(),
+            "[lib]\ncrate-type = [\"cdylib\", \"rlib\"]\n"
+        );
+
+        assert!(rewrite_crate_types("[lib]\ncrate-type = [\"cdylib\", \"rlib\"]\n").is_none());
+        assert!(rewrite_crate_types("[lib]\nname = \"x\"\n").is_none());
     }
 
     #[test]

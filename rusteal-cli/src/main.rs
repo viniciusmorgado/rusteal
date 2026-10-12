@@ -7,6 +7,7 @@ mod package_cmd;
 mod plugin_cmd;
 mod project_version;
 mod setup;
+mod static_link;
 mod sync_plugin;
 mod templates;
 mod upgrade_cmd;
@@ -86,6 +87,8 @@ enum Commands {
         output: Option<PathBuf>,
         #[arg(long)]
         shipping: bool,
+        #[arg(long = "static")]
+        link_statically: bool,
         #[arg(long, value_parser = optimizations::Switch::parse, default_value = "on")]
         optimizations: optimizations::Switch,
     },
@@ -182,6 +185,7 @@ fn main() {
             project,
             output,
             shipping,
+            link_statically,
             optimizations,
         } => {
             let root = project_root(project.as_deref());
@@ -189,7 +193,14 @@ fn main() {
             let engine = global_config::engine_path();
             let output = output.unwrap_or_else(|| root.join("Packaged"));
             let configuration = if shipping { "Shipping" } else { "Development" };
-            package_cmd::run_package(&root, &engine, &output, configuration, optimizations);
+            package_cmd::run_package(
+                &root,
+                &engine,
+                &output,
+                configuration,
+                optimizations,
+                link_statically,
+            );
         }
         Commands::Setup { project } => {
             if project.join("Rust/Cargo.toml").exists() {
