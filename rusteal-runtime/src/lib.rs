@@ -11,6 +11,12 @@ pub extern crate inventory as __inventory;
 pub mod prelude;
 mod ue_log;
 
+#[cfg(feature = "engine-allocator")]
+mod engine_allocator;
+
+#[cfg(feature = "engine-allocator")]
+pub use engine_allocator::EngineAllocator;
+
 pub use glam;
 
 use std::panic::AssertUnwindSafe;
