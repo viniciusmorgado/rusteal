@@ -5,7 +5,13 @@ use rusteal_codegen::config::{find_plugins, find_uproject};
 
 use crate::build_cmd::{self, HostPlatform};
 use crate::optimizations::{self, Snapshot, Switch};
+use crate::platform::{self, Platform};
 use crate::static_link;
+
+pub fn target_platform(name: Option<&str>) -> Platform {
+    let name = name.unwrap_or(HostPlatform::CURRENT.ubt_platform);
+    platform::find(name, &platform::search_dirs()).unwrap_or_else(|e| fail(&e))
+}
 
 pub fn run_package(
     root: &Path,
@@ -14,7 +20,18 @@ pub fn run_package(
     configuration: &str,
     switch: Switch,
     link_statically: bool,
+    target: &Platform,
 ) {
+    let host = HostPlatform::CURRENT.ubt_platform;
+
+    if !link_statically && (!target.is_host(host) || target.dynamic_library.is_none()) {
+        fail(&format!(
+            "{} is not this machine's platform ({host}): a game for it carries its Rust code \
+             linked in. Package it with --static.",
+            target.name
+        ));
+    }
+
     eprintln!("rusteal package: the libraries, release profile");
     build_cmd::run_build(root, engine, None, 1, true, None);
 
@@ -36,24 +53,31 @@ pub fn run_package(
 
     eprintln!(
         "rusteal package: BuildCookRun, {configuration}, {}",
-        platform.ubt_platform
+        target.name
     );
 
     if link_statically {
-        let archive_name = platform.static_archive_filename("rusteal_static");
+        let cargo_args = target.cargo_args();
 
-        let target = static_link::Target {
-            rust_target: None,
-            archive_name: &archive_name,
-            cargo_args: &[],
-            rustflags: &[],
-            toolchain: None,
+        let build = static_link::Target {
+            rust_target: target.rust_target.as_deref(),
+            archive_name: &target.static_archive,
+            cargo_args: &cargo_args,
+            rustflags: &target.rustflags,
+            toolchain: target.toolchain.as_deref(),
+            env: &target.env,
         };
 
-        let artifact = static_link::build(root, &target).unwrap_or_else(|e| fail(&e));
+        let mut artifact = static_link::build(root, &build).unwrap_or_else(|e| fail(&e));
 
-        let installed = static_link::install(root, &artifact, platform.ubt_platform)
-            .unwrap_or_else(|e| fail(&e));
+        for lib in &target.system_libraries {
+            if !artifact.system_libraries.contains(lib) {
+                artifact.system_libraries.push(lib.clone());
+            }
+        }
+
+        let installed =
+            static_link::install(root, &artifact, &target.name).unwrap_or_else(|e| fail(&e));
 
         eprintln!(
             "rusteal package: the Rust libraries are linked into the game from {}{}",
@@ -71,22 +95,26 @@ pub fn run_package(
     let snapshot = Snapshot::take(root);
     optimizations::report("package", root, switch);
 
-    let code = build_cmd::run_cmd_code(&[
-        uat.to_str().unwrap(),
-        "BuildCookRun",
-        &format!("-project={}", uproject.display()),
-        &format!("-platform={}", platform.ubt_platform),
-        &format!("-clientconfig={configuration}"),
-        "-build",
-        "-cook",
-        "-stage",
-        "-pak",
-        "-archive",
-        &format!("-archivedirectory={}", output.display()),
-        "-nop4",
-        "-unattended",
-        "-utf8output",
-    ]);
+    let mut uat_args = vec![
+        uat.to_str().unwrap().to_string(),
+        "BuildCookRun".to_string(),
+        format!("-project={}", uproject.display()),
+        format!("-platform={}", target.name),
+        format!("-clientconfig={configuration}"),
+        "-build".to_string(),
+        "-cook".to_string(),
+        "-stage".to_string(),
+        "-pak".to_string(),
+        "-archive".to_string(),
+        format!("-archivedirectory={}", output.display()),
+        "-nop4".to_string(),
+        "-unattended".to_string(),
+        "-utf8output".to_string(),
+    ];
+
+    uat_args.extend(target.uat_args.iter().cloned());
+    let uat_args: Vec<&str> = uat_args.iter().map(String::as_str).collect();
+    let code = build_cmd::run_cmd_code(&uat_args);
 
     snapshot.restore();
 

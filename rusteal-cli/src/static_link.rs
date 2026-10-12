@@ -37,6 +37,7 @@ pub struct Target<'a> {
     pub cargo_args: &'a [String],
     pub rustflags: &'a [String],
     pub toolchain: Option<&'a str>,
+    pub env: &'a BTreeMap<String, String>,
 }
 
 pub fn modules(root: &Path) -> Result<Vec<StaticModule>, String> {
@@ -534,6 +535,8 @@ pub fn build(root: &Path, target: &Target) -> Result<Artifact, String> {
     if !target.rustflags.is_empty() {
         command.env("RUSTFLAGS", target.rustflags.join(" "));
     }
+
+    command.envs(target.env);
 
     let output = command
         .stdout(Stdio::inherit())

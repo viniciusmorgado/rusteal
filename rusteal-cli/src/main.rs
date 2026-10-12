@@ -4,6 +4,7 @@ mod migrate;
 mod new_cmd;
 mod optimizations;
 mod package_cmd;
+mod platform;
 mod plugin_cmd;
 mod project_version;
 mod setup;
@@ -55,6 +56,10 @@ enum Commands {
         #[command(subcommand)]
         command: PluginCommands,
     },
+    Platform {
+        #[command(subcommand)]
+        command: PlatformCommands,
+    },
     Setup {
         project: PathBuf,
     },
@@ -89,6 +94,8 @@ enum Commands {
         shipping: bool,
         #[arg(long = "static")]
         link_statically: bool,
+        #[arg(long)]
+        platform: Option<String>,
         #[arg(long, value_parser = optimizations::Switch::parse, default_value = "on")]
         optimizations: optimizations::Switch,
     },
@@ -96,6 +103,12 @@ enum Commands {
         project: Option<PathBuf>,
     },
     SyncPlugin,
+}
+
+#[derive(Subcommand)]
+enum PlatformCommands {
+    List,
+    Show { name: String },
 }
 
 #[derive(Subcommand)]
@@ -186,6 +199,7 @@ fn main() {
             output,
             shipping,
             link_statically,
+            platform,
             optimizations,
         } => {
             let root = project_root(project.as_deref());
@@ -193,6 +207,8 @@ fn main() {
             let engine = global_config::engine_path();
             let output = output.unwrap_or_else(|| root.join("Packaged"));
             let configuration = if shipping { "Shipping" } else { "Development" };
+            let target = package_cmd::target_platform(platform.as_deref());
+
             package_cmd::run_package(
                 &root,
                 &engine,
@@ -200,7 +216,33 @@ fn main() {
                 configuration,
                 optimizations,
                 link_statically,
+                &target,
             );
+        }
+        Commands::Platform {
+            command: PlatformCommands::List,
+        } => {
+            for platform in platform::builtins() {
+                eprintln!("{} (built in)", platform.name);
+            }
+
+            for dir in platform::search_dirs() {
+                for entry in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
+                    if entry.path().extension().is_some_and(|ext| ext == "toml") {
+                        eprintln!("{}", entry.path().display());
+                    }
+                }
+            }
+        }
+        Commands::Platform {
+            command: PlatformCommands::Show { name },
+        } => {
+            let platform = platform::find(&name, &platform::search_dirs()).unwrap_or_else(|e| {
+                eprintln!("Error: {e}");
+                std::process::exit(1);
+            });
+
+            print!("{}", platform.to_toml());
         }
         Commands::Setup { project } => {
             if project.join("Rust/Cargo.toml").exists() {
@@ -367,5 +409,31 @@ mod tests {
         );
         assert!(Cli::try_parse_from(["rusteal", "package", "--optimizations", "no"]).is_err());
         assert!(Cli::try_parse_from(["rusteal", "new", "G", "--optimizations", "off"]).is_ok());
+    }
+
+    #[test]
+    fn package_takes_static_and_a_platform() {
+        let parsed = Cli::try_parse_from([
+            "rusteal",
+            "package",
+            "--static",
+            "--platform",
+            "packs/console.toml",
+        ])
+        .unwrap();
+
+        let Commands::Package {
+            link_statically,
+            platform,
+            ..
+        } = parsed.command
+        else {
+            panic!("not package");
+        };
+
+        assert!(link_statically);
+        assert_eq!(platform.as_deref(), Some("packs/console.toml"));
+        assert!(Cli::try_parse_from(["rusteal", "platform", "show", "Linux"]).is_ok());
+        assert!(Cli::try_parse_from(["rusteal", "platform", "list"]).is_ok());
     }
 }

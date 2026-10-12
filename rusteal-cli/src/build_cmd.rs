@@ -175,14 +175,6 @@ impl HostPlatform {
         )
     }
 
-    pub fn static_archive_filename(&self, stem: &str) -> String {
-        if self.lib_extension == "dll" {
-            format!("{stem}.lib")
-        } else {
-            format!("lib{stem}.a")
-        }
-    }
-
     pub fn deployed_lib_filename(&self, stem: &str) -> String {
         format!("{}{stem}.{}", self.lib_prefix, self.lib_extension)
     }
