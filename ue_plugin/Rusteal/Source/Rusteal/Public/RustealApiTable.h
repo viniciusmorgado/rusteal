@@ -494,6 +494,13 @@ struct FRustealWorldApi {
                                 RustealUStructHandle row_struct);
 };
 
+struct FRustealPlatformApi {
+  bool (*launch_task)(const void *run, uint8 *data);
+  double (*seconds)();
+  void (*sleep)(float seconds);
+  bool (*is_game_thread)();
+};
+
 struct FRustealApiTable {
   uint32 version;
 
@@ -513,6 +520,8 @@ struct FRustealApiTable {
   const void *const *func_table;
   uint32 func_count;
   uint64 func_fingerprint;
+
+  const FRustealPlatformApi *platform;
 };
 
 struct FRustealRustCallbacks {

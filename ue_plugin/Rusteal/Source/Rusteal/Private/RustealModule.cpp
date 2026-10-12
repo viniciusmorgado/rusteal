@@ -34,6 +34,7 @@ extern FRustealWorldApi GWorldApi;
 extern FRustealWidgetApi GWidgetApi;
 extern FRustealInputApi GInputApi;
 extern FRustealConsoleApi GConsoleApi;
+extern FRustealPlatformApi GPlatformApi;
 
 extern void RustealReifyRegisterDeleteListener();
 extern void RustealReifyUnregisterDeleteListener();
@@ -112,6 +113,7 @@ static void FillApiTable() {
   GApiTable.widget = &GWidgetApi;
   GApiTable.input = &GInputApi;
   GApiTable.console = &GConsoleApi;
+  GApiTable.platform = &GPlatformApi;
   GApiTableFilled = true;
 }
 
