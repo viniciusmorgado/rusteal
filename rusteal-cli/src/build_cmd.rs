@@ -134,6 +134,7 @@ pub struct HostPlatform {
     ubt_script: &'static str,
     pub uat_script: &'static str,
     pub ubt_platform: &'static str,
+    pub uat_package_flags: &'static [&'static str],
     lib_prefix: &'static str,
     lib_extension: &'static str,
 }
@@ -144,6 +145,7 @@ impl HostPlatform {
         ubt_script: "Engine/Build/BatchFiles/Build.bat",
         uat_script: "Engine/Build/BatchFiles/RunUAT.bat",
         ubt_platform: "Win64",
+        uat_package_flags: &[],
         lib_prefix: "",
         lib_extension: "dll",
     };
@@ -153,6 +155,7 @@ impl HostPlatform {
         ubt_script: "Engine/Build/BatchFiles/Linux/Build.sh",
         uat_script: "Engine/Build/BatchFiles/RunUAT.sh",
         ubt_platform: "Linux",
+        uat_package_flags: &[],
         lib_prefix: "lib",
         lib_extension: "so",
     };
@@ -162,6 +165,9 @@ impl HostPlatform {
         ubt_script: "Engine/Build/BatchFiles/Mac/Build.sh",
         uat_script: "Engine/Build/BatchFiles/RunUAT.sh",
         ubt_platform: "Mac",
+        // The archive step copies Binaries/Mac/<Game>.app, which only gets the
+        // cooked data and the staged libraries from the package step.
+        uat_package_flags: &["-package"],
         lib_prefix: "lib",
         lib_extension: "dylib",
     };
@@ -489,6 +495,10 @@ pub fn run_cmd(args: &[&str]) {
 }
 
 pub fn run_cmd_code(args: &[&str]) -> i32 {
+    run_cmd_code_env(args, &[])
+}
+
+pub fn run_cmd_code_env(args: &[&str], env: &[(&str, &Path)]) -> i32 {
     let display: String = args.to_vec().join(" ");
 
     let truncated = if display.len() > 200 {
@@ -501,6 +511,7 @@ pub fn run_cmd_code(args: &[&str]) -> i32 {
 
     let status = Command::new(args[0])
         .args(&args[1..])
+        .envs(env.iter().copied())
         .status()
         .unwrap_or_else(|e| panic!("Failed to run {}: {e}", args[0]));
 

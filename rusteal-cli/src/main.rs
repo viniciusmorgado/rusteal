@@ -10,6 +10,8 @@ mod sync_plugin;
 mod templates;
 mod upgrade_cmd;
 mod watch_cmd;
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+mod xcode_shim;
 
 use std::path::{Path, PathBuf};
 
