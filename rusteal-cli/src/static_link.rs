@@ -130,7 +130,20 @@ pub fn render_workspace(modules: &[StaticModule], pins: &Pins) -> String {
     out
 }
 
-fn render_member(package: &str, lib: bool, modules: &[StaticModule]) -> String {
+pub fn engine_allocator(root: &Path) -> bool {
+    std::fs::read_to_string(root.join("rusteal.toml"))
+        .ok()
+        .and_then(|text| text.parse::<toml::Table>().ok())
+        .and_then(|config| config.get("static")?.get("engine_allocator")?.as_bool())
+        .unwrap_or(true)
+}
+
+fn render_member(
+    package: &str,
+    lib: bool,
+    modules: &[StaticModule],
+    engine_allocator: bool,
+) -> String {
     let mut out = format!(
         "[package]\nname = \"{package}\"\nversion = \"0.0.0\"\nedition = \"2024\"\npublish = false\n\n"
     );
@@ -139,7 +152,13 @@ fn render_member(package: &str, lib: bool, modules: &[StaticModule]) -> String {
         out.push_str("[lib]\ncrate-type = [\"staticlib\"]\n\n");
     }
 
-    out.push_str("[dependencies]\nrusteal-runtime = { workspace = true }\n");
+    if engine_allocator {
+        out.push_str(
+            "[dependencies]\nrusteal-runtime = { workspace = true, features = [\"engine-allocator\"] }\n",
+        );
+    } else {
+        out.push_str("[dependencies]\nrusteal-runtime = { workspace = true }\n");
+    }
 
     for module in modules {
         out.push_str(&format!("{} = {{ workspace = true }}\n", module.package));
@@ -152,8 +171,17 @@ pub fn render_archive_lib(
     modules: &[StaticModule],
     owners: &BTreeMap<String, Vec<String>>,
     expected: &BTreeMap<String, Vec<String>>,
+    engine_allocator: bool,
 ) -> String {
-    let mut out = String::from("rusteal_runtime::static_modules! {\n");
+    let mut out = String::new();
+
+    if engine_allocator {
+        out.push_str(
+            "#[global_allocator]\nstatic ALLOCATOR: rusteal_runtime::EngineAllocator = rusteal_runtime::EngineAllocator;\n\n",
+        );
+    }
+
+    out.push_str("rusteal_runtime::static_modules! {\n");
 
     for module in modules {
         let quote = |items: &[String]| {
@@ -404,15 +432,21 @@ pub fn build(root: &Path, target: &Target) -> Result<Artifact, String> {
     );
 
     write(&dir.join("Cargo.toml"), &render_workspace(&modules, &pins))?;
+    let allocator = engine_allocator(root);
+
     write(
         &dir.join("archive/Cargo.toml"),
-        &render_member("rusteal-static", true, &modules),
+        &render_member("rusteal-static", true, &modules, allocator),
     )?;
 
     write(
         &dir.join("manifest/Cargo.toml"),
-        &render_member("rusteal-static-manifest", false, &modules),
+        &render_member("rusteal-static-manifest", false, &modules, false),
     )?;
+
+    if allocator {
+        eprintln!("  Rust allocates through the engine's FMemory ([static] engine_allocator)");
+    }
 
     write(
         &dir.join("manifest/src/main.rs"),
@@ -432,7 +466,7 @@ pub fn build(root: &Path, target: &Target) -> Result<Artifact, String> {
     if !dir.join("archive/src/lib.rs").exists() {
         write(
             &dir.join("archive/src/lib.rs"),
-            &render_archive_lib(&modules, &empty, &empty),
+            &render_archive_lib(&modules, &empty, &empty, allocator),
         )?;
     }
 
@@ -505,7 +539,7 @@ pub fn build(root: &Path, target: &Target) -> Result<Artifact, String> {
 
     write(
         &dir.join("archive/src/lib.rs"),
-        &render_archive_lib(&modules, &owners, &expected),
+        &render_archive_lib(&modules, &owners, &expected, allocator),
     )?;
 
     eprintln!("  building the static library (release, fat LTO)");
@@ -678,10 +712,18 @@ mod tests {
         let expected =
             BTreeMap::from([("ModLab".to_string(), vec!["class:mod_lab:Item".to_string()])]);
 
-        let lib = render_archive_lib(&modules, &owners, &expected);
+        let lib = render_archive_lib(&modules, &owners, &expected, false);
+        assert!(!lib.contains("global_allocator"));
         assert!(lib.contains("\"ModLab\" => mod_lab {"));
         assert!(lib.contains("crates: [\"mod_lab\"]"));
         assert!(lib.contains("expected: [\"class:mod_lab:Item\"]"));
+
+        let lib = render_archive_lib(&modules, &owners, &expected, true);
+        assert!(lib.starts_with("#[global_allocator]"));
+
+        let archive = render_member("rusteal-static", true, &modules, true);
+        assert!(archive.contains("features = [\"engine-allocator\"]"));
+        assert!(!render_member("m", false, &modules, false).contains("engine-allocator"));
     }
 
     fn metadata() -> serde_json::Value {

@@ -124,6 +124,16 @@ pub fn run_build(
         eprintln!("  Step {step_num} completed in {elapsed:.1}s\n");
     }
 
+    if steps.contains(&RUST_STEP) {
+        let workspaces: Vec<PathBuf> = ctx
+            .libraries
+            .iter()
+            .map(|library| library.rust_workspace.clone())
+            .collect();
+
+        crate::console_check::report(project_root, &workspaces);
+    }
+
     let overall = overall_start.elapsed().as_secs_f64();
     eprintln!("{}", "=".repeat(60));
     eprintln!("  All steps completed in {overall:.1}s");

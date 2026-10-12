@@ -1,4 +1,5 @@
 mod build_cmd;
+mod console_check;
 mod global_config;
 mod migrate;
 mod new_cmd;
