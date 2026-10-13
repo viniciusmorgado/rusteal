@@ -28,6 +28,19 @@ pub fn install_panic_hook() {
             });
 
             PANIC_SITE.with(|slot| *slot.borrow_mut() = site);
+
+            if cfg!(panic = "abort") && is_api_initialized() {
+                let payload = info.payload();
+
+                let message = payload
+                    .downcast_ref::<&str>()
+                    .copied()
+                    .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+                    .unwrap_or("unknown payload");
+
+                report_panic(message);
+            }
+
             previous(info);
         }));
     });
