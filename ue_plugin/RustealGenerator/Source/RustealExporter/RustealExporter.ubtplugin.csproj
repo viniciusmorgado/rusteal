@@ -16,7 +16,12 @@
     <Configurations>Debug;Release;Development</Configurations>
     <RootNamespace>Rusteal</RootNamespace>
     <AssemblyName>RustealExporter</AssemblyName>
-    <OutputPath>$(EngineDir)\Binaries\DotNET\UnrealBuildTool\Plugins\RustealExporter\</OutputPath>
+    <!-- In the plugin, not the engine: UBT keeps this path relative to the
+         .csproj and drops its leading "/" when that relative path climbs to
+         the root, a project on another volume than the engine (or under /tmp
+         on Linux). In the engine, projects at different Rusteal versions also
+         shared one RustealExporter.dll. -->
+    <OutputPath>..\..\Binaries\DotNET\UnrealBuildTool\Plugins\RustealExporter\</OutputPath>
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
     <DebugType>pdbonly</DebugType>
     <Nullable>enable</Nullable>
