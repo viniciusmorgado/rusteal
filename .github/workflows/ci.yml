@@ -45,3 +45,29 @@ jobs:
 
       - name: Audit the dependencies
         run: cargo audit
+
+  # The macOS code paths (#[cfg(target_os = "macos")]: the host platform, the
+  # Xcode workaround of `rusteal package`) are only compiled on a Mac. GitHub's
+  # macos-latest runners are Apple silicon, the platform Rusteal supports.
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.toml') }}
+
+      - name: Build
+        run: cargo build --workspace --verbose
+
+      - name: Test
+        run: cargo test --workspace --verbose
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --no-deps -- -D warnings
