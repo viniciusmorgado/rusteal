@@ -10,7 +10,7 @@
 # in its own configuration directory.
 
 [project]
-# The cdylib package in Rust/ deployed as the Rusteal library.
+# The game crate in Rust/, built as the Rusteal library.
 crate = "{{ crate_name }}"
 
 [codegen]

@@ -57,7 +57,8 @@ pub fn crate_types(manifest: &Path) -> bool {
         .unwrap_or_else(|e| panic!("Failed to write {}: {e}", manifest.display()));
 
     eprintln!(
-        "  {}: the library is also built as an rlib, for the static build",
+        "  {}: the library is a Rust library (rlib), which the static build links; \
+         `rusteal build` makes the editor's dynamic library from it",
         manifest.display()
     );
 
@@ -72,13 +73,10 @@ fn rewrite_crate_types(text: &str) -> Option<String> {
         .map(|line| {
             let trimmed = line.trim();
 
-            if trimmed.starts_with("crate-type")
-                && trimmed.contains("\"cdylib\"")
-                && !trimmed.contains("\"rlib\"")
-                && let Some(close) = line.rfind(']')
-            {
+            if trimmed.starts_with("crate-type") && trimmed.contains("\"cdylib\"") {
                 changed = true;
-                format!("{}, \"rlib\"{}", &line[..close], &line[close..])
+                let indent = &line[..line.len() - line.trim_start().len()];
+                format!("{indent}crate-type = [\"rlib\"]")
             } else {
                 line.to_string()
             }
@@ -175,13 +173,15 @@ mod tests {
     }
 
     #[test]
-    fn a_dynamic_library_is_also_an_rlib() {
-        assert_eq!(
-            rewrite_crate_types("[lib]\ncrate-type = [\"cdylib\"]\n").unwrap(),
-            "[lib]\ncrate-type = [\"cdylib\", \"rlib\"]\n"
-        );
+    fn a_library_crate_is_a_plain_rlib() {
+        for old in ["[\"cdylib\"]", "[\"cdylib\", \"rlib\"]"] {
+            assert_eq!(
+                rewrite_crate_types(&format!("[lib]\ncrate-type = {old}\n")).unwrap(),
+                "[lib]\ncrate-type = [\"rlib\"]\n"
+            );
+        }
 
-        assert!(rewrite_crate_types("[lib]\ncrate-type = [\"cdylib\", \"rlib\"]\n").is_none());
+        assert!(rewrite_crate_types("[lib]\ncrate-type = [\"rlib\"]\n").is_none());
         assert!(rewrite_crate_types("[lib]\nname = \"x\"\n").is_none());
     }
 

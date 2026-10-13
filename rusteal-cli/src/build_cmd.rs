@@ -61,7 +61,7 @@ pub fn run_build(
         (from..=5).collect()
     };
 
-    let cargo_step = format!("cargo build, {} profile (cdylib)", ctx.profile());
+    let cargo_step = format!("cargo rustc, {} profile (cdylib)", ctx.profile());
 
     let libraries = ctx
         .libraries
@@ -430,11 +430,13 @@ impl BuildContext {
             };
 
             let manifest_str = manifest.to_string_lossy().into_owned();
-            let mut args = vec!["cargo", "build", "--manifest-path", &manifest_str];
+            let mut args = vec!["cargo", "rustc", "--manifest-path", &manifest_str];
 
             if let Some(package) = package {
                 args.extend(["-p", package]);
             }
+
+            args.extend(["--lib", "--crate-type", "cdylib"]);
 
             if self.release {
                 args.push("--release");
