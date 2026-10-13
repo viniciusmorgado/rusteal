@@ -13,7 +13,7 @@
 #include "RustealLibrary.h"
 #include "URustealReifiedClass.h"
 
-#if PLATFORM_LINUX
+#if WITH_EDITOR && PLATFORM_LINUX
 #include <unistd.h>
 #endif
 
@@ -170,6 +170,7 @@ FString RustealLibraryFileName(const FString &Stem) {
                          FPlatformProcess::GetModuleExtension());
 }
 
+#if WITH_EDITOR
 static FString HotCopyPath(const FRustealLibrary &Library) {
   return FPaths::Combine(
       FPaths::GetPath(Library.SourcePath),
@@ -195,6 +196,7 @@ static void DeleteStaleLoadCopies(const FRustealLibrary &Library) {
                                true);
   }
 }
+#endif
 
 static void FreeHandle(FRustealLibrary &Library) {
   FPlatformProcess::FreeDllHandle(Library.Handle);
@@ -268,6 +270,7 @@ static bool LoadLibraryFile(FRustealLibrary &Library, const FString &LoadPath) {
   return true;
 }
 
+#if WITH_EDITOR
 // Not a hard link on Mac: dlclose never unloads a Rust library there, and
 // dlopen returns the library still loaded from the same file (inode).
 static bool MakeLoadCopy(const FString &Source, const FString &Copy) {
@@ -281,6 +284,7 @@ static bool MakeLoadCopy(const FString &Source, const FString &Copy) {
 #endif
   return IFileManager::Get().Copy(*Copy, *Source) == COPY_OK;
 }
+#endif
 
 static bool LoadLibrary(FRustealLibrary &Library) {
   if (!FPaths::FileExists(Library.SourcePath)) {
@@ -293,8 +297,10 @@ static bool LoadLibrary(FRustealLibrary &Library) {
   }
 
   Library.ReloadCount++;
-  const FString CopyPath = HotCopyPath(Library);
   bool bLoaded;
+
+#if WITH_EDITOR
+  const FString CopyPath = HotCopyPath(Library);
 
   if (!MakeLoadCopy(Library.SourcePath, CopyPath)) {
     UE_LOG(LogRusteal, Warning,
@@ -305,6 +311,11 @@ static bool LoadLibrary(FRustealLibrary &Library) {
   } else {
     bLoaded = LoadLibraryFile(Library, CopyPath);
   }
+#else
+  // A packaged game never reloads: it loads the library in place, and writes
+  // nothing next to it (on Mac, into its signed bundle).
+  bLoaded = LoadLibraryFile(Library, Library.SourcePath);
+#endif
 
   if (bLoaded) {
     UE_LOG(LogRusteal, Display, TEXT("[Rusteal] %s: Rust library loaded."),
@@ -462,7 +473,9 @@ static bool RegisterLibrary(FName Name, const FString &PackagePath,
 
   Library->SourcePath = LibraryPath;
   Library->PackagePath = PackagePath;
+#if WITH_EDITOR
   DeleteStaleLoadCopies(*Library);
+#endif
   Library->Table = GApiTable;
   Library->Table.func_table = reinterpret_cast<const void *const *>(FuncTable);
   Library->Table.func_count = FuncCount;

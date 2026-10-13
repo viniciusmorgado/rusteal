@@ -5,6 +5,7 @@ use rusteal_codegen::config::{find_plugins, find_uproject};
 
 use crate::build_cmd::{self, HostPlatform};
 use crate::optimizations::{self, Snapshot, Switch};
+use crate::xcode_shim;
 
 pub fn run_package(root: &Path, engine: &Path, output: &Path, configuration: &str, switch: Switch) {
     eprintln!("rusteal package: the libraries, release profile");
@@ -31,27 +32,45 @@ pub fn run_package(root: &Path, engine: &Path, output: &Path, configuration: &st
         platform.ubt_platform
     );
 
+    let shim = xcode_shim::for_package().unwrap_or_else(|e| fail(&e));
+    let env: Vec<(&str, &Path)> = shim
+        .iter()
+        .map(|shim| ("DEVELOPER_DIR", shim.developer_dir()))
+        .collect();
+
     let snapshot = Snapshot::take(root);
     optimizations::report("package", root, switch);
 
-    let code = build_cmd::run_cmd_code(&[
+    let project = format!("-project={}", uproject.display());
+    let target_platform = format!("-platform={}", platform.ubt_platform);
+    let client_config = format!("-clientconfig={configuration}");
+    let archive_dir = format!("-archivedirectory={}", output.display());
+
+    let mut args = vec![
         uat.to_str().unwrap(),
         "BuildCookRun",
-        &format!("-project={}", uproject.display()),
-        &format!("-platform={}", platform.ubt_platform),
-        &format!("-clientconfig={configuration}"),
+        &project,
+        &target_platform,
+        &client_config,
         "-build",
         "-cook",
         "-stage",
+    ];
+
+    args.extend(platform.uat_package_flags);
+    args.extend([
         "-pak",
         "-archive",
-        &format!("-archivedirectory={}", output.display()),
+        &archive_dir,
         "-nop4",
         "-unattended",
         "-utf8output",
     ]);
 
+    let code = build_cmd::run_cmd_code_env(&args, &env);
+
     snapshot.restore();
+    drop(shim);
 
     if code != 0 {
         std::process::exit(code);
