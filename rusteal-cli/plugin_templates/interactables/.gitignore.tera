@@ -5,3 +5,6 @@ Source/*/obj/
 
 # Rust build output
 Rust/target/
+
+# macOS Finder metadata
+.DS_Store
