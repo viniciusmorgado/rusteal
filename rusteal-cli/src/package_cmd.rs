@@ -7,6 +7,7 @@ use crate::build_cmd::{self, HostPlatform};
 use crate::optimizations::{self, Snapshot, Switch};
 use crate::platform::{self, Platform};
 use crate::static_link;
+use crate::xcode_shim;
 
 pub fn target_platform(name: Option<&str>) -> Platform {
     let name = name.unwrap_or(HostPlatform::CURRENT.ubt_platform);
@@ -92,6 +93,12 @@ pub fn run_package(
         static_link::set_switch(root, true).unwrap_or_else(|e| fail(&e));
     }
 
+    let shim = xcode_shim::for_package().unwrap_or_else(|e| fail(&e));
+    let env: Vec<(&str, &Path)> = shim
+        .iter()
+        .map(|shim| ("DEVELOPER_DIR", shim.developer_dir()))
+        .collect();
+
     let snapshot = Snapshot::take(root);
     optimizations::report("package", root, switch);
 
@@ -114,9 +121,10 @@ pub fn run_package(
 
     uat_args.extend(target.uat_args.iter().cloned());
     let uat_args: Vec<&str> = uat_args.iter().map(String::as_str).collect();
-    let code = build_cmd::run_cmd_code(&uat_args);
+    let code = build_cmd::run_cmd_code_env(&uat_args, &env);
 
     snapshot.restore();
+    drop(shim);
 
     if link_statically {
         static_link::set_switch(root, false).unwrap_or_else(|e| fail(&e));

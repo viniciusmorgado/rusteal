@@ -516,7 +516,7 @@ fn generate_scalar_function(
         out.push_str("        let h = self.handle();\n");
     }
 
-    if let Some(_rp) = return_param {
+    if let Some(rp) = return_param {
         let rm = ret_mapped
             .as_ref()
             .expect("return param must have mapped type");
@@ -536,7 +536,10 @@ fn generate_scalar_function(
                 ));
             }
             ConversionKind::StructOpaque => {
-                out.push_str("        let mut _ret_struct_buf = vec![0u8; 256];\n");
+                out.push_str(&format!(
+                    "        let mut _ret_struct_buf = {};\n",
+                    param_helpers::struct_buffer_expr(rp.struct_name.as_deref())
+                ));
             }
             _ => {
                 let default = properties::default_value_for(&rm.rust_ffi_type);
@@ -1091,7 +1094,12 @@ fn generate_container_function(
                 ));
             }
             ConversionKind::StructOpaque => {
-                out.push_str("        let mut __scalar_ret_buf = vec![0u8; 256];\n");
+                let rp = return_param.expect("a struct return has a return param");
+
+                out.push_str(&format!(
+                    "        let mut __scalar_ret_buf = {};\n",
+                    param_helpers::struct_buffer_expr(rp.struct_name.as_deref())
+                ));
             }
             _ => {
                 let default = properties::default_value_for(&rm.rust_ffi_type);

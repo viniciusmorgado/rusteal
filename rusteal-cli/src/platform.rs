@@ -77,8 +77,17 @@ pub fn builtins() -> Vec<Platform> {
             "so",
         ),
         desktop("Win64", None, "rusteal_static.lib", "", "dll"),
-        desktop("Mac", None, "librusteal_static.a", "lib", "dylib"),
+        Platform {
+            uat_args: mac_package_flags(),
+            ..desktop("Mac", None, "librusteal_static.a", "lib", "dylib")
+        },
     ]
+}
+
+// The archive step copies Binaries/Mac/<Game>.app, which only gets the cooked
+// data and the staged libraries from the package step.
+fn mac_package_flags() -> Vec<String> {
+    vec!["-package".to_string()]
 }
 
 impl Platform {

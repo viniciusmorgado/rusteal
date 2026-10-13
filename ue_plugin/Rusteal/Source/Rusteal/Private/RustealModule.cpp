@@ -13,7 +13,7 @@
 #include "RustealLibrary.h"
 #include "URustealReifiedClass.h"
 
-#if PLATFORM_LINUX || PLATFORM_MAC
+#if WITH_EDITOR && PLATFORM_LINUX
 #include <unistd.h>
 #endif
 
@@ -169,12 +169,15 @@ static FRustealLibrary *FindLibrary(FName Name) {
   return nullptr;
 }
 
+// The name `rusteal build` deploys: lib<stem> everywhere but Windows. Not
+// FPlatformProcess::GetModulePrefix(), which is empty on Mac.
 FString RustealLibraryFileName(const FString &Stem) {
-  return FString::Printf(TEXT("%s%s.%s"), FPlatformProcess::GetModulePrefix(),
-                         *Stem, FPlatformProcess::GetModuleExtension());
+  return FString::Printf(TEXT("%s%s.%s"),
+                         PLATFORM_WINDOWS ? TEXT("") : TEXT("lib"), *Stem,
+                         FPlatformProcess::GetModuleExtension());
 }
 
-#if !RUSTEAL_STATIC
+#if !RUSTEAL_STATIC && WITH_EDITOR
 static FString HotCopyPath(const FRustealLibrary &Library) {
   return FPaths::Combine(
       FPaths::GetPath(Library.SourcePath),
@@ -182,7 +185,6 @@ static FString HotCopyPath(const FRustealLibrary &Library) {
           TEXT("%s_hot_%d.%s"), *FPaths::GetBaseFilename(Library.SourcePath),
           Library.ReloadCount, FPlatformProcess::GetModuleExtension()));
 }
-#endif
 
 static void DeleteStaleLoadCopies(const FRustealLibrary &Library) {
   const FString Directory = FPaths::GetPath(Library.SourcePath);
@@ -201,6 +203,7 @@ static void DeleteStaleLoadCopies(const FRustealLibrary &Library) {
                                true);
   }
 }
+#endif
 
 static void FreeHandle(FRustealLibrary &Library) {
   FPlatformProcess::FreeDllHandle(Library.Handle);
@@ -344,9 +347,11 @@ static bool LoadStaticLibrary(FRustealLibrary &Library) {
 }
 #endif
 
-#if !RUSTEAL_STATIC
+#if !RUSTEAL_STATIC && WITH_EDITOR
+// Not a hard link on Mac: dlclose never unloads a Rust library there, and
+// dlopen returns the library still loaded from the same file (inode).
 static bool MakeLoadCopy(const FString &Source, const FString &Copy) {
-#if PLATFORM_LINUX || PLATFORM_MAC
+#if PLATFORM_LINUX
   IFileManager::Get().Delete(*Copy, false, true, true);
 
   if (link(TCHAR_TO_UTF8(*Source), TCHAR_TO_UTF8(*Copy)) == 0) {
@@ -373,8 +378,10 @@ static bool LoadLibrary(FRustealLibrary &Library) {
   }
 
   Library.ReloadCount++;
-  const FString CopyPath = HotCopyPath(Library);
   bool bLoaded;
+
+#if WITH_EDITOR
+  const FString CopyPath = HotCopyPath(Library);
 
   if (!MakeLoadCopy(Library.SourcePath, CopyPath)) {
     UE_LOG(LogRusteal, Warning,
@@ -385,6 +392,11 @@ static bool LoadLibrary(FRustealLibrary &Library) {
   } else {
     bLoaded = LoadLibraryFile(Library, CopyPath);
   }
+#else
+  // A packaged game never reloads: it loads the library in place, and writes
+  // nothing next to it (on Mac, into its signed bundle).
+  bLoaded = LoadLibraryFile(Library, Library.SourcePath);
+#endif
 
   if (bLoaded) {
     UE_LOG(LogRusteal, Display, TEXT("[Rusteal] %s: Rust library loaded."),
@@ -561,7 +573,9 @@ static bool RegisterLibrary(FName Name, const FString &PackagePath,
 
   Library->SourcePath = LibraryPath;
   Library->PackagePath = PackagePath;
+#if WITH_EDITOR
   DeleteStaleLoadCopies(*Library);
+#endif
   Library->Table = GApiTable;
   Library->Table.func_table = reinterpret_cast<const void *const *>(FuncTable);
   Library->Table.func_count = FuncCount;

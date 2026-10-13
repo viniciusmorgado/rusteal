@@ -502,6 +502,10 @@ pub fn run_cmd(args: &[&str]) {
 }
 
 pub fn run_cmd_code(args: &[&str]) -> i32 {
+    run_cmd_code_env(args, &[])
+}
+
+pub fn run_cmd_code_env(args: &[&str], env: &[(&str, &Path)]) -> i32 {
     let display: String = args.to_vec().join(" ");
 
     let truncated = if display.len() > 200 {
@@ -514,6 +518,7 @@ pub fn run_cmd_code(args: &[&str]) -> i32 {
 
     let status = Command::new(args[0])
         .args(&args[1..])
+        .envs(env.iter().copied())
         .status()
         .unwrap_or_else(|e| panic!("Failed to run {}: {e}", args[0]));
 

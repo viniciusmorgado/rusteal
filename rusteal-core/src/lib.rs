@@ -34,7 +34,7 @@ pub mod world;
 
 pub use api::{api, init_api};
 pub use console::{CommandContext, ConsoleVariable};
-pub use containers::{ContainerElement, OwnedStruct, UeArray, UeMap, UeSet};
+pub use containers::{ContainerElement, OwnedStruct, UeArray, UeMap, UeSet, struct_size_by_name};
 pub use delegate_registry::DelegateBinding;
 pub use dynamic_call::{DynamicCall, DynamicCallResult};
 pub use error::{
