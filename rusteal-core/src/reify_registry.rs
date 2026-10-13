@@ -1,5 +1,7 @@
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, OnceLock, RwLock};
+use std::sync::Arc;
+
+use crate::sync::{Mutex, OnceLock, RwLock};
 
 use crate::module::{self, Module, ModuleId};
 use crate::{lock_or_recover, read_or_recover, write_or_recover};

@@ -3,6 +3,7 @@ use std::cell::RefCell;
 use rusteal_ffi::{FWeakObjectHandle, RustealErrorReport};
 
 use crate::api::is_api_initialized;
+use crate::sync::{Once, thread_local};
 
 struct PanicSite {
     file: String,
@@ -15,7 +16,7 @@ thread_local! {
 }
 
 pub fn install_panic_hook() {
-    static INSTALLED: std::sync::Once = std::sync::Once::new();
+    static INSTALLED: Once = Once::new();
 
     INSTALLED.call_once(|| {
         let previous = std::panic::take_hook();

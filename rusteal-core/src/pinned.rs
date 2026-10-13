@@ -1,8 +1,10 @@
 use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::ops::Deref;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
+
+use crate::sync::{Mutex, OnceLock};
 
 use crate::lock_or_recover;
 use crate::module::{self, ModuleId};

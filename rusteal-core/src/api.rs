@@ -1,4 +1,4 @@
-use std::sync::OnceLock;
+use crate::sync::OnceLock;
 
 use rusteal_ffi::RustealApiTable;
 

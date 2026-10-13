@@ -1,12 +1,12 @@
 use std::collections::BTreeMap;
 use std::ffi::c_void;
 use std::panic::AssertUnwindSafe;
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use crate::lock_or_recover;
 use crate::module::{self, ModuleId};
+use crate::sync::Mutex;
 
 type Job = Box<dyn FnOnce() + Send>;
 type TickFn = Box<dyn FnMut(f32) + Send>;

@@ -1,6 +1,6 @@
+use crate::sync::{Mutex, OnceLock};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Mutex, OnceLock};
 
 use crate::lock_or_recover;
 use crate::module::{self, ModuleId};

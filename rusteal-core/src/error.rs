@@ -4,7 +4,7 @@ use std::error::Error;
 use std::fmt;
 use std::panic::Location;
 
-use std::sync::OnceLock;
+use crate::sync::OnceLock;
 
 use rusteal_ffi::{
     FWeakObjectHandle, RustealErrorCode, RustealErrorReport, UClassHandle, UObjectHandle,
