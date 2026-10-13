@@ -1009,6 +1009,19 @@ impl<T: ContainerElement + Hash + Eq> UeSet<T> {
     }
 }
 
+/// The size of the engine's struct named `name`, its reflected name
+/// (`HitResult` for `FHitResult`). The generated bindings size every buffer
+/// the engine writes a struct into with it: the engine copies the whole struct.
+pub fn struct_size_by_name(name: &str) -> usize {
+    let size = unsafe {
+        let ustruct = ffi_dispatch::reflection_find_struct(name.as_ptr(), name.len() as u32);
+        ffi_dispatch::reflection_get_struct_size(ustruct)
+    };
+
+    assert!(size > 0, "the engine has no struct named {name}");
+    size as usize
+}
+
 pub struct OwnedStruct<T: UeStruct> {
     data: Vec<u8>,
     needs_destroy: bool,
