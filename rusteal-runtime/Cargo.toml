@@ -14,7 +14,9 @@ rusteal-ue-flags = { workspace = true }
 glam = { workspace = true }
 log = { workspace = true }
 inventory = { workspace = true }
+rayon = { workspace = true, optional = true }
 
 [features]
 static-link = []
 engine-allocator = ["static-link"]
+rayon = ["dep:rayon"]

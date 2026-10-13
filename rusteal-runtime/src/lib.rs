@@ -17,6 +17,9 @@ mod engine_allocator;
 #[cfg(feature = "engine-allocator")]
 pub use engine_allocator::EngineAllocator;
 
+#[cfg(feature = "rayon")]
+pub mod rayon;
+
 pub use glam;
 
 use std::panic::AssertUnwindSafe;
@@ -248,6 +251,9 @@ pub fn shutdown(module: &'static Module) {
         let id = module.id();
 
         runtime::ffi_boundary((), runtime::task::shutdown);
+
+        #[cfg(feature = "rayon")]
+        runtime::ffi_boundary((), || rayon::shutdown(id));
         runtime::ffi_boundary((), || runtime::reify_registry::clear_module(id));
         runtime::ffi_boundary((), || runtime::delegate_registry::clear_module(id));
         runtime::ffi_boundary((), || runtime::pinned::clear_module(id));
