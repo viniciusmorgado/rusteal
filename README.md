@@ -86,7 +86,7 @@ Rusteal does not intend to stay compatible with the original uika, unless its au
 | Windows (x64) | Supported |
 | macOS (Apple silicon) | Supported |
 
-macOS on Intel processors has not been tested. With Xcode 27, Unreal Engine 5.8 cannot package Mac games on its own; `rusteal package` works around it ([Known limits](https://viniciusmorgado.github.io/game.rusteal.github.io/reference/limits.html)).
+macOS on Intel processors has not been tested.
 
 Rusteal does not build for Android, iOS or consoles yet; that work is under way ([Known limits](https://viniciusmorgado.github.io/game.rusteal.github.io/reference/limits.html)).
 
