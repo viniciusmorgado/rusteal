@@ -499,6 +499,10 @@ struct FRustealPlatformApi {
   double (*seconds)();
   void (*sleep)(float seconds);
   bool (*is_game_thread)();
+  uint8 *(*create_thread)(const void *run, uint8 *data, const uint8 *name,
+                          uint32 name_len);
+  void (*join_thread)(uint8 *thread);
+  uint32 (*worker_count)();
 };
 
 struct FRustealApiTable {
