@@ -36,6 +36,14 @@ pub struct RustealPlatformApi {
     pub seconds: unsafe extern "C" fn() -> f64,
     pub sleep: unsafe extern "C" fn(seconds: f32),
     pub is_game_thread: unsafe extern "C" fn() -> bool,
+    pub create_thread: unsafe extern "C" fn(
+        run: *const c_void,
+        data: *mut u8,
+        name: *const u8,
+        name_len: u32,
+    ) -> *mut u8,
+    pub join_thread: unsafe extern "C" fn(thread: *mut u8),
+    pub worker_count: unsafe extern "C" fn() -> u32,
 }
 
 unsafe impl Send for RustealApiTable {}
