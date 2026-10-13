@@ -454,7 +454,7 @@ fn walk(dir: &Path) -> Vec<PathBuf> {
 
             if path.is_dir() {
                 stack.push(path);
-            } else {
+            } else if entry.file_name() != ".DS_Store" {
                 out.push(path);
             }
         }
@@ -840,6 +840,19 @@ mod tests {
         );
 
         std::fs::set_permissions(&from, std::fs::Permissions::from_mode(0o644)).unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn finder_files_are_not_copied() {
+        let dir = std::env::temp_dir().join(format!("rusteal-walk-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("Content/Maps")).unwrap();
+        std::fs::write(dir.join("Content/Maps/Lvl.umap"), b"map").unwrap();
+        std::fs::write(dir.join("Content/.DS_Store"), b"finder").unwrap();
+        std::fs::write(dir.join(".DS_Store"), b"finder").unwrap();
+
+        assert_eq!(walk(&dir), [dir.join("Content/Maps/Lvl.umap")]);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
