@@ -17,6 +17,117 @@ struct ModuleTasks {
     tickers: Vec<(u64, TickFn)>,
     removed: Vec<u64>,
     running: usize,
+    detached: Vec<ThreadInner>,
+}
+
+enum ThreadInner {
+    Engine(usize),
+    Fallback(crate::std_fallback::FallbackThread),
+}
+
+impl ThreadInner {
+    fn join(self) {
+        match self {
+            ThreadInner::Engine(handle) => unsafe {
+                crate::ffi_dispatch::platform_join_thread(handle as *mut u8)
+            },
+            ThreadInner::Fallback(thread) => thread.join(),
+        }
+    }
+}
+
+pub struct EngineThread {
+    inner: Option<ThreadInner>,
+    module: ModuleId,
+}
+
+impl EngineThread {
+    pub fn join(mut self) {
+        if let Some(inner) = self.inner.take() {
+            inner.join();
+        }
+    }
+}
+
+impl Drop for EngineThread {
+    fn drop(&mut self) {
+        if let Some(inner) = self.inner.take() {
+            with_tasks(self.module, |tasks| tasks.detached.push(inner));
+        }
+    }
+}
+
+impl std::fmt::Debug for EngineThread {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EngineThread")
+            .field("module", &self.module)
+            .finish()
+    }
+}
+
+#[track_caller]
+pub fn spawn_thread(
+    name: &str,
+    f: impl FnOnce() + Send + 'static,
+) -> crate::RustealResult<EngineThread> {
+    let owner = module::current();
+
+    let job: Job = Box::new(move || {
+        let _scope = module::scope(owner);
+
+        if std::panic::catch_unwind(AssertUnwindSafe(f)).is_err() {
+            queue_for(
+                owner,
+                Box::new(|| {
+                    log(
+                        crate::LOG_ERROR,
+                        "[Rusteal] task::spawn_thread: the thread panicked",
+                    )
+                }),
+            );
+        }
+    });
+
+    let inner = if engine() {
+        let data = Box::into_raw(Box::new(job));
+        let run = run_job as extern "C" fn(*mut u8) as *const c_void;
+
+        let handle = unsafe {
+            crate::ffi_dispatch::platform_create_thread(
+                run,
+                data as *mut u8,
+                name.as_ptr(),
+                name.len() as u32,
+            )
+        };
+
+        if handle.is_null() {
+            drop(unsafe { Box::from_raw(data) });
+            None
+        } else {
+            Some(ThreadInner::Engine(handle as usize))
+        }
+    } else {
+        crate::std_fallback::spawn_thread(name, job).map(ThreadInner::Fallback)
+    };
+
+    match inner {
+        Some(inner) => Ok(EngineThread {
+            inner: Some(inner),
+            module: owner,
+        }),
+        None => Err(crate::RustealError::invalid_operation(
+            "the engine could not start the thread",
+        )),
+    }
+}
+
+pub fn worker_count() -> usize {
+    if engine() {
+        unsafe { crate::ffi_dispatch::platform_worker_count() as usize }
+    } else {
+        crate::std_fallback::worker_count()
+    }
 }
 
 static TASKS: Mutex<BTreeMap<ModuleId, ModuleTasks>> = Mutex::new(BTreeMap::new());
@@ -197,7 +308,12 @@ pub fn shutdown() {
     }
 
     let finished = lock_or_recover(&TASKS).remove(&module);
-    drop(finished);
+
+    if let Some(mut finished) = finished {
+        for thread in finished.detached.drain(..) {
+            thread.join();
+        }
+    }
 }
 
 #[cfg(test)]
@@ -325,5 +441,46 @@ mod tests {
             "a plugin's shutdown stopped the game"
         );
         game_hook.remove();
+    }
+
+    static THREADS: Module = Module::new("task_threads", "", &FUNCS);
+
+    #[test]
+    fn threads_run_in_their_module_and_are_joined() {
+        let _scope = THREADS.enter();
+        let seen = Arc::new(Mutex::new(Vec::<String>::new()));
+
+        let log = seen.clone();
+
+        let joined = spawn_thread("rusteal-test", move || {
+            log.lock()
+                .unwrap()
+                .push(format!("joined in {:?}", module::current()));
+        })
+        .unwrap();
+
+        joined.join();
+
+        assert_eq!(
+            *seen.lock().unwrap(),
+            vec![format!("joined in {:?}", THREADS.id())]
+        );
+
+        let log = seen.clone();
+
+        drop(
+            spawn_thread("rusteal-detached", move || {
+                std::thread::sleep(Duration::from_millis(20));
+                log.lock().unwrap().push("detached".into());
+            })
+            .unwrap(),
+        );
+
+        shutdown();
+        assert!(
+            seen.lock().unwrap().iter().any(|s| s == "detached"),
+            "shutdown did not join the thread"
+        );
+        assert!(worker_count() >= 1);
     }
 }

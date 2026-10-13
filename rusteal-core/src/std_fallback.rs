@@ -29,3 +29,23 @@ pub(crate) fn is_game_thread() -> bool {
         .get()
         .is_some_and(|id| *id == std::thread::current().id())
 }
+
+pub(crate) struct FallbackThread(std::thread::JoinHandle<()>);
+
+impl FallbackThread {
+    pub(crate) fn join(self) {
+        let _ = self.0.join();
+    }
+}
+
+pub(crate) fn spawn_thread(name: &str, job: Box<dyn FnOnce() + Send>) -> Option<FallbackThread> {
+    std::thread::Builder::new()
+        .name(name.to_string())
+        .spawn(job)
+        .ok()
+        .map(FallbackThread)
+}
+
+pub(crate) fn worker_count() -> usize {
+    std::thread::available_parallelism().map_or(1, |n| n.get().saturating_sub(1).max(1))
+}
