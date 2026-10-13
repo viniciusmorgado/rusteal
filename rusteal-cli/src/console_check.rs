@@ -16,7 +16,10 @@ const STD_SERVICES: &[(&str, &str)] = &[
 ];
 
 const THREADED_CRATES: &[(&str, &str)] = &[
-    ("rayon-core", "starts a pool of OS threads"),
+    (
+        "rayon-core",
+        "starts a pool of OS threads unless its work runs in rusteal_runtime::rayon's pool, on the engine's threads",
+    ),
     ("tokio", "starts OS threads and uses the OS's I/O"),
     ("async-std", "starts OS threads and uses the OS's I/O"),
     ("smol", "starts OS threads and uses the OS's I/O"),
@@ -173,6 +176,7 @@ mod tests {
         let findings = lock_findings(Path::new("Cargo.lock"), lock);
         assert_eq!(findings.len(), 1);
         assert!(findings[0].contains("rayon-core starts a pool of OS threads"));
+        assert!(findings[0].contains("rusteal_runtime::rayon"));
     }
 
     #[test]
