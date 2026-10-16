@@ -6,9 +6,20 @@ RUSTEAL_API bool RustealRegisterLibrary(FName Name, const FString &LibraryPath,
                                         void *const *FuncTable,
                                         uint32 FuncCount);
 
+RUSTEAL_API bool RustealRegisterLibraryChecked(FName Name,
+                                               const FString &LibraryPath,
+                                               void *const *FuncTable,
+                                               uint32 FuncCount,
+                                               uint64 FuncFingerprint);
+
 RUSTEAL_API bool RustealRegisterPluginLibrary(const FString &PluginName,
                                               void *const *FuncTable,
                                               uint32 FuncCount);
+
+RUSTEAL_API bool RustealRegisterPluginLibraryChecked(const FString &PluginName,
+                                                     void *const *FuncTable,
+                                                     uint32 FuncCount,
+                                                     uint64 FuncFingerprint);
 
 RUSTEAL_API void RustealUnregisterLibrary(FName Name);
 

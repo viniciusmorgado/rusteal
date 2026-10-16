@@ -61,7 +61,7 @@ pub fn run_build(
         (from..=5).collect()
     };
 
-    let cargo_step = format!("cargo build, {} profile (cdylib)", ctx.profile());
+    let cargo_step = format!("cargo rustc, {} profile (cdylib)", ctx.profile());
 
     let libraries = ctx
         .libraries
@@ -124,6 +124,16 @@ pub fn run_build(
         eprintln!("  Step {step_num} completed in {elapsed:.1}s\n");
     }
 
+    if steps.contains(&RUST_STEP) {
+        let workspaces: Vec<PathBuf> = ctx
+            .libraries
+            .iter()
+            .map(|library| library.rust_workspace.clone())
+            .collect();
+
+        crate::console_check::report(project_root, &workspaces);
+    }
+
     let overall = overall_start.elapsed().as_secs_f64();
     eprintln!("{}", "=".repeat(60));
     eprintln!("  All steps completed in {overall:.1}s");
@@ -134,7 +144,6 @@ pub struct HostPlatform {
     ubt_script: &'static str,
     pub uat_script: &'static str,
     pub ubt_platform: &'static str,
-    pub uat_package_flags: &'static [&'static str],
     lib_prefix: &'static str,
     lib_extension: &'static str,
 }
@@ -145,7 +154,6 @@ impl HostPlatform {
         ubt_script: "Engine/Build/BatchFiles/Build.bat",
         uat_script: "Engine/Build/BatchFiles/RunUAT.bat",
         ubt_platform: "Win64",
-        uat_package_flags: &[],
         lib_prefix: "",
         lib_extension: "dll",
     };
@@ -155,7 +163,6 @@ impl HostPlatform {
         ubt_script: "Engine/Build/BatchFiles/Linux/Build.sh",
         uat_script: "Engine/Build/BatchFiles/RunUAT.sh",
         ubt_platform: "Linux",
-        uat_package_flags: &[],
         lib_prefix: "lib",
         lib_extension: "so",
     };
@@ -165,9 +172,6 @@ impl HostPlatform {
         ubt_script: "Engine/Build/BatchFiles/Mac/Build.sh",
         uat_script: "Engine/Build/BatchFiles/RunUAT.sh",
         ubt_platform: "Mac",
-        // The archive step copies Binaries/Mac/<Game>.app, which only gets the
-        // cooked data and the staged libraries from the package step.
-        uat_package_flags: &["-package"],
         lib_prefix: "lib",
         lib_extension: "dylib",
     };
@@ -383,6 +387,8 @@ impl BuildContext {
                 None => rusteal_codegen::run_generate(&self.layout.root),
                 Some(plugin) => rusteal_codegen::run_generate_plugin(&self.layout.root, plugin),
             }
+
+            crate::migrate::bindings_dependency(&library.rust_workspace, &library.crate_name);
         }
     }
 
@@ -406,6 +412,7 @@ impl BuildContext {
                 std::process::exit(1);
             }
 
+            crate::migrate::bindings_dependency(&library.rust_workspace, &library.crate_name);
             eprintln!("  {}: {}", library.label, library.crate_name);
 
             let member = library
@@ -423,11 +430,13 @@ impl BuildContext {
             };
 
             let manifest_str = manifest.to_string_lossy().into_owned();
-            let mut args = vec!["cargo", "build", "--manifest-path", &manifest_str];
+            let mut args = vec!["cargo", "rustc", "--manifest-path", &manifest_str];
 
             if let Some(package) = package {
                 args.extend(["-p", package]);
             }
+
+            args.extend(["--lib", "--crate-type", "cdylib"]);
 
             if self.release {
                 args.push("--release");

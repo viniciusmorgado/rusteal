@@ -72,7 +72,7 @@ pub fn run_new(opts: &NewOptions) {
         "rusteal new: {written} files from the {template_name} template (crate {crate_name})"
     );
 
-    write_bindings_placeholder(&ProjectLayout::new(&root).bindings_crate());
+    write_bindings_placeholder(&ProjectLayout::new(&root).bindings_crate(), &crate_name);
     optimizations::report("new", &root, opts.optimizations);
 
     eprintln!("rusteal new: installing the Rusteal plugins");
@@ -792,7 +792,7 @@ fn template_context(project: &str, crate_name: &str, runtime_path: Option<&Path>
     ctx
 }
 
-pub fn write_bindings_placeholder(bindings: &Path) {
+pub fn write_bindings_placeholder(bindings: &Path, crate_name: &str) {
     if bindings.join("Cargo.toml").exists() {
         return;
     }
@@ -802,9 +802,12 @@ pub fn write_bindings_placeholder(bindings: &Path) {
 
     write(
         &bindings.join("Cargo.toml"),
-        "# Placeholder, replaced by the codegen step of `rusteal build --all`.\n\n\
-         [package]\nname = \"bindings\"\nversion = \"0.0.0\"\nedition = \"2024\"\npublish = false\n\n\
-         [dependencies]\nrusteal-core = { workspace = true }\nrusteal-ffi = { workspace = true }\n",
+        &format!(
+            "# Placeholder, replaced by the codegen step of `rusteal build --all`.\n\n\
+             [package]\nname = \"{}\"\nversion = \"0.0.0\"\nedition = \"2024\"\npublish = false\n\n\
+             [dependencies]\nrusteal-core = {{ workspace = true }}\nrusteal-ffi = {{ workspace = true }}\n",
+            rusteal_codegen::config::bindings_package(crate_name)
+        ),
     );
 
     write(

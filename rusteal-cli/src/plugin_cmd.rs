@@ -67,10 +67,10 @@ pub fn create_plugin(name: &str, template: &str, root: &Path, engine: &Path) -> 
     let context = plugin_context(name, &crate_name, root);
     let written = templates::write_plugin_files(template, &dir, &context);
     eprintln!("rusteal plugin new: {written} files (crate {crate_name})");
-    new_cmd::write_bindings_placeholder(&layout.rust_workspace().join("bindings"));
+    new_cmd::write_bindings_placeholder(&layout.rust_workspace().join("bindings"), &crate_name);
 
     setup::write_cpp_stubs(
-        &layout.output(Default::default()).cpp_generated,
+        &layout.output(Default::default(), &crate_name).cpp_generated,
         &format!("{name}_"),
     );
 

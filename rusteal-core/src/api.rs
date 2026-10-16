@@ -1,4 +1,4 @@
-use std::sync::OnceLock;
+use crate::sync::OnceLock;
 
 use rusteal_ffi::RustealApiTable;
 
@@ -11,9 +11,7 @@ static API: OnceLock<ApiRef> = OnceLock::new();
 pub fn init_api(table: *const RustealApiTable) {
     assert!(!table.is_null(), "init_api called with null pointer");
 
-    if API.set(ApiRef(table)).is_err() {
-        panic!("init_api called more than once");
-    }
+    let _ = API.set(ApiRef(table));
 }
 
 #[inline(always)]

@@ -4,7 +4,7 @@ use std::error::Error;
 use std::fmt;
 use std::panic::Location;
 
-use std::sync::OnceLock;
+use crate::sync::OnceLock;
 
 use rusteal_ffi::{
     FWeakObjectHandle, RustealErrorCode, RustealErrorReport, UClassHandle, UObjectHandle,
@@ -631,7 +631,21 @@ pub fn set_source_root(crate_dir: &str) {
 pub(crate) fn absolute_path(file: &str) -> String {
     let path = std::path::Path::new(file);
 
-    match SOURCE_ROOT.get() {
+    let module_root = crate::module::current_module()
+        .map(|module| module.source_root())
+        .filter(|root| !root.is_empty())
+        .map(|root| {
+            std::path::Path::new(root)
+                .parent()
+                .unwrap_or(std::path::Path::new(root))
+                .to_string_lossy()
+                .into_owned()
+        });
+
+    match module_root
+        .as_deref()
+        .or(SOURCE_ROOT.get().map(String::as_str))
+    {
         Some(root) if path.is_relative() => std::path::Path::new(root)
             .join(path)
             .to_string_lossy()

@@ -5,9 +5,34 @@ use rusteal_codegen::config::{find_plugins, find_uproject};
 
 use crate::build_cmd::{self, HostPlatform};
 use crate::optimizations::{self, Snapshot, Switch};
+use crate::platform::{self, Platform};
+use crate::static_link;
 use crate::xcode_shim;
 
-pub fn run_package(root: &Path, engine: &Path, output: &Path, configuration: &str, switch: Switch) {
+pub fn target_platform(name: Option<&str>) -> Platform {
+    let name = name.unwrap_or(HostPlatform::CURRENT.ubt_platform);
+    platform::find(name, &platform::search_dirs()).unwrap_or_else(|e| fail(&e))
+}
+
+pub fn run_package(
+    root: &Path,
+    engine: &Path,
+    output: &Path,
+    configuration: &str,
+    switch: Switch,
+    link_statically: bool,
+    target: &Platform,
+) {
+    let host = HostPlatform::CURRENT.ubt_platform;
+
+    if !link_statically && (!target.is_host(host) || target.dynamic_library.is_none()) {
+        fail(&format!(
+            "{} is not this machine's platform ({host}): a game for it carries its Rust code \
+             linked in. Package it with --static.",
+            target.name
+        ));
+    }
+
     eprintln!("rusteal package: the libraries, release profile");
     build_cmd::run_build(root, engine, None, 1, true, None);
 
@@ -29,8 +54,44 @@ pub fn run_package(root: &Path, engine: &Path, output: &Path, configuration: &st
 
     eprintln!(
         "rusteal package: BuildCookRun, {configuration}, {}",
-        platform.ubt_platform
+        target.name
     );
+
+    if link_statically {
+        let cargo_args = target.cargo_args();
+
+        let build = static_link::Target {
+            rust_target: target.rust_target.as_deref(),
+            archive_name: &target.static_archive,
+            cargo_args: &cargo_args,
+            rustflags: &target.rustflags,
+            toolchain: target.toolchain.as_deref(),
+            env: &target.env,
+        };
+
+        let mut artifact = static_link::build(root, &build).unwrap_or_else(|e| fail(&e));
+
+        for lib in &target.system_libraries {
+            if !artifact.system_libraries.contains(lib) {
+                artifact.system_libraries.push(lib.clone());
+            }
+        }
+
+        let installed =
+            static_link::install(root, &artifact, &target.name).unwrap_or_else(|e| fail(&e));
+
+        eprintln!(
+            "rusteal package: the Rust libraries are linked into the game from {}{}",
+            installed.display(),
+            if artifact.system_libraries.is_empty() {
+                String::new()
+            } else {
+                format!(" (with {})", artifact.system_libraries.join(", "))
+            }
+        );
+
+        static_link::set_switch(root, true).unwrap_or_else(|e| fail(&e));
+    }
 
     let shim = xcode_shim::for_package().unwrap_or_else(|e| fail(&e));
     let env: Vec<(&str, &Path)> = shim
@@ -41,39 +102,48 @@ pub fn run_package(root: &Path, engine: &Path, output: &Path, configuration: &st
     let snapshot = Snapshot::take(root);
     optimizations::report("package", root, switch);
 
-    let project = format!("-project={}", uproject.display());
-    let target_platform = format!("-platform={}", platform.ubt_platform);
-    let client_config = format!("-clientconfig={configuration}");
-    let archive_dir = format!("-archivedirectory={}", output.display());
-
-    let mut args = vec![
-        uat.to_str().unwrap(),
-        "BuildCookRun",
-        &project,
-        &target_platform,
-        &client_config,
-        "-build",
-        "-cook",
-        "-stage",
+    let mut uat_args = vec![
+        uat.to_str().unwrap().to_string(),
+        "BuildCookRun".to_string(),
+        format!("-project={}", uproject.display()),
+        format!("-platform={}", target.name),
+        format!("-clientconfig={configuration}"),
+        "-build".to_string(),
+        "-cook".to_string(),
+        "-stage".to_string(),
+        "-pak".to_string(),
+        "-archive".to_string(),
+        format!("-archivedirectory={}", output.display()),
+        "-nop4".to_string(),
+        "-unattended".to_string(),
+        "-utf8output".to_string(),
     ];
 
-    args.extend(platform.uat_package_flags);
-    args.extend([
-        "-pak",
-        "-archive",
-        &archive_dir,
-        "-nop4",
-        "-unattended",
-        "-utf8output",
-    ]);
-
-    let code = build_cmd::run_cmd_code_env(&args, &env);
+    uat_args.extend(target.uat_args.iter().cloned());
+    let uat_args: Vec<&str> = uat_args.iter().map(String::as_str).collect();
+    let code = build_cmd::run_cmd_code_env(&uat_args, &env);
 
     snapshot.restore();
     drop(shim);
 
+    if link_statically {
+        static_link::set_switch(root, false).unwrap_or_else(|e| fail(&e));
+    }
+
     if code != 0 {
         std::process::exit(code);
+    }
+
+    if link_statically {
+        let staged = static_link::staged_dynamic_libraries(&output);
+
+        for library in &staged {
+            eprintln!(
+                "Warning: {} was staged, though the game links the Rust code statically: its \
+                 plugin's Build.cs still adds it (see `Rusteal.AddRustLibrary`)",
+                library.display()
+            );
+        }
     }
 
     eprintln!(

@@ -147,7 +147,7 @@ fn generate_and_check(case: &str, rusteal_toml: &str) -> PathBuf {
 
     std::fs::write(project.join("Rust/Cargo.toml"), workspace).unwrap();
 
-    let output = cargo_check(&project, "bindings");
+    let output = cargo_check(&project, "probe-bindings");
 
     assert!(
         output.status.success(),
@@ -302,6 +302,14 @@ fn regenerate_fixture() {
 
 const UCLASS_GAME: &str = r#"
 #![deny(unsafe_code)]
+
+rusteal_runtime::entry!();
+
+fn on_load() {
+    log::info!("loaded");
+}
+
+rusteal_runtime::on_load!(on_load);
 
 use bindings::engine::{
     Actor, ActorExt, Controller, DataTable, FDataTableRowHandle, Pawn, PawnExt, PlayerController,
@@ -624,7 +632,8 @@ fn uclass_types_compile() {
          \n\
          [dependencies]\n\
          rusteal-runtime = { workspace = true }\n\
-         bindings = { path = \"../bindings\" }\n",
+         log = \"0.4\"\n\
+         bindings = { package = \"probe-bindings\", path = \"../bindings\" }\n",
     )
     .unwrap();
 

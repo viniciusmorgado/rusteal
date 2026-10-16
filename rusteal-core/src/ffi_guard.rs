@@ -3,6 +3,7 @@ use std::cell::RefCell;
 use rusteal_ffi::{FWeakObjectHandle, RustealErrorReport};
 
 use crate::api::is_api_initialized;
+use crate::sync::{Once, thread_local};
 
 struct PanicSite {
     file: String,
@@ -15,18 +16,35 @@ thread_local! {
 }
 
 pub fn install_panic_hook() {
-    let previous = std::panic::take_hook();
+    static INSTALLED: Once = Once::new();
 
-    std::panic::set_hook(Box::new(move |info| {
-        let site = info.location().map(|location| PanicSite {
-            file: location.file().to_owned(),
-            line: location.line(),
-            column: location.column(),
-        });
+    INSTALLED.call_once(|| {
+        let previous = std::panic::take_hook();
 
-        PANIC_SITE.with(|slot| *slot.borrow_mut() = site);
-        previous(info);
-    }));
+        std::panic::set_hook(Box::new(move |info| {
+            let site = info.location().map(|location| PanicSite {
+                file: location.file().to_owned(),
+                line: location.line(),
+                column: location.column(),
+            });
+
+            PANIC_SITE.with(|slot| *slot.borrow_mut() = site);
+
+            if cfg!(panic = "abort") && is_api_initialized() {
+                let payload = info.payload();
+
+                let message = payload
+                    .downcast_ref::<&str>()
+                    .copied()
+                    .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+                    .unwrap_or("unknown payload");
+
+                report_panic(message);
+            }
+
+            previous(info);
+        }));
+    });
 }
 
 pub fn ffi_boundary<F, R>(default: R, f: F) -> R

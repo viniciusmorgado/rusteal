@@ -3,6 +3,8 @@ use rusteal_ffi::{UClassHandle, UObjectHandle, UStructHandle};
 use crate::error::RustealResult;
 
 pub trait UeClass: 'static {
+    const RUST_TYPE_ID: u64 = 0;
+
     fn static_class() -> UClassHandle;
 }
 

@@ -35,6 +35,14 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --all-targets --no-deps -- -D warnings
 
+      # rusteal-runtime's optional features (rayon on the engine's threads, the
+      # engine allocator of static builds) are off in the workspace build.
+      - name: Test the runtime's optional features
+        run: cargo test -p rusteal-runtime --features rayon,engine-allocator --verbose
+
+      - name: Clippy on the runtime's optional features
+        run: cargo clippy -p rusteal-runtime --features rayon,engine-allocator --all-targets --no-deps -- -D warnings
+
       # Fails on any dependency with a RustSec vulnerability advisory, in the
       # Cargo.lock the build above resolved (the lock is not versioned, so this
       # is what a build gets today). Unmaintained or yanked crates only warn.
@@ -71,3 +79,11 @@ jobs:
 
       - name: Clippy
         run: cargo clippy --workspace --all-targets --no-deps -- -D warnings
+
+      # rusteal-runtime's optional features (rayon on the engine's threads, the
+      # engine allocator of static builds) are off in the workspace build.
+      - name: Test the runtime's optional features
+        run: cargo test -p rusteal-runtime --features rayon,engine-allocator --verbose
+
+      - name: Clippy on the runtime's optional features
+        run: cargo clippy -p rusteal-runtime --features rayon,engine-allocator --all-targets --no-deps -- -D warnings

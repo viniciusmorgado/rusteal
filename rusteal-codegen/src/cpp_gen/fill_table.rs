@@ -44,7 +44,11 @@ pub fn generate_fill_table(
     out.push_str("}\n\n");
 
     out.push_str(&format!(
-        "uint32_t {prefix}RustealGetFuncCount() {{\n    return RustealFuncId::FUNC_COUNT;\n}}\n"
+        "uint32_t {prefix}RustealGetFuncCount() {{\n    return RustealFuncId::FUNC_COUNT;\n}}\n\n"
+    ));
+
+    out.push_str(&format!(
+        "uint64_t {prefix}RustealGetFuncFingerprint() {{\n    return RustealFuncId::FUNC_FINGERPRINT;\n}}\n"
     ));
 
     out
@@ -79,6 +83,10 @@ mod tests {
         assert!(code.contains("void RustealFillFuncTable()"), "{code}");
         assert!(code.contains("void** RustealGetFuncTable()"), "{code}");
         assert!(code.contains("uint32_t RustealGetFuncCount()"), "{code}");
+        assert!(
+            code.contains("uint64_t RustealGetFuncFingerprint()"),
+            "{code}"
+        );
         assert!(code.contains("= (void*)&Rusteal_Actor_GetOwner;"), "{code}");
     }
 
@@ -107,6 +115,11 @@ mod tests {
 
         assert!(
             code.contains("uint32_t Inventory_RustealGetFuncCount()"),
+            "{code}"
+        );
+
+        assert!(
+            code.contains("uint64_t Inventory_RustealGetFuncFingerprint()"),
             "{code}"
         );
 
