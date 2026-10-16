@@ -607,6 +607,7 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
 
         ::rusteal_runtime::__inventory::submit! {
             ::rusteal_runtime::runtime::reify_registry::ClassFunctionRegistration {
+                krate: env!("CARGO_CRATE_NAME"),
                 type_id: #struct_name::__RUSTEAL_TYPE_ID,
                 shape: #shape_value,
                 register_functions: #register_fns_name,

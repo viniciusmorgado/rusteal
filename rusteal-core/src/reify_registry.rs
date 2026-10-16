@@ -1,9 +1,14 @@
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, OnceLock, RwLock};
+use std::sync::Arc;
 
+use crate::sync::{Mutex, OnceLock, RwLock};
+
+use crate::module::{self, Module, ModuleId};
 use crate::{lock_or_recover, read_or_recover, write_or_recover};
 
 pub struct ClassRegistration {
+    pub krate: &'static str,
+    pub name: &'static str,
     pub type_id: u64,
     pub shape: u64,
     pub depends_on: &'static [u64],
@@ -15,6 +20,8 @@ pub struct ClassRegistration {
 inventory::collect!(ClassRegistration);
 
 pub struct StructRegistration {
+    pub krate: &'static str,
+    pub name: &'static str,
     pub create: fn(),
     pub register: fn(),
     pub finalize: fn(),
@@ -22,11 +29,15 @@ pub struct StructRegistration {
 inventory::collect!(StructRegistration);
 
 pub struct EnumRegistration {
+    pub krate: &'static str,
+    pub name: &'static str,
     pub create: fn(),
 }
 inventory::collect!(EnumRegistration);
 
 pub struct InterfaceRegistration {
+    pub krate: &'static str,
+    pub name: &'static str,
     pub create: fn(),
     pub register: fn(),
     pub finalize: fn(),
@@ -34,6 +45,7 @@ pub struct InterfaceRegistration {
 inventory::collect!(InterfaceRegistration);
 
 pub struct ClassFunctionRegistration {
+    pub krate: &'static str,
     pub type_id: u64,
     pub shape: u64,
     pub register_functions: fn(),
@@ -60,17 +72,29 @@ impl ClassDefaultsOutcome for crate::error::RustealResult<()> {
     }
 }
 
-pub fn register_all_from_inventory() {
-    for ereg in inventory::iter::<EnumRegistration> {
+pub fn register_module(module: &Module) {
+    let owned = |krate: &str| module.owns(krate);
+
+    for ereg in inventory::iter::<EnumRegistration>
+        .into_iter()
+        .filter(|r| owned(r.krate))
+    {
         (ereg.create)();
     }
 
-    for ireg in inventory::iter::<InterfaceRegistration> {
+    let interfaces: Vec<&InterfaceRegistration> = inventory::iter::<InterfaceRegistration>
+        .into_iter()
+        .filter(|r| owned(r.krate))
+        .collect();
+
+    for ireg in &interfaces {
         (ireg.create)();
     }
 
-    let mut pending: Vec<&ClassRegistration> =
-        inventory::iter::<ClassRegistration>.into_iter().collect();
+    let mut pending: Vec<&ClassRegistration> = inventory::iter::<ClassRegistration>
+        .into_iter()
+        .filter(|r| owned(r.krate))
+        .collect();
 
     let class_count = pending.len() as u32;
     let mut ordered: Vec<&ClassRegistration> = Vec::with_capacity(pending.len());
@@ -97,19 +121,24 @@ pub fn register_all_from_inventory() {
         (reg.create)(true, class_shape(reg));
     }
 
-    for sreg in inventory::iter::<StructRegistration> {
+    let structs: Vec<&StructRegistration> = inventory::iter::<StructRegistration>
+        .into_iter()
+        .filter(|r| owned(r.krate))
+        .collect();
+
+    for sreg in &structs {
         (sreg.create)();
     }
 
-    for sreg in inventory::iter::<StructRegistration> {
+    for sreg in &structs {
         (sreg.register)();
     }
 
-    for sreg in inventory::iter::<StructRegistration> {
+    for sreg in &structs {
         (sreg.finalize)();
     }
 
-    for ireg in inventory::iter::<InterfaceRegistration> {
+    for ireg in &interfaces {
         (ireg.register)();
         (ireg.finalize)();
     }
@@ -120,17 +149,19 @@ pub fn register_all_from_inventory() {
 
     let ordered = dependency_order(&ordered);
 
-    let mut func_reg_count = 0u32;
+    let blocks: Vec<&ClassFunctionRegistration> = inventory::iter::<ClassFunctionRegistration>
+        .into_iter()
+        .filter(|r| owned(r.krate))
+        .collect();
 
-    for freg in inventory::iter::<ClassFunctionRegistration> {
+    for freg in &blocks {
         (freg.register_functions)();
-        func_reg_count += 1;
     }
 
     for reg in &ordered {
         (reg.finalize)();
 
-        for freg in inventory::iter::<ClassFunctionRegistration> {
+        for freg in &blocks {
             if freg.type_id == reg.type_id
                 && let Some(class_defaults) = freg.class_defaults
             {
@@ -141,10 +172,18 @@ pub fn register_all_from_inventory() {
         (reg.after_defaults)();
     }
 
-    let total_funcs = read_or_recover(func_registry()).len();
+    let owner = module::current();
+
+    let total_funcs = read_or_recover(func_registry())
+        .iter()
+        .flatten()
+        .filter(|entry| entry.module == owner)
+        .count();
 
     let msg = format!(
-        "[Rusteal] register_all_from_inventory: {class_count} classes, {func_reg_count} impl blocks, {total_funcs} function callbacks",
+        "[Rusteal] {}: registered {class_count} classes, {} impl blocks, {total_funcs} function callbacks",
+        module.krate(),
+        blocks.len(),
     );
 
     let bytes = msg.as_bytes();
@@ -152,6 +191,58 @@ pub fn register_all_from_inventory() {
     unsafe {
         crate::ffi_dispatch::logging_log(0, bytes.as_ptr(), bytes.len() as u32);
     }
+}
+
+pub fn manifest(owned: impl Fn(&str) -> bool) -> Vec<String> {
+    let mut entries = Vec::new();
+
+    for reg in inventory::iter::<ClassRegistration> {
+        if owned(reg.krate) {
+            entries.push(format!("class:{}:{}", reg.krate, reg.name));
+        }
+    }
+
+    for reg in inventory::iter::<ClassFunctionRegistration> {
+        if owned(reg.krate) {
+            entries.push(format!("impl:{}:{:016x}", reg.krate, reg.type_id));
+        }
+    }
+
+    for reg in inventory::iter::<StructRegistration> {
+        if owned(reg.krate) {
+            entries.push(format!("struct:{}:{}", reg.krate, reg.name));
+        }
+    }
+
+    for reg in inventory::iter::<EnumRegistration> {
+        if owned(reg.krate) {
+            entries.push(format!("enum:{}:{}", reg.krate, reg.name));
+        }
+    }
+
+    for reg in inventory::iter::<InterfaceRegistration> {
+        if owned(reg.krate) {
+            entries.push(format!("interface:{}:{}", reg.krate, reg.name));
+        }
+    }
+
+    entries
+}
+
+pub fn missing(expected: &[&str], linked: &[String]) -> Vec<String> {
+    let mut linked: Vec<&str> = linked.iter().map(String::as_str).collect();
+    let mut missing = Vec::new();
+
+    for entry in expected {
+        match linked.iter().position(|seen| seen == entry) {
+            Some(found) => {
+                linked.swap_remove(found);
+            }
+            None => missing.push(entry.to_string()),
+        }
+    }
+
+    missing
 }
 
 fn dependency_order<'a>(classes: &[&'a ClassRegistration]) -> Vec<&'a ClassRegistration> {
@@ -225,13 +316,19 @@ use crate::ffi_dispatch::NativePtr;
 
 type ReifyFunctionCallback = Arc<dyn Fn(UObjectHandle, *mut u8, NativePtr) + Send + Sync>;
 
+struct TypeEntry {
+    module: ModuleId,
+    info: RustTypeInfo,
+}
+
 struct FunctionEntry {
     callback: ReifyFunctionCallback,
     type_id: u64,
+    module: ModuleId,
 }
 
-static TYPE_REGISTRY: OnceLock<Mutex<HashMap<u64, RustTypeInfo>>> = OnceLock::new();
-static FUNC_REGISTRY: OnceLock<RwLock<Vec<FunctionEntry>>> = OnceLock::new();
+static TYPE_REGISTRY: OnceLock<Mutex<HashMap<u64, TypeEntry>>> = OnceLock::new();
+static FUNC_REGISTRY: OnceLock<RwLock<Vec<Option<FunctionEntry>>>> = OnceLock::new();
 static INSTANCE_DATA: OnceLock<RwLock<HashMap<u64, Vec<InstanceEntry>>>> = OnceLock::new();
 
 struct InstanceEntry {
@@ -242,11 +339,11 @@ struct InstanceEntry {
 unsafe impl Send for InstanceEntry {}
 unsafe impl Sync for InstanceEntry {}
 
-fn type_registry() -> &'static Mutex<HashMap<u64, RustTypeInfo>> {
+fn type_registry() -> &'static Mutex<HashMap<u64, TypeEntry>> {
     TYPE_REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-fn func_registry() -> &'static RwLock<Vec<FunctionEntry>> {
+fn func_registry() -> &'static RwLock<Vec<Option<FunctionEntry>>> {
     FUNC_REGISTRY.get_or_init(|| RwLock::new(Vec::new()))
 }
 
@@ -254,8 +351,35 @@ fn instance_data() -> &'static RwLock<HashMap<u64, Vec<InstanceEntry>>> {
     INSTANCE_DATA.get_or_init(|| RwLock::new(HashMap::new()))
 }
 
+fn log(level: u8, msg: &str) {
+    if crate::api::is_api_initialized() {
+        unsafe {
+            crate::ffi_dispatch::logging_log(level, msg.as_ptr(), msg.len() as u32);
+        }
+    }
+}
+
 pub fn register_type(type_id: u64, info: RustTypeInfo) {
-    lock_or_recover(type_registry()).insert(type_id, info);
+    let module = module::current();
+    let mut types = lock_or_recover(type_registry());
+
+    if let Some(existing) = types.get(&type_id)
+        && existing.module != module
+    {
+        let other = module::get(existing.module).map_or("another library", |m| m.krate());
+
+        log(
+            2,
+            &format!(
+                "[Rusteal] {}: its type id {type_id} is already {other}'s {}; the class is not registered twice",
+                info.name, existing.info.name
+            ),
+        );
+
+        return;
+    }
+
+    types.insert(type_id, TypeEntry { module, info });
 }
 
 pub fn register_function<F>(type_id: u64, f: F) -> u64
@@ -265,10 +389,11 @@ where
     let mut vec = write_or_recover(func_registry());
     let id = vec.len() as u64;
 
-    vec.push(FunctionEntry {
+    vec.push(Some(FunctionEntry {
         callback: Arc::new(f),
         type_id,
-    });
+        module: module::current(),
+    }));
 
     id
 }
@@ -276,20 +401,15 @@ where
 pub fn construct_instance(obj: UObjectHandle, type_id: u64) {
     let types = lock_or_recover(type_registry());
 
-    let Some(info) = types.get(&type_id) else {
-        if crate::api::is_api_initialized() {
-            let msg = format!("[Rusteal] construct_instance: unknown type_id {type_id}");
-            let bytes = msg.as_bytes();
-
-            unsafe {
-                crate::ffi_dispatch::logging_log(1, bytes.as_ptr(), bytes.len() as u32);
-            }
-        }
-
+    let Some(entry) = types.get(&type_id) else {
+        log(
+            1,
+            &format!("[Rusteal] construct_instance: unknown type_id {type_id}"),
+        );
         return;
     };
 
-    let data = (info.construct_fn)();
+    let data = (entry.info.construct_fn)();
     drop(types);
 
     let key = obj.to_addr();
@@ -315,18 +435,44 @@ pub fn construct_instance(obj: UObjectHandle, type_id: u64) {
 fn drop_data(type_id: u64, data: *mut u8) {
     let types = lock_or_recover(type_registry());
 
-    if let Some(info) = types.get(&type_id) {
+    if let Some(entry) = types.get(&type_id) {
         unsafe {
-            (info.drop_fn)(data);
+            (entry.info.drop_fn)(data);
         }
     }
 }
 
-pub fn drop_instance(obj: UObjectHandle, _type_id: u64) {
-    let key = obj.to_addr();
-    let entries = write_or_recover(instance_data()).remove(&key);
+fn type_module(type_id: u64) -> Option<ModuleId> {
+    lock_or_recover(type_registry())
+        .get(&type_id)
+        .map(|entry| entry.module)
+}
 
-    for entry in entries.into_iter().flatten() {
+pub fn drop_instance(obj: UObjectHandle, _type_id: u64) {
+    let module = module::current();
+    let key = obj.to_addr();
+
+    let dropped: Vec<InstanceEntry> = {
+        let mut map = write_or_recover(instance_data());
+
+        let Some(entries) = map.get_mut(&key) else {
+            return;
+        };
+
+        let (mine, others): (Vec<InstanceEntry>, Vec<InstanceEntry>) = std::mem::take(entries)
+            .into_iter()
+            .partition(|entry| type_module(entry.type_id).is_none_or(|owner| owner == module));
+
+        if others.is_empty() {
+            map.remove(&key);
+        } else {
+            *entries = others;
+        }
+
+        mine
+    };
+
+    for entry in dropped {
         drop_data(entry.type_id, entry.data);
     }
 }
@@ -335,49 +481,72 @@ pub fn invoke_function(callback_id: u64, obj: UObjectHandle, params: NativePtr) 
     let func = {
         let vec = read_or_recover(func_registry());
         vec.get(callback_id as usize)
+            .and_then(Option::as_ref)
             .map(|entry| (entry.callback.clone(), entry.type_id))
     };
 
     if let Some((func, type_id)) = func {
         let rust_data = get_instance_data(obj, type_id);
         func(obj, rust_data, params);
-    } else if crate::api::is_api_initialized() {
+    } else {
         let vec_len = read_or_recover(func_registry()).len();
 
-        let msg = format!(
-            "[Rusteal] invoke_function: callback_id {callback_id} not found (registry size = {vec_len})",
+        log(
+            1,
+            &format!(
+                "[Rusteal] invoke_function: callback_id {callback_id} not found (registry size = {vec_len})"
+            ),
         );
-
-        let bytes = msg.as_bytes();
-
-        unsafe {
-            crate::ffi_dispatch::logging_log(1, bytes.as_ptr(), bytes.len() as u32);
-        }
     }
 }
 
-pub fn clear_all() {
+pub fn clear_module(module: ModuleId) {
     if let Some(instances) = INSTANCE_DATA.get() {
-        let mut map = write_or_recover(instances);
-        let types = lock_or_recover(type_registry());
+        let owned: Vec<u64> = lock_or_recover(type_registry())
+            .iter()
+            .filter(|(_, entry)| entry.module == module)
+            .map(|(id, _)| *id)
+            .collect();
 
-        for entry in map.drain().flat_map(|(_, entries)| entries) {
-            if let Some(info) = types.get(&entry.type_id) {
-                unsafe {
-                    (info.drop_fn)(entry.data);
-                }
-            }
+        let dropped: Vec<InstanceEntry> = {
+            let mut map = write_or_recover(instances);
+            let mut dropped = Vec::new();
+
+            map.retain(|_, entries| {
+                let (mine, others): (Vec<InstanceEntry>, Vec<InstanceEntry>) =
+                    std::mem::take(entries)
+                        .into_iter()
+                        .partition(|entry| owned.contains(&entry.type_id));
+
+                dropped.extend(mine);
+                *entries = others;
+                !entries.is_empty()
+            });
+
+            dropped
+        };
+
+        for entry in dropped {
+            drop_data(entry.type_id, entry.data);
         }
-
-        drop(types);
     }
 
     if let Some(funcs) = FUNC_REGISTRY.get() {
-        write_or_recover(funcs).clear();
+        let mut funcs = write_or_recover(funcs);
+
+        for slot in funcs.iter_mut() {
+            if slot.as_ref().is_some_and(|entry| entry.module == module) {
+                *slot = None;
+            }
+        }
+
+        if funcs.iter().all(Option::is_none) {
+            funcs.clear();
+        }
     }
 
     if let Some(types) = TYPE_REGISTRY.get() {
-        lock_or_recover(types).clear();
+        lock_or_recover(types).retain(|_, entry| entry.module != module);
     }
 }
 
@@ -417,6 +586,8 @@ mod order_tests {
 
     const fn class(type_id: u64, depends_on: &'static [u64]) -> ClassRegistration {
         ClassRegistration {
+            krate: "test",
+            name: "Test",
             type_id,
             shape: 0,
             depends_on,
@@ -452,5 +623,114 @@ mod order_tests {
         static B: ClassRegistration = class(2, &[1]);
 
         assert_eq!(dependency_order(&[&A, &B]).len(), 2);
+    }
+}
+
+#[cfg(test)]
+mod manifest_tests {
+    use super::missing;
+
+    #[test]
+    fn missing_registrations_are_counted() {
+        let linked = vec!["class:game:Item".to_string(), "impl:game:01".to_string()];
+
+        assert!(missing(&["class:game:Item", "impl:game:01"], &linked).is_empty());
+
+        assert_eq!(
+            missing(
+                &[
+                    "class:game:Item",
+                    "impl:game:01",
+                    "impl:game:01",
+                    "enum:game:E"
+                ],
+                &linked
+            ),
+            ["impl:game:01", "enum:game:E"]
+        );
+    }
+}
+
+#[cfg(test)]
+mod module_tests {
+    use super::*;
+    use crate::module::{FuncTable, Module};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static FUNCS: FuncTable = FuncTable::new(0, 0);
+    static GAME: Module = Module::new("reify_game", "", &FUNCS);
+    static PLUGIN: Module = Module::new("reify_plugin", "", &FUNCS);
+    static DROPS: AtomicUsize = AtomicUsize::new(0);
+
+    fn info(name: &'static str) -> RustTypeInfo {
+        RustTypeInfo {
+            name,
+            construct_fn: || Box::into_raw(Box::new(0u32)) as *mut u8,
+            drop_fn: |ptr| {
+                DROPS.fetch_add(1, Ordering::Relaxed);
+                drop(unsafe { Box::from_raw(ptr as *mut u32) });
+            },
+        }
+    }
+
+    #[test]
+    fn libraries_drop_and_clear_only_their_own_data() {
+        let object = UObjectHandle(0x5150 as *mut std::ffi::c_void);
+        let (game_type, plugin_type) = (
+            crate::module::type_id("reify_game::Item"),
+            crate::module::type_id("reify_plugin::Item"),
+        );
+
+        let game_fn = {
+            let _scope = GAME.enter();
+            register_type(game_type, info("Item"));
+            construct_instance(object, game_type);
+            register_function(game_type, |_, _, _| {})
+        };
+
+        let plugin_fn = {
+            let _scope = PLUGIN.enter();
+            register_type(plugin_type, info("Item"));
+            construct_instance(object, plugin_type);
+            register_function(plugin_type, |_, _, _| {})
+        };
+
+        assert_ne!(game_fn, plugin_fn);
+        assert!(!get_instance_data(object, game_type).is_null());
+        assert!(!get_instance_data(object, plugin_type).is_null());
+
+        {
+            let _scope = PLUGIN.enter();
+            drop_instance(object, plugin_type);
+        }
+
+        assert!(get_instance_data(object, plugin_type).is_null());
+        assert!(
+            !get_instance_data(object, game_type).is_null(),
+            "the plugin dropped the game's data"
+        );
+
+        {
+            let _scope = PLUGIN.enter();
+            construct_instance(object, plugin_type);
+        }
+
+        clear_module(GAME.id());
+        assert!(get_instance_data(object, game_type).is_null());
+        assert!(!get_instance_data(object, plugin_type).is_null());
+        assert!(type_module(game_type).is_none());
+
+        let plugin_callback_alive = read_or_recover(func_registry())
+            .get(plugin_fn as usize)
+            .is_some_and(Option::is_some);
+
+        assert!(
+            plugin_callback_alive,
+            "clearing the game removed the plugin's functions"
+        );
+
+        clear_module(PLUGIN.id());
+        assert!(get_instance_data(object, plugin_type).is_null());
+        assert_eq!(DROPS.load(Ordering::Relaxed), 3);
     }
 }

@@ -16,14 +16,18 @@ pub mod ffi_guard;
 pub mod fname;
 pub mod input;
 pub mod logging;
+pub mod module;
 pub mod object_ref;
 pub mod pinned;
 pub mod reify_registry;
 pub mod script_interface;
 pub mod soft_ref;
+mod std_fallback;
 pub mod struct_ref;
 pub mod subclass_of;
+mod sync;
 pub mod task;
+pub mod time;
 pub mod ue_math;
 pub mod weak_ptr;
 pub mod widget;
@@ -31,7 +35,7 @@ pub mod world;
 
 pub use api::{api, init_api};
 pub use console::{CommandContext, ConsoleVariable};
-pub use containers::{ContainerElement, OwnedStruct, UeArray, UeMap, UeSet};
+pub use containers::{ContainerElement, OwnedStruct, UeArray, UeMap, UeSet, struct_size_by_name};
 pub use delegate_registry::DelegateBinding;
 pub use dynamic_call::{DynamicCall, DynamicCallResult};
 pub use error::{
@@ -40,6 +44,7 @@ pub use error::{
 };
 pub use ffi_guard::ffi_boundary;
 pub use logging::{LOG_DISPLAY, LOG_ERROR, LOG_WARNING};
+pub use module::{FuncTable, Module, ModuleId, type_id};
 pub use object_ref::{Checked, ObjectPointer, UObjectRef};
 pub use pinned::Pinned;
 pub use script_interface::ScriptInterface;
@@ -62,16 +67,4 @@ pub use rusteal_ffi::{
     UStructHandle,
 };
 
-use std::sync::{Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard};
-
-pub(crate) fn lock_or_recover<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
-    m.lock().unwrap_or_else(|e| e.into_inner())
-}
-
-pub(crate) fn read_or_recover<T>(m: &RwLock<T>) -> RwLockReadGuard<'_, T> {
-    m.read().unwrap_or_else(|e| e.into_inner())
-}
-
-pub(crate) fn write_or_recover<T>(m: &RwLock<T>) -> RwLockWriteGuard<'_, T> {
-    m.write().unwrap_or_else(|e| e.into_inner())
-}
+pub(crate) use sync::{lock_or_recover, read_or_recover, write_or_recover};

@@ -72,7 +72,7 @@ pub fn run_new(opts: &NewOptions) {
         "rusteal new: {written} files from the {template_name} template (crate {crate_name})"
     );
 
-    write_bindings_placeholder(&ProjectLayout::new(&root).bindings_crate());
+    write_bindings_placeholder(&ProjectLayout::new(&root).bindings_crate(), &crate_name);
     optimizations::report("new", &root, opts.optimizations);
 
     eprintln!("rusteal new: installing the Rusteal plugins");
@@ -454,7 +454,7 @@ fn walk(dir: &Path) -> Vec<PathBuf> {
 
             if path.is_dir() {
                 stack.push(path);
-            } else {
+            } else if entry.file_name() != ".DS_Store" {
                 out.push(path);
             }
         }
@@ -792,7 +792,7 @@ fn template_context(project: &str, crate_name: &str, runtime_path: Option<&Path>
     ctx
 }
 
-pub fn write_bindings_placeholder(bindings: &Path) {
+pub fn write_bindings_placeholder(bindings: &Path, crate_name: &str) {
     if bindings.join("Cargo.toml").exists() {
         return;
     }
@@ -802,9 +802,12 @@ pub fn write_bindings_placeholder(bindings: &Path) {
 
     write(
         &bindings.join("Cargo.toml"),
-        "# Placeholder, replaced by the codegen step of `rusteal build --all`.\n\n\
-         [package]\nname = \"bindings\"\nversion = \"0.0.0\"\nedition = \"2024\"\npublish = false\n\n\
-         [dependencies]\nrusteal-core = { workspace = true }\nrusteal-ffi = { workspace = true }\n",
+        &format!(
+            "# Placeholder, replaced by the codegen step of `rusteal build --all`.\n\n\
+             [package]\nname = \"{}\"\nversion = \"0.0.0\"\nedition = \"2024\"\npublish = false\n\n\
+             [dependencies]\nrusteal-core = {{ workspace = true }}\nrusteal-ffi = {{ workspace = true }}\n",
+            rusteal_codegen::config::bindings_package(crate_name)
+        ),
     );
 
     write(
@@ -840,6 +843,19 @@ mod tests {
         );
 
         std::fs::set_permissions(&from, std::fs::Permissions::from_mode(0o644)).unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn finder_files_are_not_copied() {
+        let dir = std::env::temp_dir().join(format!("rusteal-walk-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("Content/Maps")).unwrap();
+        std::fs::write(dir.join("Content/Maps/Lvl.umap"), b"map").unwrap();
+        std::fs::write(dir.join("Content/.DS_Store"), b"finder").unwrap();
+        std::fs::write(dir.join(".DS_Store"), b"finder").unwrap();
+
+        assert_eq!(walk(&dir), [dir.join("Content/Maps/Lvl.umap")]);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

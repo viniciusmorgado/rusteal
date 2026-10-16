@@ -31,3 +31,6 @@ CMakeLists.txt
 .vs/
 .vscode/
 .idea/
+
+# macOS Finder metadata
+.DS_Store

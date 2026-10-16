@@ -9,13 +9,7 @@ public class {{ plugin }} : ModuleRules
 
         PrivateDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "Rusteal" });
 
-        string Library = Path.Combine(PluginDirectory, "Binaries", Target.Platform.ToString(),
-            LibraryFileName(Target, "rusteal_{{ plugin }}"));
-
-        if (File.Exists(Library))
-        {
-            RuntimeDependencies.Add(Library);
-        }
+        UnrealBuildTool.Rules.Rusteal.AddRustLibrary(this, Target, PluginDirectory, "rusteal_{{ plugin }}");
 
         string DepsFile = Path.Combine(ModuleDirectory, "Generated", "module_deps.txt");
 
@@ -31,20 +25,5 @@ public class {{ plugin }} : ModuleRules
                 }
             }
         }
-    }
-
-    private static string LibraryFileName(ReadOnlyTargetRules Target, string Stem)
-    {
-        if (Target.Platform == UnrealTargetPlatform.Win64)
-        {
-            return Stem + ".dll";
-        }
-
-        if (Target.Platform == UnrealTargetPlatform.Mac)
-        {
-            return "lib" + Stem + ".dylib";
-        }
-
-        return "lib" + Stem + ".so";
     }
 }

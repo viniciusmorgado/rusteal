@@ -494,6 +494,17 @@ struct FRustealWorldApi {
                                 RustealUStructHandle row_struct);
 };
 
+struct FRustealPlatformApi {
+  bool (*launch_task)(const void *run, uint8 *data);
+  double (*seconds)();
+  void (*sleep)(float seconds);
+  bool (*is_game_thread)();
+  uint8 *(*create_thread)(const void *run, uint8 *data, const uint8 *name,
+                          uint32 name_len);
+  void (*join_thread)(uint8 *thread);
+  uint32 (*worker_count)();
+};
+
 struct FRustealApiTable {
   uint32 version;
 
@@ -512,6 +523,9 @@ struct FRustealApiTable {
 
   const void *const *func_table;
   uint32 func_count;
+  uint64 func_fingerprint;
+
+  const FRustealPlatformApi *platform;
 };
 
 struct FRustealRustCallbacks {
@@ -525,6 +539,19 @@ struct FRustealRustCallbacks {
                                   bool is_cdo);
   void (*notify_pinned_destroyed)(RustealUObjectHandle handle);
   void (*on_tick)(float delta_seconds);
+};
+
+struct FRustealModuleExports {
+  uint32 version;
+  const FRustealRustCallbacks *(*init)(const FRustealApiTable *api_table);
+  void (*shutdown)();
+  const FRustealRustCallbacks *(*callbacks)();
+};
+
+struct FRustealStaticModule {
+  const uint8 *name;
+  uint32 name_len;
+  const FRustealModuleExports *exports;
 };
 
 using FRustealInitFn =

@@ -131,7 +131,8 @@ fn collect_files(root: &Path, dir: &Path, out: &mut Vec<(String, PathBuf)>) {
 
             collect_files(root, &path, out);
         } else {
-            if name.ends_with(".csproj.props") {
+            // .DS_Store: what Finder writes into a directory it shows.
+            if name.ends_with(".csproj.props") || name == ".DS_Store" {
                 continue;
             }
 

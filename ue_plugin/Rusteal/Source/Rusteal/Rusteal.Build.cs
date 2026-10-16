@@ -22,12 +22,22 @@ public class Rusteal : ModuleRules
 
         PrivateDependencyModuleNames.Add("Projects");
 
-        string Library = Path.Combine(PluginDirectory, "Binaries", Target.Platform.ToString(),
-            RustealLibraryFileName(Target, "rusteal"));
+        string StaticSwitch = StaticSwitchFile(Target);
 
-        if (File.Exists(Library))
+        if (File.Exists(StaticSwitch))
         {
-            RuntimeDependencies.Add(Library);
+            ExternalDependencies.Add(StaticSwitch);
+        }
+
+        if (LinksRustStatically(Target))
+        {
+            PrivateDependencyModuleNames.Add("RustealStatic");
+            PublicDefinitions.Add("RUSTEAL_STATIC=1");
+        }
+        else
+        {
+            PublicDefinitions.Add("RUSTEAL_STATIC=0");
+            AddRustLibrary(this, Target, PluginDirectory, "rusteal");
         }
 
         string DepsFile = Path.Combine(ModuleDirectory, "Generated", "module_deps.txt");
@@ -46,6 +56,50 @@ public class Rusteal : ModuleRules
         }
     }
 
+    static string StaticSwitchFile(ReadOnlyTargetRules Target)
+    {
+        string Project = Target.ProjectFile != null ? Target.ProjectFile.Directory.FullName : "";
+
+        return Path.Combine(Project, "Plugins", "Rusteal", "Source", "Rusteal", "Generated",
+            "static_link.txt");
+    }
+
+    public static bool LinksRustStatically(ReadOnlyTargetRules Target)
+    {
+        if (Target.Type == TargetType.Editor)
+        {
+            return false;
+        }
+
+        string StaticSwitch = StaticSwitchFile(Target);
+
+        return File.Exists(StaticSwitch) && File.ReadAllText(StaticSwitch).Trim() == "1";
+    }
+
+    public static void AddRustLibrary(ModuleRules Rules, ReadOnlyTargetRules Target,
+        string PluginDirectory, string Stem)
+    {
+        if (LinksRustStatically(Target))
+        {
+            return;
+        }
+
+        string FileName = RustealLibraryFileName(Target, Stem);
+
+        if (FileName == null)
+        {
+            return;
+        }
+
+        string Library = Path.Combine(PluginDirectory, "Binaries", Target.Platform.ToString(),
+            FileName);
+
+        if (File.Exists(Library))
+        {
+            Rules.RuntimeDependencies.Add(Library);
+        }
+    }
+
     public static string RustealLibraryFileName(ReadOnlyTargetRules Target, string Stem)
     {
         if (Target.Platform == UnrealTargetPlatform.Win64)
@@ -58,6 +112,11 @@ public class Rusteal : ModuleRules
             return "lib" + Stem + ".dylib";
         }
 
-        return "lib" + Stem + ".so";
+        if (Target.Platform == UnrealTargetPlatform.Linux || Target.Platform == UnrealTargetPlatform.LinuxArm64)
+        {
+            return "lib" + Stem + ".so";
+        }
+
+        return null;
     }
 }

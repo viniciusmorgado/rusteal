@@ -53,6 +53,12 @@ pub fn generate_lib_rs(ctx: &CodegenContext) -> String {
     out.push_str("#![allow(clippy::all)]\n\n");
     out.push_str("pub mod func_ids;\n\n");
 
+    out.push_str(
+        "#[doc(hidden)]\n\
+         pub static __RUSTEAL_FUNCS: rusteal_core::FuncTable =\n\
+         \x20   rusteal_core::FuncTable::new(func_ids::FUNC_COUNT, func_ids::FINGERPRINT);\n\n",
+    );
+
     let mut modules: Vec<&String> = ctx.enabled_modules.iter().collect();
     modules.sort();
 

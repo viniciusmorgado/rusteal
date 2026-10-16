@@ -61,7 +61,7 @@ pub fn run_build(
         (from..=5).collect()
     };
 
-    let cargo_step = format!("cargo build, {} profile (cdylib)", ctx.profile());
+    let cargo_step = format!("cargo rustc, {} profile (cdylib)", ctx.profile());
 
     let libraries = ctx
         .libraries
@@ -122,6 +122,16 @@ pub fn run_build(
 
         let elapsed = step_start.elapsed().as_secs_f64();
         eprintln!("  Step {step_num} completed in {elapsed:.1}s\n");
+    }
+
+    if steps.contains(&RUST_STEP) {
+        let workspaces: Vec<PathBuf> = ctx
+            .libraries
+            .iter()
+            .map(|library| library.rust_workspace.clone())
+            .collect();
+
+        crate::console_check::report(project_root, &workspaces);
     }
 
     let overall = overall_start.elapsed().as_secs_f64();
@@ -377,6 +387,8 @@ impl BuildContext {
                 None => rusteal_codegen::run_generate(&self.layout.root),
                 Some(plugin) => rusteal_codegen::run_generate_plugin(&self.layout.root, plugin),
             }
+
+            crate::migrate::bindings_dependency(&library.rust_workspace, &library.crate_name);
         }
     }
 
@@ -400,6 +412,7 @@ impl BuildContext {
                 std::process::exit(1);
             }
 
+            crate::migrate::bindings_dependency(&library.rust_workspace, &library.crate_name);
             eprintln!("  {}: {}", library.label, library.crate_name);
 
             let member = library
@@ -417,11 +430,13 @@ impl BuildContext {
             };
 
             let manifest_str = manifest.to_string_lossy().into_owned();
-            let mut args = vec!["cargo", "build", "--manifest-path", &manifest_str];
+            let mut args = vec!["cargo", "rustc", "--manifest-path", &manifest_str];
 
             if let Some(package) = package {
                 args.extend(["-p", package]);
             }
+
+            args.extend(["--lib", "--crate-type", "cdylib"]);
 
             if self.release {
                 args.push("--release");
@@ -489,6 +504,10 @@ pub fn run_cmd(args: &[&str]) {
 }
 
 pub fn run_cmd_code(args: &[&str]) -> i32 {
+    run_cmd_code_env(args, &[])
+}
+
+pub fn run_cmd_code_env(args: &[&str], env: &[(&str, &Path)]) -> i32 {
     let display: String = args.to_vec().join(" ");
 
     let truncated = if display.len() > 200 {
@@ -501,6 +520,7 @@ pub fn run_cmd_code(args: &[&str]) -> i32 {
 
     let status = Command::new(args[0])
         .args(&args[1..])
+        .envs(env.iter().copied())
         .status()
         .unwrap_or_else(|e| panic!("Failed to run {}: {e}", args[0]));
 

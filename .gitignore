@@ -37,3 +37,6 @@ ue_plugin/Rusteal/Source/Rusteal/Generated/
 /.cache/
 /ide/**/bin/
 /ide/**/obj/
+
+# macOS Finder metadata
+.DS_Store

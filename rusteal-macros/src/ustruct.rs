@@ -215,6 +215,8 @@ pub fn expand_ustruct(attr: TokenStream, item: TokenStream) -> syn::Result<Token
 
         ::rusteal_runtime::__inventory::submit! {
             ::rusteal_runtime::runtime::reify_registry::StructRegistration {
+                krate: env!("CARGO_CRATE_NAME"),
+                name: #name_str,
                 create: #create_fn,
                 register: #members_fn,
                 finalize: #finalize_fn,

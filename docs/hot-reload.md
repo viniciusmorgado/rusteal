@@ -12,11 +12,16 @@ way it is. The commands are in the game developer's handbook, [Hot reload](https
    Rust-private fields start over from `Default`.
 2. The library is unloaded and the deployed file is loaded again, through a
    numbered file (`librusteal_hot_N.so`), so a build can always replace the
-   deployed one. On Linux and macOS it is a hard link, made in no time
-   whatever the library's size; on Windows, where a loaded DLL's file stays
-   locked, a copy. A link is safe because the deploy step replaces the
-   deployed file with a new one rather than writing into it: copying a
-   library over the deployed file by hand would change the loaded one.
+   deployed one. On Linux it is a hard link, made in no time whatever the
+   library's size; on Windows, where a loaded DLL's file stays locked, a
+   copy. A link is safe because the deploy step replaces the deployed file
+   with a new one rather than writing into it: copying a library over the
+   deployed file by hand would change the loaded one. On macOS it is a copy
+   too: `dlclose` never unloads a Rust library there (an image with
+   thread-local variables stays loaded), and `dlopen` hands back the image
+   already loaded from the same file, so a link would reload the old,
+   already initialized library. Each reload on macOS leaves the previous
+   library mapped until the editor exits.
 3. `rusteal_init` registers the library's classes again. A class whose
    **shape** is unchanged is reused: its functions point to the new code. A
    class whose shape changed is replaced (below).

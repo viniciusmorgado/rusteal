@@ -434,13 +434,22 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
         to_snake_case(&struct_name_str)
     );
 
-    let type_id_value = prop_type::fnv1a_hash(&struct_name_str);
-    let parent_type_id = prop_type::fnv1a_hash(&args.parent_name);
+    let type_id_value = quote! {
+        ::rusteal_runtime::runtime::type_id(concat!(module_path!(), "::", #struct_name_str))
+    };
 
-    let component_type_ids: Vec<u64> = components
+    let parent_path_for_id = &args.parent_path;
+
+    let parent_type_id = quote! {
+        <#parent_path_for_id as ::rusteal_runtime::runtime::UeClass>::RUST_TYPE_ID
+    };
+
+    let component_type_ids: Vec<TokenStream> = components
         .iter()
-        .filter_map(|c| c.component_type.segments.last())
-        .map(|segment| prop_type::fnv1a_hash(&segment.ident.to_string()))
+        .map(|c| {
+            let ty = &c.component_type;
+            quote! { <#ty as ::rusteal_runtime::runtime::UeClass>::RUST_TYPE_ID }
+        })
         .collect();
 
     let shape_value = shape::hash(
@@ -499,6 +508,8 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
 
     let ue_class_impl = quote! {
         impl ::rusteal_runtime::runtime::UeClass for #struct_name {
+            const RUST_TYPE_ID: u64 = #struct_name::__RUSTEAL_TYPE_ID;
+
             fn static_class() -> ::rusteal_runtime::ffi::UClassHandle {
                 *#class_handle_name.get().expect(concat!("Failed to find UClass for ", stringify!(#struct_name), " — was it registered?"))
             }
@@ -771,7 +782,7 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
     let register_fn = quote! {
         #[doc(hidden)]
         pub fn #register_fn_name(last_try: bool, shape: u64) -> bool {
-            const TYPE_ID: u64 = #type_id_value;
+            const TYPE_ID: u64 = #struct_name::__RUSTEAL_TYPE_ID;
 
             let parent = unsafe {
                 ::rusteal_runtime::runtime::ffi_dispatch::reflection_find_class(
@@ -967,7 +978,9 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
 
         ::rusteal_runtime::__inventory::submit! {
             ::rusteal_runtime::runtime::reify_registry::ClassRegistration {
-                type_id: #type_id_value,
+                krate: env!("CARGO_CRATE_NAME"),
+                name: #struct_name_str,
+                type_id: #struct_name::__RUSTEAL_TYPE_ID,
                 shape: #shape_value,
                 depends_on: &[#parent_type_id, #(#component_type_ids),*],
                 create: #register_fn_name,
@@ -1402,6 +1415,33 @@ mod tests {
 
         assert!(out.contains("< dyn Usable > :: __rusteal_interface_handle"));
         assert!(out.contains("reify_add_interface_class"));
+    }
+
+    #[test]
+    fn type_ids_follow_the_module_path_and_parents_give_their_own() {
+        let out = expand_uclass(
+            quote::quote!(parent = super::BaseItem),
+            quote::quote!(
+                pub struct Item {
+                    #[component(root)]
+                    mesh: StaticMeshComponent,
+                }
+            ),
+        )
+        .unwrap()
+        .to_string();
+
+        assert!(
+            out.contains("concat ! (module_path ! () , \"::\" , \"Item\")"),
+            "{out}"
+        );
+        assert!(out.contains(
+            "< super :: BaseItem as :: rusteal_runtime :: runtime :: UeClass > :: RUST_TYPE_ID"
+        ));
+        assert!(out.contains(
+            "< StaticMeshComponent as :: rusteal_runtime :: runtime :: UeClass > :: RUST_TYPE_ID"
+        ));
+        assert!(out.contains("krate : env ! (\"CARGO_CRATE_NAME\")"));
     }
 
     #[test]

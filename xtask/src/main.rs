@@ -94,7 +94,7 @@ fn dev_setup(args: &[String]) {
 
     write_exporter_props(&env.engine_root, &props);
     eprintln!("xtask: EngineDir -> {}", props.display());
-    restore_solution(&env.engine_root, &repo.join("rusteal.sln"));
+    restore_solution(&repo.join("rusteal.sln"));
 
     eprintln!("\nxtask: done. Restart the IDE's language servers to pick the files up.");
 }
@@ -307,10 +307,8 @@ fn write_exporter_props(engine_root: &Path, props: &Path) {
         .unwrap_or_else(|e| fail(&format!("cannot write {}: {e}", props.display())));
 }
 
-fn restore_solution(engine_root: &Path, solution: &Path) {
-    let dotnet = bundled_dotnet(engine_root).unwrap_or_else(|| PathBuf::from("dotnet"));
-
-    let ok = Command::new(&dotnet)
+fn restore_solution(solution: &Path) {
+    let ok = Command::new("dotnet")
         .args(["restore", "--verbosity", "quiet"])
         .arg(solution)
         .status()
@@ -320,47 +318,10 @@ fn restore_solution(engine_root: &Path, solution: &Path) {
         eprintln!("xtask: restored {}", solution.display());
     } else {
         eprintln!(
-            "xtask: warning: `{} restore` failed; the C# language server will restore the \
-             projects itself.",
-            dotnet.display()
+            "xtask: warning: `dotnet restore` failed; C# support in the editor needs a .NET SDK \
+             10 or newer on the PATH."
         );
     }
-}
-
-fn bundled_dotnet(engine_root: &Path) -> Option<PathBuf> {
-    let os = match std::env::consts::OS {
-        "windows" => "win",
-        "macos" => "osx",
-        other => other,
-    };
-
-    let arch = match std::env::consts::ARCH {
-        "x86_64" => "x64",
-        "aarch64" => "arm64",
-        other => other,
-    };
-
-    let exe = if cfg!(windows) {
-        "dotnet.exe"
-    } else {
-        "dotnet"
-    };
-
-    let root = engine_root.join("Engine/Binaries/ThirdParty/DotNet");
-
-    let mut versions: Vec<PathBuf> = std::fs::read_dir(root)
-        .ok()?
-        .flatten()
-        .map(|e| e.path())
-        .collect();
-
-    versions.sort();
-
-    versions
-        .iter()
-        .rev()
-        .map(|v| v.join(format!("{os}-{arch}")).join(exe))
-        .find(|p| p.is_file())
 }
 
 fn fail(message: &str) -> ! {

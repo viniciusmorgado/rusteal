@@ -147,6 +147,8 @@ pub fn expand_uenum(attr: TokenStream, item: TokenStream) -> syn::Result<TokenSt
 
         ::rusteal_runtime::__inventory::submit! {
             ::rusteal_runtime::runtime::reify_registry::EnumRegistration {
+                krate: env!("CARGO_CRATE_NAME"),
+                name: #name_str,
                 create: #create_fn,
             }
         }

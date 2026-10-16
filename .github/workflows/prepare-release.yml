@@ -151,6 +151,14 @@ jobs:
         if: steps.guard.outputs.skip != 'true'
         run: cargo clippy --workspace --all-targets --no-deps -- -D warnings
 
+      - name: Test the runtime's optional features
+        if: steps.guard.outputs.skip != 'true'
+        run: cargo test -p rusteal-runtime --features rayon,engine-allocator
+
+      - name: Clippy on the runtime's optional features
+        if: steps.guard.outputs.skip != 'true'
+        run: cargo clippy -p rusteal-runtime --features rayon,engine-allocator --all-targets --no-deps -- -D warnings
+
       # The same audit as CI, on the version this pull request publishes: a
       # vulnerable dependency stops the release before the merge.
       - name: Install cargo-audit

@@ -22,6 +22,11 @@ pub fn generate_cpp_func_ids(entries: &[FuncEntry]) -> String {
         entries.len()
     ));
 
+    out.push_str(&format!(
+        "    constexpr uint64_t FUNC_FINGERPRINT = 0x{:016x}ull;\n",
+        crate::rust_gen::func_ids::fingerprint(entries)
+    ));
+
     out.push_str("\n} // namespace RustealFuncId\n");
 
     out

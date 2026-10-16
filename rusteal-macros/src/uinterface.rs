@@ -344,6 +344,8 @@ pub fn expand_uinterface(attr: TokenStream, item: TokenStream) -> syn::Result<To
 
         ::rusteal_runtime::__inventory::submit! {
             ::rusteal_runtime::runtime::reify_registry::InterfaceRegistration {
+                krate: env!("CARGO_CRATE_NAME"),
+                name: #name_str,
                 create: #create_fn,
                 register: #register_fn,
                 finalize: #finalize_fn,

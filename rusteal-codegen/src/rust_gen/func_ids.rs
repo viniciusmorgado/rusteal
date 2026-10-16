@@ -15,7 +15,53 @@ pub fn generate_rust_func_ids(entries: &[FuncEntry]) -> String {
 
     out.push_str(&format!("pub const FUNC_COUNT: u32 = {};\n", entries.len()));
 
+    out.push_str(&format!(
+        "pub const FINGERPRINT: u64 = 0x{:016x};\n",
+        fingerprint(entries)
+    ));
+
     out
+}
+
+pub fn fingerprint(entries: &[FuncEntry]) -> u64 {
+    let mut hash: u64 = 0xcbf29ce484222325;
+
+    let mut feed = |text: &str| {
+        for byte in text.bytes().chain(std::iter::once(0x1f)) {
+            hash ^= byte as u64;
+            hash = hash.wrapping_mul(0x100000001b3);
+        }
+    };
+
+    for entry in entries {
+        feed(&entry.func_id.to_string());
+        feed(&entry.module_name);
+        feed(&entry.class_name);
+        feed(&entry.func_name);
+        feed(&entry.func.func_flags.to_string());
+        feed(if entry.func.is_static {
+            "static"
+        } else {
+            "member"
+        });
+
+        for param in &entry.func.params {
+            feed(&param.name);
+            feed(&param.prop_type);
+            feed(&param.prop_flags.to_string());
+
+            for name in [
+                &param.class_name,
+                &param.struct_name,
+                &param.enum_name,
+                &param.interface_name,
+            ] {
+                feed(name.as_deref().unwrap_or(""));
+            }
+        }
+    }
+
+    hash
 }
 
 pub fn func_id_const_name(class_name: &str, func_name: &str) -> String {
@@ -27,4 +73,42 @@ pub fn func_id_const_name(class_name: &str, func_name: &str) -> String {
 fn to_screaming_snake(name: &str) -> String {
     let snake = crate::naming::to_snake_case(name);
     snake.to_ascii_uppercase()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn entry(func_id: u32, class_name: &str, param_type: &str) -> FuncEntry {
+        let func = serde_json::from_value(serde_json::json!({
+            "name": "SetValue",
+            "func_flags": 0,
+            "params": [{ "name": "Value", "type": param_type, "prop_flags": 128 }],
+        }))
+        .unwrap();
+
+        FuncEntry {
+            func_id,
+            module_name: "engine".to_string(),
+            class_name: class_name.to_string(),
+            func_name: "SetValue".to_string(),
+            rust_func_name: "set_value".to_string(),
+            func,
+            cpp_class_name: format!("A{class_name}"),
+            header: String::new(),
+        }
+    }
+
+    #[test]
+    fn the_fingerprint_follows_every_signature() {
+        let base = fingerprint(&[entry(0, "Actor", "FloatProperty")]);
+        assert_eq!(base, fingerprint(&[entry(0, "Actor", "FloatProperty")]));
+        assert_ne!(base, fingerprint(&[entry(0, "Actor", "DoubleProperty")]));
+        assert_ne!(base, fingerprint(&[entry(0, "Pawn", "FloatProperty")]));
+        assert_ne!(base, fingerprint(&[entry(1, "Actor", "FloatProperty")]));
+        assert_ne!(base, fingerprint(&[]));
+
+        let code = generate_rust_func_ids(&[entry(0, "Actor", "FloatProperty")]);
+        assert!(code.contains(&format!("pub const FINGERPRINT: u64 = 0x{base:016x};")));
+    }
 }

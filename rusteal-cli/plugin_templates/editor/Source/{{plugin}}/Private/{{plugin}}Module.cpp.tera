@@ -4,6 +4,7 @@
 extern void {{ plugin }}_RustealFillFuncTable();
 extern void **{{ plugin }}_RustealGetFuncTable();
 extern uint32_t {{ plugin }}_RustealGetFuncCount();
+extern uint64_t {{ plugin }}_RustealGetFuncFingerprint();
 
 class F{{ plugin }}Module : public IModuleInterface {
 public:
@@ -11,9 +12,10 @@ public:
     FModuleManager::Get().LoadModuleChecked<IModuleInterface>(TEXT("RustealEditor"));
     {{ plugin }}_RustealFillFuncTable();
 
-    RustealRegisterPluginLibrary(TEXT("{{ plugin }}"),
-                                 {{ plugin }}_RustealGetFuncTable(),
-                                 {{ plugin }}_RustealGetFuncCount());
+    RustealRegisterPluginLibraryChecked(TEXT("{{ plugin }}"),
+                                        {{ plugin }}_RustealGetFuncTable(),
+                                        {{ plugin }}_RustealGetFuncCount(),
+                                        {{ plugin }}_RustealGetFuncFingerprint());
   }
 
   virtual void ShutdownModule() override {
