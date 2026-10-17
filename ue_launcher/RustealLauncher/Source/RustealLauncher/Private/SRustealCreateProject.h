@@ -33,6 +33,7 @@ private:
   FRustealLauncherStub Stub;
   FString Rusteal;
   FString RustealVersion;
+  FText Found;
   FText Status;
   TArray<FString> Lines;
   bool bFailed = false;
