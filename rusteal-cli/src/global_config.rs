@@ -51,6 +51,31 @@ pub fn save(config: &GlobalConfig) {
         .unwrap_or_else(|e| panic!("Failed to write {}: {e}", path.display()));
 }
 
+pub fn engine_path_or(flag: Option<&Path>) -> PathBuf {
+    let Some(engine) = flag else {
+        return engine_path();
+    };
+
+    if !is_engine_root(engine) {
+        eprintln!(
+            "Error: {} is not an Unreal Engine root (no Engine/Build/BatchFiles).",
+            engine.display()
+        );
+
+        std::process::exit(1);
+    }
+
+    let mut config = load();
+
+    if config.engine.path.trim().is_empty() {
+        config.engine.path = engine.to_string_lossy().into_owned();
+        save(&config);
+        eprintln!("  Saved the engine to {}", path().display());
+    }
+
+    engine.to_path_buf()
+}
+
 pub fn engine_path() -> PathBuf {
     let mut config = load();
 
