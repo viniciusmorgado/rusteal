@@ -27,7 +27,7 @@ private:
   bool CanCreate() const;
   FText GetLog() const;
   FText GetStatus() const;
-  FText GetCreateLabel() const;
+  EVisibility GetRetryVisibility() const;
   EVisibility GetThrobberVisibility() const;
 
   FRustealLauncherStub Stub;
