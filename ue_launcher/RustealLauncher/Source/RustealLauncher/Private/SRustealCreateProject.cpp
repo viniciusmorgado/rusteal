@@ -31,9 +31,11 @@ void SRustealCreateProject::Construct(const FArguments &InArgs) {
     RustealVersion =
         RustealLauncherCli::ReadVersion(Rusteal).Get(TEXT("unknown"));
 
-    Status = FText::Format(LOCTEXT("Ready", "Rusteal {0} at {1}"),
-                           FText::FromString(RustealVersion),
-                           FText::FromString(Rusteal));
+    Found = FText::Format(LOCTEXT("Ready", "Rusteal {0} at {1}"),
+                          FText::FromString(RustealVersion),
+                          FText::FromString(Rusteal));
+
+    Status = Found;
   }
 
   const FText Summary = FText::Format(
@@ -49,11 +51,10 @@ void SRustealCreateProject::Construct(const FArguments &InArgs) {
            .BorderImage(FAppStyle::GetBrush("ToolPanel.GroupBorder"))
            .Padding(16.0f)
                [SNew(SVerticalBox) +
-                SVerticalBox::Slot().AutoHeight().Padding(
-                    0, 0, 0,
-                    8)[SNew(STextBlock)
-                           .Font(FAppStyle::GetFontStyle("HeadingExtraSmall"))
-                           .Text(LOCTEXT("Title", "Create a Rust project"))] +
+                SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 8)
+                    [SNew(STextBlock)
+                         .Font(FAppStyle::GetFontStyle("HeadingExtraSmall"))
+                         .Text(LOCTEXT("Title", "Creating the Rust project"))] +
                 SVerticalBox::Slot().AutoHeight().Padding(
                     0, 0, 0,
                     8)[SNew(STextBlock).AutoWrapText(true).Text(Summary)] +
@@ -121,7 +122,7 @@ FReply SRustealCreateProject::OnCreate() {
     return FReply::Handled();
   }
 
-  Status = LOCTEXT("Running", "Creating the project...");
+  Status = Found;
   return FReply::Handled();
 }
 
