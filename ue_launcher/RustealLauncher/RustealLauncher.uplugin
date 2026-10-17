@@ -1,0 +1,34 @@
+{
+    "FileVersion": 3,
+    "Version": 1,
+    "VersionName": "0.1.0",
+    "FriendlyName": "Rusteal",
+    "Description": "Create Unreal Engine projects with their gameplay in Rust, from the New Project dialog.",
+    "Category": "Scripting",
+    "CreatedBy": "Vinicius Donatto Morgado",
+    "CreatedByURL": "https://github.com/viniciusmorgado/rusteal",
+    "DocsURL": "https://viniciusmorgado.github.io/game.rusteal.github.io/",
+    "MarketplaceURL": "",
+    "SupportURL": "https://github.com/viniciusmorgado/rusteal/issues",
+    "EngineVersion": "5.8.0",
+    "CanContainContent": false,
+    "IsBetaVersion": true,
+    "Installed": false,
+    "Modules": [
+        {
+            "Name": "RustealLauncher",
+            "Type": "Editor",
+            "LoadingPhase": "Default",
+            "PlatformAllowList": [
+                "Win64",
+                "Mac",
+                "Linux"
+            ]
+        }
+    ],
+    "SupportedTargetPlatforms": [
+        "Win64",
+        "Mac",
+        "Linux"
+    ]
+}
