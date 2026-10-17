@@ -28,8 +28,8 @@ public:
 
     CreateCommand = IConsoleManager::Get().RegisterConsoleCommand(
         TEXT("Rusteal.Launcher.Create"),
-        TEXT("Create the Rust project, as the Create button of the Rusteal "
-             "window does."),
+        TEXT("Create the Rust project again, as the Retry button of the "
+             "Rusteal window does."),
         FConsoleCommandDelegate::CreateRaw(this,
                                            &FRustealLauncherModule::Create));
 
@@ -80,6 +80,7 @@ private:
 
     FSlateApplication::Get().AddWindowAsNativeChild(Window,
                                                     Parent.ToSharedRef());
+    Create();
   }
 
   void Create() {

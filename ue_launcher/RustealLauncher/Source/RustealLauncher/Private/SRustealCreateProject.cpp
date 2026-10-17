@@ -38,9 +38,9 @@ void SRustealCreateProject::Construct(const FArguments &InArgs) {
 
   const FText Summary = FText::Format(
       LOCTEXT("Summary",
-              "{0} was made from a Rust template. Rusteal turns it into a "
-              "project with its gameplay in Rust, from the {1} template, and "
-              "builds it; the editor then restarts into it."),
+              "{0} was made from a Rust template. Rusteal is turning it into "
+              "a project with its gameplay in Rust, from the {1} template, "
+              "and building it; the editor restarts into it when it is done."),
       FText::FromString(FApp::GetProjectName()),
       FText::FromString(Stub.Template));
 
@@ -82,10 +82,11 @@ void SRustealCreateProject::Construct(const FArguments &InArgs) {
                      SHorizontalBox::Slot().AutoWidth().Padding(4, 0)
                          [SNew(SButton)
                               .ButtonStyle(FAppStyle::Get(), "PrimaryButton")
+                              .Visibility(this, &SRustealCreateProject::
+                                                    GetRetryVisibility)
                               .IsEnabled(this,
                                          &SRustealCreateProject::CanCreate)
-                              .Text(this,
-                                    &SRustealCreateProject::GetCreateLabel)
+                              .Text(LOCTEXT("Retry", "Retry"))
                               .OnClicked(this,
                                          &SRustealCreateProject::OnCreate)] +
                      SHorizontalBox::Slot().AutoWidth().Padding(4, 0)
@@ -162,8 +163,10 @@ void SRustealCreateProject::OnFinished(int32 ReturnCode) {
   bFailed = true;
 
   Status = FText::Format(
-      LOCTEXT("Failed", "Rusteal stopped with exit code {0}; the log above "
-                        "says why. The project was left as it was."),
+      LOCTEXT("Failed",
+              "Rusteal stopped with exit code {0}; the log above says why. "
+              "The project was left as it was: press Retry, or open the "
+              "project again to start over."),
       FText::AsNumber(ReturnCode));
 }
 
@@ -177,8 +180,8 @@ FText SRustealCreateProject::GetLog() const {
 
 FText SRustealCreateProject::GetStatus() const { return Status; }
 
-FText SRustealCreateProject::GetCreateLabel() const {
-  return bFailed ? LOCTEXT("Retry", "Retry") : LOCTEXT("Create", "Create");
+EVisibility SRustealCreateProject::GetRetryVisibility() const {
+  return bFailed ? EVisibility::Visible : EVisibility::Collapsed;
 }
 
 EVisibility SRustealCreateProject::GetThrobberVisibility() const {
