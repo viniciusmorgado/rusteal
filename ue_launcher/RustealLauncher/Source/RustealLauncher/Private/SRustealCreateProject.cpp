@@ -95,6 +95,12 @@ void SRustealCreateProject::Construct(const FArguments &InArgs) {
                                          &SRustealCreateProject::OnClose)]]]];
 }
 
+void SRustealCreateProject::Create() {
+  if (CanCreate()) {
+    OnCreate();
+  }
+}
+
 FReply SRustealCreateProject::OnCreate() {
   RustealLauncherCli::AddCargoBinToPath();
   Lines.Reset();

@@ -25,10 +25,5 @@
                 "Linux"
             ]
         }
-    ],
-    "SupportedTargetPlatforms": [
-        "Win64",
-        "Mac",
-        "Linux"
     ]
 }
