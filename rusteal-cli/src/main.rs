@@ -54,6 +54,10 @@ enum Commands {
         no_build: bool,
         #[arg(long, value_parser = optimizations::Switch::parse, default_value = "on")]
         optimizations: optimizations::Switch,
+        #[arg(long)]
+        engine: Option<PathBuf>,
+        #[arg(long)]
+        in_place: bool,
     },
     Plugin {
         #[command(subcommand)]
@@ -147,8 +151,10 @@ fn main() {
             features,
             no_build,
             optimizations,
+            engine,
+            in_place,
         } => {
-            let engine = global_config::engine_path();
+            let engine = global_config::engine_path_or(engine.as_deref());
 
             new_cmd::run_new(&new_cmd::NewOptions {
                 name: &name,
@@ -160,6 +166,7 @@ fn main() {
                 features: &features,
                 build: !no_build,
                 optimizations,
+                in_place,
             });
         }
         Commands::Plugin {

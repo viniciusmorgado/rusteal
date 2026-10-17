@@ -20,7 +20,12 @@ pub struct NewOptions<'a> {
     pub features: &'a [String],
     pub build: bool,
     pub optimizations: optimizations::Switch,
+    pub in_place: bool,
 }
+
+pub const STUB_MARKER: &str = "RustealLauncher.json";
+
+const KEPT_BY_THE_EDITOR: &[&str] = &["Saved", "Intermediate", "DerivedDataCache"];
 
 pub fn run_new(opts: &NewOptions) {
     validate_name(opts.name);
@@ -34,7 +39,12 @@ pub fn run_new(opts: &NewOptions) {
     let features = select_features(&manifest.features, opts.features);
     let root = opts.parent.join(opts.name);
 
-    if root.exists() {
+    if opts.in_place {
+        clear_stub(&root, opts.name).unwrap_or_else(|message| {
+            eprintln!("Error: {message}");
+            std::process::exit(1);
+        });
+    } else if root.exists() {
         eprintln!("Error: {} already exists.", root.display());
         std::process::exit(1);
     }
@@ -821,9 +831,130 @@ fn write(path: &Path, contents: &str) {
         .unwrap_or_else(|e| panic!("Failed to write {}: {e}", path.display()));
 }
 
+fn clear_stub(root: &Path, name: &str) -> Result<(), String> {
+    let marker = root.join(STUB_MARKER);
+
+    let text = std::fs::read_to_string(&marker).map_err(|_| {
+        format!(
+            "{} is not a project made from a Rust template: it has no {STUB_MARKER}.",
+            root.display()
+        )
+    })?;
+
+    let stub = serde_json::from_str::<serde_json::Value>(&text)
+        .ok()
+        .and_then(|value| value.get("stub").and_then(serde_json::Value::as_bool))
+        .unwrap_or(false);
+
+    if !stub {
+        return Err(format!(
+            "{} does not mark {} as a stub project.",
+            marker.display(),
+            root.display()
+        ));
+    }
+
+    let uproject = format!("{name}.uproject");
+    let mut to_remove = Vec::new();
+
+    for entry in
+        std::fs::read_dir(root).map_err(|e| format!("cannot read {}: {e}", root.display()))?
+    {
+        let entry = entry.map_err(|e| format!("cannot read {}: {e}", root.display()))?;
+        let path = entry.path();
+        let file_name = entry.file_name().to_string_lossy().into_owned();
+
+        let removable = match file_name.as_str() {
+            STUB_MARKER => continue,
+            kept if KEPT_BY_THE_EDITOR.contains(&kept) => continue,
+            "Config" => walk(&path)
+                .iter()
+                .all(|file| file.extension().is_some_and(|ext| ext == "ini")),
+            "Content" => walk(&path).is_empty(),
+            other => other == uproject,
+        };
+
+        if !removable {
+            return Err(format!(
+                "{} has {file_name}, which a stub project does not have; \
+                 create the project in an empty location instead.",
+                root.display()
+            ));
+        }
+
+        to_remove.push(path);
+    }
+
+    for path in to_remove {
+        let removed = if path.is_dir() {
+            std::fs::remove_dir_all(&path)
+        } else {
+            std::fs::remove_file(&path)
+        };
+
+        removed.map_err(|e| format!("cannot remove {}: {e}", path.display()))?;
+    }
+
+    std::fs::remove_file(&marker).map_err(|e| format!("cannot remove {}: {e}", marker.display()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn stub(name: &str, tag: &str) -> PathBuf {
+        let root = std::env::temp_dir().join(format!("rusteal-stub-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("Config")).unwrap();
+        std::fs::create_dir_all(root.join("Content")).unwrap();
+        std::fs::create_dir_all(root.join("Saved/Logs")).unwrap();
+        std::fs::write(root.join(format!("{name}.uproject")), "{}").unwrap();
+        std::fs::write(root.join("Config/DefaultGame.ini"), "").unwrap();
+        std::fs::write(root.join("Saved/Logs").join(format!("{name}.log")), "").unwrap();
+        std::fs::write(
+            root.join(STUB_MARKER),
+            r#"{"stub": true, "template": "blank"}"#,
+        )
+        .unwrap();
+        root
+    }
+
+    #[test]
+    fn a_stub_is_cleared_but_what_the_editor_holds_stays() {
+        let root = stub("Game", "clear");
+        clear_stub(&root, "Game").unwrap();
+
+        assert!(!root.join("Game.uproject").exists());
+        assert!(!root.join("Config").exists());
+        assert!(!root.join("Content").exists());
+        assert!(!root.join(STUB_MARKER).exists());
+        assert!(root.join("Saved/Logs/Game.log").exists());
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn anything_beyond_a_stub_is_refused_and_left_alone() {
+        let root = stub("Game", "extra");
+        std::fs::write(root.join("Content/Map.umap"), "").unwrap();
+
+        let error = clear_stub(&root, "Game").unwrap_err();
+        assert!(error.contains("Content"), "{error}");
+        assert!(root.join("Game.uproject").exists());
+        assert!(root.join(STUB_MARKER).exists());
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn a_directory_without_the_marker_is_not_a_stub() {
+        let root = stub("Game", "nomarker");
+        std::fs::remove_file(root.join(STUB_MARKER)).unwrap();
+        assert!(clear_stub(&root, "Game").unwrap_err().contains(STUB_MARKER));
+
+        std::fs::write(root.join(STUB_MARKER), r#"{"template": "blank"}"#).unwrap();
+        assert!(clear_stub(&root, "Game").unwrap_err().contains("stub"));
+        assert!(root.join("Game.uproject").exists());
+        std::fs::remove_dir_all(&root).unwrap();
+    }
 
     #[cfg(unix)]
     #[test]
