@@ -4,7 +4,7 @@ use std::process::Command;
 use std::time::Instant;
 
 use rusteal_codegen::config::{
-    PluginConfig, PluginLayout, ProjectConfig, ProjectLayout, find_plugins,
+    PluginConfig, PluginLayout, PluginLibrary, ProjectConfig, ProjectLayout, find_plugins,
 };
 
 pub fn canonical_no_prefix(path: &Path) -> PathBuf {
@@ -125,11 +125,13 @@ pub fn run_build(
     }
 
     if steps.contains(&RUST_STEP) {
-        let workspaces: Vec<PathBuf> = ctx
+        let mut workspaces: Vec<PathBuf> = ctx
             .libraries
             .iter()
             .map(|library| library.rust_workspace.clone())
             .collect();
+
+        workspaces.dedup();
 
         crate::console_check::report(project_root, &workspaces);
     }
@@ -197,7 +199,8 @@ struct Library {
     features: Vec<String>,
     deploy_dir: PathBuf,
     deploy_stem: String,
-    plugin: Option<PluginLayout>,
+    bindings_crate: PathBuf,
+    plugin: Option<(PluginLayout, PluginLibrary)>,
 }
 
 struct BuildContext {
@@ -227,6 +230,7 @@ impl BuildContext {
                 features: config.project.features.clone(),
                 deploy_dir: project_root.join("Plugins/Rusteal/Binaries").join(platform),
                 deploy_stem: "rusteal".to_string(),
+                bindings_crate: layout.bindings_crate(),
                 plugin: None,
             });
         }
@@ -261,15 +265,32 @@ impl BuildContext {
                 std::process::exit(1);
             });
 
-            libraries.push(Library {
-                label: format!("plugin {}", plugin.name),
-                rust_workspace: plugin.rust_workspace(),
-                crate_name: plugin_config.plugin.crate_name,
-                features: plugin_config.plugin.features,
-                deploy_dir: plugin.binaries(platform),
-                deploy_stem: plugin.library_stem(),
-                plugin: Some(plugin),
-            });
+            if let Some(editor) = &plugin_config.editor {
+                refuse_runtime_dependency(
+                    &plugin.rust_workspace(),
+                    &editor.crate_name,
+                    &plugin_config.plugin.crate_name,
+                );
+            }
+
+            for library in plugin_config.libraries(&plugin.name) {
+                let label = if library.module == plugin.name {
+                    format!("plugin {}", plugin.name)
+                } else {
+                    format!("plugin {} ({})", plugin.name, library.module)
+                };
+
+                libraries.push(Library {
+                    label,
+                    rust_workspace: plugin.rust_workspace(),
+                    crate_name: library.crate_name.clone(),
+                    features: library.features.clone(),
+                    deploy_dir: plugin.binaries(platform),
+                    deploy_stem: plugin.library_stem_of(&library),
+                    bindings_crate: plugin.library_output(&library).bindings_crate,
+                    plugin: Some((PluginLayout::new(&plugin.dir), library)),
+                });
+            }
         }
 
         BuildContext {
@@ -385,7 +406,11 @@ impl BuildContext {
         for library in &self.libraries {
             match &library.plugin {
                 None => rusteal_codegen::run_generate(&self.layout.root),
-                Some(plugin) => rusteal_codegen::run_generate_plugin(&self.layout.root, plugin),
+                Some((plugin, plugin_library)) => rusteal_codegen::run_generate_plugin_library(
+                    &self.layout.root,
+                    plugin,
+                    plugin_library,
+                ),
             }
 
             crate::migrate::bindings_dependency(&library.rust_workspace, &library.crate_name);
@@ -398,11 +423,7 @@ impl BuildContext {
 
     fn step4_cargo_build(&self) {
         for library in &self.libraries {
-            if !library
-                .rust_workspace
-                .join("bindings/src/func_ids.rs")
-                .is_file()
-            {
+            if !library.bindings_crate.join("src/func_ids.rs").is_file() {
                 eprintln!(
                     "Error: the {} library's bindings have not been generated yet: \
                      run `rusteal build --all` once.",
@@ -533,9 +554,63 @@ pub fn run_cmd_code_env(args: &[&str], env: &[(&str, &Path)]) -> i32 {
     code
 }
 
+fn depends_on(manifest_text: &str, crate_name: &str) -> bool {
+    let Ok(manifest) = manifest_text.parse::<toml::Table>() else {
+        return false;
+    };
+
+    ["dependencies", "build-dependencies"]
+        .iter()
+        .any(|section| {
+            manifest
+                .get(*section)
+                .and_then(toml::Value::as_table)
+                .is_some_and(|deps| {
+                    deps.iter().any(|(name, spec)| {
+                        let package = spec
+                            .as_table()
+                            .and_then(|t| t.get("package"))
+                            .and_then(toml::Value::as_str)
+                            .unwrap_or(name);
+
+                        package == crate_name
+                    })
+                })
+        })
+}
+
+fn refuse_runtime_dependency(workspace: &Path, editor_crate: &str, runtime_crate: &str) {
+    let manifest = workspace.join(editor_crate).join("Cargo.toml");
+    let text = fs::read_to_string(&manifest).unwrap_or_default();
+
+    if depends_on(&text, runtime_crate) {
+        eprintln!(
+            "Error: {} depends on {runtime_crate}, the plugin's runtime crate. The editor \
+             library would register the runtime library's classes a second time: reach them \
+             through reflection (DynamicCall, interfaces, Blueprint classes), and move shared \
+             code without Rust types into a crate of its own.",
+            manifest.display()
+        );
+
+        std::process::exit(1);
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::deploy;
+    use super::{depends_on, deploy};
+
+    #[test]
+    fn an_editor_crate_depending_on_the_runtime_crate_is_seen() {
+        let by_name = "[dependencies]\ninventory = { path = \"../inventory\" }\n";
+        let by_package =
+            "[dependencies]\ninv = { package = \"inventory\", path = \"../inventory\" }\n";
+        let unrelated = "[dependencies]\nrusteal-runtime = { workspace = true }\n";
+
+        assert!(depends_on(by_name, "inventory"));
+        assert!(depends_on(by_package, "inventory"));
+        assert!(!depends_on(unrelated, "inventory"));
+    }
 
     #[test]
     fn deploy_replaces_the_library_and_leaves_nothing_else() {

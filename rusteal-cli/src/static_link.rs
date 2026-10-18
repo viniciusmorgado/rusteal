@@ -57,16 +57,18 @@ pub fn modules(root: &Path) -> Result<Vec<StaticModule>, String> {
     for plugin in find_plugins(root) {
         let plugin_config = PluginConfig::load(&plugin.dir)?;
 
-        if plugin_config.plugin.kind == LibraryKind::Editor {
-            continue;
-        }
+        for library in plugin_config.libraries(&plugin.name) {
+            if library.kind == LibraryKind::Editor {
+                continue;
+            }
 
-        modules.push(StaticModule {
-            name: plugin.name.clone(),
-            manifest: member_manifest(&plugin.rust_workspace(), &plugin_config.plugin.crate_name),
-            package: plugin_config.plugin.crate_name,
-            features: plugin_config.plugin.features,
-        });
+            modules.push(StaticModule {
+                name: library.module,
+                manifest: member_manifest(&plugin.rust_workspace(), &library.crate_name),
+                package: library.crate_name,
+                features: library.features,
+            });
+        }
     }
 
     Ok(modules)

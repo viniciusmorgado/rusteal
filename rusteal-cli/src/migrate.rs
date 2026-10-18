@@ -26,7 +26,12 @@ pub fn bindings_dependency(workspace: &Path, crate_name: &str) -> Vec<PathBuf> {
         .flatten()
         .flatten()
         .map(|entry| entry.path())
-        .filter(|dir| dir.is_dir() && dir.file_name().is_some_and(|n| n != "bindings"))
+        .filter(|dir| {
+            dir.is_dir()
+                && dir
+                    .file_name()
+                    .is_some_and(|n| !n.to_string_lossy().ends_with("bindings"))
+        })
         .map(|dir| dir.join("Cargo.toml"))
         .filter(|manifest| manifest.is_file());
 
