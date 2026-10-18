@@ -161,6 +161,13 @@ enum PluginCommands {
         project: Option<PathBuf>,
         #[arg(long)]
         output: Option<PathBuf>,
+        #[arg(long)]
+        precompiled: bool,
+    },
+    Merge {
+        into: PathBuf,
+        #[arg(required = true)]
+        from: Vec<PathBuf>,
     },
 }
 
@@ -237,13 +244,19 @@ fn main() {
                     name,
                     project,
                     output,
+                    precompiled,
                 },
         } => {
             let root = project_root(project.as_deref());
             check_version(&root, Scope::PinsAndPlugins);
             let engine = global_config::engine_path();
             let output = output.unwrap_or_else(|| root.join("Packaged/Plugins"));
-            package_cmd::run_plugin_package(&root, &engine, &name, &output);
+            package_cmd::run_plugin_package(&root, &engine, &name, &output, precompiled);
+        }
+        Commands::Plugin {
+            command: PluginCommands::Merge { into, from },
+        } => {
+            package_cmd::run_plugin_merge(&into, &from);
         }
         Commands::Package {
             project,
@@ -333,7 +346,9 @@ fn main() {
             rusteal_codegen::run_generate(&root);
 
             for plugin in find_plugins(&root) {
-                rusteal_codegen::run_generate_plugin(&root, &plugin);
+                if !plugin.is_precompiled() {
+                    rusteal_codegen::run_generate_plugin(&root, &plugin);
+                }
             }
         }
         Commands::Upgrade { project } => {
