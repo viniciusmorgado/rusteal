@@ -1,0 +1,27 @@
+#include "Modules/ModuleManager.h"
+#include "RustealLibraries.h"
+
+extern void {{ module }}_RustealFillFuncTable();
+extern void **{{ module }}_RustealGetFuncTable();
+extern uint32_t {{ module }}_RustealGetFuncCount();
+extern uint64_t {{ module }}_RustealGetFuncFingerprint();
+
+class F{{ module }}Module : public IModuleInterface {
+public:
+  virtual void StartupModule() override {
+    FModuleManager::Get().LoadModuleChecked<IModuleInterface>(TEXT("RustealEditor"));
+    FModuleManager::Get().LoadModuleChecked<IModuleInterface>(TEXT("{{ plugin }}"));
+    {{ module }}_RustealFillFuncTable();
+
+    RustealRegisterPluginModuleLibraryChecked(TEXT("{{ plugin }}"), TEXT("{{ module }}"),
+                                              {{ module }}_RustealGetFuncTable(),
+                                              {{ module }}_RustealGetFuncCount(),
+                                              {{ module }}_RustealGetFuncFingerprint());
+  }
+
+  virtual void ShutdownModule() override {
+    RustealUnregisterLibrary(TEXT("{{ module }}"));
+  }
+};
+
+IMPLEMENT_MODULE(F{{ module }}Module, {{ module }})

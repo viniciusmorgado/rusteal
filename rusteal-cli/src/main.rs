@@ -145,6 +145,15 @@ enum PluginCommands {
         project: Option<PathBuf>,
         #[arg(long)]
         no_build: bool,
+        #[arg(long)]
+        editor: bool,
+    },
+    Editor {
+        name: String,
+        #[arg(long)]
+        project: Option<PathBuf>,
+        #[arg(long)]
+        no_build: bool,
     },
     Package {
         name: String,
@@ -193,6 +202,7 @@ fn main() {
                     template,
                     project,
                     no_build,
+                    editor,
                 },
         } => {
             let root = project_root(project.as_deref());
@@ -205,7 +215,21 @@ fn main() {
                 root: &root,
                 engine: &engine,
                 build: !no_build,
+                editor,
             });
+        }
+        Commands::Plugin {
+            command:
+                PluginCommands::Editor {
+                    name,
+                    project,
+                    no_build,
+                },
+        } => {
+            let root = project_root(project.as_deref());
+            check_version(&root, Scope::PinsAndPlugins);
+            let engine = global_config::engine_path();
+            plugin_cmd::run_plugin_editor(&name, &root, &engine, !no_build);
         }
         Commands::Plugin {
             command:

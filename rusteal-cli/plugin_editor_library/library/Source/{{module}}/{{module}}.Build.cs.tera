@@ -1,0 +1,29 @@
+using System.IO;
+using UnrealBuildTool;
+
+public class {{ module }} : ModuleRules
+{
+    public {{ module }}(ReadOnlyTargetRules Target) : base(Target)
+    {
+        PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
+
+        PrivateDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "Rusteal" });
+
+        UnrealBuildTool.Rules.Rusteal.AddRustLibrary(this, Target, PluginDirectory, "rusteal_{{ module }}");
+
+        string DepsFile = Path.Combine(ModuleDirectory, "Generated", "module_deps.txt");
+
+        if (File.Exists(DepsFile))
+        {
+            foreach (string Module in File.ReadAllLines(DepsFile))
+            {
+                string Trimmed = Module.Trim();
+
+                if (Trimmed.Length > 0 && !PrivateDependencyModuleNames.Contains(Trimmed))
+                {
+                    PrivateDependencyModuleNames.Add(Trimmed);
+                }
+            }
+        }
+    }
+}

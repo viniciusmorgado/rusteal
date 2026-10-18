@@ -1,0 +1,16 @@
+#![deny(unsafe_code)]
+
+rusteal_runtime::entry!();
+
+mod menu;
+mod subsystem;
+mod validator;
+
+use bindings::editor_subsystem::EditorSubsystem;
+use bindings::unreal_ed::EditorSubsystemBlueprintLibrary;
+use rusteal_runtime::runtime::{Inherits, RustealResult, SubclassOf, UObjectRef, UeClass};
+
+pub fn editor_subsystem<T: UeClass + Inherits<EditorSubsystem>>() -> RustealResult<UObjectRef<T>> {
+    let class = SubclassOf::<T>::base().upcast_to::<EditorSubsystem>();
+    EditorSubsystemBlueprintLibrary::get_editor_subsystem(class).cast::<T>()
+}
