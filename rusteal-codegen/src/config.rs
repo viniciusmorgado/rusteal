@@ -332,6 +332,17 @@ impl PluginLayout {
         }
     }
 
+    pub fn is_precompiled(&self) -> bool {
+        std::fs::read_to_string(self.descriptor())
+            .ok()
+            .and_then(|text| {
+                text.lines()
+                    .find(|line| line.trim_start().starts_with("\"Installed\""))
+                    .map(|line| line.contains("true"))
+            })
+            .unwrap_or(false)
+    }
+
     pub fn library_module_dir(&self, library: &PluginLibrary) -> PathBuf {
         self.dir.join("Source").join(&library.module)
     }
@@ -475,5 +486,21 @@ mod tests {
             layout.library_stem_of(&libraries[1]),
             "rusteal_InventoryEditor"
         );
+    }
+
+    #[test]
+    fn a_plugin_the_engine_installed_is_precompiled() {
+        let dir = std::env::temp_dir().join(format!("rusteal-installed-{}", std::process::id()));
+        let plugin = dir.join("Inventory");
+        std::fs::create_dir_all(&plugin).unwrap();
+        let layout = PluginLayout::new(&plugin);
+
+        std::fs::write(layout.descriptor(), "{\n\t\"Installed\": false\n}\n").unwrap();
+        assert!(!layout.is_precompiled());
+
+        std::fs::write(layout.descriptor(), "{\n\t\"Installed\": true\n}\n").unwrap();
+        assert!(layout.is_precompiled());
+
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }
