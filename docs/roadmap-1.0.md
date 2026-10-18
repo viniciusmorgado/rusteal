@@ -194,6 +194,14 @@ closed, and at least one real project (the Fab plugin or Noir Blue) uses them.
 
 ### M0 — Plugins for every project (≈0.10, L)
 
+**Status (2026-10-18):** in progress. The launcher is done on Linux: the Rust
+category in the New Project dialog with every template and variant, the setup
+on first open with its checks and retries, `rusteal launcher install`, both
+handbooks, and the submission notes in [fab-submission.md](fab-submission.md).
+Left: Windows and macOS, the Fab submission, editor-only plugins for projects
+without Rusteal, precompiled plugin packages, a runtime and an editor library in
+one plugin.
+
 The next step already planned: two kinds of plugins.
 
 - **Editor-only plugins** that a C++ or Blueprint project without Rusteal can
