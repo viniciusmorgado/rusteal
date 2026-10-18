@@ -148,7 +148,9 @@ mod tests {
         assert!(has("RustealLauncher/RustealLauncher.uplugin"));
         assert!(has("RustealLauncher/Config/FilterPlugin.ini"));
         assert!(has("RustealLauncher/Templates/TemplateCategories.ini"));
-        assert!(has("RustealLauncher/Source/RustealLauncher/RustealLauncher.Build.cs"));
+        assert!(has(
+            "RustealLauncher/Source/RustealLauncher/RustealLauncher.Build.cs"
+        ));
     }
 
     #[test]
@@ -166,8 +168,7 @@ mod tests {
             let template = marker["template"].as_str().unwrap();
             let variant = marker["variant"].as_str();
 
-            crate::templates::select(template, variant)
-                .unwrap_or_else(|e| panic!("{path}: {e}"));
+            crate::templates::select(template, variant).unwrap_or_else(|e| panic!("{path}: {e}"));
 
             stubs += 1;
         }

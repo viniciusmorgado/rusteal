@@ -47,6 +47,14 @@ fn main() {
     embed_templates(
         &manifest_dir,
         &out_dir,
+        "plugin_editor_library",
+        "PLUGIN_EDITOR_LIBRARY_FILES",
+        "plugin_editor_library_files.rs",
+    );
+
+    embed_templates(
+        &manifest_dir,
+        &out_dir,
         "project_features",
         "PROJECT_FEATURE_FILES",
         "project_feature_files.rs",

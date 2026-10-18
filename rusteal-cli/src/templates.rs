@@ -5,6 +5,7 @@ use serde::Deserialize;
 include!(concat!(env!("OUT_DIR"), "/template_files.rs"));
 include!(concat!(env!("OUT_DIR"), "/plugin_template_files.rs"));
 include!(concat!(env!("OUT_DIR"), "/project_feature_files.rs"));
+include!(concat!(env!("OUT_DIR"), "/plugin_editor_library_files.rs"));
 
 pub const DEFAULT_PLUGIN_TEMPLATE: &str = "blank";
 
@@ -360,6 +361,22 @@ pub fn write_plugin_files(template: &str, root: &Path, context: &tera::Context) 
 
 pub fn write_project_files(dir: &str, root: &Path, context: &tera::Context) -> usize {
     write_files(TEMPLATE_FILES, dir, root, context)
+}
+
+pub fn write_editor_library_files(root: &Path, context: &tera::Context) -> usize {
+    write_files(PLUGIN_EDITOR_LIBRARY_FILES, "library", root, context)
+}
+
+pub fn render_editor_library_config(context: &tera::Context) -> String {
+    let (path, contents) = PLUGIN_EDITOR_LIBRARY_FILES
+        .iter()
+        .find(|(path, _)| *path == "rusteal.editor.toml.tera")
+        .expect("the editor library's configuration is embedded");
+
+    let text = std::str::from_utf8(contents).unwrap_or_else(|e| panic!("{path} is not UTF-8: {e}"));
+
+    tera::Tera::one_off(text, context, false)
+        .unwrap_or_else(|e| panic!("Failed to render {path}: {e}"))
 }
 
 fn write_files(files: &[(&str, &[u8])], dir: &str, root: &Path, context: &tera::Context) -> usize {

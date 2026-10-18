@@ -8,7 +8,7 @@ description = "Rust bindings for Unreal Engine 5.8.2"
 readme = "../README.md"
 build = "build.rs"
 default-run = "rusteal"
-include = ["src/**", "templates/**", "plugin_templates/**", "project_features/**", "optimizations.toml", "build.rs", "Cargo.toml", "ue_plugin_embed/**", "ue_launcher_embed/**"]
+include = ["src/**", "templates/**", "plugin_templates/**", "plugin_editor_library/**", "project_features/**", "optimizations.toml", "build.rs", "Cargo.toml", "ue_plugin_embed/**", "ue_launcher_embed/**"]
 
 [dependencies]
 rusteal-codegen = { workspace = true }
