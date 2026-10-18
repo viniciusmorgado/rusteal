@@ -150,4 +150,33 @@ mod tests {
         assert!(has("RustealLauncher/Templates/TemplateCategories.ini"));
         assert!(has("RustealLauncher/Source/RustealLauncher/RustealLauncher.Build.cs"));
     }
+
+    #[test]
+    fn every_rust_template_names_a_template_the_cli_has() {
+        let mut stubs = 0;
+
+        for (path, contents) in LAUNCHER_FILES {
+            if !path.ends_with("/RustealLauncher.json") {
+                continue;
+            }
+
+            let marker: serde_json::Value = serde_json::from_slice(contents).unwrap();
+            assert_eq!(marker["stub"], true, "{path}");
+
+            let template = marker["template"].as_str().unwrap();
+            let variant = marker["variant"].as_str();
+
+            crate::templates::select(template, variant)
+                .unwrap_or_else(|e| panic!("{path}: {e}"));
+
+            stubs += 1;
+        }
+
+        let variants: usize = crate::templates::available()
+            .iter()
+            .map(|template| template.variants.len())
+            .sum();
+
+        assert_eq!(stubs, variants, "one Rust template per template variant");
+    }
 }

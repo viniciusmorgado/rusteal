@@ -45,7 +45,9 @@ void SRustealCreateProject::Construct(const FArguments &InArgs) {
               "a project with its gameplay in Rust, from the {1} template, "
               "and building it; the editor restarts into it when it is done."),
       FText::FromString(FApp::GetProjectName()),
-      FText::FromString(Stub.Template));
+      FText::FromString(Stub.Variant.IsEmpty()
+                            ? Stub.Template
+                            : Stub.Template + TEXT(" ") + Stub.Variant));
 
   auto Requirement = [this](const FText &Name, TAttribute<FText> State,
                             TSharedRef<SWidget> Action) {
