@@ -22,6 +22,28 @@ pub struct ProjectSection {
 pub struct PluginConfig {
     pub plugin: PluginSection,
     pub codegen: CodegenConfig,
+    #[serde(default)]
+    pub editor: Option<EditorLibrarySection>,
+}
+
+#[derive(Deserialize)]
+pub struct EditorLibrarySection {
+    #[serde(rename = "crate")]
+    pub crate_name: String,
+    #[serde(default)]
+    pub features: Vec<String>,
+    pub codegen: CodegenConfig,
+}
+
+pub const EDITOR_BINDINGS_DIR: &str = "editor-bindings";
+
+pub struct PluginLibrary {
+    pub module: String,
+    pub crate_name: String,
+    pub features: Vec<String>,
+    pub kind: LibraryKind,
+    pub codegen: CodegenConfig,
+    pub bindings_dir: &'static str,
 }
 
 #[derive(Deserialize)]
@@ -49,8 +71,47 @@ impl PluginConfig {
         let text = std::fs::read_to_string(&path)
             .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
 
-        toml::from_str(&text).map_err(|e| format!("cannot parse {}: {e}", path.display()))
+        let config: Self =
+            toml::from_str(&text).map_err(|e| format!("cannot parse {}: {e}", path.display()))?;
+
+        if config.editor.is_some() && config.plugin.kind == LibraryKind::Editor {
+            return Err(format!(
+                "{}: [editor] adds an editor library to a runtime plugin, and this plugin is \
+                 already an editor one (kind = \"editor\")",
+                path.display()
+            ));
+        }
+
+        Ok(config)
     }
+
+    pub fn libraries(&self, plugin: &str) -> Vec<PluginLibrary> {
+        let mut libraries = vec![PluginLibrary {
+            module: plugin.to_string(),
+            crate_name: self.plugin.crate_name.clone(),
+            features: self.plugin.features.clone(),
+            kind: self.plugin.kind,
+            codegen: self.codegen.clone(),
+            bindings_dir: "bindings",
+        }];
+
+        if let Some(editor) = &self.editor {
+            libraries.push(PluginLibrary {
+                module: editor_module(plugin),
+                crate_name: editor.crate_name.clone(),
+                features: editor.features.clone(),
+                kind: LibraryKind::Editor,
+                codegen: editor.codegen.clone(),
+                bindings_dir: EDITOR_BINDINGS_DIR,
+            });
+        }
+
+        libraries
+    }
+}
+
+pub fn editor_module(plugin: &str) -> String {
+    format!("{plugin}Editor")
 }
 
 #[derive(Deserialize, Clone)]
@@ -270,6 +331,26 @@ impl PluginLayout {
             kind,
         }
     }
+
+    pub fn library_module_dir(&self, library: &PluginLibrary) -> PathBuf {
+        self.dir.join("Source").join(&library.module)
+    }
+
+    pub fn library_stem_of(&self, library: &PluginLibrary) -> String {
+        format!("rusteal_{}", library.module)
+    }
+
+    pub fn library_output(&self, library: &PluginLibrary) -> LibraryOutput {
+        LibraryOutput {
+            bindings_crate: self.rust_workspace().join(library.bindings_dir),
+            bindings_package: bindings_package(&library.crate_name),
+            cpp_generated: self.library_module_dir(library).join("Generated"),
+            plugin_descriptor: self.descriptor(),
+            host_module: library.module.clone(),
+            cpp_prefix: format!("{}_", library.module),
+            kind: library.kind,
+        }
+    }
 }
 
 pub fn find_plugins(project_root: &Path) -> Vec<PluginLayout> {
@@ -341,5 +422,58 @@ mod tests {
 
         let editor = codegen().for_library(LibraryKind::Editor);
         assert_eq!(editor.modules["RustealEditor"].module, "rusteal_editor");
+    }
+
+    #[test]
+    fn a_plugin_has_a_runtime_library_and_may_have_an_editor_library() {
+        let runtime_only: PluginConfig = toml::from_str(
+            "[plugin]\ncrate = \"inventory\"\n[codegen]\nfeatures = []\n[codegen.modules]\n",
+        )
+        .unwrap();
+
+        let libraries = runtime_only.libraries("Inventory");
+        assert_eq!(libraries.len(), 1);
+        assert_eq!(libraries[0].module, "Inventory");
+
+        let both: PluginConfig = toml::from_str(
+            "[plugin]\ncrate = \"inventory\"\n[codegen]\nfeatures = []\n[codegen.modules]\n\
+             [editor]\ncrate = \"inventory-editor\"\n[editor.codegen]\nfeatures = [\"editor\"]\n\
+             [editor.codegen.modules]\n",
+        )
+        .unwrap();
+
+        let libraries = both.libraries("Inventory");
+        assert_eq!(libraries.len(), 2);
+        assert_eq!(libraries[1].module, "InventoryEditor");
+        assert_eq!(libraries[1].kind, LibraryKind::Editor);
+        assert_eq!(libraries[1].codegen.features, ["editor"]);
+
+        let layout = PluginLayout::new(Path::new("/p/Plugins/Inventory"));
+        let runtime = layout.library_output(&libraries[0]);
+        let editor = layout.library_output(&libraries[1]);
+
+        assert_eq!(runtime.cpp_prefix, "Inventory_");
+        assert_eq!(
+            runtime.bindings_crate,
+            Path::new("/p/Plugins/Inventory/Rust/bindings")
+        );
+        assert_eq!(editor.cpp_prefix, "InventoryEditor_");
+        assert_eq!(editor.host_module, "InventoryEditor");
+        assert_eq!(editor.bindings_package, "inventory-editor-bindings");
+
+        assert_eq!(
+            editor.bindings_crate,
+            Path::new("/p/Plugins/Inventory/Rust/editor-bindings")
+        );
+
+        assert_eq!(
+            editor.cpp_generated,
+            Path::new("/p/Plugins/Inventory/Source/InventoryEditor/Generated")
+        );
+
+        assert_eq!(
+            layout.library_stem_of(&libraries[1]),
+            "rusteal_InventoryEditor"
+        );
     }
 }
