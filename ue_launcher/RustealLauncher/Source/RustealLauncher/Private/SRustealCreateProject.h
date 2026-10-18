@@ -8,7 +8,6 @@
 #include "Widgets/SCompoundWidget.h"
 
 class SScrollBox;
-class SWindow;
 
 class SRustealCreateProject : public SCompoundWidget {
 public:
@@ -16,27 +15,48 @@ public:
   SLATE_ARGUMENT(FRustealLauncherStub, Stub)
   SLATE_END_ARGS()
 
+  ~SRustealCreateProject();
+
   void Construct(const FArguments &InArgs);
   void Create();
 
 private:
-  FReply OnCreate();
-  FReply OnClose();
+  enum class ERun { None, Install, Create };
+
+  void Check();
+  bool IsReady() const;
+  void Run(ERun Kind, const FString &Executable, const FString &Arguments);
   void AppendLine(const FString &Line);
   void OnFinished(int32 ReturnCode);
-  bool CanCreate() const;
+  void RestoreStub();
+
+  FReply OnGetRust();
+  FReply OnInstallRusteal();
+  FReply OnCheckAgain();
+  FReply OnRetry();
+  FReply OnCancel();
+  FReply OnClose();
+
+  FText GetRustState() const;
+  FText GetRustealState() const;
+  FText GetInstallLabel() const;
   FText GetLog() const;
   FText GetStatus() const;
-  EVisibility GetRetryVisibility() const;
-  EVisibility GetThrobberVisibility() const;
+  EVisibility VisibleWhen(bool bVisible) const;
 
   FRustealLauncherStub Stub;
+  FString StubProject;
+  TArray<FString> CodeDirectoriesToRemove;
+  FString Cargo;
+  FString CargoVersion;
   FString Rusteal;
   FString RustealVersion;
-  FText Found;
+  bool bRustealCreatesFromStubs = false;
+  bool bValidName = false;
+  bool bFailed = false;
+  ERun Running = ERun::None;
   FText Status;
   TArray<FString> Lines;
-  bool bFailed = false;
   TSharedPtr<SScrollBox> LogScroll;
   TUniquePtr<FRustealLauncherProcess> Process;
 };
