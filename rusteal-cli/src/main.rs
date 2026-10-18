@@ -1,6 +1,7 @@
 mod build_cmd;
 mod console_check;
 mod global_config;
+mod launcher_cmd;
 mod migrate;
 mod new_cmd;
 mod optimizations;
@@ -110,6 +111,22 @@ enum Commands {
         project: Option<PathBuf>,
     },
     SyncPlugin,
+    Launcher {
+        #[command(subcommand)]
+        command: LauncherCommands,
+    },
+}
+
+#[derive(Subcommand)]
+enum LauncherCommands {
+    Install {
+        #[arg(long)]
+        engine: Option<PathBuf>,
+    },
+    Remove {
+        #[arg(long)]
+        engine: Option<PathBuf>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -298,6 +315,16 @@ fn main() {
         Commands::Upgrade { project } => {
             let root = project_root(project.as_deref());
             upgrade_cmd::run_upgrade(&root);
+        }
+        Commands::Launcher {
+            command: LauncherCommands::Install { engine },
+        } => {
+            launcher_cmd::run_install(&global_config::engine_path_or(engine.as_deref()));
+        }
+        Commands::Launcher {
+            command: LauncherCommands::Remove { engine },
+        } => {
+            launcher_cmd::run_remove(&global_config::engine_path_or(engine.as_deref()));
         }
         Commands::SyncPlugin => {
             sync_plugin::run_sync();

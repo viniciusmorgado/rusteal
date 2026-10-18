@@ -10,49 +10,22 @@ fn main() {
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
 
-    let workspace_path = manifest_dir.join("..").join("ue_plugin");
-    let embed_path = manifest_dir.join("ue_plugin_embed");
+    embed_plugin(
+        &manifest_dir,
+        &out_dir,
+        ["ue_plugin", "ue_plugin_embed"],
+        "Rusteal",
+        "PLUGIN_FILES",
+        "plugin_files.rs",
+    );
 
-    let source_root = if workspace_path.join("Rusteal").exists() {
-        workspace_path
-    } else if embed_path.join("Rusteal").exists() {
-        embed_path
-    } else {
-        panic!(
-            "Cannot find UE plugin sources. \
-             Expected either {workspace} or {embed} to contain Rusteal/",
-            workspace = workspace_path.display(),
-            embed = embed_path.display(),
-        );
-    };
-
-    let source_root = fs::canonicalize(&source_root)
-        .unwrap_or_else(|e| panic!("Failed to canonicalize {}: {e}", source_root.display()));
-
-    println!("cargo:rerun-if-changed={}", source_root.display());
-
-    let mut files: Vec<(String, PathBuf)> = Vec::new();
-    collect_files(&source_root, &source_root, &mut files);
-    files.sort_by(|a, b| a.0.cmp(&b.0));
-
-    let out_file = out_dir.join("plugin_files.rs");
-
-    let mut f = fs::File::create(&out_file)
-        .unwrap_or_else(|e| panic!("Failed to create {}: {e}", out_file.display()));
-
-    writeln!(f, "pub const PLUGIN_FILES: &[(&str, &[u8])] = &[").unwrap();
-
-    for (rel_path, abs_path) in &files {
-        let abs_str = abs_path.to_str().expect("non-UTF8 path").replace('\\', "/");
-        writeln!(f, "    ({rel_path:?}, include_bytes!({abs_str:?})),").unwrap();
-    }
-
-    writeln!(f, "];").unwrap();
-
-    eprintln!(
-        "rusteal build.rs: embedded {} plugin files from {}",
-        files.len(),
-        source_root.display()
+    embed_plugin(
+        &manifest_dir,
+        &out_dir,
+        ["ue_launcher", "ue_launcher_embed"],
+        "RustealLauncher",
+        "LAUNCHER_FILES",
+        "launcher_files.rs",
     );
 
     embed_templates(
@@ -77,6 +50,60 @@ fn main() {
         "project_features",
         "PROJECT_FEATURE_FILES",
         "project_feature_files.rs",
+    );
+}
+
+fn embed_plugin(
+    manifest_dir: &Path,
+    out_dir: &Path,
+    [workspace_dir, embed_dir]: [&str; 2],
+    plugin: &str,
+    const_name: &str,
+    out_name: &str,
+) {
+    let workspace_path = manifest_dir.join("..").join(workspace_dir);
+    let embed_path = manifest_dir.join(embed_dir);
+
+    let source_root = if workspace_path.join(plugin).exists() {
+        workspace_path
+    } else if embed_path.join(plugin).exists() {
+        embed_path
+    } else {
+        panic!(
+            "Cannot find the {plugin} plugin sources. \
+             Expected either {workspace} or {embed} to contain {plugin}/",
+            workspace = workspace_path.display(),
+            embed = embed_path.display(),
+        );
+    };
+
+    let source_root = fs::canonicalize(&source_root)
+        .unwrap_or_else(|e| panic!("Failed to canonicalize {}: {e}", source_root.display()));
+
+    println!("cargo:rerun-if-changed={}", source_root.display());
+
+    let mut files: Vec<(String, PathBuf)> = Vec::new();
+    collect_files(&source_root, &source_root, &mut files);
+    files.sort_by(|a, b| a.0.cmp(&b.0));
+
+    let out_file = out_dir.join(out_name);
+
+    let mut f = fs::File::create(&out_file)
+        .unwrap_or_else(|e| panic!("Failed to create {}: {e}", out_file.display()));
+
+    writeln!(f, "pub const {const_name}: &[(&str, &[u8])] = &[").unwrap();
+
+    for (rel_path, abs_path) in &files {
+        let abs_str = abs_path.to_str().expect("non-UTF8 path").replace('\\', "/");
+        writeln!(f, "    ({rel_path:?}, include_bytes!({abs_str:?})),").unwrap();
+    }
+
+    writeln!(f, "];").unwrap();
+
+    eprintln!(
+        "rusteal build.rs: embedded {} {plugin} files from {}",
+        files.len(),
+        source_root.display()
     );
 }
 
