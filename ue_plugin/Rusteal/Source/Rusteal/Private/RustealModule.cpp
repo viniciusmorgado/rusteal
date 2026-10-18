@@ -610,6 +610,15 @@ bool RustealRegisterPluginLibraryChecked(const FString &PluginName,
                                          void *const *FuncTable,
                                          uint32 FuncCount,
                                          uint64 FuncFingerprint) {
+  return RustealRegisterPluginModuleLibraryChecked(
+      PluginName, PluginName, FuncTable, FuncCount, FuncFingerprint);
+}
+
+bool RustealRegisterPluginModuleLibraryChecked(const FString &PluginName,
+                                               const FString &LibraryName,
+                                               void *const *FuncTable,
+                                               uint32 FuncCount,
+                                               uint64 FuncFingerprint) {
   TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(PluginName);
 
   if (!Plugin.IsValid()) {
@@ -624,9 +633,9 @@ bool RustealRegisterPluginLibraryChecked(const FString &PluginName,
   const FString Path =
       FPaths::Combine(Plugin->GetBaseDir(), TEXT("Binaries"),
                       FPlatformProcess::GetBinariesSubdirectory(),
-                      RustealLibraryFileName(TEXT("rusteal_") + PluginName));
+                      RustealLibraryFileName(TEXT("rusteal_") + LibraryName));
 
-  return RustealRegisterLibraryChecked(FName(*PluginName), Path, FuncTable,
+  return RustealRegisterLibraryChecked(FName(*LibraryName), Path, FuncTable,
                                        FuncCount, FuncFingerprint);
 }
 
