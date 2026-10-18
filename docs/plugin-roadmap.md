@@ -45,7 +45,7 @@ Each entry says what is missing, what it takes, and what to do meanwhile.
 
 | Feature | What it takes | Meanwhile |
 |---|---|---|
-| **A plugin with both a runtime and an editor library** | A plugin has one Rust library, runtime or editor. Two would need two C++ modules and two bindings crates in one plugin. | Two plugins, `Name` and `NameEditor`, the editor one depending on the runtime one. |
+| **An editor library using its runtime library's Rust types** | A runtime plugin can have an editor library (`rusteal plugin new --editor`, `rusteal plugin editor`), but the editor crate cannot depend on the runtime crate: in a dynamic build it would register the runtime crate's types a second time. Needs libraries that see each other's types (the next row). | The runtime classes' Unreal functions: dynamic calls, interfaces, Blueprint classes. |
 | **Typed calls into another library's Rust classes** | A game's Rust code calling a plugin's Rust class with its Rust type: the class lives in another library, whose data a Rust crate cannot share across the library boundary. Needs generated bindings for Rust classes, from their reflection. | `DynamicCall` by name, or interfaces (`implements = [...]`) the plugin's classes implement. |
 | **Rust classes whose parent is another library's Rust class** | Same reason: the parent's Rust type is not visible to the child's crate. | A Blueprint child of the plugin's class. |
 | **A plugin library built against another Rusteal version** | A library must match the Rusteal plugin's version exactly, as the game's does. Tolerating minor versions needs a stable API table layout. | Rebuild the plugin with the project's Rusteal version. |
