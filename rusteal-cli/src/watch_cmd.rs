@@ -97,7 +97,7 @@ fn collect(dir: &Path, files: &mut Snapshot) {
         };
 
         if kind.is_dir() {
-            if !(name == "target" || name == "bindings" || name.starts_with('.')) {
+            if !(name == "target" || name.ends_with("bindings") || name.starts_with('.')) {
                 collect(&path, files);
             }
         } else if path
