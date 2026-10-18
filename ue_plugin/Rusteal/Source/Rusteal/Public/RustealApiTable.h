@@ -1,5 +1,7 @@
 #pragma once
 
+#include "CoreTypes.h"
+
 struct RustealUObjectHandle {
   void *ptr;
 };
