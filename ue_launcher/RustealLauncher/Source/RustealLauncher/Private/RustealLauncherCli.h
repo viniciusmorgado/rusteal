@@ -14,7 +14,10 @@ struct FRustealLauncherStub {
 namespace RustealLauncherCli {
 FString CargoBinDir();
 FString FindRusteal();
+FString FindCargo();
 TOptional<FString> ReadVersion(const FString &Executable);
+bool CreatesFromStubs(const FString &Rusteal);
+bool IsValidProjectName(const FString &Name);
 void AddCargoBinToPath();
 FString NewProjectArguments(const FRustealLauncherStub &Stub);
 FString ProjectParentDir();

@@ -56,7 +56,9 @@ bool FRustealLauncherProcess::Tick(float DeltaTime) {
 
   TickerHandle.Reset();
   Release();
-  OnExit.ExecuteIfBound(ReturnCode);
+
+  const FOnExit Exit = OnExit;
+  Exit.ExecuteIfBound(ReturnCode);
   return false;
 }
 

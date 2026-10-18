@@ -74,21 +74,14 @@ FString RustealLauncherCli::CargoBinDir() {
   return FullDirectory(FPaths::Combine(CargoHome, TEXT("bin")));
 }
 
-FString RustealLauncherCli::FindRusteal() {
-  const FString Override =
-      FPlatformMisc::GetEnvironmentVariable(TEXT("RUSTEAL_CLI"));
-
-  if (!Override.IsEmpty()) {
-    return FPaths::FileExists(Override) ? Override : FString();
-  }
-
-  const FString Name = ExecutableName(TEXT("rusteal"));
+static FString FindOnPath(const FString &Program) {
+  const FString Name = ExecutableName(Program);
   TArray<FString> Directories;
 
   FPlatformMisc::GetEnvironmentVariable(TEXT("PATH"))
       .ParseIntoArray(Directories, FPlatformMisc::GetPathVarDelimiter());
 
-  Directories.Add(CargoBinDir());
+  Directories.Add(RustealLauncherCli::CargoBinDir());
 
   for (const FString &Directory : Directories) {
     const FString Candidate = FPaths::Combine(Directory, Name);
@@ -99,6 +92,44 @@ FString RustealLauncherCli::FindRusteal() {
   }
 
   return FString();
+}
+
+FString RustealLauncherCli::FindRusteal() {
+  const FString Override =
+      FPlatformMisc::GetEnvironmentVariable(TEXT("RUSTEAL_CLI"));
+
+  if (!Override.IsEmpty()) {
+    return FPaths::FileExists(Override) ? Override : FString();
+  }
+
+  return FindOnPath(TEXT("rusteal"));
+}
+
+FString RustealLauncherCli::FindCargo() { return FindOnPath(TEXT("cargo")); }
+
+bool RustealLauncherCli::CreatesFromStubs(const FString &Rusteal) {
+  int32 ReturnCode = -1;
+  FString StdOut;
+  FString StdErr;
+
+  return FPlatformProcess::ExecProcess(*Rusteal, TEXT("new --help"),
+                                       &ReturnCode, &StdOut, &StdErr) &&
+         ReturnCode == 0 && StdOut.Contains(TEXT("--in-place")) &&
+         StdOut.Contains(TEXT("--engine"));
+}
+
+bool RustealLauncherCli::IsValidProjectName(const FString &Name) {
+  if (Name.IsEmpty() || Name.Len() > 20 || !FChar::IsAlpha(Name[0])) {
+    return false;
+  }
+
+  for (const TCHAR Character : Name) {
+    if (Character > 127 || !FChar::IsAlnum(Character)) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 TOptional<FString> RustealLauncherCli::ReadVersion(const FString &Executable) {
