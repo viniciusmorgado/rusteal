@@ -66,6 +66,9 @@ pub fn generate_wrapper_file(entries: &[&FuncEntry], ctx: &CodegenContext) -> St
         includes.insert("\"RustealFNameHelper.h\"".to_string());
     }
 
+    includes.insert("\"Templates/SubclassOf.h\"".to_string());
+    out.push_str("#include \"CoreMinimal.h\"\n");
+
     for inc in &includes {
         out.push_str(&format!("#include {inc}\n"));
     }
