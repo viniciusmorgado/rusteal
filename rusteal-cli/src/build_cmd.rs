@@ -260,6 +260,16 @@ impl BuildContext {
                 continue;
             }
 
+            if plugin.is_precompiled() {
+                eprintln!(
+                    "  plugin {}: precompiled (\"Installed\": true), its libraries are used as \
+                     they are",
+                    plugin.name
+                );
+
+                continue;
+            }
+
             let plugin_config = PluginConfig::load(&plugin.dir).unwrap_or_else(|e| {
                 eprintln!("Error: {e}");
                 std::process::exit(1);
