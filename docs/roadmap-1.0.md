@@ -371,6 +371,13 @@ maintainer: the pipeline reaches 1.0.0 only from a `BREAKING CHANGE:` commit.
   [third-person-gaps.md](third-person-gaps.md)), and goes into the next
   milestone it fits, or ahead of it when it blocks the game. Edge cases are
   expected; this is how they are handled.
+- **Showcase in the README:** two new sections, each added to the README only
+  when its first entry is released, linked to its repository or store page:
+  - **Rusteal Extensions**, plugins that extend Rusteal itself. The first one
+    planned is an ECS gameplay plugin for Rusteal, for gameplay written in a
+    data-oriented style in Unreal Engine, developed in parallel.
+  - **Commercial Games and Plugins built with Rusteal**. The first one expected
+    is the maintainer's Fab editor plugin (M0).
 
 ## Order and why
 
