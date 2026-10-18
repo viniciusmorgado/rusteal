@@ -27,6 +27,17 @@ pub const STUB_MARKER: &str = "RustealLauncher.json";
 
 const KEPT_BY_THE_EDITOR: &[&str] = &["Saved", "Intermediate", "DerivedDataCache"];
 
+const MADE_BY_A_CONVERSION: &[&str] = &[
+    "Config",
+    "Content",
+    "Source",
+    "Rust",
+    "Plugins",
+    "Binaries",
+    "rusteal.toml",
+    ".gitignore",
+];
+
 pub fn run_new(opts: &NewOptions) {
     validate_name(opts.name);
 
@@ -115,6 +126,13 @@ pub fn run_new(opts: &NewOptions) {
 
     if opts.build {
         build_cmd::run_build(&root, opts.engine, None, 1, false, None);
+    }
+
+    if opts.in_place {
+        let marker = root.join(STUB_MARKER);
+
+        std::fs::remove_file(&marker)
+            .unwrap_or_else(|e| panic!("Failed to remove {}: {e}", marker.display()));
     }
 
     eprintln!("\nrusteal new: done.");
@@ -864,20 +882,14 @@ fn clear_stub(root: &Path, name: &str) -> Result<(), String> {
         let path = entry.path();
         let file_name = entry.file_name().to_string_lossy().into_owned();
 
-        let removable = match file_name.as_str() {
-            STUB_MARKER => continue,
-            kept if KEPT_BY_THE_EDITOR.contains(&kept) => continue,
-            "Config" => walk(&path)
-                .iter()
-                .all(|file| file.extension().is_some_and(|ext| ext == "ini")),
-            "Content" => walk(&path).is_empty(),
-            other => other == uproject,
-        };
+        if file_name == STUB_MARKER || KEPT_BY_THE_EDITOR.contains(&file_name.as_str()) {
+            continue;
+        }
 
-        if !removable {
+        if file_name != uproject && !MADE_BY_A_CONVERSION.contains(&file_name.as_str()) {
             return Err(format!(
-                "{} has {file_name}, which a stub project does not have; \
-                 create the project in an empty location instead.",
+                "{} has {file_name}, which neither a stub project nor its conversion \
+                 makes; create the project in an empty location instead.",
                 root.display()
             ));
         }
@@ -895,7 +907,7 @@ fn clear_stub(root: &Path, name: &str) -> Result<(), String> {
         removed.map_err(|e| format!("cannot remove {}: {e}", path.display()))?;
     }
 
-    std::fs::remove_file(&marker).map_err(|e| format!("cannot remove {}: {e}", marker.display()))
+    Ok(())
 }
 
 #[cfg(test)]
@@ -927,18 +939,41 @@ mod tests {
         assert!(!root.join("Game.uproject").exists());
         assert!(!root.join("Config").exists());
         assert!(!root.join("Content").exists());
-        assert!(!root.join(STUB_MARKER).exists());
+        assert!(root.join(STUB_MARKER).exists());
         assert!(root.join("Saved/Logs/Game.log").exists());
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn what_a_stopped_conversion_left_is_cleared_for_a_retry() {
+        let root = stub("Game", "retry");
+        std::fs::create_dir_all(root.join("Rust/game/src")).unwrap();
+        std::fs::create_dir_all(root.join("Plugins/Rusteal")).unwrap();
+        std::fs::write(root.join("Content/Map.umap"), "").unwrap();
+        std::fs::write(root.join("rusteal.toml"), "").unwrap();
+        clear_stub(&root, "Game").unwrap();
+
+        for made in [
+            "Rust",
+            "Plugins",
+            "Content",
+            "rusteal.toml",
+            "Game.uproject",
+        ] {
+            assert!(!root.join(made).exists(), "{made}");
+        }
+
+        assert!(root.join(STUB_MARKER).exists());
         std::fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]
     fn anything_beyond_a_stub_is_refused_and_left_alone() {
         let root = stub("Game", "extra");
-        std::fs::write(root.join("Content/Map.umap"), "").unwrap();
+        std::fs::write(root.join("Notes.txt"), "").unwrap();
 
         let error = clear_stub(&root, "Game").unwrap_err();
-        assert!(error.contains("Content"), "{error}");
+        assert!(error.contains("Notes.txt"), "{error}");
         assert!(root.join("Game.uproject").exists());
         assert!(root.join(STUB_MARKER).exists());
         std::fs::remove_dir_all(&root).unwrap();
