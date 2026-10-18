@@ -11,8 +11,8 @@ pub mod type_map;
 use std::path::Path;
 
 use crate::config::{
-    CodegenConfig, LibraryKind, LibraryOutput, PluginConfig, PluginLayout, ProjectConfig,
-    ProjectLayout,
+    CodegenConfig, LibraryKind, LibraryOutput, PluginConfig, PluginLayout, PluginLibrary,
+    ProjectConfig, ProjectLayout,
 };
 use crate::schema::{ClassesFile, EnumsFile, StructsFile};
 
@@ -44,13 +44,31 @@ pub fn run_generate_plugin(project_root: &Path, plugin: &PluginLayout) {
         std::process::exit(1);
     });
 
+    for library in config.libraries(&plugin.name) {
+        run_generate_plugin_library(project_root, plugin, &library);
+    }
+}
+
+pub fn run_generate_plugin_library(
+    project_root: &Path,
+    plugin: &PluginLayout,
+    library: &PluginLibrary,
+) {
     let layout = ProjectLayout::new(project_root);
-    eprintln!("rusteal-codegen: plugin {}", plugin.name);
+
+    if library.module == plugin.name {
+        eprintln!("rusteal-codegen: plugin {}", plugin.name);
+    } else {
+        eprintln!(
+            "rusteal-codegen: plugin {}, library {}",
+            plugin.name, library.module
+        );
+    }
 
     generate_library(
         &layout.uht_json(),
-        &config.codegen,
-        &plugin.output(config.plugin.kind, &config.plugin.crate_name),
+        &library.codegen,
+        &plugin.library_output(library),
     );
 }
 
