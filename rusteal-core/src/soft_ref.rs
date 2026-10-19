@@ -2,7 +2,7 @@ use std::fmt;
 use std::marker::PhantomData;
 
 use crate::error::RustealResult;
-use crate::object_ref::UObjectRef;
+use crate::object_ref::{Checked, UObjectRef};
 use crate::traits::UeClass;
 use crate::world;
 
@@ -39,6 +39,11 @@ impl<T: UeClass> SoftObjectRef<T> {
         world::find_object_raw(T::static_class(), &self.path)
             .map(|h| unsafe { UObjectRef::from_raw(h) })
             .unwrap_or_else(|_| UObjectRef::null())
+    }
+
+    #[track_caller]
+    pub fn checked(&self) -> RustealResult<Checked<T>> {
+        self.get().checked()
     }
 
     #[track_caller]

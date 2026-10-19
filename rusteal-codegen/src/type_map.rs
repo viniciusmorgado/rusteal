@@ -194,10 +194,26 @@ pub fn map_property_type(
                 }
             }
         }
-        "SoftObjectProperty" | "WeakObjectProperty" => {
+        "SoftObjectProperty" => {
             if let Some(cls) = class_name {
                 MappedType {
-                    rust_type: format!("rusteal_core::UObjectRef<{cls}>"),
+                    rust_type: format!("rusteal_core::SoftObjectRef<{cls}>"),
+                    rust_ffi_type: "*const u8".into(),
+                    cpp_type: format!("TSoftObjectPtr<{cls}>"),
+                    property_getter: "get_soft_object_path".into(),
+                    property_setter: "set_soft_object_path".into(),
+                    rust_to_ffi: ConversionKind::StringUtf8,
+                    ffi_to_rust: ConversionKind::StringUtf8,
+                    supported: true,
+                }
+            } else {
+                unsupported("SoftObjectProperty without class_name")
+            }
+        }
+        "WeakObjectProperty" => {
+            if let Some(cls) = class_name {
+                MappedType {
+                    rust_type: format!("rusteal_core::TWeakObjectPtr<{cls}>"),
                     rust_ffi_type: "rusteal_core::UObjectHandle".into(),
                     cpp_type: format!("{cls}*"),
                     property_getter: "get_object".into(),
@@ -480,7 +496,11 @@ pub fn container_element_rust_type(
                     return None;
                 }
 
-                Some(format!("rusteal_core::UObjectRef<{cls}>"))
+                if inner.prop_type == "WeakObjectProperty" {
+                    Some(format!("rusteal_core::TWeakObjectPtr<{cls}>"))
+                } else {
+                    Some(format!("rusteal_core::UObjectRef<{cls}>"))
+                }
             } else {
                 Some("rusteal_core::UObjectHandle".into())
             }
