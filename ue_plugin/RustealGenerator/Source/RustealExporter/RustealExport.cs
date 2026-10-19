@@ -616,7 +616,7 @@ public static class RustealExport
 
             if (prop is UhtInterfaceProperty ifaceProp)
             {
-                info["interface_name"] = StripPrefix(ifaceProp.InterfaceClass.SourceName);
+                info["interface_name"] = ifaceProp.InterfaceClass.EngineName;
             }
 
             if (prop is UhtStructProperty structProp)

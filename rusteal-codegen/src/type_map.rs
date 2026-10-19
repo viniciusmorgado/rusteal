@@ -66,6 +66,14 @@ const SUPPORTED_TYPES: &[&str] = &[
     "MulticastSparseDelegateProperty",
 ];
 
+fn interface_rust_type(interface_name: &str) -> &str {
+    if interface_name == "Interface" {
+        "Object"
+    } else {
+        interface_name
+    }
+}
+
 pub fn is_supported_type(prop_type: &str) -> bool {
     SUPPORTED_TYPES.contains(&prop_type)
 }
@@ -241,7 +249,7 @@ pub fn map_property_type(
         "InterfaceProperty" => {
             if let Some(iface) = interface_name {
                 MappedType {
-                    rust_type: format!("rusteal_core::UObjectRef<{iface}>"),
+                    rust_type: format!("rusteal_core::UObjectRef<{}>", interface_rust_type(iface)),
                     rust_ffi_type: "rusteal_core::UObjectHandle".into(),
                     cpp_type: format!("{iface}*"),
                     property_getter: "get_object".into(),
@@ -503,7 +511,10 @@ pub fn container_element_rust_type(
                     return None;
                 }
 
-                Some(format!("rusteal_core::UObjectRef<{iface}>"))
+                Some(format!(
+                    "rusteal_core::UObjectRef<{}>",
+                    interface_rust_type(iface)
+                ))
             } else {
                 None
             }
