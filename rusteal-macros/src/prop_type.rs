@@ -37,9 +37,57 @@ pub enum PropKind {
     Enum {
         ty: Type,
     },
+    RawScalar {
+        zero_expr: TokenStream,
+    },
+    Text,
+    Weak {
+        class: Type,
+    },
+    SoftClass {
+        meta_class: Type,
+    },
+    Interface {
+        interface: Type,
+    },
+    Map {
+        key: Box<PropTypeInfo>,
+        value: Box<PropTypeInfo>,
+    },
+    Set {
+        element: Box<PropTypeInfo>,
+    },
 }
 
 impl PropKind {
+    pub fn container_element(&self) -> bool {
+        matches!(
+            self,
+            PropKind::Scalar { .. }
+                | PropKind::RawScalar { .. }
+                | PropKind::Object { .. }
+                | PropKind::Class { .. }
+                | PropKind::Name
+                | PropKind::Str
+                | PropKind::Text
+                | PropKind::SoftObject { .. }
+                | PropKind::Weak { .. }
+                | PropKind::OwnedStruct { .. }
+        )
+    }
+
+    pub fn hashable(&self) -> bool {
+        matches!(
+            self,
+            PropKind::Scalar { .. }
+                | PropKind::RawScalar { .. }
+                | PropKind::Object { .. }
+                | PropKind::Class { .. }
+                | PropKind::Name
+                | PropKind::Str
+        )
+    }
+
     pub fn property_only(&self) -> bool {
         matches!(
             self,
@@ -47,6 +95,13 @@ impl PropKind {
                 | PropKind::Name
                 | PropKind::Str
                 | PropKind::SoftObject { .. }
+                | PropKind::RawScalar { .. }
+                | PropKind::Text
+                | PropKind::Weak { .. }
+                | PropKind::SoftClass { .. }
+                | PropKind::Interface { .. }
+                | PropKind::Map { .. }
+                | PropKind::Set { .. }
         )
     }
 }
@@ -54,8 +109,41 @@ impl PropKind {
 impl PropTypeInfo {
     pub fn extra_fields(&self) -> Option<TokenStream> {
         match &self.kind {
-            PropKind::Scalar { .. } => None,
-            PropKind::Object { class } | PropKind::SoftObject { class } => Some(quote! {
+            PropKind::Scalar { .. } | PropKind::RawScalar { .. } | PropKind::Text => None,
+            PropKind::Interface { interface } => Some(quote! {
+                class_handle: <#interface as ::rusteal_runtime::runtime::UeInterface>::static_class(),
+            }),
+            PropKind::SoftClass { meta_class } => Some(quote! {
+                meta_class_handle: <#meta_class as ::rusteal_runtime::runtime::UeClass>::static_class(),
+            }),
+            PropKind::Set { element } => {
+                let inner_type = &element.prop_type_expr;
+                let inner_fields = element.extra_fields().unwrap_or_default();
+
+                Some(quote! {
+                    #inner_fields
+                    inner_prop_type: #inner_type as u32,
+                })
+            }
+            PropKind::Map { key, value } => {
+                let key_type = &key.prop_type_expr;
+                let key_fields = key.extra_fields().unwrap_or_default();
+                let value_type = &value.prop_type_expr;
+                let value_fields = value.extra_fields().unwrap_or_default();
+
+                Some(quote! {
+                    #key_fields
+                    inner_prop_type: #key_type as u32,
+                    value_prop_type: #value_type as u32,
+                    value: &::rusteal_runtime::ffi::RustealReifyPropExtra {
+                        #value_fields
+                        ..::core::default::Default::default()
+                    },
+                })
+            }
+            PropKind::Object { class }
+            | PropKind::SoftObject { class }
+            | PropKind::Weak { class } => Some(quote! {
                 class_handle: <#class as ::rusteal_runtime::runtime::UeClass>::static_class(),
             }),
             PropKind::Class { meta_class } => Some(quote! {
@@ -79,6 +167,21 @@ impl PropTypeInfo {
             }
         }
     }
+}
+
+fn two_type_args(seg: &syn::PathSegment) -> Option<(Type, Type)> {
+    let syn::PathArguments::AngleBracketed(args) = &seg.arguments else {
+        return None;
+    };
+
+    let mut types = args.args.iter().filter_map(|a| match a {
+        syn::GenericArgument::Type(t) => Some(t.clone()),
+        _ => None,
+    });
+
+    let first = types.next()?;
+    let second = types.next()?;
+    types.next().is_none().then_some((first, second))
 }
 
 fn single_type_arg(seg: &syn::PathSegment) -> Option<Type> {
@@ -161,17 +264,77 @@ pub fn map_type(ty: &Type) -> Option<PropTypeInfo> {
                 kind: PropKind::Str,
             });
         }
+        "Text" if seg.arguments.is_none() => {
+            return Some(PropTypeInfo {
+                prop_type_expr: quote! { ::rusteal_runtime::ffi::RustealReifyPropType::Text },
+                rust_type: quote! { #ty },
+                kind: PropKind::Text,
+            });
+        }
+        "TWeakObjectPtr" => {
+            let class = single_type_arg(seg)?;
+
+            return Some(PropTypeInfo {
+                prop_type_expr: quote! { ::rusteal_runtime::ffi::RustealReifyPropType::WeakObject },
+                rust_type: quote! { #ty },
+                kind: PropKind::Weak { class },
+            });
+        }
+        "SoftClassRef" => {
+            let meta_class = single_type_arg(seg)?;
+
+            return Some(PropTypeInfo {
+                prop_type_expr: quote! { ::rusteal_runtime::ffi::RustealReifyPropType::SoftClass },
+                rust_type: quote! { #ty },
+                kind: PropKind::SoftClass { meta_class },
+            });
+        }
+        "ScriptInterface" => {
+            let interface = single_type_arg(seg)?;
+
+            return Some(PropTypeInfo {
+                prop_type_expr: quote! { ::rusteal_runtime::ffi::RustealReifyPropType::Interface },
+                rust_type: quote! { #ty },
+                kind: PropKind::Interface { interface },
+            });
+        }
+        "UeSet" => {
+            let element = map_type(&single_type_arg(seg)?)?;
+
+            if !element.kind.hashable() {
+                return None;
+            }
+
+            return Some(PropTypeInfo {
+                prop_type_expr: quote! { ::rusteal_runtime::ffi::RustealReifyPropType::Set },
+                rust_type: quote! { #ty },
+                kind: PropKind::Set {
+                    element: Box::new(element),
+                },
+            });
+        }
+        "UeMap" => {
+            let (key, value) = two_type_args(seg)?;
+            let key = map_type(&key)?;
+            let value = map_type(&value)?;
+
+            if !key.kind.hashable() || !value.kind.container_element() {
+                return None;
+            }
+
+            return Some(PropTypeInfo {
+                prop_type_expr: quote! { ::rusteal_runtime::ffi::RustealReifyPropType::Map },
+                rust_type: quote! { #ty },
+                kind: PropKind::Map {
+                    key: Box::new(key),
+                    value: Box::new(value),
+                },
+            });
+        }
         "UeArray" => {
             let element = map_type(&single_type_arg(seg)?)?;
 
-            if !matches!(
-                element.kind,
-                PropKind::Scalar { .. }
-                    | PropKind::Object { .. }
-                    | PropKind::Class { .. }
-                    | PropKind::Name
-                    | PropKind::OwnedStruct { .. }
-            ) {
+            if !element.kind.container_element() {
                 return None;
             }
 
@@ -225,6 +388,25 @@ pub fn map_type(ty: &Type) -> Option<PropTypeInfo> {
             quote! { 0i64 },
         ),
         "u8" => scalar("UInt8", quote! { u8 }, "get_u8", "set_u8", quote! { 0u8 }),
+        "i8" | "i16" | "u16" | "u32" | "u64" => {
+            let name = seg.ident.to_string();
+            let variant = ident(match name.as_str() {
+                "i8" => "Int8",
+                "i16" => "Int16",
+                "u16" => "UInt16",
+                "u32" => "UInt32",
+                _ => "UInt64",
+            });
+            let rust = ident(&name);
+
+            PropTypeInfo {
+                prop_type_expr: quote! { ::rusteal_runtime::ffi::RustealReifyPropType::#variant },
+                rust_type: quote! { #rust },
+                kind: PropKind::RawScalar {
+                    zero_expr: quote! { 0 as #rust },
+                },
+            }
+        }
         "f32" => scalar(
             "Float",
             quote! { f32 },
@@ -240,7 +422,8 @@ pub fn map_type(ty: &Type) -> Option<PropTypeInfo> {
             quote! { 0.0f64 },
         ),
         "UObjectRef" | "SubclassOf" | "SoftObjectRef" | "UStructRef" | "OwnedStruct"
-        | "UeArray" => {
+        | "UeArray" | "UeMap" | "UeSet" | "TWeakObjectPtr" | "SoftClassRef" | "ScriptInterface"
+        | "Text" => {
             return None;
         }
         name if seg.arguments.is_none()
@@ -313,6 +496,13 @@ mod tests {
             PropKind::Name => "name",
             PropKind::Str => "string",
             PropKind::Enum { .. } => "enum",
+            PropKind::RawScalar { .. } => "raw scalar",
+            PropKind::Text => "text",
+            PropKind::Weak { .. } => "weak",
+            PropKind::SoftClass { .. } => "soft class",
+            PropKind::Interface { .. } => "interface",
+            PropKind::Map { .. } => "map",
+            PropKind::Set { .. } => "set",
         })
     }
 
@@ -366,6 +556,36 @@ mod tests {
             kind(parse_quote!(bindings::engine::ECollisionChannel)),
             Some("enum")
         );
+
+        for ty in [
+            parse_quote!(i8),
+            parse_quote!(i16),
+            parse_quote!(u16),
+            parse_quote!(u32),
+            parse_quote!(u64),
+        ] {
+            assert_eq!(kind(ty), Some("raw scalar"));
+        }
+
+        assert_eq!(kind(parse_quote!(Text)), Some("text"));
+        assert_eq!(kind(parse_quote!(TWeakObjectPtr<Actor>)), Some("weak"));
+        assert_eq!(kind(parse_quote!(SoftClassRef<Actor>)), Some("soft class"));
+        assert_eq!(
+            kind(parse_quote!(ScriptInterface<dyn Interactable>)),
+            Some("interface")
+        );
+        assert_eq!(kind(parse_quote!(UeMap<String, i32>)), Some("map"));
+        assert_eq!(
+            kind(parse_quote!(UeMap<FName, OwnedStruct<FVector>>)),
+            Some("map")
+        );
+        assert_eq!(kind(parse_quote!(UeSet<FName>)), Some("set"));
+        assert_eq!(kind(parse_quote!(UeArray<String>)), Some("array"));
+        assert_eq!(kind(parse_quote!(UeArray<Text>)), Some("array"));
+        assert_eq!(
+            kind(parse_quote!(UeArray<SoftObjectRef<StaticMesh>>)),
+            Some("array")
+        );
     }
 
     #[test]
@@ -381,10 +601,11 @@ mod tests {
         assert_eq!(kind(parse_quote!(UObjectRef)), None);
         assert_eq!(kind(parse_quote!(OwnedStruct)), None);
         assert_eq!(kind(parse_quote!(SoftObjectRef)), None);
-        assert_eq!(kind(parse_quote!(UeArray<SoftObjectRef<StaticMesh>>)), None);
         assert_eq!(kind(parse_quote!(usize)), None);
         assert_eq!(kind(parse_quote!(UeArray<UeArray<f32>>)), None);
-        assert_eq!(kind(parse_quote!(UeArray<String>)), None);
+        assert_eq!(kind(parse_quote!(UeMap<OwnedStruct<FVector>, i32>)), None);
+        assert_eq!(kind(parse_quote!(UeSet<Text>)), None);
+        assert_eq!(kind(parse_quote!(UeMap<String>)), None);
         assert_eq!(kind(parse_quote!(UeArray<UStructRef<FVector>>)), None);
         assert_eq!(kind(parse_quote!(Vec<UObjectRef<InputAction>>)), None);
     }

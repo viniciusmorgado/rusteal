@@ -189,6 +189,87 @@ static FProperty *CreatePropertyByType(FFieldVariant Owner, FName PropName,
     Prop = SoftProp;
     break;
   }
+  case ERustealReifyPropType::WeakObject: {
+    FWeakObjectProperty *WeakProp =
+        new FWeakObjectProperty(Owner, PropName, RF_Public);
+    WeakProp->PropertyClass =
+        (Extra && Extra->class_handle.ptr)
+            ? static_cast<UClass *>(Extra->class_handle.ptr)
+            : UObject::StaticClass();
+    Prop = WeakProp;
+    break;
+  }
+  case ERustealReifyPropType::SoftClass: {
+    FSoftClassProperty *SoftProp =
+        new FSoftClassProperty(Owner, PropName, RF_Public);
+    SoftProp->PropertyClass = UClass::StaticClass();
+    SoftProp->SetMetaClass((Extra && Extra->meta_class_handle.ptr)
+                               ? static_cast<UClass *>(Extra->meta_class_handle.ptr)
+                               : UObject::StaticClass());
+    Prop = SoftProp;
+    break;
+  }
+  case ERustealReifyPropType::Interface: {
+    UClass *InterfaceClass =
+        (Extra && Extra->class_handle.ptr)
+            ? static_cast<UClass *>(Extra->class_handle.ptr)
+            : nullptr;
+    if (!InterfaceClass) {
+      UE_LOG(LogRusteal, Error,
+             TEXT("[Rusteal] CreatePropertyByType(Interface): null class_handle"));
+
+      return nullptr;
+    }
+    FInterfaceProperty *IfaceProp =
+        new FInterfaceProperty(Owner, PropName, RF_Public);
+    IfaceProp->InterfaceClass = InterfaceClass;
+    Prop = IfaceProp;
+    break;
+  }
+  case ERustealReifyPropType::Set: {
+    const ERustealReifyPropType ElementType =
+        Extra ? static_cast<ERustealReifyPropType>(Extra->inner_prop_type)
+              : ERustealReifyPropType::Array;
+    FSetProperty *SetProp = new FSetProperty(Owner, PropName, RF_Public);
+    FProperty *Element = CreatePropertyByType(FFieldVariant(SetProp), PropName,
+                                              ElementType, Extra);
+    if (!Element) {
+      delete SetProp;
+      return nullptr;
+    }
+    Element->PropertyFlags |= CPF_HasGetValueTypeHash;
+    SetProp->AddCppProperty(Element);
+    Prop = SetProp;
+    break;
+  }
+  case ERustealReifyPropType::Map: {
+    if (!Extra || !Extra->value) {
+      UE_LOG(LogRusteal, Error,
+             TEXT("[Rusteal] CreatePropertyByType(Map): no value type for %s"),
+             *PropName.ToString());
+
+      return nullptr;
+    }
+    FMapProperty *MapProp = new FMapProperty(Owner, PropName, RF_Public);
+    FProperty *Key = CreatePropertyByType(
+        FFieldVariant(MapProp), *(PropName.ToString() + TEXT("_Key")),
+        static_cast<ERustealReifyPropType>(Extra->inner_prop_type), Extra);
+    FProperty *Value = CreatePropertyByType(
+        FFieldVariant(MapProp), PropName,
+        static_cast<ERustealReifyPropType>(Extra->value_prop_type),
+        Extra->value);
+    if (!Key || !Value) {
+      delete Key;
+      delete Value;
+      delete MapProp;
+      return nullptr;
+    }
+    Key->PropertyFlags |= CPF_HasGetValueTypeHash;
+    MapProp->AddCppProperty(Key);
+    MapProp->AddCppProperty(Value);
+    Prop = MapProp;
+    break;
+  }
   default:
     UE_LOG(LogRusteal, Error,
            TEXT("[Rusteal] CreatePropertyByType: unknown type %d"),

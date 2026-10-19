@@ -36,12 +36,16 @@ static_assert(offsetof(RustealFWeakObjectHandle, object_index) == 0,
 static_assert(offsetof(RustealFWeakObjectHandle, object_serial_number) == 4,
               "FWeakObjectHandle::object_serial_number at offset 4");
 
-static_assert(sizeof(FRustealReifyPropExtra) == 40,
-              "FRustealReifyPropExtra must be 40 bytes");
+static_assert(sizeof(FRustealReifyPropExtra) == 56,
+              "FRustealReifyPropExtra must be 56 bytes");
 static_assert(offsetof(FRustealReifyPropExtra, enum_underlying) == 32,
               "FRustealReifyPropExtra::enum_underlying at offset 32");
 static_assert(offsetof(FRustealReifyPropExtra, inner_prop_type) == 36,
               "FRustealReifyPropExtra::inner_prop_type at offset 36");
+static_assert(offsetof(FRustealReifyPropExtra, value_prop_type) == 40,
+              "FRustealReifyPropExtra::value_prop_type at offset 40");
+static_assert(offsetof(FRustealReifyPropExtra, value) == 48,
+              "FRustealReifyPropExtra::value at offset 48");
 
 static_assert(sizeof(FRustealConsoleArgs) == 24,
               "FRustealConsoleArgs must be 24 bytes");
