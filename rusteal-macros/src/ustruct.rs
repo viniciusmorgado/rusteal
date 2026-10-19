@@ -43,14 +43,16 @@ pub fn expand_ustruct(attr: TokenStream, item: TokenStream) -> syn::Result<Token
             ));
         };
 
-        let args = parse_uproperty_args(attr)?;
+        let mut args = parse_uproperty_args(attr)?;
+        args.add_doc_tooltip(&field.attrs);
 
         let Some(info) = prop_type::map_type(&field.ty) else {
             return Err(syn::Error::new_spanned(
                 &field.ty,
-                "unsupported uproperty type: supported are bool/i32/i64/u8/f32/f64, \
-                 UObjectRef<T>, SubclassOf<T>, SoftObjectRef<T>, UeArray of those, \
-                 OwnedStruct<T>, FName, String and UE enums",
+                "unsupported uproperty type: supported are bool, the integers, f32, f64, \
+                 String, FName, Text, UE enums, UObjectRef<T>, TWeakObjectPtr<T>, \
+                 SubclassOf<T>, SoftObjectRef<T>, SoftClassRef<T>, ScriptInterface<dyn I>, \
+                 OwnedStruct<T>, and UeArray, UeMap and UeSet of those",
             ));
         };
 

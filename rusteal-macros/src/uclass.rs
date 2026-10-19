@@ -124,6 +124,104 @@ pub(crate) struct UPropertyArgs {
     name: Option<String>,
     category: Option<String>,
     bind_widget: Option<&'static str>,
+    meta: Vec<(String, String)>,
+}
+
+fn meta_value(value: &Expr) -> syn::Result<String> {
+    match value {
+        Expr::Lit(syn::ExprLit {
+            lit: syn::Lit::Str(s),
+            ..
+        }) => Ok(s.value()),
+        Expr::Lit(syn::ExprLit {
+            lit: syn::Lit::Bool(b),
+            ..
+        }) => Ok(b.value.to_string()),
+        Expr::Lit(syn::ExprLit {
+            lit: syn::Lit::Int(i),
+            ..
+        }) => Ok(i.base10_digits().to_string()),
+        Expr::Lit(syn::ExprLit {
+            lit: syn::Lit::Float(f),
+            ..
+        }) => Ok(f.base10_digits().to_string()),
+        Expr::Unary(syn::ExprUnary {
+            op: syn::UnOp::Neg(_),
+            expr,
+            ..
+        }) => Ok(format!("-{}", meta_value(expr)?)),
+        other => Err(syn::Error::new_spanned(
+            other,
+            "a meta value is a string, a number or a bool",
+        )),
+    }
+}
+
+fn parse_meta_list(list: &syn::MetaList) -> syn::Result<Vec<(String, String)>> {
+    let entries = list.parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated)?;
+    let mut out = Vec::new();
+
+    for entry in &entries {
+        match entry {
+            Meta::Path(p) => {
+                let key = p.get_ident().ok_or_else(|| {
+                    syn::Error::new_spanned(p, "a meta key is a plain name, such as ClampMin")
+                })?;
+
+                out.push((key.to_string(), "true".to_string()));
+            }
+            Meta::NameValue(nv) => {
+                let key = nv.path.get_ident().ok_or_else(|| {
+                    syn::Error::new_spanned(
+                        &nv.path,
+                        "a meta key is a plain name, such as ClampMin",
+                    )
+                })?;
+
+                out.push((key.to_string(), meta_value(&nv.value)?));
+            }
+            Meta::List(l) => {
+                return Err(syn::Error::new_spanned(
+                    l,
+                    "a meta entry is Key = value, or a Key alone for true",
+                ));
+            }
+        }
+    }
+
+    Ok(out)
+}
+
+pub(crate) fn doc_tooltip(attrs: &[syn::Attribute]) -> Option<String> {
+    let lines: Vec<String> = attrs
+        .iter()
+        .filter(|a| a.path().is_ident("doc"))
+        .filter_map(|a| match &a.meta {
+            Meta::NameValue(nv) => match &nv.value {
+                Expr::Lit(syn::ExprLit {
+                    lit: syn::Lit::Str(s),
+                    ..
+                }) => Some(s.value().trim().to_string()),
+                _ => None,
+            },
+            _ => None,
+        })
+        .collect();
+
+    let text = lines.join("\n").trim().to_string();
+    (!text.is_empty()).then_some(text)
+}
+
+impl UPropertyArgs {
+    pub(crate) fn add_doc_tooltip(&mut self, attrs: &[syn::Attribute]) {
+        if self.meta.iter().any(|(key, _)| key == "ToolTip") {
+            return;
+        }
+
+        if let Some(tooltip) = doc_tooltip(attrs) {
+            self.meta.push(("ToolTip".to_string(), tooltip));
+        }
+    }
 }
 
 fn str_value(value: &Expr, what: &str) -> syn::Result<String> {
@@ -184,7 +282,7 @@ pub(crate) fn parse_uproperty_args(attr: &syn::Attribute) -> syn::Result<UProper
                          BlueprintReadOnly, EditAnywhere, EditDefaultsOnly, VisibleAnywhere, \
                          SaveGame, Config, Transient, BindWidget, BindWidgetOptional, \
                          BindWidgetAnim, BindWidgetAnimOptional, default = ..., \
-                         name = \"...\" or category = \"...\"",
+                         name = \"...\", category = \"...\" or meta(...)",
                     ));
                 }
             }
@@ -196,6 +294,9 @@ pub(crate) fn parse_uproperty_args(attr: &syn::Attribute) -> syn::Result<UProper
             }
             Meta::NameValue(nv) if nv.path.is_ident("category") => {
                 args.category = Some(str_value(&nv.value, "category")?);
+            }
+            Meta::List(list) if list.path.is_ident("meta") => {
+                args.meta.extend(parse_meta_list(list)?);
             }
             other => {
                 return Err(syn::Error::new_spanned(
@@ -373,14 +474,16 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
                 subobject_name,
             });
         } else if let Some(attr) = uprop_attr {
-            let pargs = parse_uproperty_args(attr)?;
+            let mut pargs = parse_uproperty_args(attr)?;
+            pargs.add_doc_tooltip(&field.attrs);
 
             let Some(info) = prop_type::map_type(&field_ty) else {
                 return Err(syn::Error::new_spanned(
                     &field_ty,
-                    "unsupported uproperty type: supported are bool/i32/i64/u8/f32/f64, \
-                     UObjectRef<T>, SubclassOf<T>, SoftObjectRef<T>, UeArray of those, \
-                     OwnedStruct<T>, FName, String and UE enums",
+                    "unsupported uproperty type: supported are bool, the integers, f32, f64, \
+                     String, FName, Text, UE enums, UObjectRef<T>, TWeakObjectPtr<T>, \
+                     SubclassOf<T>, SoftObjectRef<T>, SoftClassRef<T>, ScriptInterface<dyn I>, \
+                     OwnedStruct<T>, and UeArray, UeMap and UeSet of those",
                 ));
             };
 
@@ -395,13 +498,18 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
             if pargs.default_expr.is_some()
                 && !matches!(
                     info.kind,
-                    prop_type::PropKind::Scalar { .. } | prop_type::PropKind::Enum { .. }
+                    prop_type::PropKind::Scalar { .. }
+                        | prop_type::PropKind::RawScalar { .. }
+                        | prop_type::PropKind::Enum { .. }
+                        | prop_type::PropKind::Str
+                        | prop_type::PropKind::Name
+                        | prop_type::PropKind::Text
                 )
             {
                 return Err(syn::Error::new_spanned(
                     &field_ty,
-                    "`default = ...` is only supported for bool/i32/i64/u8/f32/f64 and enum properties; \
-                     the others are set in #[class_defaults] or a Blueprint child",
+                    "`default = ...` is supported for bool, integer, float, enum, String, FName \
+                     and Text properties; the others are set in #[class_defaults] or a Blueprint child",
                 ));
             }
 
@@ -753,6 +861,38 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
                     ::rusteal_runtime::runtime::ffi_dispatch::property_set_enum(
                         cdo, prop, ::rusteal_runtime::runtime::UeEnum::to_i64(#default_expr),
                     )
+                },
+                prop_type::PropKind::RawScalar { .. } => {
+                    let rust_ty = prop_type::map_type(&prop.ty).unwrap().rust_type;
+
+                    quote! {
+                        {
+                            let value: #rust_ty = #default_expr;
+                            ::rusteal_runtime::runtime::ffi_dispatch::property_set_property_at(
+                                cdo, prop, 0, &value as *const #rust_ty as *const u8,
+                                std::mem::size_of::<#rust_ty>() as u32,
+                            )
+                        }
+                    }
+                }
+                prop_type::PropKind::Str => quote! {
+                    {
+                        let value: &str = #default_expr;
+                        ::rusteal_runtime::runtime::ffi_dispatch::property_set_string(
+                            cdo, prop, value.as_ptr(), value.len() as u32,
+                        )
+                    }
+                },
+                prop_type::PropKind::Name => quote! {
+                    ::rusteal_runtime::runtime::ffi_dispatch::property_set_fname(
+                        cdo, prop, ::rusteal_runtime::runtime::FName::new(#default_expr).handle(),
+                    )
+                },
+                prop_type::PropKind::Text => quote! {
+                    {
+                        let value: ::rusteal_runtime::runtime::Text = (#default_expr).into();
+                        ::rusteal_runtime::runtime::ffi_dispatch::property_set_text(cdo, prop, value.as_raw())
+                    }
                 },
                 _ => continue,
             };
@@ -1220,15 +1360,122 @@ pub(crate) fn property_accessors(
                     },
                 )),
             ),
+            prop_type::PropKind::RawScalar { zero_expr } => (
+                quote! {
+                    let mut val: #rust_ty = #zero_expr;
+                    unsafe {
+                        ::rusteal_runtime::runtime::ffi_dispatch::property_get_property_at(
+                            #container, prop, 0, &mut val as *mut #rust_ty as *mut u8,
+                            std::mem::size_of::<#rust_ty>() as u32,
+                        );
+                    }
+                    val
+                },
+                Some((
+                    quote! { #rust_ty },
+                    quote! {
+                        unsafe {
+                            ::rusteal_runtime::runtime::ffi_dispatch::property_set_property_at(
+                                #container, prop, 0, &val as *const #rust_ty as *const u8,
+                                std::mem::size_of::<#rust_ty>() as u32,
+                            );
+                        }
+                    },
+                )),
+            ),
+            prop_type::PropKind::Text => (
+                quote! {
+                    let mut raw: *mut u8 = std::ptr::null_mut();
+                    ::rusteal_runtime::runtime::ffi_infallible_ctx(unsafe {
+                        ::rusteal_runtime::runtime::ffi_dispatch::property_get_text(#container, prop, &mut raw)
+                    }, #ue_name);
+                    unsafe { ::rusteal_runtime::runtime::Text::from_raw(raw) }
+                },
+                Some((
+                    quote! { impl Into<::rusteal_runtime::runtime::Text> },
+                    quote! {
+                        let val: ::rusteal_runtime::runtime::Text = val.into();
+                        ::rusteal_runtime::runtime::ffi_infallible_ctx(unsafe {
+                            ::rusteal_runtime::runtime::ffi_dispatch::property_set_text(#container, prop, val.as_raw())
+                        }, #ue_name);
+                    },
+                )),
+            ),
+            prop_type::PropKind::Weak { .. } => (
+                quote! {
+                    let mut h = ::rusteal_runtime::ffi::UObjectHandle::null();
+                    unsafe { ::rusteal_runtime::runtime::ffi_dispatch::property_get_object(#container, prop, &mut h); }
+                    unsafe { <#rust_ty as ::rusteal_runtime::runtime::ObjectPointer>::from_object_handle(h) }
+                },
+                Some((
+                    quote! { #rust_ty },
+                    quote! {
+                        let h = ::rusteal_runtime::runtime::ObjectPointer::object_handle(&val);
+                        unsafe { ::rusteal_runtime::runtime::ffi_dispatch::property_set_object(#container, prop, h); }
+                    },
+                )),
+            ),
+            prop_type::PropKind::SoftClass { .. } => (
+                quote! {
+                    let mut len: u32 = 0;
+                    unsafe {
+                        ::rusteal_runtime::runtime::ffi_dispatch::property_get_soft_object_path(
+                            #container, prop, std::ptr::null_mut(), 0, &mut len,
+                        );
+                    }
+                    let mut buf = vec![0u8; len as usize];
+                    unsafe {
+                        ::rusteal_runtime::runtime::ffi_dispatch::property_get_soft_object_path(
+                            #container, prop, buf.as_mut_ptr(), len, &mut len,
+                        );
+                    }
+                    buf.truncate(len as usize);
+                    <#rust_ty>::new(String::from_utf8(buf).unwrap_or_default())
+                },
+                Some((
+                    quote! { &#rust_ty },
+                    quote! {
+                        let path = val.path();
+                        unsafe {
+                            ::rusteal_runtime::runtime::ffi_dispatch::property_set_soft_object_path(
+                                #container, prop, path.as_ptr(), path.len() as u32,
+                            );
+                        }
+                    },
+                )),
+            ),
+            prop_type::PropKind::Interface { .. } => (
+                quote! {
+                    let mut h = ::rusteal_runtime::ffi::UObjectHandle::null();
+                    unsafe { ::rusteal_runtime::runtime::ffi_dispatch::property_get_object(#container, prop, &mut h); }
+                    <#rust_ty>::new(h).ok()
+                },
+                Some((
+                    quote! { Option<#rust_ty> },
+                    quote! {
+                        let h = val.map_or(::rusteal_runtime::ffi::UObjectHandle::null(), |v| v.raw());
+                        unsafe { ::rusteal_runtime::runtime::ffi_dispatch::property_set_object(#container, prop, h); }
+                    },
+                )),
+            ),
+            prop_type::PropKind::Map { .. } | prop_type::PropKind::Set { .. } => {
+                (quote! { <#rust_ty>::new(#container, prop) }, None)
+            }
             prop_type::PropKind::Struct { .. } => {
                 unreachable!("rejected when the field was parsed")
             }
         };
 
+        let getter_ret = if matches!(info.kind, prop_type::PropKind::Interface { .. }) {
+            quote! { Option<#rust_ty> }
+        } else {
+            quote! { #rust_ty }
+        };
+
         accessors.push(Accessor {
             name: format_ident!("{}", field_ident),
             param: None,
-            ret: Some(quote! { #rust_ty }),
+            ret: Some(getter_ret),
             body: quote! {
                 #find_prop
                 #getter_body
@@ -1324,7 +1571,13 @@ pub(crate) fn add_property_statements(uprops: &[UPropertyField]) -> Vec<TokenStr
             .category
             .iter()
             .map(|category| ("Category", category.as_str()))
-            .chain(prop.args.bind_widget.map(|key| (key, "true")));
+            .chain(prop.args.bind_widget.map(|key| (key, "true")))
+            .chain(
+                prop.args
+                    .meta
+                    .iter()
+                    .map(|(key, value)| (key.as_str(), value.as_str())),
+            );
 
         let meta_stmts: Vec<TokenStream> = metadata
             .map(|(key, value)| {
@@ -1495,6 +1748,48 @@ mod tests {
         assert!(flagged[0].to_string().contains("CPF_SAVE_GAME"));
         let plain = add_property_statements(&[field(parse_quote!(#[uproperty(EditAnywhere)]))]);
         assert!(!plain[0].to_string().contains("CPF_SAVE_GAME"));
+    }
+
+    #[test]
+    fn meta_entries_and_doc_comments_become_metadata() {
+        let attr: syn::Attribute = parse_quote!(#[uproperty(
+            EditAnywhere,
+            meta(ClampMin = 0, ClampMax = 1.5, UIMin = -10, Units = "cm", InlineEditConditionToggle)
+        )]);
+        let mut args = parse_uproperty_args(&attr).unwrap();
+        let field: syn::Field = parse_quote! {
+            /// How far it reaches.
+            ///
+            /// In centimetres.
+            range: f32
+        };
+        args.add_doc_tooltip(&field.attrs);
+
+        let meta: Vec<(&str, &str)> = args
+            .meta
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .collect();
+
+        assert_eq!(
+            meta,
+            [
+                ("ClampMin", "0"),
+                ("ClampMax", "1.5"),
+                ("UIMin", "-10"),
+                ("Units", "cm"),
+                ("InlineEditConditionToggle", "true"),
+                ("ToolTip", "How far it reaches.\n\nIn centimetres."),
+            ]
+        );
+
+        let attr: syn::Attribute = parse_quote!(#[uproperty(meta(ToolTip = "Given"))]);
+        let mut args = parse_uproperty_args(&attr).unwrap();
+        args.add_doc_tooltip(&field.attrs);
+        assert_eq!(args.meta, [("ToolTip".to_string(), "Given".to_string())]);
+
+        let attr: syn::Attribute = parse_quote!(#[uproperty(meta(ClampMin(0)))]);
+        assert!(parse_uproperty_args(&attr).is_err());
     }
 
     #[test]

@@ -366,6 +366,11 @@ enum class ERustealReifyPropType : uint32 {
   Enum = 17,
   Array = 18,
   SoftObject = 19,
+  WeakObject = 20,
+  SoftClass = 21,
+  Interface = 22,
+  Map = 23,
+  Set = 24,
 };
 
 struct FRustealReifyPropExtra {
@@ -375,6 +380,8 @@ struct FRustealReifyPropExtra {
   RustealUClassHandle enum_handle;
   uint32 enum_underlying;
   uint32 inner_prop_type;
+  uint32 value_prop_type;
+  const FRustealReifyPropExtra *value;
 };
 
 struct FRustealReifyApi {
