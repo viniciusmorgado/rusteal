@@ -239,7 +239,12 @@ pub fn generate_property(
     }
 
     match mapped.rust_to_ffi {
-        ConversionKind::StringUtf8 if prop.prop_type == "SoftObjectProperty" => {
+        ConversionKind::StringUtf8
+            if matches!(
+                prop.prop_type.as_str(),
+                "SoftObjectProperty" | "SoftClassProperty"
+            ) =>
+        {
             generate_soft_getter(out, &rust_name, &byte_lit, prop_name_len, pctx, &mapped);
         }
         ConversionKind::StringUtf8 => {
@@ -309,7 +314,12 @@ pub fn generate_property(
     }
 
     match mapped.rust_to_ffi {
-        ConversionKind::StringUtf8 if prop.prop_type == "SoftObjectProperty" => {
+        ConversionKind::StringUtf8
+            if matches!(
+                prop.prop_type.as_str(),
+                "SoftObjectProperty" | "SoftClassProperty"
+            ) =>
+        {
             generate_soft_setter(out, &rust_name, &byte_lit, prop_name_len, pctx, &mapped);
         }
         ConversionKind::StringUtf8 => {

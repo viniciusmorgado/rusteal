@@ -153,6 +153,7 @@ const ENGINE_PLUGIN_PACKAGES: &[(&str, &str)] = &[("GameplayAbilities", "Gamepla
 const ENGINE_UNEXPORTED_FUNCTIONS: &[&str] = &[
     "GameplayTask_SpawnActor.SpawnActor",
     "GameplayTask_WaitDelay.TaskWaitDelay",
+    "KismetSystemLibrary.IsObjectOfSoftClass",
     "KismetSystemLibrary.IsValidInterface",
 ];
 

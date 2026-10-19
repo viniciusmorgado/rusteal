@@ -273,7 +273,18 @@ pub(super) fn is_scalar_output_returnable(dir: ParamDirection, mapped: &MappedTy
 }
 
 pub(super) fn is_soft(param: &ParamInfo) -> bool {
-    param.prop_type == "SoftObjectProperty"
+    matches!(
+        param.prop_type.as_str(),
+        "SoftObjectProperty" | "SoftClassProperty"
+    )
+}
+
+pub(super) fn soft_constructor(param: &ParamInfo) -> &'static str {
+    if param.prop_type == "SoftClassProperty" {
+        "rusteal_core::SoftClassRef::new"
+    } else {
+        "rusteal_core::SoftObjectRef::new"
+    }
 }
 
 fn generate_function(out: &mut String, entry: &FuncEntry, class_name: &str, ctx: &CodegenContext) {
@@ -712,7 +723,7 @@ fn generate_scalar_function(
                     );
 
                     if is_soft(rp) {
-                        return_parts.push("rusteal_core::SoftObjectRef::new(_ret_str)".to_string());
+                        return_parts.push(format!("{}(_ret_str)", soft_constructor(rp)));
                     } else {
                         return_parts.push("_ret_str".to_string());
                     }

@@ -3,7 +3,7 @@ use crate::naming::{escape_reserved, to_snake_case};
 use crate::schema::*;
 use crate::type_map::{ConversionKind, MappedType};
 
-use super::classes::{is_soft, is_struct_owned};
+use super::classes::{is_soft, is_struct_owned, soft_constructor};
 use super::properties;
 
 /// A zeroed buffer as large as the engine's struct `struct_name`, its size
@@ -76,7 +76,7 @@ pub fn emit_out_param_conversion(
             ));
 
             if is_soft(param) {
-                format!("rusteal_core::SoftObjectRef::new({pname}_str)")
+                format!("{}({pname}_str)", soft_constructor(param))
             } else {
                 format!("{pname}_str")
             }
