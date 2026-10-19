@@ -21,6 +21,10 @@
 #define RUSTEAL_STATIC 0
 #endif
 
+#ifndef RUSTEAL_HOSTS_GAME_LIBRARY
+#define RUSTEAL_HOSTS_GAME_LIBRARY 1
+#endif
+
 DEFINE_LOG_CATEGORY(LogRusteal);
 
 extern FRustealCoreApi GCoreApi;
@@ -630,10 +634,21 @@ bool RustealRegisterPluginModuleLibraryChecked(const FString &PluginName,
     return false;
   }
 
-  const FString Path =
+  const FString FileName =
+      RustealLibraryFileName(TEXT("rusteal_") + LibraryName);
+
+  FString Path =
       FPaths::Combine(Plugin->GetBaseDir(), TEXT("Binaries"),
-                      FPlatformProcess::GetBinariesSubdirectory(),
-                      RustealLibraryFileName(TEXT("rusteal_") + LibraryName));
+                      FPlatformProcess::GetBinariesSubdirectory(), FileName);
+
+  const FString Prebuilt =
+      FPaths::Combine(Plugin->GetBaseDir(), TEXT("Source"), TEXT("ThirdParty"),
+                      TEXT("RustLibraries"),
+                      FPlatformProcess::GetBinariesSubdirectory(), FileName);
+
+  if (!FPaths::FileExists(Path) && FPaths::FileExists(Prebuilt)) {
+    Path = Prebuilt;
+  }
 
   return RustealRegisterLibraryChecked(FName(*LibraryName), Path, FuncTable,
                                        FuncCount, FuncFingerprint);
@@ -697,6 +712,7 @@ void FRustealModule::StartupModule() {
   GTickerHandle = FTSTicker::GetCoreTicker().AddTicker(
       FTickerDelegate::CreateStatic(&TickLibraries));
 
+#if RUSTEAL_HOSTS_GAME_LIBRARY
   RustealFillFuncTable();
 
   const FString GamePath = FPaths::Combine(
@@ -707,6 +723,7 @@ void FRustealModule::StartupModule() {
   RegisterLibrary(FName(FApp::GetProjectName()), TEXT("/Script/Rusteal"),
                   GamePath, RustealGetFuncTable(), RustealGetFuncCount(),
                   RustealGetFuncFingerprint());
+#endif
 }
 
 void FRustealModule::ShutdownModule() {
