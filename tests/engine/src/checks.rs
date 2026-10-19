@@ -17,11 +17,11 @@ use bindings::slate_core::{
     FWrapButtonStyleExt,
 };
 use rusteal_runtime::runtime::{
-    DynamicCall, Inherits, OwnedStruct, SoftClassRef, SoftObjectRef, SubclassOf, TWeakObjectPtr,
-    Text, Transform, UObjectRef, UeClass, UeStruct, task,
+    DynamicCall, FName, Inherits, OwnedStruct, SoftClassRef, SoftObjectRef, SubclassOf,
+    TWeakObjectPtr, Text, Transform, UObjectRef, UeClass, UeStruct, task,
 };
 
-use crate::fixtures::TestActor;
+use crate::fixtures::{Pingable, TestActor};
 use crate::runner::{Check, Context, Outcome};
 
 pub const ALL: &[(&str, Check)] = &[
@@ -116,6 +116,13 @@ pub const ALL: &[(&str, Check)] = &[
         "engine_member_function_takes_a_closure_with_arguments",
         engine_member_function_takes_a_closure_with_arguments,
     ),
+    ("rust_integer_properties", rust_integer_properties),
+    (
+        "rust_text_and_string_properties",
+        rust_text_and_string_properties,
+    ),
+    ("rust_reference_properties", rust_reference_properties),
+    ("rust_container_properties", rust_container_properties),
     (
         "task_comes_back_to_the_game_thread",
         task_comes_back_to_the_game_thread,
@@ -763,6 +770,142 @@ fn engine_member_function_takes_a_closure_with_arguments(context: &Context) -> O
         let value = *seen.lock().unwrap();
         (value >= 0.999).then_some(Ok(()))
     }))
+}
+
+fn test_actor(context: &Context) -> Result<TestActor, String> {
+    TestActor::from_obj(spawn(context)?).map_err(|e| format!("{e:?}"))
+}
+
+fn rust_integer_properties(context: &Context) -> Outcome {
+    done((|| {
+        let actor = test_actor(context)?;
+        ensure(
+            actor.wide() == 40000,
+            format!("default wide {}", actor.wide()),
+        )?;
+        ensure(
+            actor.big() == 3_000_000_000,
+            format!("default big {}", actor.big()),
+        )?;
+
+        actor.set_small(-5);
+        actor.set_short(-12345);
+        actor.set_huge(u64::MAX);
+        ensure(actor.small() == -5, format!("small {}", actor.small()))?;
+        ensure(actor.short() == -12345, format!("short {}", actor.short()))?;
+        ensure(actor.huge() == u64::MAX, format!("huge {}", actor.huge()))
+    })())
+}
+
+fn rust_text_and_string_properties(context: &Context) -> Outcome {
+    done((|| {
+        let actor = test_actor(context)?;
+        ensure(
+            actor.caption().to_string() == "Hello",
+            format!("default caption {}", actor.caption()),
+        )?;
+        ensure(
+            actor.title() == "Hero",
+            format!("default title {}", actor.title()),
+        )?;
+
+        actor.set_caption(Text::localized("RustealTests", "Caption", "Over the actor"));
+        let (found, namespace, key) = KismetTextLibrary::get_text_id(actor.caption());
+        ensure(
+            found && namespace == "RustealTests" && key == "Caption",
+            format!("caption id {found} {namespace:?} {key:?}"),
+        )
+    })())
+}
+
+fn rust_reference_properties(context: &Context) -> Outcome {
+    done((|| {
+        let actor = test_actor(context)?;
+        let other_ref = spawn(context)?;
+        let other = TestActor::from_obj(other_ref).map_err(|e| format!("{e:?}"))?;
+
+        actor.set_target(TWeakObjectPtr::from_ref(&other_ref.upcast()));
+        ensure(
+            actor.target().get().map(|a| a.raw()) == Some(other_ref.raw()),
+            "the weak target does not reach the actor",
+        )?;
+
+        actor.set_spawn_class(&SoftClassRef::new(STATIC_MESH_ACTOR));
+        ensure(
+            actor.spawn_class().path() == STATIC_MESH_ACTOR,
+            format!("spawn class {:?}", actor.spawn_class().path()),
+        )?;
+
+        ensure(actor.partner().is_none(), "a new partner is set")?;
+        let partner = other_ref
+            .interface::<dyn Pingable>()
+            .map_err(|e| format!("interface: {e:?}"))?;
+        actor.set_partner(Some(partner));
+        ensure(
+            actor.partner().map(|p| p.raw()) == Some(other_ref.raw()),
+            "the partner was not kept",
+        )?;
+        actor.set_partner(None);
+        ensure(actor.partner().is_none(), "the partner was not cleared")?;
+
+        other_ref
+            .checked()
+            .map_err(|e| format!("checked: {e:?}"))?
+            .k2_destroy_actor();
+        let _ = other;
+        ensure(
+            actor.target().get().is_none(),
+            "the weak target outlived the actor",
+        )
+    })())
+}
+
+fn rust_container_properties(context: &Context) -> Outcome {
+    done((|| {
+        let actor = test_actor(context)?;
+        let e = |e| format!("{e:?}");
+
+        let scores = actor.scores();
+        scores.add(&"ação".to_string(), &1).map_err(e)?;
+        scores.add(&"b".to_string(), &2).map_err(e)?;
+        ensure(scores.len().map_err(e)? == 2, "two scores")?;
+        ensure(
+            scores.find(&"ação".to_string()).map_err(e)? == 1,
+            "score of ação",
+        )?;
+
+        let seen = actor.seen();
+        seen.add(&FName::new("x")).map_err(e)?;
+        seen.add(&FName::new("x")).map_err(e)?;
+        ensure(seen.len().map_err(e)? == 1, "a set keeps one x")?;
+        ensure(seen.contains(&FName::new("x")).map_err(e)?, "the set has x")?;
+
+        let long = "ñ-".repeat(4000);
+        let names = actor.names();
+        names.push(&long).map_err(e)?;
+        names.push(&"short".to_string()).map_err(e)?;
+        ensure(names.get(0).map_err(e)? == long, "a long string was cut")?;
+        ensure(
+            names.to_vec().map_err(e)? == vec![long.clone(), "short".to_string()],
+            "to_vec lost a string",
+        )?;
+
+        let assets = actor.assets();
+        assets
+            .push(&SoftObjectRef::new(DEFAULT_MATERIAL))
+            .map_err(e)?;
+        ensure(
+            assets.get(0).map_err(e)?.path() == DEFAULT_MATERIAL,
+            "the soft reference lost its path",
+        )?;
+
+        let captions = actor.captions();
+        captions
+            .push(&Text::localized("RustealTests", "Line", "A line"))
+            .map_err(e)?;
+        let (found, _, key) = KismetTextLibrary::get_text_id(captions.get(0).map_err(e)?);
+        ensure(found && key == "Line", format!("caption key {key:?}"))
+    })())
 }
 
 fn task_comes_back_to_the_game_thread(_: &Context) -> Outcome {
