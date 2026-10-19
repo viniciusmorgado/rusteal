@@ -1,6 +1,7 @@
 #include "RustealApiTable.h"
 #include "RustealErrors.h"
 #include "UObject/UObjectGlobals.h"
+#include "RustealStrings.h"
 
 static bool IsValidImpl(RustealUObjectHandle Obj) {
   return ::IsValid(static_cast<UObject *>(Obj.ptr));
@@ -67,8 +68,7 @@ static RustealUObjectHandle GetOuterImpl(RustealUObjectHandle Obj) {
 }
 
 static RustealFNameHandle MakeFNameImpl(const uint8 *NameUtf8, uint32 NameLen) {
-  const FString Str(NameLen,
-                    UTF8_TO_TCHAR(reinterpret_cast<const char *>(NameUtf8)));
+  const FString Str = RustealUtf8ToFString(NameUtf8, NameLen);
 
   const FName Name(*Str);
 

@@ -4,6 +4,7 @@
 #include "UObject/TextProperty.h"
 #include "UObject/UObjectGlobals.h"
 #include "UObject/UnrealType.h"
+#include "RustealStrings.h"
 
 #define RUSTEAL_CHECK_VALID(ObjHandle)                                         \
   void *Object = (ObjHandle).ptr;                                              \
@@ -159,8 +160,7 @@ static ERustealErrorCode SetStringImpl(RustealUObjectHandle Obj,
   RUSTEAL_CHECK_VALID(Obj);
   FProperty *Property = static_cast<FProperty *>(Prop.ptr);
 
-  const FString Value(Len,
-                      UTF8_TO_TCHAR(reinterpret_cast<const char *>(InBuf)));
+  const FString Value = RustealUtf8ToFString(InBuf, Len);
 
   if (FStrProperty *StrProp = CastField<FStrProperty>(Property)) {
     StrProp->SetPropertyValue_InContainer(Object, Value);
@@ -216,7 +216,7 @@ static ERustealErrorCode SetSoftObjectPathImpl(RustealUObjectHandle Obj,
     return RustealFailType(Prop.ptr, TEXT("FSoftObjectProperty"));
   }
 
-  const FString Path(Len, UTF8_TO_TCHAR(reinterpret_cast<const char *>(InBuf)));
+  const FString Path = RustealUtf8ToFString(InBuf, Len);
 
   SoftProp->SetPropertyValue_InContainer(Object,
                                          FSoftObjectPtr(FSoftObjectPath(Path)));

@@ -7,9 +7,10 @@
 #include "GameFramework/Pawn.h"
 #include "RustealApiTable.h"
 #include "UObject/UObjectGlobals.h"
+#include "RustealStrings.h"
 
 static FString Utf8ToFStr(const uint8 *Buf, uint32 Len) {
-  return FString(Len, UTF8_TO_TCHAR(reinterpret_cast<const char *>(Buf)));
+  return RustealUtf8ToFString(Buf, Len);
 }
 
 static RustealUObjectHandle SpawnActorImpl(RustealUObjectHandle WorldHandle,

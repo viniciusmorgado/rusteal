@@ -3,6 +3,7 @@
 #include "RustealFNameHelper.h"
 #include "UObject/UObjectGlobals.h"
 #include "UObject/UnrealType.h"
+#include "RustealStrings.h"
 
 #define RUSTEAL_CHECK_VALID(ObjHandle)                                         \
   void *Object = (ObjHandle).ptr;                                              \
@@ -92,7 +93,7 @@ static void WriteElement(FProperty *InnerProp, void *ElemPtr,
     const char *Utf8Str =
         reinterpret_cast<const char *>(InBuf + sizeof(uint32));
 
-    FString Value(Len, UTF8_TO_TCHAR(Utf8Str));
+    FString Value = RustealUtf8ToFString(Utf8Str, Len);
     StrProp->SetPropertyValue(ElemPtr, Value);
   } else if (FTextProperty *TextProp = CastField<FTextProperty>(InnerProp)) {
     uint32 Len = 0;
@@ -101,7 +102,7 @@ static void WriteElement(FProperty *InnerProp, void *ElemPtr,
     const char *Utf8Str =
         reinterpret_cast<const char *>(InBuf + sizeof(uint32));
 
-    FString Value(Len, UTF8_TO_TCHAR(Utf8Str));
+    FString Value = RustealUtf8ToFString(Utf8Str, Len);
     TextProp->SetPropertyValue(ElemPtr, FText::FromString(Value));
   } else if (CastField<FNameProperty>(InnerProp)) {
     uint64 Packed = 0;
