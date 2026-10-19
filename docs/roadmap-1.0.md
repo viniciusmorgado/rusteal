@@ -59,7 +59,10 @@ refers to the next section.
 | Engine `TSoftObjectPtr` and `TWeakObjectPtr` properties typed as strong `UObjectRef`: an unloaded soft reference read as null, its path lost; now `SoftObjectRef<T>` and `TWeakObjectPtr<T>` | done | M1 |
 | A feature whose modules come from an engine plugin got empty bindings: UHT did not run again after the plugin was added | done | M1 |
 | `TSoftClassPtr`, `TLazyObjectPtr`, `TOptional`, `TFieldPath` engine properties dropped | missing | M1 |
-| `FText` passes through `ToString`: localization data is lost | partial | M1, M8 |
+| `FText` passed through `ToString`, losing its localization data; now `Text`, the engine's `FText` | done | M1 |
+| `Text::localized` in Rust code is not read by the engine's text gatherer: its texts are translated only when the localization data has their namespace and key (String Tables work) | missing | M8 |
+| Engine structs Rust read were shallow copies: arrays freed under Rust (function returns) or leaked (properties, containers) | done | M1 |
+| Engine `TSoftClassPtr` properties and functions dropped; now `SoftClassRef<T>` | done | M1 |
 | `FInstancedStruct` opaque, `TSubScriptStructOf` (new in 5.8) not mapped | partial | M1 |
 | Engine functions taking a delegate dropped | missing | M1 |
 | `#[uproperty]`: `TMap`, `TSet`, `FText`, `i8`/`i16`/`u16`/`u32`/`u64`, weak, soft class, interface and delegate properties, arrays of strings and soft references | missing | M1 |
