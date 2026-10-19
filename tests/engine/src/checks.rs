@@ -40,6 +40,10 @@ pub const ALL: &[(&str, Check)] = &[
     ("ufunction_echo_by_reflection", ufunction_echo_by_reflection),
     ("component_is_created", component_is_created),
     ("udelegate_reaches_a_closure", udelegate_reaches_a_closure),
+    (
+        "udelegate_listener_survives_garbage_collection",
+        udelegate_listener_survives_garbage_collection,
+    ),
     ("engine_function_call", engine_function_call),
     ("engine_string_is_utf8", engine_string_is_utf8),
     (
@@ -220,6 +224,50 @@ fn udelegate_reaches_a_closure(context: &Context) -> Outcome {
         let value = *seen.lock().unwrap();
         ensure(value == 7, format!("the listener saw {value}"))
     })())
+}
+
+fn udelegate_listener_survives_garbage_collection(context: &Context) -> Outcome {
+    let bound = (|| {
+        let actor = spawn(context)?;
+        let seen = Arc::new(Mutex::new(0));
+        let sink = seen.clone();
+
+        TestActor::from_obj(actor)
+            .map_err(|e| format!("{e:?}"))?
+            .on_ping_add(move |value| *sink.lock().unwrap() = value)
+            .map_err(|e| format!("{e:?}"))?
+            .detach();
+
+        Ok::<_, String>((actor, seen))
+    })();
+
+    let (actor, seen) = match bound {
+        Ok(bound) => bound,
+        Err(e) => return done(Err(e)),
+    };
+
+    KismetSystemLibrary::collect_garbage();
+    let mut frames = 0;
+
+    Outcome::Pending(Box::new(move || {
+        frames += 1;
+
+        if frames < 5 {
+            return None;
+        }
+
+        let fired = TestActor::from_obj(actor).map(|actor| actor.ping(9));
+
+        if let Err(e) = fired {
+            return Some(Err(format!("{e:?}")));
+        }
+
+        let value = *seen.lock().unwrap();
+        Some(ensure(
+            value == 9,
+            format!("after a garbage collection the listener saw {value}"),
+        ))
+    }))
 }
 
 fn engine_function_call(_: &Context) -> Outcome {
