@@ -1,14 +1,15 @@
 use std::sync::{Arc, Mutex};
 
 use bindings::engine::{
-    ActorComponent, BlendableInterface, FPostProcessSettingsExt, FWeightedBlendableExt,
+    ActorComponent, BlendableInterface, CameraComponent, CameraComponentExt,
+    FMinimalViewInfoExt, FPostProcessSettingsExt, InputSettings, InputSettingsExt, KismetGuidLibrary, FWeightedBlendableExt,
     FWeightedBlendablesExt, KismetMathLibrary, KismetStringLibrary, KismetSystemLibrary, Material,
-    PostProcessVolume, PostProcessVolumeExt, ProjectileMovementComponent,
+    PlayerInput, PostProcessVolume, PostProcessVolumeExt, ProjectileMovementComponent, StaticMeshActor,
     ProjectileMovementComponentExt, VolumetricCloudComponent, VolumetricCloudComponentExt,
 };
 use bindings::prelude::*;
 use rusteal_runtime::runtime::{
-    DynamicCall, Inherits, SoftObjectRef, SubclassOf, TWeakObjectPtr, Transform, UObjectRef, UeClass, task,
+    DynamicCall, Inherits, SoftClassRef, SoftObjectRef, SubclassOf, TWeakObjectPtr, Transform, UObjectRef, UeClass, task,
 };
 
 use crate::fixtures::TestActor;
@@ -63,6 +64,22 @@ pub const ALL: &[(&str, Check)] = &[
     (
         "engine_weak_property_follows_its_object",
         engine_weak_property_follows_its_object,
+    ),
+    (
+        "engine_struct_with_an_array_returned_by_a_function",
+        engine_struct_with_an_array_returned_by_a_function,
+    ),
+    (
+        "engine_struct_passed_by_reference",
+        engine_struct_passed_by_reference,
+    ),
+    (
+        "engine_soft_class_reference_crosses_as_a_path",
+        engine_soft_class_reference_crosses_as_a_path,
+    ),
+    (
+        "engine_soft_class_property_keeps_the_path",
+        engine_soft_class_property_keeps_the_path,
     ),
     (
         "task_comes_back_to_the_game_thread",
@@ -314,6 +331,100 @@ fn engine_weak_property_follows_its_object(context: &Context) -> Outcome {
         ensure(
             movement.get_homing_target_component().get().is_none(),
             "the weak reference outlived the destroyed component",
+        )
+    })())
+}
+
+fn engine_struct_with_an_array_returned_by_a_function(context: &Context) -> Outcome {
+    done((|| {
+        let material = default_material()?;
+        let camera = add_component::<CameraComponent>(context)?
+            .checked()
+            .map_err(|e| format!("checked: {e:?}"))?;
+        let blendable = material
+            .cast::<BlendableInterface>()
+            .map_err(|e| format!("cast: {e:?}"))?;
+
+        camera.add_or_update_blendable(blendable, Some(0.25));
+
+        let mut kept = Vec::new();
+
+        for _ in 0..200 {
+            let view = camera.get_camera_view(0.0);
+            kept.push(view.clone());
+        }
+
+        for view in &kept {
+            let settings = view.as_ref().get_post_process_settings();
+            let blendables = settings.as_ref().get_weighted_blendables();
+            let array = blendables.as_ref().array();
+            let len = array.len().map_err(|e| format!("len: {e:?}"))?;
+            ensure(len == 1, format!("{len} blendables"))?;
+            let first = array.get(0).map_err(|e| format!("get: {e:?}"))?;
+            ensure(
+                first.as_ref().get_object().raw() == material.raw()
+                    && first.as_ref().get_weight() == 0.25,
+                "the returned view lost its blendable",
+            )?;
+        }
+
+        Ok(())
+    })())
+}
+
+fn engine_struct_passed_by_reference(_: &Context) -> Outcome {
+    done((|| {
+        let mut guid = KismetGuidLibrary::new_guid();
+        ensure(KismetGuidLibrary::is_valid_guid(&guid), "a new guid is not valid")?;
+
+        KismetGuidLibrary::invalidate_guid(&mut guid);
+        ensure(
+            !KismetGuidLibrary::is_valid_guid(&guid),
+            "invalidate_guid did not change the guid",
+        )
+    })())
+}
+
+const STATIC_MESH_ACTOR: &str = "/Script/Engine.StaticMeshActor";
+
+fn engine_soft_class_reference_crosses_as_a_path(_: &Context) -> Outcome {
+    done((|| {
+        let loaded =
+            KismetSystemLibrary::load_class_asset_blocking(&SoftClassRef::new(STATIC_MESH_ACTOR));
+        ensure(
+            loaded.raw() == StaticMeshActor::static_class(),
+            "LoadClassAsset_Blocking did not load the class",
+        )?;
+
+        let typed = SoftClassRef::<Actor>::new(STATIC_MESH_ACTOR)
+            .load_synchronous()
+            .map_err(|e| format!("load: {e:?}"))?;
+        ensure(
+            typed.raw() == StaticMeshActor::static_class(),
+            "SoftClassRef::load_synchronous gave another class",
+        )?;
+
+        let soft = KismetSystemLibrary::conv_class_to_soft_class_reference(
+            SubclassOf::<StaticMeshActor>::base().upcast_to::<bindings::core_ue::Object>(),
+        );
+        ensure(soft.path() == STATIC_MESH_ACTOR, format!("path {:?}", soft.path()))
+    })())
+}
+
+fn engine_soft_class_property_keeps_the_path(_: &Context) -> Outcome {
+    done((|| {
+        let input = InputSettings::get_input_settings()
+            .checked()
+            .map_err(|e| format!("input settings: {e:?}"))?;
+        let class: SoftClassRef<PlayerInput> = input.get_default_player_input_class();
+        ensure(!class.is_null(), "the default player input class has no path")?;
+
+        let loaded = class
+            .load_synchronous()
+            .map_err(|e| format!("load {:?}: {e:?}", class.path()))?;
+        ensure(
+            !loaded.is_null(),
+            format!("{:?} does not resolve to a class", class.path()),
         )
     })())
 }
