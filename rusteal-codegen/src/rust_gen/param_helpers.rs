@@ -99,7 +99,7 @@ pub fn emit_out_param_conversion(
         ConversionKind::StructOpaque => {
             if is_struct_owned(param.struct_name.as_deref(), ctx) {
                 out.push_str(&format!(
-                    "        let {pname}_owned = rusteal_core::OwnedStruct::from_bytes({pname}_buf);\n"
+                    "        let {pname}_owned = unsafe {{ rusteal_core::OwnedStruct::from_constructed({pname}_buf) }};\n"
                 ));
 
                 format!("{pname}_owned")

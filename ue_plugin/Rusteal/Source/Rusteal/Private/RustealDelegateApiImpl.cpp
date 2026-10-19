@@ -222,6 +222,7 @@ RustealDelegateApi_ReadParam(RustealFPropertyHandle PropHandle, void *ParamsBuf,
       return RustealFail(ERustealErrorCode::BufferTooSmall);
     }
 
+    StructProp->Struct->InitializeStruct(OutBuf);
     StructProp->Struct->CopyScriptStruct(OutBuf, ValuePtr);
     return ERustealErrorCode::Ok;
   }

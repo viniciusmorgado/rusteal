@@ -3,15 +3,22 @@ use std::path::Path;
 use crate::project_version::{self, PINNED, PLUGINS, Pins, Scope, Version};
 use crate::{build_cmd, global_config, new_cmd, setup};
 
-const MIGRATIONS: &[(&str, &str)] = &[(
-    "0.10.0",
-    "Engine soft references are SoftObjectRef<T> and engine weak references TWeakObjectPtr<T>, \
+const MIGRATIONS: &[(&str, &str)] = &[
+    (
+        "0.10.0",
+        "Engine soft references are SoftObjectRef<T> and engine weak references TWeakObjectPtr<T>, \
      in properties, struct fields, function parameters and returns; they were UObjectRef<T>. \
      A soft reference keeps its path when the asset is not loaded: path(), get() for the \
      loaded object, load_synchronous() to load it. A weak one gives get() -> Option<UObjectRef<T>>, \
      None once its object is destroyed. Functions that take one take &SoftObjectRef<T> or \
      TWeakObjectPtr<T>: SoftObjectRef::new(path) or TWeakObjectPtr::from_ref(&object).",
-)];
+    ),
+    (
+        "0.10.0",
+        "Engine functions that change a struct passed by reference take &mut OwnedStruct<T>; \
+         they took a *mut u8.",
+    ),
+];
 
 pub fn migration_notes(from: Version, to: Version) -> Vec<(Version, &'static str)> {
     MIGRATIONS
@@ -212,7 +219,7 @@ glam = "0.33.8"
         assert!(migration_notes(v("0.10.0"), v("0.12.0")).is_empty());
 
         let notes = migration_notes(v("0.9.0"), v("0.10.0"));
-        assert_eq!(notes.len(), 1);
+        assert_eq!(notes.len(), 2);
         assert_eq!(notes[0].0, v("0.10.0"));
     }
 

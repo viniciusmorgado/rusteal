@@ -439,6 +439,24 @@ impl<K: ContainerElement, V: ContainerElement> Iterator for BulkMapIter<K, V> {
 
 impl<K: ContainerElement, V: ContainerElement> ExactSizeIterator for BulkMapIter<K, V> {}
 
+impl<T: ContainerElement> Drop for BulkArrayIter<T> {
+    fn drop(&mut self) {
+        for _ in self.by_ref() {}
+    }
+}
+
+impl<K: ContainerElement, V: ContainerElement> Drop for BulkMapIter<K, V> {
+    fn drop(&mut self) {
+        for _ in self.by_ref() {}
+    }
+}
+
+impl<T: ContainerElement> Drop for BulkSetIter<T> {
+    fn drop(&mut self) {
+        for _ in self.by_ref() {}
+    }
+}
+
 pub struct BulkSetIter<T: ContainerElement> {
     buf: Vec<u8>,
     count: usize,
@@ -1066,6 +1084,18 @@ impl<T: UeStruct> OwnedStruct<T> {
         }
     }
 
+    /// # Safety
+    ///
+    /// `data` holds a `T` the engine constructed in it, which this value now owns.
+    #[doc(hidden)]
+    pub unsafe fn from_constructed(data: Vec<u8>) -> Self {
+        OwnedStruct {
+            data,
+            needs_destroy: true,
+            _marker: PhantomData,
+        }
+    }
+
     pub fn copy_from(src: &UStructRef<T>) -> Self {
         let mut owned = Self::new();
 
@@ -1088,6 +1118,11 @@ impl<T: UeStruct> OwnedStruct<T> {
         &self.data
     }
 
+    #[doc(hidden)]
+    pub fn as_mut_ptr(&mut self) -> *mut u8 {
+        self.data.as_mut_ptr()
+    }
+
     pub fn to_bytes(&self) -> Vec<u8> {
         self.data.clone()
     }
@@ -1095,11 +1130,7 @@ impl<T: UeStruct> OwnedStruct<T> {
 
 impl<T: UeStruct> Clone for OwnedStruct<T> {
     fn clone(&self) -> Self {
-        OwnedStruct {
-            data: self.data.clone(),
-            needs_destroy: false,
-            _marker: PhantomData,
-        }
+        Self::copy_from(&self.as_ref())
     }
 }
 
@@ -1129,7 +1160,7 @@ unsafe impl<T: UeStruct> ContainerElement for OwnedStruct<T> {
             let data = vec![0u8; written as usize];
             std::ptr::copy_nonoverlapping(buf, data.as_ptr() as *mut u8, written as usize);
 
-            OwnedStruct::from_bytes(data)
+            OwnedStruct::from_constructed(data)
         }
     }
 

@@ -1120,7 +1120,7 @@ pub(crate) fn property_accessors(
                     ::rusteal_runtime::runtime::ffi_infallible_ctx(unsafe {
                         ::rusteal_runtime::runtime::ffi_dispatch::property_get_struct(#container, prop, buf.as_mut_ptr(), size as u32)
                     }, #ue_name);
-                    ::rusteal_runtime::runtime::OwnedStruct::from_bytes(buf)
+                    unsafe { ::rusteal_runtime::runtime::OwnedStruct::from_constructed(buf) }
                 },
                 Some((
                     quote! { &#rust_ty },

@@ -78,6 +78,7 @@ static void ReadElement(FProperty *InnerProp, const void *ElemPtr,
       *OutWritten = sizeof(void *);
   } else if (FStructProperty *StructProp =
                  CastField<FStructProperty>(InnerProp)) {
+    StructProp->Struct->InitializeStruct(OutBuf);
     StructProp->Struct->CopyScriptStruct(OutBuf, ElemPtr);
 
     if (OutWritten)
