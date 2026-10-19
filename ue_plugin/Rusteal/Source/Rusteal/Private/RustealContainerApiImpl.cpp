@@ -22,6 +22,7 @@ static bool IsRawCopyableElement(FProperty *InnerProp) {
          !CastField<FTextProperty>(InnerProp) &&
          !CastField<FNameProperty>(InnerProp) &&
          !CastField<FObjectPropertyBase>(InnerProp) &&
+         !CastField<FInterfaceProperty>(InnerProp) &&
          !CastField<FStructProperty>(InnerProp);
 }
 
@@ -62,6 +63,12 @@ static void ReadElement(FProperty *InnerProp, const void *ElemPtr,
 
     if (OutWritten)
       *OutWritten = sizeof(uint64);
+  } else if (CastField<FInterfaceProperty>(InnerProp)) {
+    UObject *Obj = static_cast<const FScriptInterface *>(ElemPtr)->GetObject();
+    FMemory::Memcpy(OutBuf, &Obj, sizeof(void *));
+
+    if (OutWritten)
+      *OutWritten = sizeof(void *);
   } else if (FObjectPropertyBase *ObjProp =
                  CastField<FObjectPropertyBase>(InnerProp)) {
     UObject *Obj = ObjProp->GetObjectPropertyValue(ElemPtr);
@@ -108,6 +115,14 @@ static void WriteElement(FProperty *InnerProp, void *ElemPtr,
     uint64 Packed = 0;
     FMemory::Memcpy(&Packed, InBuf, sizeof(uint64));
     *static_cast<FName *>(ElemPtr) = RustealUnpackFName(Packed);
+  } else if (FInterfaceProperty *IfaceProp =
+                 CastField<FInterfaceProperty>(InnerProp)) {
+    UObject *Obj = nullptr;
+    FMemory::Memcpy(&Obj, InBuf, sizeof(void *));
+    FScriptInterface *Iface = static_cast<FScriptInterface *>(ElemPtr);
+    Iface->SetObject(Obj);
+    Iface->SetInterface(
+        Obj ? Obj->GetInterfaceAddress(IfaceProp->InterfaceClass) : nullptr);
   } else if (FObjectPropertyBase *ObjProp =
                  CastField<FObjectPropertyBase>(InnerProp)) {
     UObject *Obj = nullptr;
