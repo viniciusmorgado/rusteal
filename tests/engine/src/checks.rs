@@ -21,7 +21,7 @@ use rusteal_runtime::runtime::{
     TWeakObjectPtr, Text, Transform, UObjectRef, UeClass, UeStruct, task,
 };
 
-use crate::fixtures::{Pingable, TestActor};
+use crate::fixtures::{Loadout, LoadoutExt, Pingable, TestActor};
 use crate::runner::{Check, Context, Outcome};
 
 pub const ALL: &[(&str, Check)] = &[
@@ -123,6 +123,7 @@ pub const ALL: &[(&str, Check)] = &[
     ),
     ("rust_reference_properties", rust_reference_properties),
     ("rust_container_properties", rust_container_properties),
+    ("rust_struct_fields", rust_struct_fields),
     (
         "task_comes_back_to_the_game_thread",
         task_comes_back_to_the_game_thread,
@@ -905,6 +906,28 @@ fn rust_container_properties(context: &Context) -> Outcome {
             .map_err(e)?;
         let (found, _, key) = KismetTextLibrary::get_text_id(captions.get(0).map_err(e)?);
         ensure(found && key == "Line", format!("caption key {key:?}"))
+    })())
+}
+
+fn rust_struct_fields(_: &Context) -> Outcome {
+    done((|| {
+        let e = |e| format!("{e:?}");
+        let loadout = OwnedStruct::<Loadout>::new();
+        let fields = loadout.as_ref();
+
+        fields.set_title("Scout");
+        fields.set_level(60000);
+        fields.counts().add(&FName::new("Ammo"), &30).map_err(e)?;
+
+        let copy = loadout.clone();
+        drop(loadout);
+        let fields = copy.as_ref();
+        ensure(fields.title().to_string() == "Scout", "the title was lost")?;
+        ensure(fields.level() == 60000, format!("level {}", fields.level()))?;
+        ensure(
+            fields.counts().find(&FName::new("Ammo")).map_err(e)? == 30,
+            "the map was not copied with the struct",
+        )
     })())
 }
 
