@@ -144,13 +144,13 @@ pub fn map_property_type(
             supported: true,
         },
         "TextProperty" => MappedType {
-            rust_type: "String".into(),
-            rust_ffi_type: "*const u8".into(),
+            rust_type: "rusteal_core::Text".into(),
+            rust_ffi_type: "rusteal_core::UObjectHandle".into(),
             cpp_type: "FText".into(),
-            property_getter: "get_string".into(),
-            property_setter: "set_string".into(),
-            rust_to_ffi: ConversionKind::StringUtf8,
-            ffi_to_rust: ConversionKind::StringUtf8,
+            property_getter: "get_text".into(),
+            property_setter: "set_text".into(),
+            rust_to_ffi: ConversionKind::ObjectRef,
+            ffi_to_rust: ConversionKind::ObjectRef,
             supported: true,
         },
         "NameProperty" => MappedType {
@@ -503,7 +503,8 @@ pub fn container_element_rust_type(
         "UInt64Property" => Some("u64".into()),
         "FloatProperty" => Some("f32".into()),
         "DoubleProperty" => Some("f64".into()),
-        "StrProperty" | "TextProperty" => Some("String".into()),
+        "StrProperty" => Some("String".into()),
+        "TextProperty" => Some("rusteal_core::Text".into()),
         "NameProperty" => Some("rusteal_core::FNameHandle".into()),
         "ObjectProperty" | "SoftObjectProperty" | "WeakObjectProperty" => {
             if let Some(cls) = &inner.class_name {

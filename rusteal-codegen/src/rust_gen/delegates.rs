@@ -27,6 +27,7 @@ pub enum ParamConversion {
     },
     FName,
     String,
+    Text,
     Struct {
         struct_name: String,
         cpp_name: String,
@@ -170,10 +171,15 @@ fn resolve_delegate_param(
             rust_type: "rusteal_core::FNameHandle".into(),
             conversion: ParamConversion::FName,
         }),
-        "StrProperty" | "TextProperty" => Some(DelegateParam {
+        "StrProperty" => Some(DelegateParam {
             name: param_name,
             rust_type: "String".into(),
             conversion: ParamConversion::String,
+        }),
+        "TextProperty" => Some(DelegateParam {
+            name: param_name,
+            rust_type: "rusteal_core::Text".into(),
+            conversion: ParamConversion::Text,
         }),
         "ClassProperty"
             if value
@@ -444,6 +450,23 @@ pub fn generate_delegate_structs(out: &mut String, delegates: &[DelegateInfo], c
                          \x20                       &mut __written,\n\
                          \x20                   ));\n\
                          \x20                   rusteal_core::FNameHandle(u64::from_ne_bytes(__buf))\n\
+                         \x20               }};\n"
+                    ));
+                }
+                ParamConversion::Text => {
+                    out.push_str(&format!(
+                        "                let {var_name} = {{\n\
+                         \x20                   let mut __buf = [0u8; 8];\n\
+                         \x20                   let mut __written: u32 = 0;\n\
+                         \x20                   rusteal_core::ffi_infallible(rusteal_core::ffi_dispatch::delegate_read_param(\n\
+                         \x20                       param_info[{i}].1,\n\
+                         \x20                       params,\n\
+                         \x20                       param_info[{i}].0,\n\
+                         \x20                       __buf.as_mut_ptr(),\n\
+                         \x20                       8,\n\
+                         \x20                       &mut __written,\n\
+                         \x20                   ));\n\
+                         \x20                   rusteal_core::Text::from_raw(usize::from_ne_bytes(__buf) as *mut u8)\n\
                          \x20               }};\n"
                     ));
                 }

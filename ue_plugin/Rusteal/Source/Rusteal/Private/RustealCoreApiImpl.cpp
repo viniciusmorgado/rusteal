@@ -173,6 +173,39 @@ static uint32 TakePendingUtf8Impl(const uint8 *Key, uint8 *Buf, uint32 BufLen) {
   return Len;
 }
 
+static void *TextFromStringImpl(const uint8 *Utf8, uint32 Len) {
+  return new FText(FText::FromString(RustealUtf8ToFString(Utf8, Len)));
+}
+
+static void *TextLocalizedImpl(const uint8 *Namespace, uint32 NamespaceLen,
+                               const uint8 *Key, uint32 KeyLen,
+                               const uint8 *Source, uint32 SourceLen) {
+  return new FText(FText::AsLocalizable_Advanced(
+      RustealUtf8ToFString(Namespace, NamespaceLen),
+      RustealUtf8ToFString(Key, KeyLen),
+      RustealUtf8ToFString(Source, SourceLen)));
+}
+
+static void *TextCloneImpl(const void *Text) {
+  return new FText(*static_cast<const FText *>(Text));
+}
+
+static void TextDestroyImpl(void *Text) { delete static_cast<FText *>(Text); }
+
+static void TextToStringImpl(const void *Text, uint8 *Buf, uint32 BufLen,
+                             uint32 *OutLen) {
+  RustealWriteUtf8(static_cast<const FText *>(Text)->ToString(), Buf, BufLen,
+                   OutLen);
+}
+
+static bool TextIsEmptyImpl(const void *Text) {
+  return static_cast<const FText *>(Text)->IsEmpty();
+}
+
+static bool TextEqualImpl(const void *A, const void *B) {
+  return static_cast<const FText *>(A)->EqualTo(*static_cast<const FText *>(B));
+}
+
 static bool IsChildOfImpl(RustealUClassHandle ClassHandle,
                           RustealUClassHandle ParentHandle) {
   UObject *ClassObject = static_cast<UObject *>(ClassHandle.ptr);
@@ -210,4 +243,11 @@ FRustealCoreApi GCoreApi = {
     &RustealTakeErrorMessage,
     &IsChildOfImpl,
     &TakePendingUtf8Impl,
+    &TextFromStringImpl,
+    &TextLocalizedImpl,
+    &TextCloneImpl,
+    &TextDestroyImpl,
+    &TextToStringImpl,
+    &TextIsEmptyImpl,
+    &TextEqualImpl,
 };

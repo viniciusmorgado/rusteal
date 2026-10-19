@@ -30,6 +30,7 @@ pub mod struct_ref;
 pub mod subclass_of;
 mod sync;
 pub mod task;
+pub mod text;
 pub mod time;
 pub mod ue_math;
 pub mod weak_ptr;
@@ -57,6 +58,7 @@ pub use soft_ref::SoftObjectRef;
 pub use strings::take_utf8;
 pub use struct_ref::UStructRef;
 pub use subclass_of::SubclassOf;
+pub use text::Text;
 pub use traits::{
     HasParent, Inherits, UeClass, UeEnum, UeHandle, UeInterface, UeStruct, ValidHandle,
 };

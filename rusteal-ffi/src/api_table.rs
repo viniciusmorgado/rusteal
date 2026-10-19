@@ -91,6 +91,22 @@ pub struct RustealCoreApi {
     pub is_child_of: unsafe extern "C" fn(class: UClassHandle, parent: UClassHandle) -> bool,
 
     pub take_pending_utf8: unsafe extern "C" fn(key: *const u8, buf: *mut u8, buf_len: u32) -> u32,
+
+    pub text_from_string: unsafe extern "C" fn(utf8: *const u8, len: u32) -> *mut u8,
+    pub text_localized: unsafe extern "C" fn(
+        namespace: *const u8,
+        namespace_len: u32,
+        key: *const u8,
+        key_len: u32,
+        source: *const u8,
+        source_len: u32,
+    ) -> *mut u8,
+    pub text_clone: unsafe extern "C" fn(text: *const u8) -> *mut u8,
+    pub text_destroy: unsafe extern "C" fn(text: *mut u8),
+    pub text_to_string:
+        unsafe extern "C" fn(text: *const u8, buf: *mut u8, buf_len: u32, out_len: *mut u32),
+    pub text_is_empty: unsafe extern "C" fn(text: *const u8) -> bool,
+    pub text_equal: unsafe extern "C" fn(a: *const u8, b: *const u8) -> bool,
 }
 
 #[repr(C)]
@@ -275,6 +291,16 @@ pub struct RustealPropertyApi {
         prop: FPropertyHandle,
         buf: *const u8,
         len: u32,
+    ) -> RustealErrorCode,
+    pub get_text: unsafe extern "C" fn(
+        obj: UObjectHandle,
+        prop: FPropertyHandle,
+        out: *mut *mut u8,
+    ) -> RustealErrorCode,
+    pub set_text: unsafe extern "C" fn(
+        obj: UObjectHandle,
+        prop: FPropertyHandle,
+        text: *const u8,
     ) -> RustealErrorCode,
 }
 

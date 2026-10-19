@@ -37,7 +37,6 @@ enum PostCallAction {
     InOutStringCopyback(String),
     InOutSoftCopyback(String),
     SoftPathOutput(String),
-    InOutTextCopyback(String),
 }
 
 pub fn generate_wrapper_file(entries: &[&FuncEntry], ctx: &CodegenContext) -> String {
@@ -222,10 +221,7 @@ fn generate_wrapper_function(out: &mut String, entry: &FuncEntry, ctx: &CodegenC
 
         match mapped.ffi_to_rust {
             ConversionKind::StringUtf8 => {
-                if param.prop_type == "TextProperty" {
-                    out.push_str(&format!("    FText __Out{name};\n"));
-                    post_call_actions.push(PostCallAction::TextOutput(name.clone()));
-                } else if let Some(soft) = soft_cpp_type(param, ctx) {
+                if let Some(soft) = soft_cpp_type(param, ctx) {
                     out.push_str(&format!("    {soft} __Out{name};\n"));
                     post_call_actions.push(PostCallAction::SoftPathOutput(name.clone()));
                 } else {
@@ -253,6 +249,10 @@ fn generate_wrapper_function(out: &mut String, entry: &FuncEntry, ctx: &CodegenC
                     let iface = native_interface_cpp_type(ctx, param.interface_name.as_deref());
                     out.push_str(&format!("    TScriptInterface<{iface}> __Out{name};\n"));
                     post_call_actions.push(PostCallAction::InterfaceOutput(name.clone()));
+                }
+                "TextProperty" => {
+                    out.push_str(&format!("    FText __Out{name};\n"));
+                    post_call_actions.push(PostCallAction::TextOutput(name.clone()));
                 }
                 _ => {
                     let obj_cpp = resolve_object_cpp_type(ctx, param.class_name.as_deref());
@@ -309,12 +309,7 @@ fn generate_wrapper_function(out: &mut String, entry: &FuncEntry, ctx: &CodegenC
             if mapped.rust_to_ffi == ConversionKind::StringUtf8 {
                 let name = &param.name;
 
-                if param.prop_type == "TextProperty" {
-                    out.push_str(&format!(
-                        "    FText __InOut{name} = FText::FromString(FString(UTF8_TO_TCHAR(std::string({name}, {name}Len).c_str())));\n"
-                    ));
-                    post_call_actions.push(PostCallAction::InOutTextCopyback(name.clone()));
-                } else if let Some(soft) = soft_cpp_type(param, ctx) {
+                if let Some(soft) = soft_cpp_type(param, ctx) {
                     out.push_str(&format!(
                         "    {soft} __InOut{name} = {soft}(FSoftObjectPath(FString(UTF8_TO_TCHAR(std::string({name}, {name}Len).c_str()))));\n"
                     ));
@@ -653,6 +648,7 @@ fn input_arg_expression(param: &ParamInfo, dir: ParamDirection, ctx: &CodegenCon
             let cpp_type = resolve_object_cpp_type(ctx, param.class_name.as_deref());
 
             match param.prop_type.as_str() {
+                "TextProperty" => format!("*static_cast<const FText*>({})", param.name),
                 "WeakObjectProperty" => {
                     let bare_type = resolve_object_cpp_type_bare(ctx, param.class_name.as_deref());
 
@@ -681,9 +677,7 @@ fn input_arg_expression(param: &ParamInfo, dir: ParamDirection, ctx: &CodegenCon
                     name = param.name
                 );
 
-                if param.prop_type == "TextProperty" {
-                    format!("FText::FromString({fstring_expr})")
-                } else if let Some(soft) = soft_cpp_type(param, ctx) {
+                if let Some(soft) = soft_cpp_type(param, ctx) {
                     format!("{soft}(FSoftObjectPath({fstring_expr}))")
                 } else {
                     fstring_expr
@@ -738,12 +732,11 @@ fn return_strategy(param: &ParamInfo, ctx: &CodegenContext) -> ReturnStrategy {
         ConversionKind::ObjectRef => match param.prop_type.as_str() {
             "WeakObjectProperty" => ReturnStrategy::WeakObjectRef,
             "InterfaceProperty" => ReturnStrategy::InterfaceRef,
+            "TextProperty" => ReturnStrategy::TextReturn,
             _ => ReturnStrategy::ObjectRef,
         },
         ConversionKind::StringUtf8 => {
-            if param.prop_type == "TextProperty" {
-                ReturnStrategy::TextReturn
-            } else if soft_cpp_type(param, ctx).is_some() {
+            if soft_cpp_type(param, ctx).is_some() {
                 ReturnStrategy::SoftPathReturn
             } else {
                 ReturnStrategy::StringReturn
@@ -811,11 +804,7 @@ fn emit_return(out: &mut String, strategy: &ReturnStrategy, call_expr: &str) {
             out.push_str("    RustealWriteUtf8(__RustealResult, OutBuf, BufLen, OutLen);\n");
         }
         ReturnStrategy::TextReturn => {
-            out.push_str(&format!(
-                "    FString __RustealResult = ({call_expr}).ToString();\n"
-            ));
-
-            out.push_str("    RustealWriteUtf8(__RustealResult, OutBuf, BufLen, OutLen);\n");
+            out.push_str(&format!("    *OutReturnValue = new FText({call_expr});\n"));
         }
         ReturnStrategy::StructReturn { reflected } => {
             out.push_str(&format!("    auto __RustealResult = {call_expr};\n"));
@@ -883,7 +872,7 @@ fn emit_post_call(out: &mut String, action: &PostCallAction) {
         }
         PostCallAction::TextOutput(name) => {
             out.push_str(&format!(
-                "    RustealWriteUtf8(__Out{name}.ToString(), Out{name}, Out{name}BufLen, Out{name}Len);\n"
+                "    *Out{name} = new FText(MoveTemp(__Out{name}));\n"
             ));
         }
         PostCallAction::StructOutput {
@@ -940,11 +929,6 @@ fn emit_post_call(out: &mut String, action: &PostCallAction) {
         PostCallAction::SoftPathOutput(name) => {
             out.push_str(&format!(
                 "    RustealWriteUtf8(__Out{name}.ToSoftObjectPath().ToString(), Out{name}, Out{name}BufLen, Out{name}Len);\n"
-            ));
-        }
-        PostCallAction::InOutTextCopyback(name) => {
-            out.push_str(&format!(
-                "    RustealWriteUtf8(__InOut{name}.ToString(), Out{name}, Out{name}BufLen, Out{name}Len);\n"
             ));
         }
     }
@@ -1331,5 +1315,53 @@ mod tests {
             "{out}"
         );
         assert!(!out.contains("FMemory::Memcpy"), "{out}");
+    }
+
+    #[test]
+    fn texts_cross_as_owned_ftexts() {
+        let codegen: CodegenConfig = toml::from_str(
+            "features = [\"engine\"]\n[modules]\nEngine = { module = \"engine\", feature = \"engine\" }",
+        )
+        .unwrap();
+        let ctx = CodegenContext::new(
+            vec![class("Object", ""), class("CameraComponent", "Object")],
+            vec![],
+            vec![],
+            &codegen,
+        );
+        let parm = rusteal_ue_flags::CPF_PARM;
+
+        let takes = entry(
+            "SetLabel",
+            serde_json::json!([param("Label", parm, "TextProperty", None)]),
+        );
+        let returns = entry(
+            "GetLabel",
+            serde_json::json!([param(
+                "ReturnValue",
+                parm | CPF_OUT_PARM | CPF_RETURN_PARM,
+                "TextProperty",
+                None
+            )]),
+        );
+        let gives = entry(
+            "FindLabel",
+            serde_json::json!([param("Found", parm | CPF_OUT_PARM, "TextProperty", None)]),
+        );
+
+        let out = generate_wrapper_file(&[&takes, &returns, &gives], &ctx);
+
+        assert!(
+            out.contains("Self->SetLabel(*static_cast<const FText*>(Label));"),
+            "{out}"
+        );
+        assert!(
+            out.contains("*OutReturnValue = new FText(Self->GetLabel());"),
+            "{out}"
+        );
+        assert!(
+            out.contains("*OutFound = new FText(MoveTemp(__OutFound));"),
+            "{out}"
+        );
     }
 }

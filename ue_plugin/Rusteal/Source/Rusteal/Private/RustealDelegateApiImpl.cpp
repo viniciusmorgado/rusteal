@@ -180,20 +180,15 @@ RustealDelegateApi_ReadParam(RustealFPropertyHandle PropHandle, void *ParamsBuf,
   }
 
   if (const FTextProperty *TextProp = CastField<FTextProperty>(Prop)) {
-    FString Str = TextProp->GetPropertyValue(ValuePtr).ToString();
-    FTCHARToUTF8 Utf8(*Str);
-    uint32 Len = static_cast<uint32>(Utf8.Length());
-    uint32 Required = sizeof(uint32) + Len;
-
     if (OutWritten)
-      *OutWritten = Required;
+      *OutWritten = sizeof(void *);
 
-    if (OutBufSize < Required) {
+    if (OutBufSize < sizeof(void *)) {
       return RustealFail(ERustealErrorCode::BufferTooSmall);
     }
 
-    FMemory::Memcpy(OutBuf, &Len, sizeof(uint32));
-    FMemory::Memcpy(OutBuf + sizeof(uint32), Utf8.Get(), Len);
+    void *Text = new FText(TextProp->GetPropertyValue(ValuePtr));
+    FMemory::Memcpy(OutBuf, &Text, sizeof(void *));
     return ERustealErrorCode::Ok;
   }
 
