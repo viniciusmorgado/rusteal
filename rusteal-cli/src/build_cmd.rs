@@ -113,7 +113,7 @@ pub fn run_build(
 
         match step_num {
             1 => ctx.step1_ue_build(steps.contains(&2) && steps.contains(&3)),
-            2 => ctx.step2_codegen(),
+            2 => ctx.step2_codegen(steps.contains(&1) && steps.contains(&3)),
             3 => ctx.step3_ue_rebuild(),
             4 => ctx.step4_cargo_build(),
             5 => ctx.step5_copy_dll(),
@@ -431,7 +431,59 @@ impl BuildContext {
         }
     }
 
-    fn step2_codegen(&self) {
+    fn descriptors(&self) -> Vec<PathBuf> {
+        std::iter::once(self.layout.plugin_descriptor())
+            .chain(
+                self.libraries
+                    .iter()
+                    .filter_map(|l| l.plugin.as_ref().map(|(plugin, _)| plugin.descriptor())),
+            )
+            .collect()
+    }
+
+    fn plugin_dependencies(&self) -> Vec<String> {
+        self.descriptors()
+            .iter()
+            .flat_map(|descriptor| {
+                let json: serde_json::Value = fs::read_to_string(descriptor)
+                    .ok()
+                    .and_then(|text| serde_json::from_str(&text).ok())
+                    .unwrap_or_default();
+
+                json["Plugins"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|p| p["Name"].as_str().map(str::to_string))
+                    .collect::<Vec<_>>()
+            })
+            .collect()
+    }
+
+    fn step2_codegen(&self, reexports: bool) {
+        let before = self.plugin_dependencies();
+        self.generate_all();
+
+        if reexports && self.plugin_dependencies() != before {
+            eprintln!(
+                "  The bindings now use engine plugins the reflection dump did not have; \
+                 it is exported again and the bindings generated from it."
+            );
+
+            let header = self
+                .project_path()
+                .join("Plugins/RustealGenerator/Source/RustealGenerator/RustealGeneratorDummy.h");
+
+            if let Ok(file) = fs::File::options().write(true).open(&header) {
+                let _ = file.set_modified(std::time::SystemTime::now());
+            }
+
+            self.step1_ue_build(true);
+            self.generate_all();
+        }
+    }
+
+    fn generate_all(&self) {
         for library in &self.libraries {
             match &library.plugin {
                 None => rusteal_codegen::run_generate(&self.layout.root),
