@@ -1,6 +1,7 @@
 mod clangdb;
 mod dev_env;
 mod engine_test;
+mod templates_check;
 
 use std::ffi::OsStr;
 use std::io::{BufRead, IsTerminal, Write};
@@ -11,6 +12,7 @@ use dev_env::{DevEnv, expand_home};
 
 const USAGE: &str = "usage: cargo xtask dev-setup [--project <path> | --new <path>]
        cargo xtask engine-test
+       cargo xtask templates-check [<template>:<variant> | plugin:<template>]...
 
 Reads RUSTEAL_DEV_ENGINE_ROOT from .env at the repository root (see .env.example)
 or from the environment, and asks for the UE project Rusteal is developed against:
@@ -25,7 +27,12 @@ Then writes compile_commands.json (clangd) and the exporter's .csproj.props
 projects).
 
 engine-test builds a test project in target/engine-test with this checkout, runs
-the tests of tests/engine in the editor without a window, and prints their results.";
+the tests of tests/engine in a game without a window, and prints their results.
+
+templates-check creates a project from every template and variant, and a plugin
+from every plugin template, generates their bindings from a reflection dump made
+with every feature (target/engine-test/full-dump, exported once by UBT), and runs
+cargo check on their Rust code. Name templates to check only those.";
 
 const BASE_PROJECT: &str = "\
 Rusteal is developed against an Unreal Engine project: the plugins in ue_plugin/
@@ -47,6 +54,7 @@ fn main() {
     match args.first().map(String::as_str) {
         Some("dev-setup") => dev_setup(&args[1..]),
         Some("engine-test") => engine_test::engine_test(),
+        Some("templates-check") => templates_check::templates_check(&args[1..]),
         _ => usage(),
     }
 }
