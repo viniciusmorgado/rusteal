@@ -1,6 +1,7 @@
 #include "RustealApiTable.h"
 #include "RustealErrors.h"
 #include "RustealFNameHelper.h"
+#include "UObject/PropertyOptional.h"
 #include "UObject/TextProperty.h"
 #include "UObject/UObjectGlobals.h"
 #include "UObject/UnrealType.h"
@@ -246,6 +247,61 @@ static ERustealErrorCode SetTextImpl(RustealUObjectHandle Obj,
   return ERustealErrorCode::Ok;
 }
 
+static ERustealErrorCode GetOptionalImpl(RustealUObjectHandle Obj,
+                                         RustealFPropertyHandle Prop,
+                                         uint8 *OutBuf, uint32 BufSize,
+                                         bool *OutIsSet) {
+  RUSTEAL_CHECK_VALID(Obj);
+
+  const FOptionalProperty *OptProp =
+      CastField<FOptionalProperty>(static_cast<FProperty *>(Prop.ptr));
+
+  if (!OptProp) {
+    return RustealFailType(Prop.ptr, TEXT("FOptionalProperty"));
+  }
+
+  const void *OptPtr = OptProp->ContainerPtrToValuePtr<void>(Object);
+  *OutIsSet = OptProp->IsSet(OptPtr);
+
+  if (!*OutIsSet) {
+    return ERustealErrorCode::Ok;
+  }
+
+  FProperty *Value = OptProp->GetValueProperty();
+
+  if (BufSize < static_cast<uint32>(Value->GetSize())) {
+    return RustealFail(ERustealErrorCode::BufferTooSmall);
+  }
+
+  Value->InitializeValue(OutBuf);
+  Value->CopyCompleteValue(OutBuf, OptProp->GetValuePointerForRead(OptPtr));
+  return ERustealErrorCode::Ok;
+}
+
+static ERustealErrorCode SetOptionalImpl(RustealUObjectHandle Obj,
+                                         RustealFPropertyHandle Prop,
+                                         const uint8 *InBuf) {
+  RUSTEAL_CHECK_VALID(Obj);
+
+  FOptionalProperty *OptProp =
+      CastField<FOptionalProperty>(static_cast<FProperty *>(Prop.ptr));
+
+  if (!OptProp) {
+    return RustealFailType(Prop.ptr, TEXT("FOptionalProperty"));
+  }
+
+  void *OptPtr = OptProp->ContainerPtrToValuePtr<void>(Object);
+
+  if (!InBuf) {
+    OptProp->MarkUnset(OptPtr);
+    return ERustealErrorCode::Ok;
+  }
+
+  void *Value = OptProp->MarkSetAndGetInitializedValuePointerToReplace(OptPtr);
+  OptProp->GetValueProperty()->CopyCompleteValue(Value, InBuf);
+  return ERustealErrorCode::Ok;
+}
+
 static ERustealErrorCode GetFNameImpl(RustealUObjectHandle Obj,
                                       RustealFPropertyHandle Prop,
                                       RustealFNameHandle *Out) {
@@ -475,4 +531,6 @@ FRustealPropertyApi GPropertyApi = {
     &SetSoftObjectPathImpl,
     &GetTextImpl,
     &SetTextImpl,
+    &GetOptionalImpl,
+    &SetOptionalImpl,
 };

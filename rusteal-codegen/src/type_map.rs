@@ -60,6 +60,7 @@ const SUPPORTED_TYPES: &[&str] = &[
     "SetProperty",
     "SoftObjectProperty",
     "SoftClassProperty",
+    "OptionalProperty",
     "WeakObjectProperty",
     "InterfaceProperty",
     "DelegateProperty",

@@ -302,6 +302,18 @@ pub struct RustealPropertyApi {
         prop: FPropertyHandle,
         text: *const u8,
     ) -> RustealErrorCode,
+    pub get_optional: unsafe extern "C" fn(
+        obj: UObjectHandle,
+        prop: FPropertyHandle,
+        buf: *mut u8,
+        buf_size: u32,
+        is_set: *mut bool,
+    ) -> RustealErrorCode,
+    pub set_optional: unsafe extern "C" fn(
+        obj: UObjectHandle,
+        prop: FPropertyHandle,
+        buf: *const u8,
+    ) -> RustealErrorCode,
 }
 
 #[repr(C)]

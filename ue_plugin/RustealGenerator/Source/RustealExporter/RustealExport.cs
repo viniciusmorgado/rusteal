@@ -644,6 +644,11 @@ public static class RustealExport
                 info["element_prop"] = ExportInnerProperty(setProp.ValueProperty);
             }
 
+            if (prop is UhtOptionalProperty optProp)
+            {
+                info["inner_prop"] = ExportInnerProperty(optProp.ValueProperty);
+            }
+
             if (prop is UhtMapProperty mapProp)
             {
                 info["key_prop"] = ExportInnerProperty(mapProp.KeyProperty);

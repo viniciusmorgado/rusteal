@@ -140,6 +140,13 @@ fn is_property_exportable(prop: &PropertyInfo, available: &HashSet<String>) -> b
         return is_delegate_exportable(prop, available);
     }
 
+    if prop.prop_type == "OptionalProperty" {
+        return prop
+            .inner_prop
+            .as_deref()
+            .is_some_and(|inner| is_inner_type_exportable(inner, available));
+    }
+
     if let Some(ref cls) = prop.class_name
         && !available.contains(cls)
     {
@@ -354,6 +361,10 @@ fn filter_functions(
             if param.prop_type == "TextProperty"
                 && type_map::param_direction(param) == type_map::ParamDirection::InOut
             {
+                return false;
+            }
+
+            if param.prop_type == "OptionalProperty" {
                 return false;
             }
 
