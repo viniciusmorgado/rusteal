@@ -112,7 +112,7 @@ pub fn run_build(
         eprintln!("{}", "-".repeat(60));
 
         match step_num {
-            1 => ctx.step1_ue_build(),
+            1 => ctx.step1_ue_build(steps.contains(&2) && steps.contains(&3)),
             2 => ctx.step2_codegen(),
             3 => ctx.step3_ue_rebuild(),
             4 => ctx.step4_cargo_build(),
@@ -343,6 +343,14 @@ impl BuildContext {
     }
 
     fn run_ubt(&self) {
+        let code = self.run_ubt_code();
+
+        if code != 0 {
+            std::process::exit(code);
+        }
+    }
+
+    fn run_ubt_code(&self) -> i32 {
         let platform = &HostPlatform::CURRENT;
         let script = self.engine_path.join(platform.ubt_script);
 
@@ -355,18 +363,18 @@ impl BuildContext {
         let uproject = self.uproject_path();
         let uproject_abs = canonical_no_prefix(&uproject);
 
-        run_cmd(&[
+        run_cmd_code(&[
             script.to_str().unwrap(),
             &target,
             platform.ubt_platform,
             "Development",
             &format!("-Project={}", uproject_abs.display()),
             "-NoHotReload",
-        ]);
+        ])
     }
 
-    fn step1_ue_build(&self) {
-        self.run_ubt();
+    fn step1_ue_build(&self, regenerates: bool) {
+        let code = self.run_ubt_code();
 
         let uht_input = self.layout.uht_json();
 
@@ -410,6 +418,17 @@ impl BuildContext {
             json_files.len(),
             uht_input.display()
         );
+
+        if code != 0 {
+            if regenerates && copied == json_files.len() {
+                eprintln!(
+                    "  The build failed with the code generated before; it is generated \
+                     again from the engine's reflection and built in step 3."
+                );
+            } else {
+                std::process::exit(code);
+            }
+        }
     }
 
     fn step2_codegen(&self) {
