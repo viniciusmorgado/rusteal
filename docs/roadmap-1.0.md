@@ -125,7 +125,7 @@ refers to the next section.
 
 | Gap | Status | Milestone |
 |---|---|---|
-| Editor-only plugins for C++/Blueprint projects without Rusteal, sellable on Fab | missing | M0 |
+| Editor-only plugins for C++/Blueprint projects without Rusteal (`rusteal plugin package --standalone`) | done; Fab on hold | M0 |
 | Rusteal as a precompiled engine plugin on Fab, with a Rust option in the project browser | missing | M0 |
 | Precompiled plugin packages (`BuildPlugin`), several platforms in one package | done | M0 |
 | Engine-wide installs of Rusteal plugins | missing | M0 |
@@ -201,9 +201,12 @@ on first open with its checks and retries, `rusteal launcher install`, both
 handbooks, and the submission notes in [fab-submission.md](fab-submission.md).
 A runtime plugin can also have an editor library (`rusteal plugin new
 --editor`, `rusteal plugin editor`), and a plugin can be packaged precompiled
-(`rusteal plugin package --precompiled`, `rusteal plugin merge`). Left: Windows
-and macOS, the Fab submission (on hold), editor-only plugins for projects
-without Rusteal.
+(`rusteal plugin package --precompiled`, `rusteal plugin merge`), and an editor
+plugin can be packaged for any project, Blueprint and C++ ones included, with a
+renamed copy of the runtime inside it (`rusteal plugin package --standalone`),
+checked in a Blueprint, a C++ and a Rusteal project with two such plugins at once
+and a packaged game that carries none of it. Left: Windows and macOS, and the Fab
+submission (on hold).
 
 The next step already planned: two kinds of plugins.
 

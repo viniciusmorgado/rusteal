@@ -68,3 +68,14 @@ To send before the submission, through [Fab support](https://support.fab.com/s/?
    from the engine's reflection data. Does that meet 4.3.6.1.a?
 5. *Build plugins.* Does the build farm accept a C# UnrealBuildTool/UHT plugin
    (`*.ubtplugin.csproj`) inside a code plugin?
+
+## Editor plugins made with Rusteal
+
+An editor tool written with Rusteal goes to Fab as `<output>/<Name>-Source` from
+`rusteal plugin package <Name> --standalone`: the plugin's C++ sources with a
+renamed copy of the Rusteal runtime as modules of its own, no dependency on any
+other plugin made by a user, no Rust sources, and its Rust library prebuilt in
+`Source/ThirdParty/RustLibraries/<Platform>/` (no `Binaries/`, which Fab refuses
+in a zip). Question 4 above is about that library. Each platform's library comes
+from packaging on that platform; `rusteal plugin merge` joins the packages.
+
