@@ -4,7 +4,19 @@ use rusteal_runtime::runtime::{
     FName, ScriptInterface, SoftClassRef, SoftObjectRef, TWeakObjectPtr, Text, UeArray, UeMap,
     UeSet,
 };
-use rusteal_runtime::{uclass, uclass_impl, uinterface};
+use rusteal_runtime::{uclass, uclass_impl, uinterface, ustruct};
+
+#[ustruct]
+pub struct Loadout {
+    #[uproperty(EditAnywhere)]
+    title: Text,
+
+    #[uproperty(EditAnywhere)]
+    counts: UeMap<FName, i32>,
+
+    #[uproperty(EditAnywhere)]
+    level: u16,
+}
 
 #[uinterface]
 pub trait Pingable {
