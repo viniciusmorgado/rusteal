@@ -124,6 +124,21 @@ pub fn engine_test() {
         &project.join("Rust").join(CRATE).join("src"),
     );
 
+    if project
+        .join("Intermediate/Rusteal/uht/rusteal_classes.json")
+        .is_file()
+    {
+        eprintln!("engine-test: generating the bindings with this CLI");
+        run(
+            Command::new(&cli)
+                .arg("generate")
+                .arg(&project)
+                .stdin(std::process::Stdio::null()),
+            "rusteal generate",
+            &logs.join("generate.log"),
+        );
+    }
+
     eprintln!("engine-test: building the project (UBT, bindings, cargo)");
     run(
         Command::new(&cli)
