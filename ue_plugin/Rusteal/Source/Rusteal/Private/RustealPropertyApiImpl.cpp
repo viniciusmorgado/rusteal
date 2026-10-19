@@ -239,6 +239,13 @@ static ERustealErrorCode GetObjectImpl(RustealUObjectHandle Obj,
                                        RustealUObjectHandle *Out) {
   RUSTEAL_CHECK_VALID(Obj);
 
+  if (const FInterfaceProperty *IfaceProp =
+          CastField<FInterfaceProperty>(static_cast<FProperty *>(Prop.ptr))) {
+    Out->ptr =
+        IfaceProp->ContainerPtrToValuePtr<FScriptInterface>(Object)->GetObject();
+    return ERustealErrorCode::Ok;
+  }
+
   const FObjectPropertyBase *ObjProp =
       CastField<FObjectPropertyBase>(static_cast<FProperty *>(Prop.ptr));
 
@@ -255,6 +262,17 @@ static ERustealErrorCode SetObjectImpl(RustealUObjectHandle Obj,
                                        RustealFPropertyHandle Prop,
                                        RustealUObjectHandle Val) {
   RUSTEAL_CHECK_VALID(Obj);
+
+  if (FInterfaceProperty *IfaceProp =
+          CastField<FInterfaceProperty>(static_cast<FProperty *>(Prop.ptr))) {
+    UObject *Value = static_cast<UObject *>(Val.ptr);
+    FScriptInterface *Iface =
+        IfaceProp->ContainerPtrToValuePtr<FScriptInterface>(Object);
+    Iface->SetObject(Value);
+    Iface->SetInterface(
+        Value ? Value->GetInterfaceAddress(IfaceProp->InterfaceClass) : nullptr);
+    return ERustealErrorCode::Ok;
+  }
 
   FObjectPropertyBase *ObjProp =
       CastField<FObjectPropertyBase>(static_cast<FProperty *>(Prop.ptr));

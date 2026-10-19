@@ -8,6 +8,7 @@ enum ReturnStrategy {
     Direct,
     ObjectRef,
     SoftWeakObjectRef,
+    InterfaceRef,
     Cast(String),
     StringReturn,
     TextReturn,
@@ -22,6 +23,7 @@ enum PostCallAction {
     StructOutput { name: String, struct_cpp: String },
     ObjectOutput(String),
     SoftWeakObjectOutput(String),
+    InterfaceOutput(String),
     FNameOutput(String),
     EnumOutput { name: String, ffi_type: String },
     InOutStructCopyback { name: String, struct_cpp: String },
@@ -68,6 +70,7 @@ pub fn generate_wrapper_file(entries: &[&FuncEntry], ctx: &CodegenContext) -> St
 
     includes.insert("\"Templates/SubclassOf.h\"".to_string());
     includes.insert("\"RustealUtf8.h\"".to_string());
+    includes.insert("\"RustealInterface.h\"".to_string());
     out.push_str("#include \"CoreMinimal.h\"\n");
 
     for inc in &includes {
@@ -237,6 +240,11 @@ fn generate_wrapper_function(out: &mut String, entry: &FuncEntry, ctx: &CodegenC
                     let bare = resolve_object_cpp_type_bare(ctx, param.class_name.as_deref());
                     out.push_str(&format!("    TWeakObjectPtr<{bare}> __Out{name};\n"));
                     post_call_actions.push(PostCallAction::SoftWeakObjectOutput(name.clone()));
+                }
+                "InterfaceProperty" => {
+                    let iface = native_interface_cpp_type(ctx, param.interface_name.as_deref());
+                    out.push_str(&format!("    TScriptInterface<{iface}> __Out{name};\n"));
+                    post_call_actions.push(PostCallAction::InterfaceOutput(name.clone()));
                 }
                 _ => {
                     let obj_cpp = resolve_object_cpp_type(ctx, param.class_name.as_deref());
@@ -581,6 +589,15 @@ fn resolve_object_cpp_type_bare(ctx: &CodegenContext, class_name: Option<&str>) 
     }
 }
 
+fn native_interface_cpp_type(ctx: &CodegenContext, interface_name: Option<&str>) -> String {
+    let uclass = resolve_object_cpp_type_bare(ctx, interface_name);
+
+    match uclass.strip_prefix('U') {
+        Some(rest) => format!("I{rest}"),
+        None => format!("I{uclass}"),
+    }
+}
+
 fn resolve_object_cpp_type(ctx: &CodegenContext, class_name: Option<&str>) -> String {
     match class_name {
         Some(cn) => {
@@ -620,6 +637,14 @@ fn input_arg_expression(param: &ParamInfo, dir: ParamDirection, ctx: &CodegenCon
 
                     format!(
                         "TWeakObjectPtr<{bare_type}>(static_cast<{cpp_type}>({}))",
+                        param.name
+                    )
+                }
+                "InterfaceProperty" => {
+                    let iface = native_interface_cpp_type(ctx, param.interface_name.as_deref());
+
+                    format!(
+                        "RustealToScriptInterface<{iface}>(static_cast<UObject*>({}))",
                         param.name
                     )
                 }
@@ -681,6 +706,7 @@ fn return_strategy(param: &ParamInfo) -> ReturnStrategy {
         ConversionKind::Identity | ConversionKind::IntCast => ReturnStrategy::Direct,
         ConversionKind::ObjectRef => match param.prop_type.as_str() {
             "SoftObjectProperty" | "WeakObjectProperty" => ReturnStrategy::SoftWeakObjectRef,
+            "InterfaceProperty" => ReturnStrategy::InterfaceRef,
             _ => ReturnStrategy::ObjectRef,
         },
         ConversionKind::StringUtf8 => {
@@ -725,6 +751,11 @@ fn emit_return(out: &mut String, strategy: &ReturnStrategy, call_expr: &str) {
         ReturnStrategy::SoftWeakObjectRef => {
             out.push_str(&format!(
                 "    *OutReturnValue = const_cast<void*>(static_cast<const void*>({call_expr}.Get()));\n"
+            ));
+        }
+        ReturnStrategy::InterfaceRef => {
+            out.push_str(&format!(
+                "    *OutReturnValue = static_cast<void*>(({call_expr}).GetObject());\n"
             ));
         }
         ReturnStrategy::Cast(ctype) => {
@@ -820,6 +851,11 @@ fn emit_post_call(out: &mut String, action: &PostCallAction) {
                 "    *Out{name} = static_cast<void*>(__Out{name}.Get());\n"
             ));
         }
+        PostCallAction::InterfaceOutput(name) => {
+            out.push_str(&format!(
+                "    *Out{name} = static_cast<void*>(__Out{name}.GetObject());\n"
+            ));
+        }
         PostCallAction::FNameOutput(name) => {
             out.push_str(&format!(
                 "    *Out{name} = RustealPackFName(__Out{name});\n"
@@ -898,7 +934,10 @@ fn resolve_inner_cpp_type(inner: &PropertyInfo, ctx: &CodegenContext) -> String 
             }
             None => "UClass*".to_string(),
         },
-        "InterfaceProperty" => resolve_object_cpp_type(ctx, inner.interface_name.as_deref()),
+        "InterfaceProperty" => format!(
+            "TScriptInterface<{}>",
+            native_interface_cpp_type(ctx, inner.interface_name.as_deref())
+        ),
         "EnumProperty" => {
             let name = inner
                 .enum_cpp_name
@@ -953,6 +992,7 @@ fn collect_param_headers(param: &ParamInfo, ctx: &CodegenContext, includes: &mut
     for cls_name in [
         param.class_name.as_deref(),
         param.meta_class_name.as_deref(),
+        param.interface_name.as_deref(),
     ]
     .into_iter()
     .flatten()
@@ -980,6 +1020,7 @@ fn collect_param_headers(param: &ParamInfo, ctx: &CodegenContext, includes: &mut
         for cls_name in [
             inner.class_name.as_deref(),
             inner.meta_class_name.as_deref(),
+            inner.interface_name.as_deref(),
         ]
         .into_iter()
         .flatten()
@@ -1002,5 +1043,108 @@ fn include_struct_header(struct_name: &str, ctx: &CodegenContext, includes: &mut
         && !st.header.is_empty()
     {
         includes.insert(format!("\"{}\"", st.header));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::CodegenConfig;
+
+    fn class(name: &str, parent: &str) -> ClassInfo {
+        serde_json::from_value(serde_json::json!({
+            "name": name, "cpp_name": format!("U{name}"), "package": "Engine",
+            "header": "", "class_flags": 0, "super": parent,
+        }))
+        .unwrap()
+    }
+
+    fn param(
+        name: &str,
+        flags: u64,
+        prop_type: &str,
+        interface: Option<&str>,
+    ) -> serde_json::Value {
+        serde_json::json!({
+            "name": name, "type": prop_type, "prop_flags": flags,
+            "enum_name": null, "enum_cpp_name": null, "enum_cpp_form": null,
+            "enum_underlying_type": null, "class_name": null, "meta_class_name": null,
+            "struct_name": null, "interface_name": interface, "func_info": null,
+            "inner_prop": null, "key_prop": null, "value_prop": null,
+            "element_prop": null, "default": null,
+        })
+    }
+
+    fn entry(name: &str, params: serde_json::Value) -> FuncEntry {
+        FuncEntry {
+            func_id: 0,
+            module_name: "engine".into(),
+            class_name: "CameraComponent".into(),
+            func_name: name.into(),
+            rust_func_name: name.into(),
+            func: serde_json::from_value(serde_json::json!({
+                "name": name, "func_flags": FUNC_NATIVE, "params": params,
+            }))
+            .unwrap(),
+            cpp_class_name: "UCameraComponent".into(),
+            header: String::new(),
+        }
+    }
+
+    #[test]
+    fn interfaces_cross_as_script_interfaces() {
+        let codegen: CodegenConfig = toml::from_str("features = []\n[modules]").unwrap();
+        let ctx = CodegenContext::new(
+            vec![
+                class("Object", ""),
+                class("Interface", "Object"),
+                class("BlendableInterface", "Interface"),
+                class("CameraComponent", "Object"),
+            ],
+            vec![],
+            vec![],
+            &codegen,
+        );
+
+        let iface = Some("BlendableInterface");
+        let parm = rusteal_ue_flags::CPF_PARM;
+
+        let takes = entry(
+            "AddOrUpdateBlendable",
+            serde_json::json!([param("InBlendableObject", parm, "InterfaceProperty", iface)]),
+        );
+        let returns = entry(
+            "GetBlendable",
+            serde_json::json!([param(
+                "ReturnValue",
+                parm | CPF_OUT_PARM | CPF_RETURN_PARM,
+                "InterfaceProperty",
+                iface
+            )]),
+        );
+        let gives = entry(
+            "FindBlendable",
+            serde_json::json!([param(
+                "Found",
+                parm | CPF_OUT_PARM,
+                "InterfaceProperty",
+                iface
+            )]),
+        );
+
+        let out = generate_wrapper_file(&[&takes, &returns, &gives], &ctx);
+
+        assert!(
+            out.contains(
+                "RustealToScriptInterface<IBlendableInterface>(static_cast<UObject*>(InBlendableObject))"
+            ),
+            "{out}"
+        );
+        assert!(out.contains(").GetObject());"), "{out}");
+        assert!(
+            out.contains("TScriptInterface<IBlendableInterface> __OutFound;"),
+            "{out}"
+        );
+        assert!(out.contains("__OutFound.GetObject()"), "{out}");
     }
 }

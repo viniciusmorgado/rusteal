@@ -148,6 +148,8 @@ const RUSTEAL_INTERNAL_CLASSES: &[&str] = &[
     "RustealDelegateProxy",
 ];
 
+const ENGINE_UNEXPORTED_FUNCTIONS: &[&str] = &["KismetSystemLibrary.IsValidInterface"];
+
 impl CodegenConfig {
     pub fn for_library(&self, kind: LibraryKind) -> CodegenConfig {
         let mut config = self.clone();
@@ -179,6 +181,12 @@ impl CodegenConfig {
         for class in RUSTEAL_INTERNAL_CLASSES {
             if !config.blocklist.classes.iter().any(|c| c == class) {
                 config.blocklist.classes.push(class.to_string());
+            }
+        }
+
+        for function in ENGINE_UNEXPORTED_FUNCTIONS {
+            if !config.blocklist.functions.iter().any(|f| f == function) {
+                config.blocklist.functions.push(function.to_string());
             }
         }
 

@@ -274,7 +274,7 @@ fn is_inner_type_exportable(inner: &PropertyInfo, available: &HashSet<String>) -
 
     if matches!(
         inner.prop_type.as_str(),
-        "ArrayProperty" | "MapProperty" | "SetProperty"
+        "ArrayProperty" | "MapProperty" | "SetProperty" | "InterfaceProperty"
     ) {
         return false;
     }
