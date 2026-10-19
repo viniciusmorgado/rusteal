@@ -3,7 +3,8 @@ use std::sync::{Arc, Mutex};
 use bindings::engine::{
     ActorComponent, BlendableInterface, CameraComponent, CameraComponentExt,
     FMinimalViewInfoExt, FPostProcessSettingsExt, InputSettings, InputSettingsExt, KismetGuidLibrary,
-    KismetTextLibrary, TextRenderComponent, TextRenderComponentExt, FWeightedBlendableExt,
+    CurveFloat, CurveFloatExt, FRichCurveExt, FRichCurveKey, FRichCurveKeyExt, KismetTextLibrary,
+    TextRenderComponent, TextRenderComponentExt, TimelineComponent, TimelineComponentExt, FWeightedBlendableExt,
     FWeightedBlendablesExt, KismetMathLibrary, KismetStringLibrary, KismetSystemLibrary, Material,
     PlayerInput, PostProcessVolume, PostProcessVolumeExt, ProjectileMovementComponent, StaticMeshActor,
     ProjectileMovementComponentExt, VolumetricCloudComponent, VolumetricCloudComponentExt,
@@ -95,6 +96,14 @@ pub const ALL: &[(&str, Check)] = &[
     (
         "engine_text_keeps_its_localization",
         engine_text_keeps_its_localization,
+    ),
+    (
+        "engine_function_takes_a_closure",
+        engine_function_takes_a_closure,
+    ),
+    (
+        "engine_member_function_takes_a_closure_with_arguments",
+        engine_member_function_takes_a_closure_with_arguments,
     ),
     (
         "task_comes_back_to_the_game_thread",
@@ -605,6 +614,71 @@ fn engine_function_takes_any_object_as_iinterface(context: &Context) -> Outcome 
             "Conv_InterfaceToObject returned another object",
         )
     })())
+}
+
+fn engine_function_takes_a_closure(_: &Context) -> Outcome {
+    let fired = Arc::new(Mutex::new(0));
+    let sink = fired.clone();
+
+    let _handle = KismetSystemLibrary::k2_set_timer_delegate(
+        move || *sink.lock().unwrap() += 1,
+        0.05,
+        false,
+        None,
+        None,
+        None,
+    );
+
+    KismetSystemLibrary::collect_garbage();
+
+    Outcome::Pending(Box::new(move || {
+        let count = *fired.lock().unwrap();
+        (count > 0).then(|| ensure(count == 1, format!("the timer fired {count} times")))
+    }))
+}
+
+fn engine_member_function_takes_a_closure_with_arguments(context: &Context) -> Outcome {
+    let started = (|| {
+        let timeline = add_component::<TimelineComponent>(context)?
+            .checked()
+            .map_err(|e| format!("checked: {e:?}"))?;
+        let curve = rusteal_runtime::runtime::world::new_object_raw(
+            timeline.raw(),
+            CurveFloat::static_class(),
+        )
+        .and_then(UObjectRef::<CurveFloat>::from_handle)
+        .map_err(|e| format!("curve: {e:?}"))?;
+        let checked = curve.checked().map_err(|e| format!("checked: {e:?}"))?;
+
+        let rich = checked.get_float_curve();
+        let keys = rich.as_ref().keys();
+
+        for (time, value) in [(0.0, 0.0), (0.1, 1.0)] {
+            let key = OwnedStruct::<FRichCurveKey>::new();
+            key.as_ref().set_time(time);
+            key.as_ref().set_value(value);
+            keys.push(&key).map_err(|e| format!("key: {e:?}"))?;
+        }
+
+        checked.set_float_curve(&rich);
+
+        let seen = Arc::new(Mutex::new(-1.0f32));
+        let sink = seen.clone();
+        timeline.add_interp_float(curve, move |value| *sink.lock().unwrap() = value, None, None);
+        timeline.play();
+
+        Ok::<_, String>(seen)
+    })();
+
+    let seen = match started {
+        Ok(seen) => seen,
+        Err(e) => return done(Err(e)),
+    };
+
+    Outcome::Pending(Box::new(move || {
+        let value = *seen.lock().unwrap();
+        (value >= 0.999).then_some(Ok(()))
+    }))
 }
 
 fn task_comes_back_to_the_game_thread(_: &Context) -> Outcome {
