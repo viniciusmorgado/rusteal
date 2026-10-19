@@ -440,8 +440,7 @@ fn generate_string_getter(
          \x20       rusteal_core::ffi_infallible_ctx(unsafe {{\n\
          \x20           rusteal_core::ffi_dispatch::property_get_string({c}, prop, buf.as_mut_ptr(), buf.len() as u32, &mut out_len)\n\
          \x20       }}, \"{rust_name}\");\n\
-         \x20       buf.truncate(out_len as usize);\n\
-         \x20       String::from_utf8_lossy(&buf).into_owned()\n\
+         \x20       rusteal_core::take_utf8(buf, out_len)\n\
          \x20   }}\n\n"
     ));
 }

@@ -2,6 +2,7 @@
 #include "RustealErrors.h"
 #include "UObject/UObjectGlobals.h"
 #include "RustealStrings.h"
+#include "RustealUtf8.h"
 
 static bool IsValidImpl(RustealUObjectHandle Obj) {
   return ::IsValid(static_cast<UObject *>(Obj.ptr));
@@ -134,6 +135,44 @@ static bool IsWeakValidImpl(RustealFWeakObjectHandle WeakHandle) {
   return Weak.IsValid();
 }
 
+static thread_local TMap<const void *, TArray<uint8>> GPendingUtf8;
+
+void RustealWriteUtf8(const FString &Value, void *Buf, uint32 BufLen,
+                      uint32 *OutLen) {
+  const FTCHARToUTF8 Utf8(*Value);
+  const uint32 Len = static_cast<uint32>(Utf8.Length());
+
+  if (OutLen) {
+    *OutLen = Len;
+  }
+
+  if (!Buf) {
+    return;
+  }
+
+  FMemory::Memcpy(Buf, Utf8.Get(), FMath::Min(Len, BufLen));
+
+  if (Len > BufLen) {
+    TArray<uint8> &Pending = GPendingUtf8.FindOrAdd(Buf);
+    Pending.SetNumUninitialized(Len);
+    FMemory::Memcpy(Pending.GetData(), Utf8.Get(), Len);
+  } else {
+    GPendingUtf8.Remove(Buf);
+  }
+}
+
+static uint32 TakePendingUtf8Impl(const uint8 *Key, uint8 *Buf, uint32 BufLen) {
+  TArray<uint8> Pending;
+
+  if (!GPendingUtf8.RemoveAndCopyValue(Key, Pending)) {
+    return 0;
+  }
+
+  const uint32 Len = static_cast<uint32>(Pending.Num());
+  FMemory::Memcpy(Buf, Pending.GetData(), FMath::Min(Len, BufLen));
+  return Len;
+}
+
 static bool IsChildOfImpl(RustealUClassHandle ClassHandle,
                           RustealUClassHandle ParentHandle) {
   UObject *ClassObject = static_cast<UObject *>(ClassHandle.ptr);
@@ -170,4 +209,5 @@ FRustealCoreApi GCoreApi = {
     &IsWeakValidImpl,
     &RustealTakeErrorMessage,
     &IsChildOfImpl,
+    &TakePendingUtf8Impl,
 };

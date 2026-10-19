@@ -67,6 +67,7 @@ pub fn generate_wrapper_file(entries: &[&FuncEntry], ctx: &CodegenContext) -> St
     }
 
     includes.insert("\"Templates/SubclassOf.h\"".to_string());
+    includes.insert("\"RustealUtf8.h\"".to_string());
     out.push_str("#include \"CoreMinimal.h\"\n");
 
     for inc in &includes {
@@ -734,26 +735,14 @@ fn emit_return(out: &mut String, strategy: &ReturnStrategy, call_expr: &str) {
         ReturnStrategy::StringReturn => {
             out.push_str(&format!("    FString __RustealResult = {call_expr};\n"));
 
-            out.push_str(
-                "    auto __RustealUtf8 = StringCast<ANSICHAR>(*__RustealResult);\n\
-                 \x20   int32 __RustealLen = __RustealUtf8.Length();\n\
-                 \x20   if (__RustealLen > static_cast<int32>(BufLen)) __RustealLen = static_cast<int32>(BufLen);\n\
-                 \x20   FMemory::Memcpy(OutBuf, __RustealUtf8.Get(), __RustealLen);\n\
-                 \x20   *OutLen = static_cast<uint32_t>(__RustealLen);\n",
-            );
+            out.push_str("    RustealWriteUtf8(__RustealResult, OutBuf, BufLen, OutLen);\n");
         }
         ReturnStrategy::TextReturn => {
             out.push_str(&format!(
                 "    FString __RustealResult = ({call_expr}).ToString();\n"
             ));
 
-            out.push_str(
-                "    auto __RustealUtf8 = StringCast<ANSICHAR>(*__RustealResult);\n\
-                 \x20   int32 __RustealLen = __RustealUtf8.Length();\n\
-                 \x20   if (__RustealLen > static_cast<int32>(BufLen)) __RustealLen = static_cast<int32>(BufLen);\n\
-                 \x20   FMemory::Memcpy(OutBuf, __RustealUtf8.Get(), __RustealLen);\n\
-                 \x20   *OutLen = static_cast<uint32_t>(__RustealLen);\n",
-            );
+            out.push_str("    RustealWriteUtf8(__RustealResult, OutBuf, BufLen, OutLen);\n");
         }
         ReturnStrategy::StructReturn => {
             out.push_str(&format!("    auto __RustealResult = {call_expr};\n"));
@@ -808,25 +797,12 @@ fn emit_post_call(out: &mut String, action: &PostCallAction) {
     match action {
         PostCallAction::StringOutput(name) => {
             out.push_str(&format!(
-                "    {{\n\
-                 \x20       auto __Utf8 = StringCast<ANSICHAR>(*__Out{name});\n\
-                 \x20       int32 __Len = __Utf8.Length();\n\
-                 \x20       if (__Len > static_cast<int32>(Out{name}BufLen)) __Len = static_cast<int32>(Out{name}BufLen);\n\
-                 \x20       FMemory::Memcpy(Out{name}, __Utf8.Get(), __Len);\n\
-                 \x20       *Out{name}Len = static_cast<uint32_t>(__Len);\n\
-                 \x20   }}\n"
+                "    RustealWriteUtf8(__Out{name}, Out{name}, Out{name}BufLen, Out{name}Len);\n"
             ));
         }
         PostCallAction::TextOutput(name) => {
             out.push_str(&format!(
-                "    {{\n\
-                 \x20       FString __Str = __Out{name}.ToString();\n\
-                 \x20       auto __Utf8 = StringCast<ANSICHAR>(*__Str);\n\
-                 \x20       int32 __Len = __Utf8.Length();\n\
-                 \x20       if (__Len > static_cast<int32>(Out{name}BufLen)) __Len = static_cast<int32>(Out{name}BufLen);\n\
-                 \x20       FMemory::Memcpy(Out{name}, __Utf8.Get(), __Len);\n\
-                 \x20       *Out{name}Len = static_cast<uint32_t>(__Len);\n\
-                 \x20   }}\n"
+                "    RustealWriteUtf8(__Out{name}.ToString(), Out{name}, Out{name}BufLen, Out{name}Len);\n"
             ));
         }
         PostCallAction::StructOutput { name, struct_cpp } => {
@@ -861,25 +837,12 @@ fn emit_post_call(out: &mut String, action: &PostCallAction) {
         }
         PostCallAction::InOutStringCopyback(name) => {
             out.push_str(&format!(
-                "    {{\n\
-                 \x20       auto __Utf8 = StringCast<ANSICHAR>(*__InOut{name});\n\
-                 \x20       int32 __Len = __Utf8.Length();\n\
-                 \x20       if (__Len > static_cast<int32>(Out{name}BufLen)) __Len = static_cast<int32>(Out{name}BufLen);\n\
-                 \x20       FMemory::Memcpy(Out{name}, __Utf8.Get(), __Len);\n\
-                 \x20       *Out{name}Len = static_cast<uint32_t>(__Len);\n\
-                 \x20   }}\n"
+                "    RustealWriteUtf8(__InOut{name}, Out{name}, Out{name}BufLen, Out{name}Len);\n"
             ));
         }
         PostCallAction::InOutTextCopyback(name) => {
             out.push_str(&format!(
-                "    {{\n\
-                 \x20       FString __Str = __InOut{name}.ToString();\n\
-                 \x20       auto __Utf8 = StringCast<ANSICHAR>(*__Str);\n\
-                 \x20       int32 __Len = __Utf8.Length();\n\
-                 \x20       if (__Len > static_cast<int32>(Out{name}BufLen)) __Len = static_cast<int32>(Out{name}BufLen);\n\
-                 \x20       FMemory::Memcpy(Out{name}, __Utf8.Get(), __Len);\n\
-                 \x20       *Out{name}Len = static_cast<uint32_t>(__Len);\n\
-                 \x20   }}\n"
+                "    RustealWriteUtf8(__InOut{name}.ToString(), Out{name}, Out{name}BufLen, Out{name}Len);\n"
             ));
         }
     }

@@ -5,6 +5,7 @@
 #include "UObject/UObjectGlobals.h"
 #include "UObject/UnrealType.h"
 #include "RustealStrings.h"
+#include "RustealUtf8.h"
 
 #define RUSTEAL_CHECK_VALID(ObjHandle)                                         \
   void *Object = (ObjHandle).ptr;                                              \
@@ -139,18 +140,7 @@ static ERustealErrorCode GetStringImpl(RustealUObjectHandle Obj,
     return RustealFailType(Property, TEXT("FTextProperty"));
   }
 
-  const FTCHARToUTF8 Utf8(*Value);
-  const uint32 Len = static_cast<uint32>(Utf8.Length());
-
-  if (OutLen) {
-    *OutLen = Len;
-  }
-
-  if (Buf && BufLen > 0) {
-    const uint32 CopyLen = FMath::Min(Len, BufLen);
-    FMemory::Memcpy(Buf, Utf8.Get(), CopyLen);
-  }
-
+  RustealWriteUtf8(Value, Buf, BufLen, OutLen);
   return ERustealErrorCode::Ok;
 }
 
