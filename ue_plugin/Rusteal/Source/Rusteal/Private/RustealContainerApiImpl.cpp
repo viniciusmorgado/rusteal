@@ -42,19 +42,11 @@ static void ReadElement(FProperty *InnerProp, const void *ElemPtr,
     if (OutWritten)
       *OutWritten = sizeof(uint32) + CopyLen;
   } else if (FTextProperty *TextProp = CastField<FTextProperty>(InnerProp)) {
-    const FText &Text = TextProp->GetPropertyValue(ElemPtr);
-    FString Str = Text.ToString();
-    FTCHARToUTF8 Utf8(*Str);
-    uint32 Len = static_cast<uint32>(Utf8.Length());
-    FMemory::Memcpy(OutBuf, &Len, sizeof(uint32));
-
-    uint32 CopyLen =
-        FMath::Min(Len, BufSize - static_cast<uint32>(sizeof(uint32)));
-
-    FMemory::Memcpy(OutBuf + sizeof(uint32), Utf8.Get(), CopyLen);
+    void *Text = new FText(TextProp->GetPropertyValue(ElemPtr));
+    FMemory::Memcpy(OutBuf, &Text, sizeof(void *));
 
     if (OutWritten)
-      *OutWritten = sizeof(uint32) + CopyLen;
+      *OutWritten = sizeof(void *);
   } else if (CastField<FNameProperty>(InnerProp)) {
     const uint64 Packed =
         RustealPackFName(*static_cast<const FName *>(ElemPtr));
@@ -104,14 +96,9 @@ static void WriteElement(FProperty *InnerProp, void *ElemPtr,
     FString Value = RustealUtf8ToFString(Utf8Str, Len);
     StrProp->SetPropertyValue(ElemPtr, Value);
   } else if (FTextProperty *TextProp = CastField<FTextProperty>(InnerProp)) {
-    uint32 Len = 0;
-    FMemory::Memcpy(&Len, InBuf, sizeof(uint32));
-
-    const char *Utf8Str =
-        reinterpret_cast<const char *>(InBuf + sizeof(uint32));
-
-    FString Value = RustealUtf8ToFString(Utf8Str, Len);
-    TextProp->SetPropertyValue(ElemPtr, FText::FromString(Value));
+    const FText *Text = nullptr;
+    FMemory::Memcpy(&Text, InBuf, sizeof(void *));
+    TextProp->SetPropertyValue(ElemPtr, *Text);
   } else if (CastField<FNameProperty>(InnerProp)) {
     uint64 Packed = 0;
     FMemory::Memcpy(&Packed, InBuf, sizeof(uint64));

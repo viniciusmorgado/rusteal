@@ -398,6 +398,7 @@ fn generate_scalar_function(
     let mut param_names = Vec::new();
     let mut default_unwraps: Vec<(String, String)> = Vec::new();
     let mut soft_paths: Vec<(String, bool)> = Vec::new();
+    let mut texts: Vec<String> = Vec::new();
 
     for (param, dir, mapped) in &all_mapped {
         if *dir == ParamDirection::Return {
@@ -420,8 +421,17 @@ fn generate_scalar_function(
             soft_paths.push((pname.clone(), has_default));
         }
 
+        if param.prop_type == "TextProperty" && *dir == ParamDirection::In {
+            texts.push(pname.clone());
+        }
+
         match dir {
             ParamDirection::In | ParamDirection::InOut => match mapped.rust_to_ffi {
+                ConversionKind::ObjectRef
+                    if param.prop_type == "TextProperty" && *dir == ParamDirection::In =>
+                {
+                    sig.push_str(&format!("{pname}: impl Into<rusteal_core::Text>, "));
+                }
                 ConversionKind::StringUtf8 if is_soft(param) && *dir == ParamDirection::In => {
                     if has_default {
                         sig.push_str(&format!("{pname}: Option<&{}>, ", mapped.rust_type));
@@ -489,6 +499,12 @@ fn generate_scalar_function(
     for (pname, default_expr) in &default_unwraps {
         out.push_str(&format!(
             "        let {pname} = {pname}.unwrap_or({default_expr});\n"
+        ));
+    }
+
+    for pname in &texts {
+        out.push_str(&format!(
+            "        let {pname}: rusteal_core::Text = {pname}.into();\n"
         ));
     }
 

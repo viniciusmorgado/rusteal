@@ -38,7 +38,7 @@ pub fn parse_default_literal(
         "ObjectProperty" | "ClassProperty" | "WeakObjectProperty" | "InterfaceProperty" => {
             parse_object_default(default_str, mapped)
         }
-        "StrProperty" | "TextProperty" => parse_string_default(default_str),
+        "StrProperty" => parse_string_default(default_str),
         "NameProperty" => parse_fname_default(default_str),
         _ => None,
     }

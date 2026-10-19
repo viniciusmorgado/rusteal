@@ -276,6 +276,9 @@ pub fn generate_property(
 
             return;
         }
+        ConversionKind::ObjectRef if prop.prop_type == "TextProperty" => {
+            generate_text_getter(out, &rust_name, &byte_lit, prop_name_len, pctx);
+        }
         ConversionKind::ObjectRef => {
             generate_object_getter(out, &rust_name, &byte_lit, prop_name_len, pctx, &mapped);
         }
@@ -326,6 +329,9 @@ pub fn generate_property(
             generate_string_setter(out, &rust_name, &byte_lit, prop_name_len, pctx);
         }
         ConversionKind::StructOpaque => {}
+        ConversionKind::ObjectRef if prop.prop_type == "TextProperty" => {
+            generate_text_setter(out, &rust_name, &byte_lit, prop_name_len, pctx);
+        }
         ConversionKind::ObjectRef => {
             generate_object_setter(out, &rust_name, &byte_lit, prop_name_len, pctx, &mapped);
         }
@@ -457,6 +463,57 @@ fn generate_string_getter(
          \x20           rusteal_core::ffi_dispatch::property_get_string({c}, prop, buf.as_mut_ptr(), buf.len() as u32, &mut out_len)\n\
          \x20       }}, \"{rust_name}\");\n\
          \x20       rusteal_core::take_utf8(buf, out_len)\n\
+         \x20   }}\n\n"
+    ));
+}
+
+fn generate_text_getter(
+    out: &mut String,
+    rust_name: &str,
+    byte_lit: &str,
+    prop_name_len: usize,
+    pctx: &PropertyContext,
+) {
+    let c = &pctx.container_expr;
+
+    out.push_str(&format!(
+        "    fn get_{rust_name}(&self) -> rusteal_core::Text {{\n"
+    ));
+
+    emit_prop_lookup(out, byte_lit, prop_name_len, pctx);
+    emit_pre_access(out, pctx);
+
+    out.push_str(&format!(
+        "        let mut raw: *mut u8 = std::ptr::null_mut();\n\
+         \x20       rusteal_core::ffi_infallible_ctx(unsafe {{\n\
+         \x20           rusteal_core::ffi_dispatch::property_get_text({c}, prop, &mut raw)\n\
+         \x20       }}, \"{rust_name}\");\n\
+         \x20       unsafe {{ rusteal_core::Text::from_raw(raw) }}\n\
+         \x20   }}\n\n"
+    ));
+}
+
+fn generate_text_setter(
+    out: &mut String,
+    rust_name: &str,
+    byte_lit: &str,
+    prop_name_len: usize,
+    pctx: &PropertyContext,
+) {
+    let c = &pctx.container_expr;
+
+    out.push_str(&format!(
+        "    fn set_{rust_name}(&self, val: impl Into<rusteal_core::Text>) {{\n"
+    ));
+
+    emit_prop_lookup(out, byte_lit, prop_name_len, pctx);
+    emit_pre_access(out, pctx);
+
+    out.push_str(&format!(
+        "        let val: rusteal_core::Text = val.into();\n\
+         \x20       rusteal_core::ffi_infallible_ctx(unsafe {{\n\
+         \x20           rusteal_core::ffi_dispatch::property_set_text({c}, prop, val.as_raw())\n\
+         \x20       }}, \"{rust_name}\");\n\
          \x20   }}\n\n"
     ));
 }

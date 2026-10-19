@@ -214,6 +214,38 @@ static ERustealErrorCode SetSoftObjectPathImpl(RustealUObjectHandle Obj,
   return ERustealErrorCode::Ok;
 }
 
+static ERustealErrorCode GetTextImpl(RustealUObjectHandle Obj,
+                                     RustealFPropertyHandle Prop, void **Out) {
+  RUSTEAL_CHECK_VALID(Obj);
+
+  const FTextProperty *TextProp =
+      CastField<FTextProperty>(static_cast<FProperty *>(Prop.ptr));
+
+  if (!TextProp) {
+    return RustealFailType(Prop.ptr, TEXT("FTextProperty"));
+  }
+
+  *Out = new FText(TextProp->GetPropertyValue_InContainer(Object));
+  return ERustealErrorCode::Ok;
+}
+
+static ERustealErrorCode SetTextImpl(RustealUObjectHandle Obj,
+                                     RustealFPropertyHandle Prop,
+                                     const void *Text) {
+  RUSTEAL_CHECK_VALID(Obj);
+
+  FTextProperty *TextProp =
+      CastField<FTextProperty>(static_cast<FProperty *>(Prop.ptr));
+
+  if (!TextProp) {
+    return RustealFailType(Prop.ptr, TEXT("FTextProperty"));
+  }
+
+  TextProp->SetPropertyValue_InContainer(Object,
+                                         *static_cast<const FText *>(Text));
+  return ERustealErrorCode::Ok;
+}
+
 static ERustealErrorCode GetFNameImpl(RustealUObjectHandle Obj,
                                       RustealFPropertyHandle Prop,
                                       RustealFNameHandle *Out) {
@@ -441,4 +473,6 @@ FRustealPropertyApi GPropertyApi = {
     &SetPropertyAtImpl,
     &GetSoftObjectPathImpl,
     &SetSoftObjectPathImpl,
+    &GetTextImpl,
+    &SetTextImpl,
 };

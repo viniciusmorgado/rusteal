@@ -62,6 +62,17 @@ struct FRustealCoreApi {
                       RustealUClassHandle parent);
 
   uint32 (*take_pending_utf8)(const uint8 *key, uint8 *buf, uint32 buf_len);
+
+  void *(*text_from_string)(const uint8 *utf8, uint32 len);
+  void *(*text_localized)(const uint8 *ns, uint32 ns_len, const uint8 *key,
+                          uint32 key_len, const uint8 *source,
+                          uint32 source_len);
+  void *(*text_clone)(const void *text);
+  void (*text_destroy)(void *text);
+  void (*text_to_string)(const void *text, uint8 *buf, uint32 buf_len,
+                         uint32 *out_len);
+  bool (*text_is_empty)(const void *text);
+  bool (*text_equal)(const void *a, const void *b);
 };
 
 struct FRustealErrorReport {
@@ -161,6 +172,10 @@ struct FRustealPropertyApi {
   ERustealErrorCode (*set_soft_object_path)(RustealUObjectHandle obj,
                                             RustealFPropertyHandle prop,
                                             const uint8 *buf, uint32 len);
+  ERustealErrorCode (*get_text)(RustealUObjectHandle obj,
+                                RustealFPropertyHandle prop, void **out);
+  ERustealErrorCode (*set_text)(RustealUObjectHandle obj,
+                                RustealFPropertyHandle prop, const void *text);
 };
 
 struct FRustealReflectionApi {

@@ -18,6 +18,13 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "Engine functions that change a struct passed by reference take &mut OwnedStruct<T>; \
          they took a *mut u8.",
     ),
+    (
+        "0.10.0",
+        "Engine FText is Text, which keeps its localization: properties, struct fields, \
+         returns and arrays give a Text (Display and to_string() for the string), and functions \
+         take impl Into<Text>, so a &str or a String still works. An FText parameter with a \
+         default value is a required one; pass \"\" for an empty text.",
+    ),
 ];
 
 pub fn migration_notes(from: Version, to: Version) -> Vec<(Version, &'static str)> {
@@ -219,7 +226,7 @@ glam = "0.33.8"
         assert!(migration_notes(v("0.10.0"), v("0.12.0")).is_empty());
 
         let notes = migration_notes(v("0.9.0"), v("0.10.0"));
-        assert_eq!(notes.len(), 2);
+        assert_eq!(notes.len(), 3);
         assert_eq!(notes[0].0, v("0.10.0"));
     }
 

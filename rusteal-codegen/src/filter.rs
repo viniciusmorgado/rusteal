@@ -351,6 +351,12 @@ fn filter_functions(
                 return false;
             }
 
+            if param.prop_type == "TextProperty"
+                && type_map::param_direction(param) == type_map::ParamDirection::InOut
+            {
+                return false;
+            }
+
             if matches!(
                 param.prop_type.as_str(),
                 "ArrayProperty" | "MapProperty" | "SetProperty"
