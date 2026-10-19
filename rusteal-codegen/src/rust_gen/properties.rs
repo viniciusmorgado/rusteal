@@ -239,6 +239,9 @@ pub fn generate_property(
     }
 
     match mapped.rust_to_ffi {
+        ConversionKind::StringUtf8 if prop.prop_type == "SoftObjectProperty" => {
+            generate_soft_getter(out, &rust_name, &byte_lit, prop_name_len, pctx, &mapped);
+        }
         ConversionKind::StringUtf8 => {
             generate_string_getter(out, &rust_name, &byte_lit, prop_name_len, pctx);
         }
@@ -306,6 +309,9 @@ pub fn generate_property(
     }
 
     match mapped.rust_to_ffi {
+        ConversionKind::StringUtf8 if prop.prop_type == "SoftObjectProperty" => {
+            generate_soft_setter(out, &rust_name, &byte_lit, prop_name_len, pctx, &mapped);
+        }
         ConversionKind::StringUtf8 => {
             generate_string_setter(out, &rust_name, &byte_lit, prop_name_len, pctx);
         }
@@ -441,6 +447,66 @@ fn generate_string_getter(
          \x20           rusteal_core::ffi_dispatch::property_get_string({c}, prop, buf.as_mut_ptr(), buf.len() as u32, &mut out_len)\n\
          \x20       }}, \"{rust_name}\");\n\
          \x20       rusteal_core::take_utf8(buf, out_len)\n\
+         \x20   }}\n\n"
+    ));
+}
+
+fn generate_soft_getter(
+    out: &mut String,
+    rust_name: &str,
+    byte_lit: &str,
+    prop_name_len: usize,
+    pctx: &PropertyContext,
+    mapped: &MappedType,
+) {
+    let rust_type = &mapped.rust_type;
+    let c = &pctx.container_expr;
+
+    out.push_str(&format!(
+        "    fn get_{rust_name}(&self) -> {rust_type} {{\n"
+    ));
+
+    emit_prop_lookup(out, byte_lit, prop_name_len, pctx);
+    emit_pre_access(out, pctx);
+
+    out.push_str(&format!(
+        "        let mut out_len: u32 = 0;\n\
+         \x20       rusteal_core::ffi_infallible_ctx(unsafe {{\n\
+         \x20           rusteal_core::ffi_dispatch::property_get_soft_object_path({c}, prop, std::ptr::null_mut(), 0, &mut out_len)\n\
+         \x20       }}, \"{rust_name}\");\n\
+         \x20       let mut buf = vec![0u8; out_len as usize];\n\
+         \x20       rusteal_core::ffi_infallible_ctx(unsafe {{\n\
+         \x20           rusteal_core::ffi_dispatch::property_get_soft_object_path({c}, prop, buf.as_mut_ptr(), buf.len() as u32, &mut out_len)\n\
+         \x20       }}, \"{rust_name}\");\n\
+         \x20       buf.truncate(out_len as usize);\n\
+         \x20       rusteal_core::SoftObjectRef::new(String::from_utf8(buf).unwrap_or_default())\n\
+         \x20   }}\n\n"
+    ));
+}
+
+fn generate_soft_setter(
+    out: &mut String,
+    rust_name: &str,
+    byte_lit: &str,
+    prop_name_len: usize,
+    pctx: &PropertyContext,
+    mapped: &MappedType,
+) {
+    let rust_type = &mapped.rust_type;
+    let c = &pctx.container_expr;
+
+    out.push_str(&format!(
+        "    fn set_{rust_name}(&self, val: &{rust_type}) {{\n"
+    ));
+
+    emit_prop_lookup(out, byte_lit, prop_name_len, pctx);
+    emit_pre_access(out, pctx);
+
+    out.push_str(&format!(
+        "        let path = val.path();\n\
+         \x20       rusteal_core::ffi_infallible_ctx(unsafe {{\n\
+         \x20           rusteal_core::ffi_dispatch::property_set_soft_object_path({c}, prop, path.as_ptr(), path.len() as u32)\n\
+         \x20       }}, \"{rust_name}\");\n\
          \x20   }}\n\n"
     ));
 }

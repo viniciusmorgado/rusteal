@@ -259,10 +259,19 @@ pub(super) fn is_scalar_output_returnable(dir: ParamDirection, mapped: &MappedTy
     dir == ParamDirection::Out || dir == ParamDirection::InOut
 }
 
+pub(super) fn is_soft(param: &ParamInfo) -> bool {
+    param.prop_type == "SoftObjectProperty"
+}
+
 fn generate_function(out: &mut String, entry: &FuncEntry, class_name: &str, ctx: &CodegenContext) {
     let has_container = entry.func.params.iter().any(is_container_param);
 
-    if has_container {
+    if has_container && entry.func.params.iter().any(is_soft) {
+        out.push_str(&format!(
+            "    // Skipped: {}.{} (soft reference next to a container)\n\n",
+            class_name, entry.func.name
+        ));
+    } else if has_container {
         generate_container_function(out, entry, class_name, ctx);
     } else {
         generate_scalar_function(out, entry, class_name, ctx);
@@ -364,6 +373,7 @@ fn generate_scalar_function(
 
     let mut param_names = Vec::new();
     let mut default_unwraps: Vec<(String, String)> = Vec::new();
+    let mut soft_paths: Vec<(String, bool)> = Vec::new();
 
     for (param, dir, mapped) in &all_mapped {
         if *dir == ParamDirection::Return {
@@ -375,15 +385,26 @@ fn generate_scalar_function(
         let has_default = *dir == ParamDirection::In
             && defaults::parse_default_literal(param, mapped, ctx).is_some();
 
-        if has_default {
+        if has_default && !is_soft(param) {
             let default_expr = defaults::parse_default_literal(param, mapped, ctx)
                 .expect("default literal must be parseable (has_default was true)");
 
             default_unwraps.push((pname.clone(), default_expr));
         }
 
+        if is_soft(param) && *dir == ParamDirection::In {
+            soft_paths.push((pname.clone(), has_default));
+        }
+
         match dir {
             ParamDirection::In | ParamDirection::InOut => match mapped.rust_to_ffi {
+                ConversionKind::StringUtf8 if is_soft(param) && *dir == ParamDirection::In => {
+                    if has_default {
+                        sig.push_str(&format!("{pname}: Option<&{}>, ", mapped.rust_type));
+                    } else {
+                        sig.push_str(&format!("{pname}: &{}, ", mapped.rust_type));
+                    }
+                }
                 ConversionKind::StringUtf8 => {
                     if has_default {
                         sig.push_str(&format!("{pname}: Option<&str>, "));
@@ -445,6 +466,16 @@ fn generate_scalar_function(
         out.push_str(&format!(
             "        let {pname} = {pname}.unwrap_or({default_expr});\n"
         ));
+    }
+
+    for (pname, has_default) in &soft_paths {
+        if *has_default {
+            out.push_str(&format!(
+                "        let {pname} = {pname}.map_or(\"\", |soft| soft.path());\n"
+            ));
+        } else {
+            out.push_str(&format!("        let {pname} = {pname}.path();\n"));
+        }
     }
 
     out.push_str("        {\n");
@@ -662,7 +693,11 @@ fn generate_scalar_function(
                         "        let _ret_str = rusteal_core::take_utf8(_ret_buf, _ret_len);\n",
                     );
 
-                    return_parts.push("_ret_str".to_string());
+                    if is_soft(rp) {
+                        return_parts.push("rusteal_core::SoftObjectRef::new(_ret_str)".to_string());
+                    } else {
+                        return_parts.push("_ret_str".to_string());
+                    }
                 }
                 ConversionKind::EnumCast => {
                     let rt = &rm.rust_type;

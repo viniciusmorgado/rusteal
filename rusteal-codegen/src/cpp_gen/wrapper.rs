@@ -7,11 +7,12 @@ use crate::type_map::{self, ConversionKind, MappedType, ParamDirection};
 enum ReturnStrategy {
     Direct,
     ObjectRef,
-    SoftWeakObjectRef,
+    WeakObjectRef,
     InterfaceRef,
     Cast(String),
     StringReturn,
     TextReturn,
+    SoftPathReturn,
     StructReturn,
     FNameReturn,
     ContainerReturn,
@@ -22,12 +23,14 @@ enum PostCallAction {
     TextOutput(String),
     StructOutput { name: String, struct_cpp: String },
     ObjectOutput(String),
-    SoftWeakObjectOutput(String),
+    WeakObjectOutput(String),
     InterfaceOutput(String),
     FNameOutput(String),
     EnumOutput { name: String, ffi_type: String },
     InOutStructCopyback { name: String, struct_cpp: String },
     InOutStringCopyback(String),
+    InOutSoftCopyback(String),
+    SoftPathOutput(String),
     InOutTextCopyback(String),
 }
 
@@ -216,6 +219,10 @@ fn generate_wrapper_function(out: &mut String, entry: &FuncEntry, ctx: &CodegenC
                 if param.prop_type == "TextProperty" {
                     out.push_str(&format!("    FText __Out{name};\n"));
                     post_call_actions.push(PostCallAction::TextOutput(name.clone()));
+                } else if param.prop_type == "SoftObjectProperty" {
+                    let bare = resolve_object_cpp_type_bare(ctx, param.class_name.as_deref());
+                    out.push_str(&format!("    TSoftObjectPtr<{bare}> __Out{name};\n"));
+                    post_call_actions.push(PostCallAction::SoftPathOutput(name.clone()));
                 } else {
                     out.push_str(&format!("    FString __Out{name};\n"));
                     post_call_actions.push(PostCallAction::StringOutput(name.clone()));
@@ -231,15 +238,10 @@ fn generate_wrapper_function(out: &mut String, entry: &FuncEntry, ctx: &CodegenC
                 });
             }
             ConversionKind::ObjectRef => match param.prop_type.as_str() {
-                "SoftObjectProperty" => {
-                    let bare = resolve_object_cpp_type_bare(ctx, param.class_name.as_deref());
-                    out.push_str(&format!("    TSoftObjectPtr<{bare}> __Out{name};\n"));
-                    post_call_actions.push(PostCallAction::SoftWeakObjectOutput(name.clone()));
-                }
                 "WeakObjectProperty" => {
                     let bare = resolve_object_cpp_type_bare(ctx, param.class_name.as_deref());
                     out.push_str(&format!("    TWeakObjectPtr<{bare}> __Out{name};\n"));
-                    post_call_actions.push(PostCallAction::SoftWeakObjectOutput(name.clone()));
+                    post_call_actions.push(PostCallAction::WeakObjectOutput(name.clone()));
                 }
                 "InterfaceProperty" => {
                     let iface = native_interface_cpp_type(ctx, param.interface_name.as_deref());
@@ -310,6 +312,12 @@ fn generate_wrapper_function(out: &mut String, entry: &FuncEntry, ctx: &CodegenC
                         "    FText __InOut{name} = FText::FromString(FString(UTF8_TO_TCHAR(std::string({name}, {name}Len).c_str())));\n"
                     ));
                     post_call_actions.push(PostCallAction::InOutTextCopyback(name.clone()));
+                } else if param.prop_type == "SoftObjectProperty" {
+                    let bare = resolve_object_cpp_type_bare(ctx, param.class_name.as_deref());
+                    out.push_str(&format!(
+                        "    TSoftObjectPtr<{bare}> __InOut{name} = TSoftObjectPtr<{bare}>(FSoftObjectPath(FString(UTF8_TO_TCHAR(std::string({name}, {name}Len).c_str()))));\n"
+                    ));
+                    post_call_actions.push(PostCallAction::InOutSoftCopyback(name.clone()));
                 } else {
                     out.push_str(&format!(
                         "    FString __InOut{name} = FString(UTF8_TO_TCHAR(std::string({name}, {name}Len).c_str()));\n"
@@ -624,14 +632,6 @@ fn input_arg_expression(param: &ParamInfo, dir: ParamDirection, ctx: &CodegenCon
             let cpp_type = resolve_object_cpp_type(ctx, param.class_name.as_deref());
 
             match param.prop_type.as_str() {
-                "SoftObjectProperty" => {
-                    let bare_type = resolve_object_cpp_type_bare(ctx, param.class_name.as_deref());
-
-                    format!(
-                        "TSoftObjectPtr<{bare_type}>(static_cast<{cpp_type}>({}))",
-                        param.name
-                    )
-                }
                 "WeakObjectProperty" => {
                     let bare_type = resolve_object_cpp_type_bare(ctx, param.class_name.as_deref());
 
@@ -662,6 +662,10 @@ fn input_arg_expression(param: &ParamInfo, dir: ParamDirection, ctx: &CodegenCon
 
                 if param.prop_type == "TextProperty" {
                     format!("FText::FromString({fstring_expr})")
+                } else if param.prop_type == "SoftObjectProperty" {
+                    let bare = resolve_object_cpp_type_bare(ctx, param.class_name.as_deref());
+
+                    format!("TSoftObjectPtr<{bare}>(FSoftObjectPath({fstring_expr}))")
                 } else {
                     fstring_expr
                 }
@@ -705,13 +709,15 @@ fn return_strategy(param: &ParamInfo) -> ReturnStrategy {
     match mapped.ffi_to_rust {
         ConversionKind::Identity | ConversionKind::IntCast => ReturnStrategy::Direct,
         ConversionKind::ObjectRef => match param.prop_type.as_str() {
-            "SoftObjectProperty" | "WeakObjectProperty" => ReturnStrategy::SoftWeakObjectRef,
+            "WeakObjectProperty" => ReturnStrategy::WeakObjectRef,
             "InterfaceProperty" => ReturnStrategy::InterfaceRef,
             _ => ReturnStrategy::ObjectRef,
         },
         ConversionKind::StringUtf8 => {
             if param.prop_type == "TextProperty" {
                 ReturnStrategy::TextReturn
+            } else if param.prop_type == "SoftObjectProperty" {
+                ReturnStrategy::SoftPathReturn
             } else {
                 ReturnStrategy::StringReturn
             }
@@ -748,7 +754,7 @@ fn emit_return(out: &mut String, strategy: &ReturnStrategy, call_expr: &str) {
                 "    *OutReturnValue = const_cast<void*>(static_cast<const void*>({call_expr}));\n"
             ));
         }
-        ReturnStrategy::SoftWeakObjectRef => {
+        ReturnStrategy::WeakObjectRef => {
             out.push_str(&format!(
                 "    *OutReturnValue = const_cast<void*>(static_cast<const void*>({call_expr}.Get()));\n"
             ));
@@ -765,6 +771,13 @@ fn emit_return(out: &mut String, strategy: &ReturnStrategy, call_expr: &str) {
         }
         ReturnStrategy::StringReturn => {
             out.push_str(&format!("    FString __RustealResult = {call_expr};\n"));
+
+            out.push_str("    RustealWriteUtf8(__RustealResult, OutBuf, BufLen, OutLen);\n");
+        }
+        ReturnStrategy::SoftPathReturn => {
+            out.push_str(&format!(
+                "    FString __RustealResult = ({call_expr}).ToSoftObjectPath().ToString();\n"
+            ));
 
             out.push_str("    RustealWriteUtf8(__RustealResult, OutBuf, BufLen, OutLen);\n");
         }
@@ -846,7 +859,7 @@ fn emit_post_call(out: &mut String, action: &PostCallAction) {
                 "    *Out{name} = static_cast<void*>(__Out{name});\n"
             ));
         }
-        PostCallAction::SoftWeakObjectOutput(name) => {
+        PostCallAction::WeakObjectOutput(name) => {
             out.push_str(&format!(
                 "    *Out{name} = static_cast<void*>(__Out{name}.Get());\n"
             ));
@@ -874,6 +887,16 @@ fn emit_post_call(out: &mut String, action: &PostCallAction) {
         PostCallAction::InOutStringCopyback(name) => {
             out.push_str(&format!(
                 "    RustealWriteUtf8(__InOut{name}, Out{name}, Out{name}BufLen, Out{name}Len);\n"
+            ));
+        }
+        PostCallAction::InOutSoftCopyback(name) => {
+            out.push_str(&format!(
+                "    RustealWriteUtf8(__InOut{name}.ToSoftObjectPath().ToString(), Out{name}, Out{name}BufLen, Out{name}Len);\n"
+            ));
+        }
+        PostCallAction::SoftPathOutput(name) => {
+            out.push_str(&format!(
+                "    RustealWriteUtf8(__Out{name}.ToSoftObjectPath().ToString(), Out{name}, Out{name}BufLen, Out{name}Len);\n"
             ));
         }
         PostCallAction::InOutTextCopyback(name) => {
@@ -1093,7 +1116,10 @@ mod tests {
 
     #[test]
     fn interfaces_cross_as_script_interfaces() {
-        let codegen: CodegenConfig = toml::from_str("features = []\n[modules]").unwrap();
+        let codegen: CodegenConfig = toml::from_str(
+            "features = [\"engine\"]\n[modules]\nEngine = { module = \"engine\", feature = \"engine\" }",
+        )
+        .unwrap();
         let ctx = CodegenContext::new(
             vec![
                 class("Object", ""),
@@ -1146,5 +1172,56 @@ mod tests {
             "{out}"
         );
         assert!(out.contains("__OutFound.GetObject()"), "{out}");
+    }
+
+    #[test]
+    fn soft_references_cross_as_paths() {
+        let codegen: CodegenConfig = toml::from_str(
+            "features = [\"engine\"]\n[modules]\nEngine = { module = \"engine\", feature = \"engine\" }",
+        )
+        .unwrap();
+        let ctx = CodegenContext::new(
+            vec![
+                class("Object", ""),
+                class("MaterialInterface", "Object"),
+                class("CameraComponent", "Object"),
+            ],
+            vec![],
+            vec![],
+            &codegen,
+        );
+
+        let soft = |name: &str, flags: u64| {
+            let mut p = param(name, flags, "SoftObjectProperty", None);
+            p["class_name"] = "MaterialInterface".into();
+            p
+        };
+        let parm = rusteal_ue_flags::CPF_PARM;
+
+        let takes = entry("LoadMaterial", serde_json::json!([soft("Asset", parm)]));
+        let returns = entry(
+            "GetMaterial",
+            serde_json::json!([soft("ReturnValue", parm | CPF_OUT_PARM | CPF_RETURN_PARM)]),
+        );
+        let gives = entry(
+            "FindMaterial",
+            serde_json::json!([soft("Found", parm | CPF_OUT_PARM)]),
+        );
+
+        let out = generate_wrapper_file(&[&takes, &returns, &gives], &ctx);
+
+        assert!(
+            out.contains("TSoftObjectPtr<UMaterialInterface>(FSoftObjectPath(FString(UTF8_TO_TCHAR(std::string(Asset, AssetLen).c_str()))))"),
+            "{out}"
+        );
+        assert!(out.contains(").ToSoftObjectPath().ToString();"), "{out}");
+        assert!(
+            out.contains("TSoftObjectPtr<UMaterialInterface> __OutFound;"),
+            "{out}"
+        );
+        assert!(
+            out.contains("RustealWriteUtf8(__OutFound.ToSoftObjectPath().ToString()"),
+            "{out}"
+        );
     }
 }
