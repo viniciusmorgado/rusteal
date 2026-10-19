@@ -16,10 +16,13 @@ public:
 
   UFunction *Signature = nullptr;
 
-  UPROPERTY()
-  TObjectPtr<UObject> OwnerObject;
+  TWeakObjectPtr<UObject> OwnerObject;
 
   static FName FakeFuncName;
+
+  static void Keep(URustealDelegateProxy *Proxy);
+
+  static void Release(URustealDelegateProxy *Proxy);
 
   UFUNCTION()
   void RustFakeCallable();
