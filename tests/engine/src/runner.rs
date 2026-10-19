@@ -20,7 +20,7 @@ const TIMEOUT_SECONDS: f32 = 30.0;
 pub fn register() {
     let registered = console::register_command(
         "rusteal_tests.run",
-        "Runs Rusteal's engine tests, writes their results and quits the editor.",
+        "Runs Rusteal's engine tests, writes their results and quits.",
         |_, context| match context.world::<World>() {
             Ok(world) => run(Context { world }),
             Err(error) => log::error!("[RustealTests] no world: {error:?}"),
@@ -106,5 +106,5 @@ fn finish(lines: &mut Vec<String>, world: &UObjectRef<World>) {
         log::error!("[RustealTests] cannot write {path}: {error}");
     }
 
-    KismetSystemLibrary::execute_console_command(world.upcast(), "QUIT_EDITOR", None);
+    KismetSystemLibrary::execute_console_command(world.upcast(), "quit", None);
 }
