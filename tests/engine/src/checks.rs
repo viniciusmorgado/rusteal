@@ -1,8 +1,12 @@
 use std::sync::{Arc, Mutex};
 
-use bindings::engine::{KismetMathLibrary, KismetStringLibrary};
+use bindings::engine::{
+    BlendableInterface, FPostProcessSettingsExt, FWeightedBlendableExt, FWeightedBlendablesExt,
+    KismetMathLibrary, KismetStringLibrary, KismetSystemLibrary, Material, PostProcessVolume,
+    PostProcessVolumeExt,
+};
 use bindings::prelude::*;
-use rusteal_runtime::runtime::{DynamicCall, Transform, UObjectRef, UeClass, task};
+use rusteal_runtime::runtime::{DynamicCall, SoftObjectRef, Transform, UObjectRef, UeClass, task};
 
 use crate::fixtures::TestActor;
 use crate::runner::{Check, Context, Outcome};
@@ -36,6 +40,14 @@ pub const ALL: &[(&str, Check)] = &[
     (
         "rust_string_property_longer_than_512_bytes",
         rust_string_property_longer_than_512_bytes,
+    ),
+    (
+        "engine_function_takes_an_interface",
+        engine_function_takes_an_interface,
+    ),
+    (
+        "engine_function_takes_any_object_as_iinterface",
+        engine_function_takes_any_object_as_iinterface,
     ),
     (
         "task_comes_back_to_the_game_thread",
@@ -196,6 +208,55 @@ fn rust_string_property_longer_than_512_bytes(context: &Context) -> Outcome {
         ensure(
             actor.label() == text,
             format!("got {} bytes", actor.label().len()),
+        )
+    })())
+}
+
+fn engine_function_takes_an_interface(context: &Context) -> Outcome {
+    done((|| {
+        let material = SoftObjectRef::<Material>::new(
+            "/Engine/EngineMaterials/DefaultMaterial.DefaultMaterial",
+        )
+        .load_synchronous()
+        .map_err(|e| format!("load: {e:?}"))?;
+        let blendable = material
+            .cast::<BlendableInterface>()
+            .map_err(|e| format!("cast: {e:?}"))?;
+        let transform = FTransform::from_transform(Transform::IDENTITY);
+        let volume = context
+            .world
+            .spawn_actor::<PostProcessVolume>(&transform)
+            .map_err(|e| format!("spawn: {e:?}"))?
+            .checked()
+            .map_err(|e| format!("checked: {e:?}"))?;
+
+        volume.add_or_update_blendable(blendable, Some(0.5));
+
+        let settings = volume.get_settings();
+        let blendables = settings.as_ref().get_weighted_blendables();
+        let array = blendables.as_ref().array();
+        let len = array.len().map_err(|e| format!("len: {e:?}"))?;
+        ensure(len == 1, format!("{len} blendables"))?;
+        let first = array.get(0).map_err(|e| format!("get: {e:?}"))?;
+        let object = first.as_ref().get_object();
+        ensure(
+            object.raw() == material.raw(),
+            "the blendable is not the material",
+        )?;
+        ensure(
+            first.as_ref().get_weight() == 0.5,
+            format!("weight {}", first.as_ref().get_weight()),
+        )
+    })())
+}
+
+fn engine_function_takes_any_object_as_iinterface(context: &Context) -> Outcome {
+    done((|| {
+        let actor = spawn(context)?;
+        let object = KismetSystemLibrary::conv_interface_to_object(actor.upcast().upcast());
+        ensure(
+            object.raw() == actor.raw(),
+            "Conv_InterfaceToObject returned another object",
         )
     })())
 }
