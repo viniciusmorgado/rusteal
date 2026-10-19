@@ -19,6 +19,7 @@
 
 static bool IsRawCopyableElement(FProperty *InnerProp) {
   return !CastField<FStrProperty>(InnerProp) &&
+         !CastField<FSoftObjectProperty>(InnerProp) &&
          !CastField<FTextProperty>(InnerProp) &&
          !CastField<FNameProperty>(InnerProp) &&
          !CastField<FObjectPropertyBase>(InnerProp) &&
@@ -26,21 +27,33 @@ static bool IsRawCopyableElement(FProperty *InnerProp) {
          !CastField<FStructProperty>(InnerProp);
 }
 
+static void WriteUtf8Element(const FString &Value, uint8 *OutBuf,
+                             uint32 BufSize, uint32 *OutWritten) {
+  FTCHARToUTF8 Utf8(*Value);
+  const uint32 Len = static_cast<uint32>(Utf8.Length());
+
+  if (OutWritten)
+    *OutWritten = static_cast<uint32>(sizeof(uint32)) + Len;
+
+  if (BufSize < sizeof(uint32)) {
+    return;
+  }
+
+  FMemory::Memcpy(OutBuf, &Len, sizeof(uint32));
+  FMemory::Memcpy(OutBuf + sizeof(uint32), Utf8.Get(),
+                  FMath::Min(Len, BufSize - static_cast<uint32>(sizeof(uint32))));
+}
+
 static void ReadElement(FProperty *InnerProp, const void *ElemPtr,
                         uint8 *OutBuf, uint32 BufSize, uint32 *OutWritten) {
   if (FStrProperty *StrProp = CastField<FStrProperty>(InnerProp)) {
-    const FString &Str = StrProp->GetPropertyValue(ElemPtr);
-    FTCHARToUTF8 Utf8(*Str);
-    uint32 Len = static_cast<uint32>(Utf8.Length());
-    FMemory::Memcpy(OutBuf, &Len, sizeof(uint32));
-
-    uint32 CopyLen =
-        FMath::Min(Len, BufSize - static_cast<uint32>(sizeof(uint32)));
-
-    FMemory::Memcpy(OutBuf + sizeof(uint32), Utf8.Get(), CopyLen);
-
-    if (OutWritten)
-      *OutWritten = sizeof(uint32) + CopyLen;
+    WriteUtf8Element(StrProp->GetPropertyValue(ElemPtr), OutBuf, BufSize,
+                     OutWritten);
+  } else if (FSoftObjectProperty *SoftProp =
+                 CastField<FSoftObjectProperty>(InnerProp)) {
+    WriteUtf8Element(
+        SoftProp->GetPropertyValue(ElemPtr).ToSoftObjectPath().ToString(),
+        OutBuf, BufSize, OutWritten);
   } else if (FTextProperty *TextProp = CastField<FTextProperty>(InnerProp)) {
     void *Text = new FText(TextProp->GetPropertyValue(ElemPtr));
     FMemory::Memcpy(OutBuf, &Text, sizeof(void *));
@@ -70,11 +83,15 @@ static void ReadElement(FProperty *InnerProp, const void *ElemPtr,
       *OutWritten = sizeof(void *);
   } else if (FStructProperty *StructProp =
                  CastField<FStructProperty>(InnerProp)) {
-    StructProp->Struct->InitializeStruct(OutBuf);
-    StructProp->Struct->CopyScriptStruct(OutBuf, ElemPtr);
+    const uint32 Size = static_cast<uint32>(StructProp->GetSize());
 
     if (OutWritten)
-      *OutWritten = StructProp->GetSize();
+      *OutWritten = Size;
+
+    if (Size <= BufSize) {
+      StructProp->Struct->InitializeStruct(OutBuf);
+      StructProp->Struct->CopyScriptStruct(OutBuf, ElemPtr);
+    }
   } else {
     uint32 Size = InnerProp->GetSize();
     FMemory::Memcpy(OutBuf, ElemPtr, FMath::Min(Size, BufSize));
@@ -95,6 +112,13 @@ static void WriteElement(FProperty *InnerProp, void *ElemPtr,
 
     FString Value = RustealUtf8ToFString(Utf8Str, Len);
     StrProp->SetPropertyValue(ElemPtr, Value);
+  } else if (FSoftObjectProperty *SoftProp =
+                 CastField<FSoftObjectProperty>(InnerProp)) {
+    uint32 Len = 0;
+    FMemory::Memcpy(&Len, InBuf, sizeof(uint32));
+
+    const FString Path = RustealUtf8ToFString(InBuf + sizeof(uint32), Len);
+    SoftProp->SetPropertyValue(ElemPtr, FSoftObjectPtr(FSoftObjectPath(Path)));
   } else if (FTextProperty *TextProp = CastField<FTextProperty>(InnerProp)) {
     const FText *Text = nullptr;
     FMemory::Memcpy(&Text, InBuf, sizeof(void *));
