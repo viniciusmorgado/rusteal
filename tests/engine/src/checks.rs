@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex};
 
-use bindings::core_ue::{FGuid, FInstancedStruct};
+use bindings::core_ue::{FGuid, FInstancedStruct, FIntPoint, FIntPointExt};
 use bindings::engine::{
     ActorComponent, BlendableInterface, CameraComponent, CameraComponentExt, CurveFloat,
     CurveFloatExt, FMinimalViewInfoExt, FPostProcessSettingsExt, FRichCurveExt, FRichCurveKey,
@@ -99,6 +99,10 @@ pub const ALL: &[(&str, Check)] = &[
     (
         "instanced_struct_holds_a_struct",
         instanced_struct_holds_a_struct,
+    ),
+    (
+        "engine_structs_without_static_struct",
+        engine_structs_without_static_struct,
     ),
     (
         "engine_text_keeps_its_localization",
@@ -554,6 +558,27 @@ fn engine_text_keeps_its_localization(context: &Context) -> Outcome {
         ensure(
             found && namespace == "RustealTests" && key == "Greeting",
             format!("after the property, id {found} {namespace:?} {key:?}"),
+        )
+    })())
+}
+
+fn engine_structs_without_static_struct(_: &Context) -> Outcome {
+    done((|| {
+        let span = KismetMathLibrary::from_minutes(1.5);
+        let seconds = KismetMathLibrary::get_total_seconds(&span);
+        ensure(seconds == 90.0, format!("{seconds} seconds"))?;
+
+        let a = OwnedStruct::<FIntPoint>::new();
+        a.as_ref().set_x(2);
+        a.as_ref().set_y(3);
+        let b = OwnedStruct::<FIntPoint>::new();
+        b.as_ref().set_x(10);
+        b.as_ref().set_y(20);
+
+        let sum = KismetMathLibrary::add_int_point_int_point(&a, &b);
+        ensure(
+            (sum.as_ref().get_x(), sum.as_ref().get_y()) == (12, 23),
+            format!("sum ({}, {})", sum.as_ref().get_x(), sum.as_ref().get_y()),
         )
     })())
 }
