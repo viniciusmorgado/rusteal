@@ -21,6 +21,7 @@ pub mod object_ref;
 pub mod pinned;
 pub mod reify_registry;
 pub mod script_interface;
+pub mod soft_class_ref;
 pub mod soft_ref;
 mod std_fallback;
 #[doc(hidden)]
@@ -50,6 +51,7 @@ pub use module::{FuncTable, Module, ModuleId, type_id};
 pub use object_ref::{Checked, ObjectPointer, UObjectRef};
 pub use pinned::Pinned;
 pub use script_interface::ScriptInterface;
+pub use soft_class_ref::SoftClassRef;
 pub use soft_ref::SoftObjectRef;
 #[doc(hidden)]
 pub use strings::take_utf8;

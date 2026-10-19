@@ -164,8 +164,10 @@ fn is_property_exportable(prop: &PropertyInfo, available: &HashSet<String>) -> b
         return false;
     }
 
-    if prop.prop_type == "ClassProperty"
-        && let Some(ref meta_cls) = prop.meta_class_name
+    if matches!(
+        prop.prop_type.as_str(),
+        "ClassProperty" | "SoftClassProperty"
+    ) && let Some(ref meta_cls) = prop.meta_class_name
         && !available.contains(meta_cls)
     {
         return false;
@@ -274,7 +276,7 @@ fn is_inner_type_exportable(inner: &PropertyInfo, available: &HashSet<String>) -
 
     if matches!(
         inner.prop_type.as_str(),
-        "ArrayProperty" | "MapProperty" | "SetProperty" | "InterfaceProperty"
+        "ArrayProperty" | "MapProperty" | "SetProperty" | "InterfaceProperty" | "SoftClassProperty"
     ) {
         return false;
     }
@@ -381,8 +383,10 @@ fn filter_functions(
                 return false;
             }
 
-            if param.prop_type == "ClassProperty"
-                && let Some(ref meta_cls) = param.meta_class_name
+            if matches!(
+                param.prop_type.as_str(),
+                "ClassProperty" | "SoftClassProperty"
+            ) && let Some(ref meta_cls) = param.meta_class_name
                 && !available.contains(meta_cls)
             {
                 return false;

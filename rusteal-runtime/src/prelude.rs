@@ -1,8 +1,8 @@
 pub use rusteal_core::{
     ConsoleVariable, DelegateBinding, DynamicCall, DynamicCallResult, ErrorContext, ErrorKind,
     FName, LOG_DISPLAY, LOG_ERROR, LOG_WARNING, OwnedStruct, Pinned, RustealError, RustealResult,
-    ScriptInterface, SoftObjectRef, SubclassOf, TWeakObjectPtr, UObjectRef, UStructRef, UeArray,
-    UeClass, UeEnum, UeInterface, UeMap, UeSet, UeStruct,
+    ScriptInterface, SoftClassRef, SoftObjectRef, SubclassOf, TWeakObjectPtr, UObjectRef,
+    UStructRef, UeArray, UeClass, UeEnum, UeInterface, UeMap, UeSet, UeStruct,
 };
 
 pub use rusteal_core::{

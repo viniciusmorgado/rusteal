@@ -225,9 +225,8 @@ fn generate_wrapper_function(out: &mut String, entry: &FuncEntry, ctx: &CodegenC
                 if param.prop_type == "TextProperty" {
                     out.push_str(&format!("    FText __Out{name};\n"));
                     post_call_actions.push(PostCallAction::TextOutput(name.clone()));
-                } else if param.prop_type == "SoftObjectProperty" {
-                    let bare = resolve_object_cpp_type_bare(ctx, param.class_name.as_deref());
-                    out.push_str(&format!("    TSoftObjectPtr<{bare}> __Out{name};\n"));
+                } else if let Some(soft) = soft_cpp_type(param, ctx) {
+                    out.push_str(&format!("    {soft} __Out{name};\n"));
                     post_call_actions.push(PostCallAction::SoftPathOutput(name.clone()));
                 } else {
                     out.push_str(&format!("    FString __Out{name};\n"));
@@ -315,10 +314,9 @@ fn generate_wrapper_function(out: &mut String, entry: &FuncEntry, ctx: &CodegenC
                         "    FText __InOut{name} = FText::FromString(FString(UTF8_TO_TCHAR(std::string({name}, {name}Len).c_str())));\n"
                     ));
                     post_call_actions.push(PostCallAction::InOutTextCopyback(name.clone()));
-                } else if param.prop_type == "SoftObjectProperty" {
-                    let bare = resolve_object_cpp_type_bare(ctx, param.class_name.as_deref());
+                } else if let Some(soft) = soft_cpp_type(param, ctx) {
                     out.push_str(&format!(
-                        "    TSoftObjectPtr<{bare}> __InOut{name} = TSoftObjectPtr<{bare}>(FSoftObjectPath(FString(UTF8_TO_TCHAR(std::string({name}, {name}Len).c_str()))));\n"
+                        "    {soft} __InOut{name} = {soft}(FSoftObjectPath(FString(UTF8_TO_TCHAR(std::string({name}, {name}Len).c_str()))));\n"
                     ));
                     post_call_actions.push(PostCallAction::InOutSoftCopyback(name.clone()));
                 } else {
@@ -569,6 +567,26 @@ fn int_ctype(cpp_type: &str) -> String {
     .to_string()
 }
 
+fn soft_cpp_type(param: &ParamInfo, ctx: &CodegenContext) -> Option<String> {
+    match param.prop_type.as_str() {
+        "SoftObjectProperty" => Some(format!(
+            "TSoftObjectPtr<{}>",
+            resolve_object_cpp_type_bare(ctx, param.class_name.as_deref())
+        )),
+        "SoftClassProperty" => Some(format!(
+            "TSoftClassPtr<{}>",
+            resolve_object_cpp_type_bare(
+                ctx,
+                param
+                    .meta_class_name
+                    .as_deref()
+                    .or(param.class_name.as_deref())
+            )
+        )),
+        _ => None,
+    }
+}
+
 fn resolve_struct_opaque_cpp_type(param: &ParamInfo, ctx: &CodegenContext) -> String {
     match param.prop_type.as_str() {
         "SoftObjectProperty" => {
@@ -665,10 +683,8 @@ fn input_arg_expression(param: &ParamInfo, dir: ParamDirection, ctx: &CodegenCon
 
                 if param.prop_type == "TextProperty" {
                     format!("FText::FromString({fstring_expr})")
-                } else if param.prop_type == "SoftObjectProperty" {
-                    let bare = resolve_object_cpp_type_bare(ctx, param.class_name.as_deref());
-
-                    format!("TSoftObjectPtr<{bare}>(FSoftObjectPath({fstring_expr}))")
+                } else if let Some(soft) = soft_cpp_type(param, ctx) {
+                    format!("{soft}(FSoftObjectPath({fstring_expr}))")
                 } else {
                     fstring_expr
                 }
@@ -727,7 +743,7 @@ fn return_strategy(param: &ParamInfo, ctx: &CodegenContext) -> ReturnStrategy {
         ConversionKind::StringUtf8 => {
             if param.prop_type == "TextProperty" {
                 ReturnStrategy::TextReturn
-            } else if param.prop_type == "SoftObjectProperty" {
+            } else if soft_cpp_type(param, ctx).is_some() {
                 ReturnStrategy::SoftPathReturn
             } else {
                 ReturnStrategy::StringReturn

@@ -59,6 +59,7 @@ const SUPPORTED_TYPES: &[&str] = &[
     "MapProperty",
     "SetProperty",
     "SoftObjectProperty",
+    "SoftClassProperty",
     "WeakObjectProperty",
     "InterfaceProperty",
     "DelegateProperty",
@@ -208,6 +209,22 @@ pub fn map_property_type(
                 }
             } else {
                 unsupported("SoftObjectProperty without class_name")
+            }
+        }
+        "SoftClassProperty" => {
+            if let Some(cls) = meta_class_name.or(class_name) {
+                MappedType {
+                    rust_type: format!("rusteal_core::SoftClassRef<{cls}>"),
+                    rust_ffi_type: "*const u8".into(),
+                    cpp_type: format!("TSoftClassPtr<{cls}>"),
+                    property_getter: "get_soft_object_path".into(),
+                    property_setter: "set_soft_object_path".into(),
+                    rust_to_ffi: ConversionKind::StringUtf8,
+                    ffi_to_rust: ConversionKind::StringUtf8,
+                    supported: true,
+                }
+            } else {
+                unsupported("SoftClassProperty without meta_class_name")
             }
         }
         "WeakObjectProperty" => {
