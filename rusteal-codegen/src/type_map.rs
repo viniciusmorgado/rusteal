@@ -62,6 +62,7 @@ const SUPPORTED_TYPES: &[&str] = &[
     "SoftClassProperty",
     "OptionalProperty",
     "WeakObjectProperty",
+    "LazyObjectProperty",
     "InterfaceProperty",
     "DelegateProperty",
     "MulticastInlineDelegateProperty",
@@ -228,7 +229,7 @@ pub fn map_property_type(
                 unsupported("SoftClassProperty without meta_class_name")
             }
         }
-        "WeakObjectProperty" => {
+        "WeakObjectProperty" | "LazyObjectProperty" => {
             if let Some(cls) = class_name {
                 MappedType {
                     rust_type: format!("rusteal_core::TWeakObjectPtr<{cls}>"),
