@@ -71,8 +71,8 @@ pub use ue_math::{
 pub use weak_ptr::TWeakObjectPtr;
 
 pub use rusteal_ffi::{
-    FNameHandle, FPropertyHandle, FWeakObjectHandle, RustealErrorCode, UClassHandle, UObjectHandle,
-    UStructHandle,
+    FNameHandle, FPropertyHandle, FWeakObjectHandle, RustealErrorCode, UClassHandle,
+    UFunctionHandle, UObjectHandle, UStructHandle,
 };
 
 pub(crate) use sync::{lock_or_recover, read_or_recover, write_or_recover};

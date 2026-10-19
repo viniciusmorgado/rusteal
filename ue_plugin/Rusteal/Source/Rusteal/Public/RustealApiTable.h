@@ -332,6 +332,10 @@ struct FRustealDelegateApi {
                                     RustealFPropertyHandle prop,
                                     RustealUObjectHandle target,
                                     const uint8 *name, uint32 name_len);
+
+  void *(*make_delegate)(RustealUFunctionHandle signature,
+                         RustealUObjectHandle owner, uint64 callback_id);
+  void (*free_delegate)(void *delegate);
 };
 
 enum class ERustealReifyPropType : uint32 {

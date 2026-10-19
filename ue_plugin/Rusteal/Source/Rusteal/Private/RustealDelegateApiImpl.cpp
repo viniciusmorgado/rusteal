@@ -263,6 +263,31 @@ RustealDelegateApi_ReadParam(RustealFPropertyHandle PropHandle, void *ParamsBuf,
   return ERustealErrorCode::Ok;
 }
 
+static void *RustealDelegateApi_MakeDelegate(RustealUFunctionHandle Signature,
+                                             RustealUObjectHandle OwnerHandle,
+                                             uint64 CallbackId) {
+  UObject *Owner = static_cast<UObject *>(OwnerHandle.ptr);
+
+  if (!IsValid(Owner)) {
+    Owner = GetTransientPackage();
+  }
+
+  URustealDelegateProxy *Proxy = NewObject<URustealDelegateProxy>(Owner);
+  Proxy->CallbackId = CallbackId;
+  Proxy->Library = RustealCurrentLibrary();
+  Proxy->Signature = static_cast<UFunction *>(Signature.ptr);
+  Proxy->OwnerObject = Owner;
+  URustealDelegateProxy::Keep(Proxy);
+
+  FScriptDelegate *Delegate = new FScriptDelegate();
+  Delegate->BindUFunction(Proxy, URustealDelegateProxy::FakeFuncName);
+  return Delegate;
+}
+
+static void RustealDelegateApi_FreeDelegate(void *Delegate) {
+  delete static_cast<FScriptDelegate *>(Delegate);
+}
+
 static ERustealErrorCode RustealDelegateApi_AddFunction(
     RustealUObjectHandle ObjHandle, RustealFPropertyHandle PropHandle,
     RustealUObjectHandle TargetHandle, const uint8 *Name, uint32 NameLen) {
@@ -320,4 +345,6 @@ FRustealDelegateApi GDelegateApi = {
     &RustealDelegateApi_AddMulticast,       &RustealDelegateApi_RemoveMulticast,
     &RustealDelegateApi_BroadcastMulticast, &RustealDelegateApi_ReadParam,
     &RustealDelegateApi_AddFunction,
+    &RustealDelegateApi_MakeDelegate,
+    &RustealDelegateApi_FreeDelegate,
 };

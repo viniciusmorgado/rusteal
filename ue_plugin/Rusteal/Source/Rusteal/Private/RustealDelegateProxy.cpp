@@ -1,6 +1,7 @@
 #include "RustealDelegateProxy.h"
 #include "RustealApiTable.h"
 #include "RustealLibrary.h"
+#include "Engine/World.h"
 #include "RustealModule.h"
 #include "UObject/GCObject.h"
 #include "UObject/UObjectIterator.h"
@@ -56,6 +57,16 @@ void RustealDelegateProxiesForgetLibrary(FRustealLibrary *Library) {
 }
 
 void URustealDelegateProxy::RustFakeCallable() {}
+
+UWorld *URustealDelegateProxy::GetWorld() const {
+  UObject *Owner = OwnerObject.Get();
+
+  if (Owner && Owner != GetTransientPackage()) {
+    return Owner->GetWorld();
+  }
+
+  return GWorld;
+}
 
 void URustealDelegateProxy::BeginDestroy() {
   if (Library && Library->IsLoaded() && CallbackId != 0) {
