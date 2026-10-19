@@ -60,6 +60,8 @@ struct FRustealCoreApi {
 
   bool (*is_child_of)(RustealUClassHandle class_handle,
                       RustealUClassHandle parent);
+
+  uint32 (*take_pending_utf8)(const uint8 *key, uint8 *buf, uint32 buf_len);
 };
 
 struct FRustealErrorReport {

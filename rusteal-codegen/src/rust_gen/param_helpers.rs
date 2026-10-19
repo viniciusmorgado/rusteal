@@ -72,11 +72,7 @@ pub fn emit_out_param_conversion(
         }
         ConversionKind::StringUtf8 => {
             out.push_str(&format!(
-                "        {pname}_buf.truncate({pname}_len as usize);\n"
-            ));
-
-            out.push_str(&format!(
-                "        let {pname}_str = String::from_utf8_lossy(&{pname}_buf).into_owned();\n"
+                "        let {pname}_str = rusteal_core::take_utf8({pname}_buf, {pname}_len);\n"
             ));
 
             format!("{pname}_str")

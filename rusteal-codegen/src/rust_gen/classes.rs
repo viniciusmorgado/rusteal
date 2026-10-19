@@ -658,10 +658,8 @@ fn generate_scalar_function(
                     );
                 }
                 ConversionKind::StringUtf8 => {
-                    out.push_str("        _ret_buf.truncate(_ret_len as usize);\n");
-
                     out.push_str(
-                        "        let _ret_str = String::from_utf8_lossy(&_ret_buf).into_owned();\n",
+                        "        let _ret_str = rusteal_core::take_utf8(_ret_buf, _ret_len);\n",
                     );
 
                     return_parts.push("_ret_str".to_string());
@@ -1378,8 +1376,7 @@ fn emit_container_return(
                     );
                 }
                 ConversionKind::StringUtf8 => {
-                    out.push_str("        __scalar_ret_buf.truncate(__scalar_ret_len as usize);\n");
-                    out.push_str("        let __scalar_str = String::from_utf8_lossy(&__scalar_ret_buf).into_owned();\n");
+                    out.push_str("        let __scalar_str = rusteal_core::take_utf8(__scalar_ret_buf, __scalar_ret_len);\n");
                     return_parts.push("__scalar_str".to_string());
                 }
                 ConversionKind::EnumCast => {

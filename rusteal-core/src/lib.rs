@@ -23,6 +23,8 @@ pub mod reify_registry;
 pub mod script_interface;
 pub mod soft_ref;
 mod std_fallback;
+#[doc(hidden)]
+pub mod strings;
 pub mod struct_ref;
 pub mod subclass_of;
 mod sync;
@@ -49,6 +51,8 @@ pub use object_ref::{Checked, ObjectPointer, UObjectRef};
 pub use pinned::Pinned;
 pub use script_interface::ScriptInterface;
 pub use soft_ref::SoftObjectRef;
+#[doc(hidden)]
+pub use strings::take_utf8;
 pub use struct_ref::UStructRef;
 pub use subclass_of::SubclassOf;
 pub use traits::{

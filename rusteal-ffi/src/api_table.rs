@@ -89,6 +89,8 @@ pub struct RustealCoreApi {
     ) -> bool,
 
     pub is_child_of: unsafe extern "C" fn(class: UClassHandle, parent: UClassHandle) -> bool,
+
+    pub take_pending_utf8: unsafe extern "C" fn(key: *const u8, buf: *mut u8, buf_len: u32) -> u32,
 }
 
 #[repr(C)]
