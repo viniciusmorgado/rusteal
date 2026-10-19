@@ -4,13 +4,12 @@
 #include "RustealApiTable.h"
 #include "RustealLibrary.h"
 #include "RustealModule.h"
+#include "RustealStrings.h"
 
 static TMap<FRustealLibrary *, TArray<FString>> GConsoleNames;
 
 static FString ConsoleUtf8(const uint8 *Text, uint32 Len) {
-  return Text
-             ? FString(Len, UTF8_TO_TCHAR(reinterpret_cast<const char *>(Text)))
-             : FString();
+  return Text ? RustealUtf8ToFString(Text, Len) : FString();
 }
 
 static void Remember(const FString &Name) {

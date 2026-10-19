@@ -15,16 +15,16 @@
 #include "UObject/UnrealType.h"
 #include "URustealReifiedClass.h"
 #include "URustealReifiedFunction.h"
+#include "RustealStrings.h"
 
 static FName ReifyUtf8ToFName(const uint8 *Name, uint32 NameLen) {
-  const FString Str(NameLen,
-                    UTF8_TO_TCHAR(reinterpret_cast<const char *>(Name)));
+  const FString Str = RustealUtf8ToFString(Name, NameLen);
 
   return FName(*Str);
 }
 
 static FString ReifyUtf8ToFString(const uint8 *Name, uint32 NameLen) {
-  return FString(NameLen, UTF8_TO_TCHAR(reinterpret_cast<const char *>(Name)));
+  return RustealUtf8ToFString(Name, NameLen);
 }
 
 static FProperty *CreatePropertyByType(FFieldVariant Owner, FName PropName,
@@ -1137,18 +1137,17 @@ static RustealUClassHandle CreateEnumImpl(const uint8 *Name, uint32 NameLen,
       .ParseIntoArray(Names, TEXT("\n"), false);
 
   if (Names.Num() != static_cast<int32>(Count)) {
-    UE_LOG(LogRusteal, Error,
-           TEXT("[Rusteal] Enum %s: %d names for %u values"), *EnumString,
-           Names.Num(), Count);
+    UE_LOG(LogRusteal, Error, TEXT("[Rusteal] Enum %s: %d names for %u values"),
+           *EnumString, Names.Num(), Count);
     return RustealUClassHandle{nullptr};
   }
 
   TArray<TPair<FName, int64>> Pairs;
 
   for (uint32 Index = 0; Index < Count; ++Index) {
-    Pairs.Emplace(FName(*FString::Printf(TEXT("%s::%s"), *EnumString,
-                                         *Names[Index])),
-                  Values[Index]);
+    Pairs.Emplace(
+        FName(*FString::Printf(TEXT("%s::%s"), *EnumString, *Names[Index])),
+        Values[Index]);
   }
 
   if (UEnum *Existing = FindObject<UEnum>(RustealPackage, *EnumString)) {

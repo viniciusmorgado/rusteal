@@ -3,16 +3,16 @@
 #include "RustealErrors.h"
 #include "UObject/UObjectGlobals.h"
 #include "UObject/UnrealType.h"
+#include "RustealStrings.h"
 
 static FName Utf8ToFName(const uint8 *Name, uint32 NameLen) {
-  const FString Str(NameLen,
-                    UTF8_TO_TCHAR(reinterpret_cast<const char *>(Name)));
+  const FString Str = RustealUtf8ToFString(Name, NameLen);
 
   return FName(*Str);
 }
 
 static FString Utf8ToFString(const uint8 *Name, uint32 NameLen) {
-  return FString(NameLen, UTF8_TO_TCHAR(reinterpret_cast<const char *>(Name)));
+  return RustealUtf8ToFString(Name, NameLen);
 }
 
 static FString OwnTypeName(const FString &Name) {

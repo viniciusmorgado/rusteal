@@ -15,6 +15,7 @@
 
 #if WITH_EDITOR && PLATFORM_LINUX
 #include <unistd.h>
+#include "RustealStrings.h"
 #endif
 
 #ifndef RUSTEAL_STATIC
@@ -63,8 +64,7 @@ extern uint64_t RustealGetFuncFingerprint();
 #define LOCTEXT_NAMESPACE "FRustealModule"
 
 static void RustealLogImpl(uint8 Level, const uint8 *Msg, uint32 MsgLen) {
-  const FString MsgStr(MsgLen,
-                       UTF8_TO_TCHAR(reinterpret_cast<const char *>(Msg)));
+  const FString MsgStr = RustealUtf8ToFString(Msg, MsgLen);
 
   switch (Level) {
   case 0:
