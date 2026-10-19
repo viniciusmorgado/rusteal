@@ -10,6 +10,7 @@ mod platform;
 mod plugin_cmd;
 mod project_version;
 mod setup;
+mod standalone;
 mod static_link;
 mod sync_plugin;
 mod templates;
@@ -163,6 +164,8 @@ enum PluginCommands {
         output: Option<PathBuf>,
         #[arg(long)]
         precompiled: bool,
+        #[arg(long, conflicts_with = "precompiled")]
+        standalone: bool,
     },
     Merge {
         into: PathBuf,
@@ -245,13 +248,21 @@ fn main() {
                     project,
                     output,
                     precompiled,
+                    standalone,
                 },
         } => {
             let root = project_root(project.as_deref());
             check_version(&root, Scope::PinsAndPlugins);
             let engine = global_config::engine_path();
             let output = output.unwrap_or_else(|| root.join("Packaged/Plugins"));
-            package_cmd::run_plugin_package(&root, &engine, &name, &output, precompiled);
+            package_cmd::run_plugin_package(
+                &root,
+                &engine,
+                &name,
+                &output,
+                precompiled,
+                standalone,
+            );
         }
         Commands::Plugin {
             command: PluginCommands::Merge { into, from },
