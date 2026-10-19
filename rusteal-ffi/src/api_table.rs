@@ -381,6 +381,13 @@ pub struct RustealReflectionApi {
     pub find_enum: unsafe extern "C" fn(name: *const u8, name_len: u32) -> UClassHandle,
 
     pub get_delegate_signature: unsafe extern "C" fn(prop: FPropertyHandle) -> UFunctionHandle,
+
+    pub instanced_struct_type: unsafe extern "C" fn(instanced: *const u8) -> UStructHandle,
+    pub instanced_struct_get:
+        unsafe extern "C" fn(instanced: *const u8, ustruct: UStructHandle, out: *mut u8) -> bool,
+    pub instanced_struct_set:
+        unsafe extern "C" fn(instanced: *mut u8, ustruct: UStructHandle, value: *const u8),
+    pub instanced_struct_reset: unsafe extern "C" fn(instanced: *mut u8),
 }
 
 #[repr(C)]

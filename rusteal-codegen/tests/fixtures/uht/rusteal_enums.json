@@ -202,6 +202,47 @@
     },
     {
       "cpp_form": 2,
+      "cpp_name": "EUINavigation",
+      "name": "EUINavigation",
+      "package": "SlateCore",
+      "pairs": [
+        [
+          "Left",
+          0
+        ],
+        [
+          "Right",
+          1
+        ],
+        [
+          "Up",
+          2
+        ],
+        [
+          "Down",
+          3
+        ],
+        [
+          "Next",
+          4
+        ],
+        [
+          "Previous",
+          5
+        ],
+        [
+          "Num",
+          6
+        ],
+        [
+          "Invalid",
+          7
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 2,
       "cpp_name": "EFlowDirectionPreference",
       "name": "EFlowDirectionPreference",
       "package": "SlateCore",
@@ -255,111 +296,22 @@
       "underlying_type": "uint8"
     },
     {
-      "cpp_form": 2,
-      "cpp_name": "EUINavigation",
-      "name": "EUINavigation",
-      "package": "SlateCore",
-      "pairs": [
-        [
-          "Left",
-          0
-        ],
-        [
-          "Right",
-          1
-        ],
-        [
-          "Up",
-          2
-        ],
-        [
-          "Down",
-          3
-        ],
-        [
-          "Next",
-          4
-        ],
-        [
-          "Previous",
-          5
-        ],
-        [
-          "Num",
-          6
-        ],
-        [
-          "Invalid",
-          7
-        ]
-      ],
-      "underlying_type": "uint8"
-    },
-    {
       "cpp_form": 1,
-      "cpp_name": "EMouseCursor",
-      "name": "EMouseCursor",
-      "package": "CoreUObject",
+      "cpp_name": "EUMGSequencePlayMode",
+      "name": "EUMGSequencePlayMode",
+      "package": "UMG",
       "pairs": [
         [
-          "None",
+          "Forward",
           0
         ],
         [
-          "Default",
+          "Reverse",
           1
         ],
         [
-          "TextEditBeam",
+          "PingPong",
           2
-        ],
-        [
-          "ResizeLeftRight",
-          3
-        ],
-        [
-          "ResizeUpDown",
-          4
-        ],
-        [
-          "ResizeSouthEast",
-          5
-        ],
-        [
-          "ResizeSouthWest",
-          6
-        ],
-        [
-          "CardinalCross",
-          7
-        ],
-        [
-          "Crosshairs",
-          8
-        ],
-        [
-          "Hand",
-          9
-        ],
-        [
-          "GrabHand",
-          10
-        ],
-        [
-          "GrabHandClosed",
-          11
-        ],
-        [
-          "SlashedCircle",
-          12
-        ],
-        [
-          "EyeDropper",
-          13
-        ],
-        [
-          "Custom",
-          14
         ]
       ],
       "underlying_type": "uint8"
@@ -394,27 +346,6 @@
         [
           "Finished",
           1
-        ]
-      ],
-      "underlying_type": "uint8"
-    },
-    {
-      "cpp_form": 1,
-      "cpp_name": "EUMGSequencePlayMode",
-      "name": "EUMGSequencePlayMode",
-      "package": "UMG",
-      "pairs": [
-        [
-          "Forward",
-          0
-        ],
-        [
-          "Reverse",
-          1
-        ],
-        [
-          "PingPong",
-          2
         ]
       ],
       "underlying_type": "uint8"
@@ -1899,39 +1830,70 @@
       "underlying_type": "uint8"
     },
     {
-      "cpp_form": 2,
-      "cpp_name": "EMappingContextInputModeFilterOptions",
-      "name": "EMappingContextInputModeFilterOptions",
-      "package": "EnhancedInput",
+      "cpp_form": 1,
+      "cpp_name": "EMouseCursor",
+      "name": "EMouseCursor",
+      "package": "CoreUObject",
       "pairs": [
         [
-          "UseProjectDefaultQuery",
+          "None",
           0
         ],
         [
-          "UseCustomQuery",
+          "Default",
           1
         ],
         [
-          "DoNotFilter",
+          "TextEditBeam",
           2
-        ]
-      ],
-      "underlying_type": "uint8"
-    },
-    {
-      "cpp_form": 2,
-      "cpp_name": "EMappingContextRegistrationTrackingMode",
-      "name": "EMappingContextRegistrationTrackingMode",
-      "package": "EnhancedInput",
-      "pairs": [
-        [
-          "Untracked",
-          0
         ],
         [
-          "CountRegistrations",
-          1
+          "ResizeLeftRight",
+          3
+        ],
+        [
+          "ResizeUpDown",
+          4
+        ],
+        [
+          "ResizeSouthEast",
+          5
+        ],
+        [
+          "ResizeSouthWest",
+          6
+        ],
+        [
+          "CardinalCross",
+          7
+        ],
+        [
+          "Crosshairs",
+          8
+        ],
+        [
+          "Hand",
+          9
+        ],
+        [
+          "GrabHand",
+          10
+        ],
+        [
+          "GrabHandClosed",
+          11
+        ],
+        [
+          "SlashedCircle",
+          12
+        ],
+        [
+          "EyeDropper",
+          13
+        ],
+        [
+          "Custom",
+          14
         ]
       ],
       "underlying_type": "uint8"
@@ -2058,31 +2020,6 @@
     },
     {
       "cpp_form": 2,
-      "cpp_name": "EInputActionValueType",
-      "name": "EInputActionValueType",
-      "package": "EnhancedInput",
-      "pairs": [
-        [
-          "Boolean",
-          0
-        ],
-        [
-          "Axis1D",
-          1
-        ],
-        [
-          "Axis2D",
-          2
-        ],
-        [
-          "Axis3D",
-          3
-        ]
-      ],
-      "underlying_type": "uint8"
-    },
-    {
-      "cpp_form": 2,
       "cpp_name": "EPlayerMappableKeySettingBehaviors",
       "name": "EPlayerMappableKeySettingBehaviors",
       "package": "EnhancedInput",
@@ -2115,6 +2052,69 @@
         [
           "Cumulative",
           1
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 2,
+      "cpp_name": "EMappingContextInputModeFilterOptions",
+      "name": "EMappingContextInputModeFilterOptions",
+      "package": "EnhancedInput",
+      "pairs": [
+        [
+          "UseProjectDefaultQuery",
+          0
+        ],
+        [
+          "UseCustomQuery",
+          1
+        ],
+        [
+          "DoNotFilter",
+          2
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 2,
+      "cpp_name": "EMappingContextRegistrationTrackingMode",
+      "name": "EMappingContextRegistrationTrackingMode",
+      "package": "EnhancedInput",
+      "pairs": [
+        [
+          "Untracked",
+          0
+        ],
+        [
+          "CountRegistrations",
+          1
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 2,
+      "cpp_name": "EInputActionValueType",
+      "name": "EInputActionValueType",
+      "package": "EnhancedInput",
+      "pairs": [
+        [
+          "Boolean",
+          0
+        ],
+        [
+          "Axis1D",
+          1
+        ],
+        [
+          "Axis2D",
+          2
+        ],
+        [
+          "Axis3D",
+          3
         ]
       ],
       "underlying_type": "uint8"

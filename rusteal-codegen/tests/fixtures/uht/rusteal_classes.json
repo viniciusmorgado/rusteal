@@ -31,6 +31,7 @@
         }
       ],
       "header": "UObject/Object.h",
+      "header_public": true,
       "interfaces": [],
       "name": "Object",
       "package": "CoreUObject",
@@ -4578,6 +4579,335 @@
           "params": []
         },
         {
+          "func_flags": 1946289153,
+          "is_static": false,
+          "name": "IsHiddenEdAtStartup",
+          "params": [
+            {
+              "class_name": null,
+              "default": null,
+              "enum_cpp_form": null,
+              "enum_cpp_name": null,
+              "enum_name": null,
+              "enum_underlying_type": null,
+              "func_info": null,
+              "inner_prop": null,
+              "interface_name": null,
+              "key_prop": null,
+              "meta_class_name": null,
+              "name": "ReturnValue",
+              "prop_flags": 4503599627371904,
+              "struct_name": null,
+              "type": "BoolProperty",
+              "value_prop": null
+            }
+          ]
+        },
+        {
+          "func_flags": 1946289154,
+          "is_static": false,
+          "name": "IsHiddenEd",
+          "params": [
+            {
+              "class_name": null,
+              "default": null,
+              "enum_cpp_form": null,
+              "enum_cpp_name": null,
+              "enum_name": null,
+              "enum_underlying_type": null,
+              "func_info": null,
+              "inner_prop": null,
+              "interface_name": null,
+              "key_prop": null,
+              "meta_class_name": null,
+              "name": "ReturnValue",
+              "prop_flags": 4503599627371904,
+              "struct_name": null,
+              "type": "BoolProperty",
+              "value_prop": null
+            }
+          ]
+        },
+        {
+          "func_flags": 604111874,
+          "is_static": false,
+          "name": "SetIsTemporarilyHiddenInEditor",
+          "params": [
+            {
+              "class_name": null,
+              "default": null,
+              "enum_cpp_form": null,
+              "enum_cpp_name": null,
+              "enum_name": null,
+              "enum_underlying_type": null,
+              "func_info": null,
+              "inner_prop": null,
+              "interface_name": null,
+              "key_prop": null,
+              "meta_class_name": null,
+              "name": "bIsHidden",
+              "prop_flags": 4503599627370624,
+              "struct_name": null,
+              "type": "BoolProperty",
+              "value_prop": null
+            }
+          ]
+        },
+        {
+          "func_flags": 1946289155,
+          "is_static": false,
+          "name": "IsTemporarilyHiddenInEditor",
+          "params": [
+            {
+              "class_name": null,
+              "default": "false",
+              "enum_cpp_form": null,
+              "enum_cpp_name": null,
+              "enum_name": null,
+              "enum_underlying_type": null,
+              "func_info": null,
+              "inner_prop": null,
+              "interface_name": null,
+              "key_prop": null,
+              "meta_class_name": null,
+              "name": "bIncludeParent",
+              "prop_flags": 4503599627370624,
+              "struct_name": null,
+              "type": "BoolProperty",
+              "value_prop": null
+            },
+            {
+              "class_name": null,
+              "default": null,
+              "enum_cpp_form": null,
+              "enum_cpp_name": null,
+              "enum_name": null,
+              "enum_underlying_type": null,
+              "func_info": null,
+              "inner_prop": null,
+              "interface_name": null,
+              "key_prop": null,
+              "meta_class_name": null,
+              "name": "ReturnValue",
+              "prop_flags": 4503599627371904,
+              "struct_name": null,
+              "type": "BoolProperty",
+              "value_prop": null
+            }
+          ]
+        },
+        {
+          "func_flags": 1946289155,
+          "is_static": false,
+          "name": "IsEditable",
+          "params": [
+            {
+              "class_name": null,
+              "default": null,
+              "enum_cpp_form": null,
+              "enum_cpp_name": null,
+              "enum_name": null,
+              "enum_underlying_type": null,
+              "func_info": null,
+              "inner_prop": null,
+              "interface_name": null,
+              "key_prop": null,
+              "meta_class_name": null,
+              "name": "ReturnValue",
+              "prop_flags": 4503599627371904,
+              "struct_name": null,
+              "type": "BoolProperty",
+              "value_prop": null
+            }
+          ]
+        },
+        {
+          "func_flags": 1946289154,
+          "is_static": false,
+          "name": "IsSelectable",
+          "params": [
+            {
+              "class_name": null,
+              "default": null,
+              "enum_cpp_form": null,
+              "enum_cpp_name": null,
+              "enum_name": null,
+              "enum_underlying_type": null,
+              "func_info": null,
+              "inner_prop": null,
+              "interface_name": null,
+              "key_prop": null,
+              "meta_class_name": null,
+              "name": "ReturnValue",
+              "prop_flags": 4503599627371904,
+              "struct_name": null,
+              "type": "BoolProperty",
+              "value_prop": null
+            }
+          ]
+        },
+        {
+          "func_flags": 1946289154,
+          "is_static": false,
+          "name": "GetDefaultActorLabel",
+          "params": [
+            {
+              "class_name": null,
+              "default": null,
+              "enum_cpp_form": null,
+              "enum_cpp_name": null,
+              "enum_name": null,
+              "enum_underlying_type": null,
+              "func_info": null,
+              "inner_prop": null,
+              "interface_name": null,
+              "key_prop": null,
+              "meta_class_name": null,
+              "name": "ReturnValue",
+              "prop_flags": 4503599627371904,
+              "struct_name": null,
+              "type": "StrProperty",
+              "value_prop": null
+            }
+          ]
+        },
+        {
+          "func_flags": 1946289155,
+          "is_static": false,
+          "name": "GetActorLabel",
+          "params": [
+            {
+              "class_name": null,
+              "default": "true",
+              "enum_cpp_form": null,
+              "enum_cpp_name": null,
+              "enum_name": null,
+              "enum_underlying_type": null,
+              "func_info": null,
+              "inner_prop": null,
+              "interface_name": null,
+              "key_prop": null,
+              "meta_class_name": null,
+              "name": "bCreateIfNone",
+              "prop_flags": 4503599627370624,
+              "struct_name": null,
+              "type": "BoolProperty",
+              "value_prop": null
+            },
+            {
+              "class_name": null,
+              "default": null,
+              "enum_cpp_form": null,
+              "enum_cpp_name": null,
+              "enum_name": null,
+              "enum_underlying_type": null,
+              "func_info": null,
+              "inner_prop": null,
+              "interface_name": null,
+              "key_prop": null,
+              "meta_class_name": null,
+              "name": "ReturnValue",
+              "prop_flags": 4503599627371904,
+              "struct_name": null,
+              "type": "StrProperty",
+              "value_prop": null
+            }
+          ]
+        },
+        {
+          "func_flags": 604111875,
+          "is_static": false,
+          "name": "SetActorLabel",
+          "params": [
+            {
+              "class_name": null,
+              "default": null,
+              "enum_cpp_form": null,
+              "enum_cpp_name": null,
+              "enum_name": null,
+              "enum_underlying_type": null,
+              "func_info": null,
+              "inner_prop": null,
+              "interface_name": null,
+              "key_prop": null,
+              "meta_class_name": null,
+              "name": "NewActorLabel",
+              "prop_flags": 4503599627370624,
+              "struct_name": null,
+              "type": "StrProperty",
+              "value_prop": null
+            },
+            {
+              "class_name": null,
+              "default": "true",
+              "enum_cpp_form": null,
+              "enum_cpp_name": null,
+              "enum_name": null,
+              "enum_underlying_type": null,
+              "func_info": null,
+              "inner_prop": null,
+              "interface_name": null,
+              "key_prop": null,
+              "meta_class_name": null,
+              "name": "bMarkDirty",
+              "prop_flags": 4503599627370624,
+              "struct_name": null,
+              "type": "BoolProperty",
+              "value_prop": null
+            }
+          ]
+        },
+        {
+          "func_flags": 1946289155,
+          "is_static": false,
+          "name": "GetFolderPath",
+          "params": [
+            {
+              "class_name": null,
+              "default": null,
+              "enum_cpp_form": null,
+              "enum_cpp_name": null,
+              "enum_name": null,
+              "enum_underlying_type": null,
+              "func_info": null,
+              "inner_prop": null,
+              "interface_name": null,
+              "key_prop": null,
+              "meta_class_name": null,
+              "name": "ReturnValue",
+              "prop_flags": 4503599627371904,
+              "struct_name": null,
+              "type": "NameProperty",
+              "value_prop": null
+            }
+          ]
+        },
+        {
+          "func_flags": 608306179,
+          "is_static": false,
+          "name": "SetFolderPath",
+          "params": [
+            {
+              "class_name": null,
+              "default": null,
+              "enum_cpp_form": null,
+              "enum_cpp_name": null,
+              "enum_name": null,
+              "enum_underlying_type": null,
+              "func_info": null,
+              "inner_prop": null,
+              "interface_name": null,
+              "key_prop": null,
+              "meta_class_name": null,
+              "name": "NewFolderPath",
+              "prop_flags": 4503599761588610,
+              "struct_name": null,
+              "type": "NameProperty",
+              "value_prop": null
+            }
+          ]
+        },
+        {
           "func_flags": 67240962,
           "is_static": false,
           "name": "SetActorTickEnabled",
@@ -5961,6 +6291,7 @@
         }
       ],
       "header": "GameFramework/Actor.h",
+      "header_public": true,
       "interfaces": [],
       "name": "Actor",
       "package": "Engine",
@@ -9349,6 +9680,7 @@
         }
       ],
       "header": "GameFramework/Pawn.h",
+      "header_public": true,
       "interfaces": [
         "INavAgentInterface"
       ],
@@ -9840,6 +10172,7 @@
         }
       ],
       "header": "Engine/World.h",
+      "header_public": true,
       "interfaces": [],
       "name": "World",
       "package": "Engine",
@@ -10811,6 +11144,7 @@
         }
       ],
       "header": "Components/ActorComponent.h",
+      "header_public": true,
       "interfaces": [
         "IInterface_AssetUserData"
       ],
@@ -14027,6 +14361,7 @@
         }
       ],
       "header": "Components/SceneComponent.h",
+      "header_public": true,
       "interfaces": [],
       "name": "SceneComponent",
       "package": "Engine",
@@ -14462,6 +14797,7 @@
       "cpp_name": "USubsystem",
       "funcs": [],
       "header": "Subsystems/Subsystem.h",
+      "header_public": true,
       "interfaces": [],
       "name": "Subsystem",
       "package": "Engine",
@@ -14473,6 +14809,7 @@
       "cpp_name": "ULocalPlayerSubsystem",
       "funcs": [],
       "header": "Subsystems/LocalPlayerSubsystem.h",
+      "header_public": true,
       "interfaces": [],
       "name": "LocalPlayerSubsystem",
       "package": "Engine",
@@ -16162,6 +16499,7 @@
         }
       ],
       "header": "EnhancedInputSubsystemInterface.h",
+      "header_public": true,
       "interfaces": [],
       "name": "EnhancedInputSubsystemInterface",
       "package": "EnhancedInput",
@@ -16173,6 +16511,7 @@
       "cpp_name": "UEnhancedInputLocalPlayerSubsystem",
       "funcs": [],
       "header": "EnhancedInputSubsystems.h",
+      "header_public": true,
       "interfaces": [
         "IEnhancedInputSubsystemInterface"
       ],
@@ -16348,6 +16687,7 @@
       "cpp_name": "UDataAsset",
       "funcs": [],
       "header": "Engine/DataAsset.h",
+      "header_public": true,
       "interfaces": [],
       "name": "DataAsset",
       "package": "Engine",
@@ -16359,6 +16699,7 @@
       "cpp_name": "UPrimaryDataAsset",
       "funcs": [],
       "header": "Engine/DataAsset.h",
+      "header_public": true,
       "interfaces": [],
       "name": "PrimaryDataAsset",
       "package": "Engine",
@@ -16370,6 +16711,7 @@
       "cpp_name": "UInputAction",
       "funcs": [],
       "header": "InputAction.h",
+      "header_public": true,
       "interfaces": [],
       "name": "InputAction",
       "package": "EnhancedInput",
@@ -16806,6 +17148,7 @@
         }
       ],
       "header": "InputMappingContext.h",
+      "header_public": true,
       "interfaces": [],
       "name": "InputMappingContext",
       "package": "EnhancedInput",
@@ -17154,6 +17497,7 @@
         }
       ],
       "header": "InputModifiers.h",
+      "header_public": true,
       "interfaces": [],
       "name": "InputModifier",
       "package": "EnhancedInput",
@@ -17315,6 +17659,7 @@
         }
       ],
       "header": "GameFramework/PlayerInput.h",
+      "header_public": true,
       "interfaces": [],
       "name": "PlayerInput",
       "package": "Engine",
@@ -17401,6 +17746,7 @@
       "cpp_name": "UEnhancedPlayerInput",
       "funcs": [],
       "header": "EnhancedPlayerInput.h",
+      "header_public": true,
       "interfaces": [],
       "name": "EnhancedPlayerInput",
       "package": "EnhancedInput",
@@ -17719,6 +18065,7 @@
         }
       ],
       "header": "PlayerMappableInputConfig.h",
+      "header_public": true,
       "interfaces": [],
       "name": "PlayerMappableInputConfig",
       "package": "EnhancedInput",
@@ -17868,6 +18215,7 @@
       "cpp_name": "UInputComponent",
       "funcs": [],
       "header": "Components/InputComponent.h",
+      "header_public": true,
       "interfaces": [],
       "name": "InputComponent",
       "package": "Engine",
@@ -17923,6 +18271,7 @@
         }
       ],
       "header": "EnhancedInputComponent.h",
+      "header_public": true,
       "interfaces": [],
       "name": "EnhancedInputComponent",
       "package": "EnhancedInput",
@@ -17934,6 +18283,7 @@
       "cpp_name": "UField",
       "funcs": [],
       "header": "UObject/Class.h",
+      "header_public": true,
       "interfaces": [],
       "name": "Field",
       "package": "CoreUObject",
@@ -17967,6 +18317,7 @@
       "cpp_name": "UStruct",
       "funcs": [],
       "header": "UObject/Class.h",
+      "header_public": true,
       "interfaces": [],
       "name": "Struct",
       "package": "CoreUObject",
@@ -18037,6 +18388,7 @@
       "cpp_name": "UClass",
       "funcs": [],
       "header": "UObject/Class.h",
+      "header_public": true,
       "interfaces": [],
       "name": "Class",
       "package": "CoreUObject",
@@ -18747,6 +19099,7 @@
         }
       ],
       "header": "GameFramework/Controller.h",
+      "header_public": true,
       "interfaces": [
         "INavAgentInterface"
       ],
@@ -24304,6 +24657,7 @@
         }
       ],
       "header": "GameFramework/PlayerController.h",
+      "header_public": true,
       "interfaces": [],
       "name": "PlayerController",
       "package": "Engine",
@@ -25362,6 +25716,7 @@
       "cpp_name": "UBlueprintFunctionLibrary",
       "funcs": [],
       "header": "Kismet/BlueprintFunctionLibrary.h",
+      "header_public": true,
       "interfaces": [],
       "name": "BlueprintFunctionLibrary",
       "package": "Engine",
@@ -25722,6 +26077,7 @@
         }
       ],
       "header": "Subsystems/SubsystemBlueprintLibrary.h",
+      "header_public": true,
       "interfaces": [],
       "name": "SubsystemBlueprintLibrary",
       "package": "Engine",
@@ -26444,6 +26800,7 @@
         }
       ],
       "header": "EnhancedInputLibrary.h",
+      "header_public": true,
       "interfaces": [],
       "name": "EnhancedInputLibrary",
       "package": "EnhancedInput",
@@ -26455,6 +26812,7 @@
       "cpp_name": "UVisual",
       "funcs": [],
       "header": "Components/Visual.h",
+      "header_public": true,
       "interfaces": [],
       "name": "Visual",
       "package": "UMG",
@@ -28119,6 +28477,7 @@
         }
       ],
       "header": "Components/Widget.h",
+      "header_public": true,
       "interfaces": [
         "INotifyFieldValueChanged"
       ],
@@ -33044,6 +33403,7 @@
         }
       ],
       "header": "Blueprint/UserWidget.h",
+      "header_public": true,
       "interfaces": [
         "INamedSlotInterface"
       ],
@@ -33577,6 +33937,7 @@
       "cpp_name": "UDataTable",
       "funcs": [],
       "header": "Engine/DataTable.h",
+      "header_public": true,
       "interfaces": [],
       "name": "DataTable",
       "package": "Engine",

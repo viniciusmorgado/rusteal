@@ -66,6 +66,7 @@ const STRUCTS: &[&str] = &[
     "ModifyContextOptions",
     "EnhancedActionKeyMapping",
     "DataTableRowHandle",
+    "InstancedStruct",
 ];
 
 const RUSTEAL_TOML: &str = r#"[project]
