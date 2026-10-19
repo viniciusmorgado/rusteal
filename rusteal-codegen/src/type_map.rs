@@ -575,15 +575,9 @@ pub fn container_element_rust_type(
         "StructProperty" => {
             if let Some(sn) = &inner.struct_name {
                 if let Some(ctx) = ctx {
-                    if let Some(si) = ctx.structs.get(sn.as_str()) {
-                        if si.has_static_struct {
-                            Some(format!("rusteal_core::OwnedStruct<{}>", si.cpp_name))
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
-                    }
+                    ctx.structs
+                        .get(sn.as_str())
+                        .map(|si| format!("rusteal_core::OwnedStruct<{}>", si.cpp_name))
                 } else {
                     Some(format!("rusteal_core::OwnedStruct<F{sn}>"))
                 }

@@ -84,7 +84,7 @@ pub fn collect_deduped_properties<'a>(
             let valid = if let Some(ctx) = ctx {
                 prop.struct_name
                     .as_deref()
-                    .is_some_and(|sn| ctx.structs.get(sn).is_some_and(|si| si.has_static_struct))
+                    .is_some_and(|sn| ctx.structs.contains_key(sn))
             } else {
                 prop.struct_name.is_some()
             };
@@ -517,7 +517,7 @@ fn optional_value(inner: &PropertyInfo, ctx: &CodegenContext) -> Option<Optional
             let name = inner.struct_name.as_deref()?;
             let si = ctx.structs.get(name)?;
 
-            si.has_static_struct.then(|| OptionalValue::Struct {
+            Some(OptionalValue::Struct {
                 cpp_name: si.cpp_name.clone(),
                 name: name.to_string(),
             })

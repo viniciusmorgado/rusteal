@@ -13,7 +13,7 @@ enum ReturnStrategy {
     StringReturn,
     TextReturn,
     SoftPathReturn,
-    StructReturn { reflected: bool },
+    StructReturn { lookup: Option<String> },
     FNameReturn,
     ContainerReturn,
 }
@@ -24,7 +24,7 @@ enum PostCallAction {
     StructOutput {
         name: String,
         struct_cpp: String,
-        reflected: bool,
+        lookup: Option<String>,
     },
     ObjectOutput(String),
     WeakObjectOutput(String),
@@ -80,6 +80,7 @@ pub fn generate_wrapper_file(entries: &[&FuncEntry], ctx: &CodegenContext) -> St
     includes.insert("\"RustealUtf8.h\"".to_string());
     includes.insert("\"RustealInterface.h\"".to_string());
     includes.insert("\"RustealDelegateArg.h\"".to_string());
+    includes.insert("\"RustealStructs.h\"".to_string());
     out.push_str("#include \"CoreMinimal.h\"\n");
 
     for inc in &includes {
@@ -237,7 +238,7 @@ fn generate_wrapper_function(out: &mut String, entry: &FuncEntry, ctx: &CodegenC
                 post_call_actions.push(PostCallAction::StructOutput {
                     name: name.clone(),
                     struct_cpp,
-                    reflected: is_reflected_struct(param, ctx),
+                    lookup: struct_lookup(param, ctx),
                 });
             }
             ConversionKind::ObjectRef => match param.prop_type.as_str() {
@@ -718,12 +719,17 @@ fn input_arg_expression(param: &ParamInfo, dir: ParamDirection, ctx: &CodegenCon
     }
 }
 
-fn is_reflected_struct(param: &ParamInfo, ctx: &CodegenContext) -> bool {
-    param
-        .struct_name
-        .as_deref()
-        .and_then(|sn| ctx.structs.get(sn))
-        .is_some_and(|si| si.has_static_struct)
+fn struct_lookup(param: &ParamInfo, ctx: &CodegenContext) -> Option<String> {
+    let si = ctx.structs.get(param.struct_name.as_deref()?)?;
+
+    Some(if si.has_static_struct {
+        format!("TBaseStructure<{}>::Get()", si.cpp_name)
+    } else {
+        format!(
+            "RustealFindScriptStruct(TEXT(\"/Script/{}.{}\"))",
+            si.package, si.name
+        )
+    })
 }
 
 fn return_strategy(param: &ParamInfo, ctx: &CodegenContext) -> ReturnStrategy {
@@ -759,7 +765,7 @@ fn return_strategy(param: &ParamInfo, ctx: &CodegenContext) -> ReturnStrategy {
             ReturnStrategy::Cast(ctype.to_string())
         }
         ConversionKind::StructOpaque => ReturnStrategy::StructReturn {
-            reflected: is_reflected_struct(param, ctx),
+            lookup: struct_lookup(param, ctx),
         },
         ConversionKind::FName => ReturnStrategy::FNameReturn,
         ConversionKind::ContainerArray
@@ -812,15 +818,15 @@ fn emit_return(out: &mut String, strategy: &ReturnStrategy, call_expr: &str) {
         ReturnStrategy::TextReturn => {
             out.push_str(&format!("    *OutReturnValue = new FText({call_expr});\n"));
         }
-        ReturnStrategy::StructReturn { reflected } => {
+        ReturnStrategy::StructReturn { lookup } => {
             out.push_str(&format!("    auto __RustealResult = {call_expr};\n"));
 
-            if *reflected {
-                out.push_str(
-                    "    UScriptStruct* __RustealStruct = TBaseStructure<std::decay_t<decltype(__RustealResult)>>::Get();\n\
+            if let Some(lookup) = lookup {
+                out.push_str(&format!(
+                    "    static UScriptStruct* __RustealStruct = {lookup};\n\
                      \x20   __RustealStruct->InitializeStruct(OutReturnValue);\n\
-                     \x20   __RustealStruct->CopyScriptStruct(OutReturnValue, &__RustealResult);\n",
-                );
+                     \x20   __RustealStruct->CopyScriptStruct(OutReturnValue, &__RustealResult);\n"
+                ));
             } else {
                 out.push_str(
                     "    FMemory::Memcpy(OutReturnValue, &__RustealResult, sizeof(__RustealResult));\n",
@@ -883,11 +889,11 @@ fn emit_post_call(out: &mut String, action: &PostCallAction) {
         }
         PostCallAction::StructOutput {
             name,
-            struct_cpp,
-            reflected: true,
+            lookup: Some(lookup),
+            ..
         } => {
             out.push_str(&format!(
-                "    if (Out{name}) {{ UScriptStruct* __Struct{name} = TBaseStructure<{struct_cpp}>::Get(); __Struct{name}->InitializeStruct(Out{name}); __Struct{name}->CopyScriptStruct(Out{name}, &__Out{name}); }}\n"
+                "    if (Out{name}) {{ static UScriptStruct* __Struct{name} = {lookup}; __Struct{name}->InitializeStruct(Out{name}); __Struct{name}->CopyScriptStruct(Out{name}, &__Out{name}); }}\n"
             ));
         }
         PostCallAction::StructOutput {
@@ -1402,5 +1408,40 @@ mod tests {
             "{out}"
         );
         assert!(out.contains("#include \"RustealDelegateArg.h\""), "{out}");
+    }
+
+    #[test]
+    fn structs_without_static_struct_are_found_by_path() {
+        let codegen: CodegenConfig = toml::from_str(
+            "features = [\"engine\"]\n[modules]\nEngine = { module = \"engine\", feature = \"engine\" }\nCoreUObject = { module = \"core_ue\", feature = \"engine\" }",
+        )
+        .unwrap();
+        let point: StructInfo = serde_json::from_value(serde_json::json!({
+            "name": "IntPoint", "cpp_name": "FIntPoint", "package": "CoreUObject",
+            "struct_flags": 0, "super": null, "has_static_struct": false,
+        }))
+        .unwrap();
+        let ctx = CodegenContext::new(
+            vec![class("Object", ""), class("CameraComponent", "Object")],
+            vec![point],
+            vec![],
+            &codegen,
+        );
+
+        let mut ret = param(
+            "ReturnValue",
+            rusteal_ue_flags::CPF_PARM | CPF_OUT_PARM | CPF_RETURN_PARM,
+            "StructProperty",
+            None,
+        );
+        ret["struct_name"] = "IntPoint".into();
+
+        let out = generate_wrapper_file(&[&entry("GetPoint", serde_json::json!([ret]))], &ctx);
+
+        assert!(
+            out.contains("RustealFindScriptStruct(TEXT(\"/Script/CoreUObject.IntPoint\"))"),
+            "{out}"
+        );
+        assert!(!out.contains("FMemory::Memcpy"), "{out}");
     }
 }

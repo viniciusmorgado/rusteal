@@ -235,10 +235,6 @@ fn resolve_delegate_param(
             let sn = value.get("struct_name").and_then(|v| v.as_str())?;
             let si = ctx.structs.get(sn)?;
 
-            if !si.has_static_struct {
-                return None;
-            }
-
             Some(DelegateParam {
                 name: param_name,
                 rust_type: format!("rusteal_core::OwnedStruct<{}>", si.cpp_name),

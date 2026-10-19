@@ -37,59 +37,57 @@ pub fn generate_struct(s: &StructInfo, ctx: &CodegenContext) -> String {
          pub struct {name};\n\n"
     ));
 
-    if s.has_static_struct {
-        let name_bytes = stripped.as_bytes();
-        let name_len = name_bytes.len();
-        let byte_lit = format!("b\"{stripped}\\0\"");
+    let name_bytes = stripped.as_bytes();
+    let name_len = name_bytes.len();
+    let byte_lit = format!("b\"{stripped}\\0\"");
+
+    out.push_str(&format!(
+        "impl rusteal_core::UeStruct for {name} {{\n\
+         \x20   fn static_struct() -> rusteal_core::UStructHandle {{\n\
+         \x20       static CACHE: std::sync::OnceLock<rusteal_core::UStructHandle> = std::sync::OnceLock::new();\n\
+         \x20       *CACHE.get_or_init(|| unsafe {{\n\
+         \x20           rusteal_core::ffi_dispatch::reflection_find_struct({byte_lit}.as_ptr(), {name_len})\n\
+         \x20       }})\n\
+         \x20   }}\n\
+         }}\n\n"
+    ));
+
+    let (_, deduped_props) = properties::collect_deduped_properties(&s.props, Some(ctx));
+
+    if !deduped_props.is_empty() {
+        let pctx = PropertyContext {
+            find_prop_fn: "find_struct_property".to_string(),
+            handle_expr: format!("{name}::static_struct()"),
+            pre_access: String::new(),
+            container_expr: "self.as_ptr()".to_string(),
+        };
+
+        let trait_name = format!("{name}Ext");
+
+        let no_suppress = std::collections::HashSet::new();
+        let mut body_buf = String::new();
+
+        for prop in &deduped_props {
+            properties::generate_property(&mut body_buf, prop, &pctx, ctx, &no_suppress);
+        }
+
+        out.push_str(&format!("pub trait {trait_name} {{\n"));
+
+        for line in body_buf.lines() {
+            if line.starts_with("    fn ") && line.ends_with(" {") {
+                out.push_str(&line[..line.len() - 2]);
+                out.push_str(";\n");
+            }
+        }
+
+        out.push_str("}\n\n");
 
         out.push_str(&format!(
-            "impl rusteal_core::UeStruct for {name} {{\n\
-             \x20   fn static_struct() -> rusteal_core::UStructHandle {{\n\
-             \x20       static CACHE: std::sync::OnceLock<rusteal_core::UStructHandle> = std::sync::OnceLock::new();\n\
-             \x20       *CACHE.get_or_init(|| unsafe {{\n\
-             \x20           rusteal_core::ffi_dispatch::reflection_find_struct({byte_lit}.as_ptr(), {name_len})\n\
-             \x20       }})\n\
-             \x20   }}\n\
-             }}\n\n"
+            "impl {trait_name} for rusteal_core::UStructRef<{name}> {{\n"
         ));
 
-        let (_, deduped_props) = properties::collect_deduped_properties(&s.props, Some(ctx));
-
-        if !deduped_props.is_empty() {
-            let pctx = PropertyContext {
-                find_prop_fn: "find_struct_property".to_string(),
-                handle_expr: format!("{name}::static_struct()"),
-                pre_access: String::new(),
-                container_expr: "self.as_ptr()".to_string(),
-            };
-
-            let trait_name = format!("{name}Ext");
-
-            let no_suppress = std::collections::HashSet::new();
-            let mut body_buf = String::new();
-
-            for prop in &deduped_props {
-                properties::generate_property(&mut body_buf, prop, &pctx, ctx, &no_suppress);
-            }
-
-            out.push_str(&format!("pub trait {trait_name} {{\n"));
-
-            for line in body_buf.lines() {
-                if line.starts_with("    fn ") && line.ends_with(" {") {
-                    out.push_str(&line[..line.len() - 2]);
-                    out.push_str(";\n");
-                }
-            }
-
-            out.push_str("}\n\n");
-
-            out.push_str(&format!(
-                "impl {trait_name} for rusteal_core::UStructRef<{name}> {{\n"
-            ));
-
-            out.push_str(&body_buf);
-            out.push_str("}\n");
-        }
+        out.push_str(&body_buf);
+        out.push_str("}\n");
     }
 
     out
