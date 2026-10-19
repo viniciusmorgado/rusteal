@@ -1,12 +1,15 @@
 use std::sync::{Arc, Mutex};
 
 use bindings::engine::{
-    BlendableInterface, FPostProcessSettingsExt, FWeightedBlendableExt, FWeightedBlendablesExt,
-    KismetMathLibrary, KismetStringLibrary, KismetSystemLibrary, Material, PostProcessVolume,
-    PostProcessVolumeExt,
+    ActorComponent, BlendableInterface, FPostProcessSettingsExt, FWeightedBlendableExt,
+    FWeightedBlendablesExt, KismetMathLibrary, KismetStringLibrary, KismetSystemLibrary, Material,
+    PostProcessVolume, PostProcessVolumeExt, ProjectileMovementComponent,
+    ProjectileMovementComponentExt, VolumetricCloudComponent, VolumetricCloudComponentExt,
 };
 use bindings::prelude::*;
-use rusteal_runtime::runtime::{DynamicCall, SoftObjectRef, Transform, UObjectRef, UeClass, task};
+use rusteal_runtime::runtime::{
+    DynamicCall, Inherits, SoftObjectRef, SubclassOf, TWeakObjectPtr, Transform, UObjectRef, UeClass, task,
+};
 
 use crate::fixtures::TestActor;
 use crate::runner::{Check, Context, Outcome};
@@ -48,6 +51,18 @@ pub const ALL: &[(&str, Check)] = &[
     (
         "engine_function_takes_any_object_as_iinterface",
         engine_function_takes_any_object_as_iinterface,
+    ),
+    (
+        "engine_soft_property_keeps_the_path",
+        engine_soft_property_keeps_the_path,
+    ),
+    (
+        "engine_soft_reference_crosses_as_a_path",
+        engine_soft_reference_crosses_as_a_path,
+    ),
+    (
+        "engine_weak_property_follows_its_object",
+        engine_weak_property_follows_its_object,
     ),
     (
         "task_comes_back_to_the_game_thread",
@@ -212,13 +227,100 @@ fn rust_string_property_longer_than_512_bytes(context: &Context) -> Outcome {
     })())
 }
 
+const DEFAULT_MATERIAL: &str = "/Engine/EngineMaterials/DefaultMaterial.DefaultMaterial";
+
+fn default_material() -> Result<UObjectRef<Material>, String> {
+    SoftObjectRef::<Material>::new(DEFAULT_MATERIAL)
+        .load_synchronous()
+        .map_err(|e| format!("load: {e:?}"))
+}
+
+fn add_component<T: UeClass + Inherits<ActorComponent>>(context: &Context) -> Result<UObjectRef<T>, String> {
+    let actor = spawn(context)?
+        .checked()
+        .map_err(|e| format!("checked: {e:?}"))?;
+    let transform = FTransform::from_transform(Transform::IDENTITY);
+
+    actor
+        .add_component_by_class(
+            SubclassOf::<T>::base().upcast_to::<ActorComponent>(),
+            false,
+            &transform,
+            false,
+        )
+        .cast::<T>()
+        .map_err(|e| format!("add component: {e:?}"))
+}
+
+fn engine_soft_property_keeps_the_path(context: &Context) -> Outcome {
+    done((|| {
+        let material = default_material()?;
+        let cloud = add_component::<VolumetricCloudComponent>(context)?
+            .checked()
+            .map_err(|e| format!("checked: {e:?}"))?;
+
+        cloud.set_material(material.upcast());
+
+        let soft = cloud.get_material();
+        ensure(soft.path() == DEFAULT_MATERIAL, format!("path {:?}", soft.path()))?;
+        ensure(
+            soft.get().raw() == material.raw(),
+            "the soft reference does not resolve to the material",
+        )
+    })())
+}
+
+fn engine_soft_reference_crosses_as_a_path(_: &Context) -> Outcome {
+    done((|| {
+        let material = default_material()?;
+        let loaded =
+            KismetSystemLibrary::load_asset_blocking(&SoftObjectRef::new(DEFAULT_MATERIAL));
+        ensure(
+            loaded.raw() == material.raw(),
+            "LoadAsset_Blocking did not load the path",
+        )?;
+
+        let soft = KismetSystemLibrary::conv_object_to_soft_object_reference(
+            material.upcast().upcast(),
+        );
+        ensure(soft.path() == DEFAULT_MATERIAL, format!("path {:?}", soft.path()))
+    })())
+}
+
+fn engine_weak_property_follows_its_object(context: &Context) -> Outcome {
+    done((|| {
+        let movement = add_component::<ProjectileMovementComponent>(context)?
+            .checked()
+            .map_err(|e| format!("checked: {e:?}"))?;
+        let target = spawn(context)?;
+        let root = TestActor::from_obj(target)
+            .map_err(|e| format!("{e:?}"))?
+            .root()
+            .map_err(|e| format!("{e:?}"))?;
+
+        movement.set_homing_target_component(TWeakObjectPtr::from_ref(&root));
+
+        let followed = movement.get_homing_target_component().get();
+        ensure(
+            followed.map(|c| c.raw()) == Some(root.raw()),
+            "the weak reference does not reach the component",
+        )?;
+
+        target
+            .checked()
+            .map_err(|e| format!("checked: {e:?}"))?
+            .k2_destroy_actor();
+
+        ensure(
+            movement.get_homing_target_component().get().is_none(),
+            "the weak reference outlived the destroyed component",
+        )
+    })())
+}
+
 fn engine_function_takes_an_interface(context: &Context) -> Outcome {
     done((|| {
-        let material = SoftObjectRef::<Material>::new(
-            "/Engine/EngineMaterials/DefaultMaterial.DefaultMaterial",
-        )
-        .load_synchronous()
-        .map_err(|e| format!("load: {e:?}"))?;
+        let material = default_material()?;
         let blendable = material
             .cast::<BlendableInterface>()
             .map_err(|e| format!("cast: {e:?}"))?;
