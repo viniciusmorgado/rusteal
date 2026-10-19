@@ -1,13 +1,15 @@
 use std::sync::{Arc, Mutex};
 
+use bindings::core_ue::{FGuid, FInstancedStruct};
 use bindings::engine::{
-    ActorComponent, BlendableInterface, CameraComponent, CameraComponentExt,
-    FMinimalViewInfoExt, FPostProcessSettingsExt, InputSettings, InputSettingsExt, KismetGuidLibrary,
-    CurveFloat, CurveFloatExt, FRichCurveExt, FRichCurveKey, FRichCurveKeyExt, KismetTextLibrary,
-    TextRenderComponent, TextRenderComponentExt, TimelineComponent, TimelineComponentExt, FWeightedBlendableExt,
-    FWeightedBlendablesExt, KismetMathLibrary, KismetStringLibrary, KismetSystemLibrary, Material,
-    PlayerInput, PostProcessVolume, PostProcessVolumeExt, ProjectileMovementComponent, StaticMeshActor,
-    ProjectileMovementComponentExt, VolumetricCloudComponent, VolumetricCloudComponentExt,
+    ActorComponent, BlendableInterface, CameraComponent, CameraComponentExt, CurveFloat,
+    CurveFloatExt, FMinimalViewInfoExt, FPostProcessSettingsExt, FRichCurveExt, FRichCurveKey,
+    FRichCurveKeyExt, FWeightedBlendableExt, FWeightedBlendablesExt, InputSettings,
+    InputSettingsExt, KismetGuidLibrary, KismetMathLibrary, KismetStringLibrary,
+    KismetSystemLibrary, KismetTextLibrary, Material, PlayerInput, PostProcessVolume,
+    PostProcessVolumeExt, ProjectileMovementComponent, ProjectileMovementComponentExt,
+    StaticMeshActor, TextRenderComponent, TextRenderComponentExt, TimelineComponent,
+    TimelineComponentExt, VolumetricCloudComponent, VolumetricCloudComponentExt,
 };
 use bindings::prelude::*;
 use bindings::slate_core::{
@@ -15,7 +17,8 @@ use bindings::slate_core::{
     FWrapButtonStyleExt,
 };
 use rusteal_runtime::runtime::{
-    DynamicCall, Inherits, OwnedStruct, SoftClassRef, SoftObjectRef, SubclassOf, Text, TWeakObjectPtr, Transform, UObjectRef, UeClass, task,
+    DynamicCall, Inherits, OwnedStruct, SoftClassRef, SoftObjectRef, SubclassOf, TWeakObjectPtr,
+    Text, Transform, UObjectRef, UeClass, UeStruct, task,
 };
 
 use crate::fixtures::TestActor;
@@ -93,6 +96,10 @@ pub const ALL: &[(&str, Check)] = &[
     ),
     ("engine_text_round_trip", engine_text_round_trip),
     ("engine_optional_fields", engine_optional_fields),
+    (
+        "instanced_struct_holds_a_struct",
+        instanced_struct_holds_a_struct,
+    ),
     (
         "engine_text_keeps_its_localization",
         engine_text_keeps_its_localization,
@@ -320,7 +327,9 @@ fn default_material() -> Result<UObjectRef<Material>, String> {
         .map_err(|e| format!("load: {e:?}"))
 }
 
-fn add_component<T: UeClass + Inherits<ActorComponent>>(context: &Context) -> Result<UObjectRef<T>, String> {
+fn add_component<T: UeClass + Inherits<ActorComponent>>(
+    context: &Context,
+) -> Result<UObjectRef<T>, String> {
     let actor = spawn(context)?
         .checked()
         .map_err(|e| format!("checked: {e:?}"))?;
@@ -347,7 +356,10 @@ fn engine_soft_property_keeps_the_path(context: &Context) -> Outcome {
         cloud.set_material(material.upcast());
 
         let soft = cloud.get_material();
-        ensure(soft.path() == DEFAULT_MATERIAL, format!("path {:?}", soft.path()))?;
+        ensure(
+            soft.path() == DEFAULT_MATERIAL,
+            format!("path {:?}", soft.path()),
+        )?;
         ensure(
             soft.get().raw() == material.raw(),
             "the soft reference does not resolve to the material",
@@ -365,10 +377,12 @@ fn engine_soft_reference_crosses_as_a_path(_: &Context) -> Outcome {
             "LoadAsset_Blocking did not load the path",
         )?;
 
-        let soft = KismetSystemLibrary::conv_object_to_soft_object_reference(
-            material.upcast().upcast(),
-        );
-        ensure(soft.path() == DEFAULT_MATERIAL, format!("path {:?}", soft.path()))
+        let soft =
+            KismetSystemLibrary::conv_object_to_soft_object_reference(material.upcast().upcast());
+        ensure(
+            soft.path() == DEFAULT_MATERIAL,
+            format!("path {:?}", soft.path()),
+        )
     })())
 }
 
@@ -443,7 +457,10 @@ fn engine_struct_with_an_array_returned_by_a_function(context: &Context) -> Outc
 fn engine_struct_passed_by_reference(_: &Context) -> Outcome {
     done((|| {
         let mut guid = KismetGuidLibrary::new_guid();
-        ensure(KismetGuidLibrary::is_valid_guid(&guid), "a new guid is not valid")?;
+        ensure(
+            KismetGuidLibrary::is_valid_guid(&guid),
+            "a new guid is not valid",
+        )?;
 
         KismetGuidLibrary::invalidate_guid(&mut guid);
         ensure(
@@ -475,7 +492,10 @@ fn engine_soft_class_reference_crosses_as_a_path(_: &Context) -> Outcome {
         let soft = KismetSystemLibrary::conv_class_to_soft_class_reference(
             SubclassOf::<StaticMeshActor>::base().upcast_to::<bindings::core_ue::Object>(),
         );
-        ensure(soft.path() == STATIC_MESH_ACTOR, format!("path {:?}", soft.path()))
+        ensure(
+            soft.path() == STATIC_MESH_ACTOR,
+            format!("path {:?}", soft.path()),
+        )
     })())
 }
 
@@ -485,7 +505,10 @@ fn engine_soft_class_property_keeps_the_path(_: &Context) -> Outcome {
             .checked()
             .map_err(|e| format!("input settings: {e:?}"))?;
         let class: SoftClassRef<PlayerInput> = input.get_default_player_input_class();
-        ensure(!class.is_null(), "the default player input class has no path")?;
+        ensure(
+            !class.is_null(),
+            "the default player input class has no path",
+        )?;
 
         let loaded = class
             .load_synchronous()
@@ -531,6 +554,37 @@ fn engine_text_keeps_its_localization(context: &Context) -> Outcome {
         ensure(
             found && namespace == "RustealTests" && key == "Greeting",
             format!("after the property, id {found} {namespace:?} {key:?}"),
+        )
+    })())
+}
+
+fn instanced_struct_holds_a_struct(_: &Context) -> Outcome {
+    done((|| {
+        let guid = KismetGuidLibrary::new_guid();
+        let instanced = FInstancedStruct::make(&guid);
+        let held = instanced.as_ref();
+        ensure(held.is_set(), "the instanced struct is empty")?;
+        ensure(
+            held.script_struct() == FGuid::static_struct(),
+            "the instanced struct holds another type",
+        )?;
+
+        let back = held.get::<FGuid>().ok_or("get::<FGuid> gave nothing")?;
+        ensure(
+            KismetGuidLibrary::equal_equal_guid_guid(&guid, &back),
+            "the guid changed",
+        )?;
+        ensure(
+            held.get::<FVector>().is_none(),
+            "get::<FVector> gave a value",
+        )?;
+
+        let copy = instanced.clone();
+        held.reset();
+        ensure(!held.is_set(), "reset left a value")?;
+        ensure(
+            copy.as_ref().get::<FGuid>().is_some(),
+            "the clone lost its value with the original",
         )
     })())
 }
@@ -664,7 +718,12 @@ fn engine_member_function_takes_a_closure_with_arguments(context: &Context) -> O
 
         let seen = Arc::new(Mutex::new(-1.0f32));
         let sink = seen.clone();
-        timeline.add_interp_float(curve, move |value| *sink.lock().unwrap() = value, None, None);
+        timeline.add_interp_float(
+            curve,
+            move |value| *sink.lock().unwrap() = value,
+            None,
+            None,
+        );
         timeline.play();
 
         Ok::<_, String>(seen)
