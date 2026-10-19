@@ -148,6 +148,8 @@ const RUSTEAL_INTERNAL_CLASSES: &[&str] = &[
     "RustealDelegateProxy",
 ];
 
+const ENGINE_PLUGIN_PACKAGES: &[(&str, &str)] = &[("GameplayAbilities", "GameplayAbilities")];
+
 const ENGINE_UNEXPORTED_FUNCTIONS: &[&str] = &[
     "GameplayTask_SpawnActor.SpawnActor",
     "GameplayTask_WaitDelay.TaskWaitDelay",
@@ -185,6 +187,14 @@ impl CodegenConfig {
         for class in RUSTEAL_INTERNAL_CLASSES {
             if !config.blocklist.classes.iter().any(|c| c == class) {
                 config.blocklist.classes.push(class.to_string());
+            }
+        }
+
+        for (package, plugin) in ENGINE_PLUGIN_PACKAGES {
+            if let Some(mapping) = config.modules.get_mut(*package)
+                && mapping.plugin.is_none()
+            {
+                mapping.plugin = Some(plugin.to_string());
             }
         }
 
@@ -424,6 +434,32 @@ mod tests {
             "#,
         )
         .unwrap()
+    }
+
+    #[test]
+    fn engine_plugin_packages_name_their_plugin() {
+        let config: CodegenConfig = toml::from_str(
+            r#"
+            features = ["gameplay-abilities"]
+            [modules]
+            GameplayAbilities = { module = "gameplay_abilities", feature = "gameplay-abilities" }
+            "#,
+        )
+        .unwrap();
+
+        let library = config.for_library(LibraryKind::Runtime);
+
+        assert_eq!(
+            library.modules["GameplayAbilities"].plugin.as_deref(),
+            Some("GameplayAbilities")
+        );
+        assert!(
+            library
+                .blocklist
+                .functions
+                .iter()
+                .any(|f| f == "KismetSystemLibrary.IsValidInterface")
+        );
     }
 
     #[test]
