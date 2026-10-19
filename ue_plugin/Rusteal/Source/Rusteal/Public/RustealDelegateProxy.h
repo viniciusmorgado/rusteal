@@ -28,4 +28,6 @@ public:
   void RustFakeCallable();
 
   virtual void ProcessEvent(UFunction *Function, void *Parms) override;
+
+  virtual void BeginDestroy() override;
 };
