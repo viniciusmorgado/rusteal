@@ -40,6 +40,12 @@ RustealDelegateApi_BindDelegate(RustealUObjectHandle ObjHandle,
   Proxy->Library = RustealCurrentLibrary();
   Proxy->Signature = DelegateProp->SignatureFunction;
   Proxy->OwnerObject = Object;
+  URustealDelegateProxy::Keep(Proxy);
+
+  if (URustealDelegateProxy *Old =
+          Cast<URustealDelegateProxy>(Delegate->GetUObject())) {
+    URustealDelegateProxy::Release(Old);
+  }
 
   Delegate->BindUFunction(Proxy, URustealDelegateProxy::FakeFuncName);
 
@@ -64,6 +70,11 @@ RustealDelegateApi_UnbindDelegate(RustealUObjectHandle ObjHandle,
     return RustealFail(ERustealErrorCode::InternalError);
   }
 
+  if (URustealDelegateProxy *Old =
+          Cast<URustealDelegateProxy>(Delegate->GetUObject())) {
+    URustealDelegateProxy::Release(Old);
+  }
+
   Delegate->Unbind();
   return ERustealErrorCode::Ok;
 }
@@ -86,6 +97,7 @@ RustealDelegateApi_AddMulticast(RustealUObjectHandle ObjHandle,
   Proxy->Library = RustealCurrentLibrary();
   Proxy->Signature = MultiProp->SignatureFunction;
   Proxy->OwnerObject = Object;
+  URustealDelegateProxy::Keep(Proxy);
 
   FScriptDelegate ScriptDelegate;
   ScriptDelegate.BindUFunction(Proxy, URustealDelegateProxy::FakeFuncName);
@@ -119,6 +131,7 @@ RustealDelegateApi_RemoveMulticast(RustealUObjectHandle ObjHandle,
       FScriptDelegate ScriptDelegate;
       ScriptDelegate.BindUFunction(Proxy, URustealDelegateProxy::FakeFuncName);
       MultiProp->RemoveDelegate(ScriptDelegate, Object);
+      URustealDelegateProxy::Release(Proxy);
       return ERustealErrorCode::Ok;
     }
   }
