@@ -53,8 +53,9 @@ refers to the next section.
 
 | Gap | Status | Milestone |
 |---|---|---|
-| Engine `TScriptInterface` properties read through `get_object`, which refuses an `FInterfaceProperty` (from the code, not run) | bug | M1 |
-| Engine strings cut at 512 bytes, and a cut can split a UTF-8 character | bug | M1 |
+| Engine `TScriptInterface` functions and properties: the dump named the native `I` class, so all were dropped, and `get_object` refused an `FInterfaceProperty` | done | M1 |
+| Engine strings cut at 512 bytes, converted to ANSI, and a cut could split a UTF-8 character | done | M1 |
+| Engine structs holding a `TArray` (or other owning members) read by copy into `OwnedStruct::from_bytes`, never destroyed: each read leaks | bug | M1 |
 | Engine `TSoftObjectPtr` and `TWeakObjectPtr` properties typed as strong `UObjectRef`: an unloaded soft reference reads as null, its path is lost | partial | M1 |
 | `TSoftClassPtr`, `TLazyObjectPtr`, `TOptional`, `TFieldPath` engine properties dropped | missing | M1 |
 | `FText` passes through `ToString`: localization data is lost | partial | M1, M8 |
