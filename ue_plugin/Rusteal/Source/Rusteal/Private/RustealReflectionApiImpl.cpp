@@ -1,4 +1,5 @@
 #include "RustealApiTable.h"
+#include "HAL/PreprocessorHelpers.h"
 #include "RustealErrors.h"
 #include "UObject/UObjectGlobals.h"
 #include "UObject/UnrealType.h"
@@ -14,8 +15,20 @@ static FString Utf8ToFString(const uint8 *Name, uint32 NameLen) {
   return FString(NameLen, UTF8_TO_TCHAR(reinterpret_cast<const char *>(Name)));
 }
 
+static FString OwnTypeName(const FString &Name) {
+#if defined(RUSTEAL_VENDORED_PREFIX) && defined(RUSTEAL_VENDORED_ORIGINAL)
+  const FString Original(PREPROCESSOR_TO_STRING(RUSTEAL_VENDORED_ORIGINAL));
+
+  if (Name.StartsWith(Original, ESearchCase::CaseSensitive)) {
+    return FString(PREPROCESSOR_TO_STRING(RUSTEAL_VENDORED_PREFIX)) + Name;
+  }
+#endif
+
+  return Name;
+}
+
 static RustealUClassHandle FindClassImpl(const uint8 *Name, uint32 NameLen) {
-  const FString ClassName = Utf8ToFString(Name, NameLen);
+  const FString ClassName = OwnTypeName(Utf8ToFString(Name, NameLen));
 
   UClass *Found =
       FindFirstObject<UClass>(*ClassName, EFindFirstObjectOptions::NativeFirst);
@@ -52,7 +65,7 @@ static uint32 GetPropertySizeImpl(RustealFPropertyHandle Prop) {
 }
 
 static RustealUStructHandle FindStructImpl(const uint8 *Name, uint32 NameLen) {
-  const FString StructName = Utf8ToFString(Name, NameLen);
+  const FString StructName = OwnTypeName(Utf8ToFString(Name, NameLen));
 
   UScriptStruct *Found = FindFirstObject<UScriptStruct>(
       *StructName, EFindFirstObjectOptions::NativeFirst);
@@ -225,7 +238,7 @@ static ERustealErrorCode CopyStructImpl(RustealUStructHandle UStructHandle,
 }
 
 static RustealUClassHandle FindEnumImpl(const uint8 *Name, uint32 NameLen) {
-  const FString EnumName = Utf8ToFString(Name, NameLen);
+  const FString EnumName = OwnTypeName(Utf8ToFString(Name, NameLen));
 
   UEnum *Found =
       FindFirstObject<UEnum>(*EnumName, EFindFirstObjectOptions::NativeFirst);
