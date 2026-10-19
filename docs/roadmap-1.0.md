@@ -56,7 +56,8 @@ refers to the next section.
 | Engine `TScriptInterface` functions and properties: the dump named the native `I` class, so all were dropped, and `get_object` refused an `FInterfaceProperty` | done | M1 |
 | Engine strings cut at 512 bytes, converted to ANSI, and a cut could split a UTF-8 character | done | M1 |
 | Engine structs holding a `TArray` (or other owning members) read by copy into `OwnedStruct::from_bytes`, never destroyed: each read leaks | bug | M1 |
-| Engine `TSoftObjectPtr` and `TWeakObjectPtr` properties typed as strong `UObjectRef`: an unloaded soft reference reads as null, its path is lost | partial | M1 |
+| Engine `TSoftObjectPtr` and `TWeakObjectPtr` properties typed as strong `UObjectRef`: an unloaded soft reference read as null, its path lost; now `SoftObjectRef<T>` and `TWeakObjectPtr<T>` | done | M1 |
+| A feature whose modules come from an engine plugin got empty bindings: UHT did not run again after the plugin was added | done | M1 |
 | `TSoftClassPtr`, `TLazyObjectPtr`, `TOptional`, `TFieldPath` engine properties dropped | missing | M1 |
 | `FText` passes through `ToString`: localization data is lost | partial | M1, M8 |
 | `FInstancedStruct` opaque, `TSubScriptStructOf` (new in 5.8) not mapped | partial | M1 |
