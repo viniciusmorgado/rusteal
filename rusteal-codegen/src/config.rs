@@ -155,6 +155,10 @@ const ENGINE_UNEXPORTED_FUNCTIONS: &[&str] = &[
     "GameplayTask_WaitDelay.TaskWaitDelay",
     "KismetSystemLibrary.IsObjectOfSoftClass",
     "KismetSystemLibrary.IsValidInterface",
+    "WidgetAnimation.BindToAnimationFinished",
+    "WidgetAnimation.BindToAnimationStarted",
+    "WidgetAnimation.UnbindFromAnimationFinished",
+    "WidgetAnimation.UnbindFromAnimationStarted",
 ];
 
 impl CodegenConfig {

@@ -565,6 +565,13 @@ pub struct RustealDelegateApi {
         name: *const u8,
         name_len: u32,
     ) -> RustealErrorCode,
+
+    pub make_delegate: unsafe extern "C" fn(
+        signature: UFunctionHandle,
+        owner: UObjectHandle,
+        callback_id: u64,
+    ) -> *mut u8,
+    pub free_delegate: unsafe extern "C" fn(delegate: *mut u8),
 }
 
 #[repr(C)]

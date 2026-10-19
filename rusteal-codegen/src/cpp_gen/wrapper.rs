@@ -79,6 +79,7 @@ pub fn generate_wrapper_file(entries: &[&FuncEntry], ctx: &CodegenContext) -> St
     includes.insert("\"Templates/SubclassOf.h\"".to_string());
     includes.insert("\"RustealUtf8.h\"".to_string());
     includes.insert("\"RustealInterface.h\"".to_string());
+    includes.insert("\"RustealDelegateArg.h\"".to_string());
     out.push_str("#include \"CoreMinimal.h\"\n");
 
     for inc in &includes {
@@ -501,10 +502,10 @@ fn scalar_input_cpp_type(mapped: &MappedType, param: &ParamInfo, dir: ParamDirec
             }
         }
         ConversionKind::FName => "uint64_t".to_string(),
+        ConversionKind::Delegate => "void*".to_string(),
         ConversionKind::ContainerArray
         | ConversionKind::ContainerMap
         | ConversionKind::ContainerSet
-        | ConversionKind::Delegate
         | ConversionKind::MulticastDelegate => {
             unreachable!("container/delegate types are property-only, never function params")
         }
@@ -702,10 +703,10 @@ fn input_arg_expression(param: &ParamInfo, dir: ParamDirection, ctx: &CodegenCon
         ConversionKind::FName => {
             format!("RustealUnpackFName({})", param.name)
         }
+        ConversionKind::Delegate => format!("FRustealDelegateArg{{{}}}", param.name),
         ConversionKind::ContainerArray
         | ConversionKind::ContainerMap
         | ConversionKind::ContainerSet
-        | ConversionKind::Delegate
         | ConversionKind::MulticastDelegate => {
             unreachable!("container/delegate types are property-only, never function params")
         }
@@ -1363,5 +1364,38 @@ mod tests {
             out.contains("*OutFound = new FText(MoveTemp(__OutFound));"),
             "{out}"
         );
+    }
+
+    #[test]
+    fn delegates_cross_as_script_delegates() {
+        let codegen: CodegenConfig = toml::from_str(
+            "features = [\"engine\"]\n[modules]\nEngine = { module = \"engine\", feature = \"engine\" }",
+        )
+        .unwrap();
+        let ctx = CodegenContext::new(
+            vec![class("Object", ""), class("CameraComponent", "Object")],
+            vec![],
+            vec![],
+            &codegen,
+        );
+
+        let takes = entry(
+            "SetTimerDelegate",
+            serde_json::json!([param(
+                "Delegate",
+                rusteal_ue_flags::CPF_PARM,
+                "DelegateProperty",
+                None
+            )]),
+        );
+
+        let out = generate_wrapper_file(&[&takes], &ctx);
+
+        assert!(out.contains("void* Delegate"), "{out}");
+        assert!(
+            out.contains("Self->SetTimerDelegate(FRustealDelegateArg{Delegate});"),
+            "{out}"
+        );
+        assert!(out.contains("#include \"RustealDelegateArg.h\""), "{out}");
     }
 }

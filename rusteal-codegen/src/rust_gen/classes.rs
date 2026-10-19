@@ -346,6 +346,28 @@ fn generate_scalar_function(
         all_mapped.push((param, dir, mapped));
     }
 
+    let mut delegate_params: Vec<(String, Vec<delegates::DelegateParam>, &serde_json::Value)> =
+        Vec::new();
+
+    for (param, dir, mapped) in &all_mapped {
+        if mapped.rust_to_ffi != ConversionKind::Delegate {
+            continue;
+        }
+
+        let closure = param
+            .func_info
+            .as_ref()
+            .filter(|_| *dir == ParamDirection::In)
+            .and_then(|fi| Some((delegates::closure_params(fi, ctx)?, fi)));
+
+        match closure {
+            Some((params, fi)) => {
+                delegate_params.push((escape_reserved(&to_snake_case(&param.name)), params, fi))
+            }
+            None => all_supported = false,
+        }
+    }
+
     if !all_supported {
         out.push_str(&format!(
             "    // Skipped: {}.{} (unsupported param type)\n\n",
@@ -427,6 +449,23 @@ fn generate_scalar_function(
 
         match dir {
             ParamDirection::In | ParamDirection::InOut => match mapped.rust_to_ffi {
+                ConversionKind::Delegate => {
+                    let callback_sig = delegate_params
+                        .iter()
+                        .find(|(name, ..)| *name == pname)
+                        .map(|(_, params, _)| {
+                            params
+                                .iter()
+                                .map(|p| p.rust_type.clone())
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        })
+                        .unwrap_or_default();
+
+                    sig.push_str(&format!(
+                        "{pname}: impl FnMut({callback_sig}) + Send + 'static, "
+                    ));
+                }
                 ConversionKind::ObjectRef
                     if param.prop_type == "TextProperty" && *dir == ParamDirection::In =>
                 {
@@ -529,6 +568,9 @@ fn generate_scalar_function(
     for (_param, dir, mapped) in &all_mapped {
         match dir {
             ParamDirection::In | ParamDirection::InOut => match mapped.rust_to_ffi {
+                ConversionKind::Delegate => {
+                    ffi_params.push_str("*mut u8, ");
+                }
                 ConversionKind::StringUtf8 => {
                     ffi_params.push_str("*const u8, u32, ");
 
@@ -629,6 +671,60 @@ fn generate_scalar_function(
         }
     }
 
+    for (pname, params, func_info) in &delegate_params {
+        let param_ue_name = func
+            .params
+            .iter()
+            .find(|p| escape_reserved(&to_snake_case(&p.name)) == *pname)
+            .map(|p| p.name.as_str())
+            .unwrap_or(pname);
+
+        let sig_expr = format!(
+            "rusteal_core::ffi_dispatch::reflection_get_delegate_signature(\n\
+             \x20               rusteal_core::ffi_dispatch::reflection_get_function_param(\n\
+             \x20                   rusteal_core::ffi_dispatch::reflection_find_function_by_class({class_name}::static_class(), b\"{func_ue}\\0\".as_ptr(), {func_len}),\n\
+             \x20                   b\"{param_ue_name}\\0\".as_ptr(), {param_len}))",
+            func_ue = func.ue_name,
+            func_len = func.ue_name.len(),
+            param_len = param_ue_name.len(),
+        );
+
+        out.push_str(&format!(
+            "        let {pname} = {{\n\
+             \x20       let mut callback = {pname};\n\
+             \x20       static SIGNATURE: std::sync::OnceLock<usize> = std::sync::OnceLock::new();\n\
+             \x20       let signature = rusteal_core::UFunctionHandle(*SIGNATURE.get_or_init(|| unsafe {{ {sig_expr} }}.0 as usize) as *mut std::ffi::c_void);\n"
+        ));
+
+        if !params.is_empty() {
+            delegates::emit_param_info(out, params, func_info, &sig_expr);
+        }
+
+        out.push_str(
+            "        let id = rusteal_core::delegate_registry::register_callback(move |params: rusteal_core::ffi_dispatch::NativePtr| {\n\
+             \x20           #[allow(unused_variables)] let params = params;\n\
+             \x20           unsafe {\n",
+        );
+
+        delegates::emit_param_reads(out, params);
+
+        let call_args: Vec<&str> = params.iter().map(|p| p.name.as_str()).collect();
+        let owner = if is_static {
+            "rusteal_core::UObjectHandle::null()"
+        } else {
+            "h"
+        };
+
+        out.push_str(&format!(
+            "                callback({});\n\
+             \x20           }}\n\
+             \x20       }});\n\
+             \x20       unsafe {{ rusteal_core::ffi_dispatch::delegate_make_delegate(signature, {owner}, id) }}\n\
+             \x20       }};\n",
+            call_args.join(", ")
+        ));
+    }
+
     out.push_str("        rusteal_core::ffi_infallible(unsafe { __rusteal_fn(");
 
     if !is_static {
@@ -717,6 +813,12 @@ fn generate_scalar_function(
     }
 
     out.push_str(") });\n");
+
+    for (pname, ..) in &delegate_params {
+        out.push_str(&format!(
+            "        unsafe {{ rusteal_core::ffi_dispatch::delegate_free_delegate({pname}) }};\n"
+        ));
+    }
 
     {
         let mut return_parts = Vec::new();

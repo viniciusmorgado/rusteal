@@ -190,12 +190,31 @@ fn is_delegate_type(prop_type: &str) -> bool {
     )
 }
 
-fn is_delegate_exportable(prop: &PropertyInfo, available: &HashSet<String>) -> bool {
-    let func_info = match &prop.func_info {
-        Some(fi) => fi,
-        None => return false,
-    };
+fn is_callable_signature(func_info: &serde_json::Value, available: &HashSet<String>) -> bool {
+    let writes_back = func_info
+        .get("params")
+        .and_then(|p| p.as_array())
+        .into_iter()
+        .flatten()
+        .any(|p| {
+            p.get("prop_flags")
+                .and_then(|f| f.as_u64())
+                .is_some_and(|f| {
+                    f & CPF_RETURN_PARM != 0 || (f & CPF_OUT_PARM != 0 && f & CPF_CONST_PARM == 0)
+                })
+        });
 
+    !writes_back && is_signature_exportable(func_info, available)
+}
+
+fn is_delegate_exportable(prop: &PropertyInfo, available: &HashSet<String>) -> bool {
+    match &prop.func_info {
+        Some(fi) => is_signature_exportable(fi, available),
+        None => false,
+    }
+}
+
+fn is_signature_exportable(func_info: &serde_json::Value, available: &HashSet<String>) -> bool {
     let params = match func_info.get("params").and_then(|p| p.as_array()) {
         Some(params) => params,
         None => return true,
@@ -354,7 +373,14 @@ fn filter_functions(
                 return false;
             }
 
-            if is_delegate_type(&param.prop_type) {
+            if is_delegate_type(&param.prop_type)
+                && !(param.prop_type == "DelegateProperty"
+                    && type_map::param_direction(param) == type_map::ParamDirection::In
+                    && param
+                        .func_info
+                        .as_ref()
+                        .is_some_and(|fi| is_callable_signature(fi, available)))
+            {
                 return false;
             }
 
