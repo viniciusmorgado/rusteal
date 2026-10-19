@@ -494,7 +494,7 @@ pub fn generate_delegate_structs(out: &mut String, delegates: &[DelegateInfo], c
                          \x20                       __size as u32,\n\
                          \x20                       &mut __written,\n\
                          \x20                   ));\n\
-                         \x20                   rusteal_core::OwnedStruct::<{cpp_name}>::from_bytes(__buf)\n\
+                         \x20                   rusteal_core::OwnedStruct::<{cpp_name}>::from_constructed(__buf)\n\
                          \x20               }};\n"
                     ));
                 }

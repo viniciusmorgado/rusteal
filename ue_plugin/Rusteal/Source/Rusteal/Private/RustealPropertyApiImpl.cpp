@@ -339,6 +339,7 @@ static ERustealErrorCode GetStructImpl(RustealUObjectHandle Obj,
   }
 
   const void *SrcPtr = StructProp->ContainerPtrToValuePtr<void>(Object);
+  StructProp->Struct->InitializeStruct(OutBuf);
   StructProp->Struct->CopyScriptStruct(OutBuf, SrcPtr);
   return ERustealErrorCode::Ok;
 }
@@ -382,6 +383,7 @@ static ERustealErrorCode GetPropertyAtImpl(RustealUObjectHandle Obj,
   if (BufSize < ElemSize)
     return RustealFail(ERustealErrorCode::InternalError);
 
+  Property->InitializeValue(OutBuf);
   Property->CopySingleValue(OutBuf, Src);
   return ERustealErrorCode::Ok;
 }

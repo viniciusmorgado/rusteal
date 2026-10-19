@@ -13,7 +13,7 @@ enum ReturnStrategy {
     StringReturn,
     TextReturn,
     SoftPathReturn,
-    StructReturn,
+    StructReturn { reflected: bool },
     FNameReturn,
     ContainerReturn,
 }
@@ -21,13 +21,19 @@ enum ReturnStrategy {
 enum PostCallAction {
     StringOutput(String),
     TextOutput(String),
-    StructOutput { name: String, struct_cpp: String },
+    StructOutput {
+        name: String,
+        struct_cpp: String,
+        reflected: bool,
+    },
     ObjectOutput(String),
     WeakObjectOutput(String),
     InterfaceOutput(String),
     FNameOutput(String),
-    EnumOutput { name: String, ffi_type: String },
-    InOutStructCopyback { name: String, struct_cpp: String },
+    EnumOutput {
+        name: String,
+        ffi_type: String,
+    },
     InOutStringCopyback(String),
     InOutSoftCopyback(String),
     SoftPathOutput(String),
@@ -235,6 +241,7 @@ fn generate_wrapper_function(out: &mut String, entry: &FuncEntry, ctx: &CodegenC
                 post_call_actions.push(PostCallAction::StructOutput {
                     name: name.clone(),
                     struct_cpp,
+                    reflected: is_reflected_struct(param, ctx),
                 });
             }
             ConversionKind::ObjectRef => match param.prop_type.as_str() {
@@ -287,13 +294,9 @@ fn generate_wrapper_function(out: &mut String, entry: &FuncEntry, ctx: &CodegenC
             if mapped.rust_to_ffi == ConversionKind::StructOpaque {
                 let name = &param.name;
                 let struct_cpp = resolve_struct_opaque_cpp_type(param, ctx);
-                out.push_str(&format!("    {struct_cpp} __InOut{name};\n"));
-                out.push_str(&format!("    if ({name}) {{ FMemory::Memcpy(&__InOut{name}, {name}, sizeof({struct_cpp})); }}\n"));
-
-                post_call_actions.push(PostCallAction::InOutStructCopyback {
-                    name: name.clone(),
-                    struct_cpp,
-                });
+                out.push_str(&format!(
+                    "    {struct_cpp}& __InOut{name} = *reinterpret_cast<{struct_cpp}*>({name});\n"
+                ));
             }
         }
     }
@@ -389,7 +392,7 @@ fn generate_wrapper_function(out: &mut String, entry: &FuncEntry, ctx: &CodegenC
     };
 
     if let Some(rp) = return_param {
-        let strategy = return_strategy(rp);
+        let strategy = return_strategy(rp, ctx);
         emit_return(out, &strategy, &call_expr);
     } else {
         out.push_str(&format!("    {call_expr};\n"));
@@ -699,7 +702,15 @@ fn input_arg_expression(param: &ParamInfo, dir: ParamDirection, ctx: &CodegenCon
     }
 }
 
-fn return_strategy(param: &ParamInfo) -> ReturnStrategy {
+fn is_reflected_struct(param: &ParamInfo, ctx: &CodegenContext) -> bool {
+    param
+        .struct_name
+        .as_deref()
+        .and_then(|sn| ctx.structs.get(sn))
+        .is_some_and(|si| si.has_static_struct)
+}
+
+fn return_strategy(param: &ParamInfo, ctx: &CodegenContext) -> ReturnStrategy {
     if is_container_param(param) {
         return ReturnStrategy::ContainerReturn;
     }
@@ -732,7 +743,9 @@ fn return_strategy(param: &ParamInfo) -> ReturnStrategy {
 
             ReturnStrategy::Cast(ctype.to_string())
         }
-        ConversionKind::StructOpaque => ReturnStrategy::StructReturn,
+        ConversionKind::StructOpaque => ReturnStrategy::StructReturn {
+            reflected: is_reflected_struct(param, ctx),
+        },
         ConversionKind::FName => ReturnStrategy::FNameReturn,
         ConversionKind::ContainerArray
         | ConversionKind::ContainerMap
@@ -788,12 +801,20 @@ fn emit_return(out: &mut String, strategy: &ReturnStrategy, call_expr: &str) {
 
             out.push_str("    RustealWriteUtf8(__RustealResult, OutBuf, BufLen, OutLen);\n");
         }
-        ReturnStrategy::StructReturn => {
+        ReturnStrategy::StructReturn { reflected } => {
             out.push_str(&format!("    auto __RustealResult = {call_expr};\n"));
 
-            out.push_str(
-                "    FMemory::Memcpy(OutReturnValue, &__RustealResult, sizeof(__RustealResult));\n",
-            );
+            if *reflected {
+                out.push_str(
+                    "    UScriptStruct* __RustealStruct = TBaseStructure<std::decay_t<decltype(__RustealResult)>>::Get();\n\
+                     \x20   __RustealStruct->InitializeStruct(OutReturnValue);\n\
+                     \x20   __RustealStruct->CopyScriptStruct(OutReturnValue, &__RustealResult);\n",
+                );
+            } else {
+                out.push_str(
+                    "    FMemory::Memcpy(OutReturnValue, &__RustealResult, sizeof(__RustealResult));\n",
+                );
+            }
         }
         ReturnStrategy::FNameReturn => {
             out.push_str(&format!("    FName __RustealResult = {call_expr};\n"));
@@ -849,7 +870,18 @@ fn emit_post_call(out: &mut String, action: &PostCallAction) {
                 "    RustealWriteUtf8(__Out{name}.ToString(), Out{name}, Out{name}BufLen, Out{name}Len);\n"
             ));
         }
-        PostCallAction::StructOutput { name, struct_cpp } => {
+        PostCallAction::StructOutput {
+            name,
+            struct_cpp,
+            reflected: true,
+        } => {
+            out.push_str(&format!(
+                "    if (Out{name}) {{ UScriptStruct* __Struct{name} = TBaseStructure<{struct_cpp}>::Get(); __Struct{name}->InitializeStruct(Out{name}); __Struct{name}->CopyScriptStruct(Out{name}, &__Out{name}); }}\n"
+            ));
+        }
+        PostCallAction::StructOutput {
+            name, struct_cpp, ..
+        } => {
             out.push_str(&format!(
                 "    if (Out{name}) {{ FMemory::Memcpy(Out{name}, &__Out{name}, sizeof({struct_cpp})); }}\n"
             ));
@@ -877,11 +909,6 @@ fn emit_post_call(out: &mut String, action: &PostCallAction) {
         PostCallAction::EnumOutput { name, ffi_type } => {
             out.push_str(&format!(
                 "    *Out{name} = static_cast<{ffi_type}>(__Out{name});\n"
-            ));
-        }
-        PostCallAction::InOutStructCopyback { name, struct_cpp } => {
-            out.push_str(&format!(
-                "    if ({name}) {{ FMemory::Memcpy({name}, &__InOut{name}, sizeof({struct_cpp})); }}\n"
             ));
         }
         PostCallAction::InOutStringCopyback(name) => {
@@ -1223,5 +1250,70 @@ mod tests {
             out.contains("RustealWriteUtf8(__OutFound.ToSoftObjectPath().ToString()"),
             "{out}"
         );
+    }
+
+    #[test]
+    fn reflected_structs_are_constructed_in_the_rust_buffer() {
+        let codegen: CodegenConfig = toml::from_str(
+            "features = [\"engine\"]\n[modules]\nEngine = { module = \"engine\", feature = \"engine\" }",
+        )
+        .unwrap();
+        let view: StructInfo = serde_json::from_value(serde_json::json!({
+            "name": "MinimalViewInfo", "cpp_name": "FMinimalViewInfo", "package": "Engine",
+            "struct_flags": 0, "super": null, "has_static_struct": true,
+        }))
+        .unwrap();
+        let ctx = CodegenContext::new(
+            vec![class("Object", ""), class("CameraComponent", "Object")],
+            vec![view],
+            vec![],
+            &codegen,
+        );
+
+        let view_param = |name: &str, flags: u64| {
+            let mut p = param(name, flags, "StructProperty", None);
+            p["struct_name"] = "MinimalViewInfo".into();
+            p
+        };
+        let parm = rusteal_ue_flags::CPF_PARM;
+
+        let returns = entry(
+            "GetView",
+            serde_json::json!([view_param(
+                "ReturnValue",
+                parm | CPF_OUT_PARM | CPF_RETURN_PARM
+            )]),
+        );
+        let gives = entry(
+            "GetCameraView",
+            serde_json::json!([view_param("DesiredView", parm | CPF_OUT_PARM)]),
+        );
+        let edits = entry(
+            "EditView",
+            serde_json::json!([view_param(
+                "View",
+                parm | CPF_OUT_PARM | rusteal_ue_flags::CPF_REFERENCE_PARM
+            )]),
+        );
+
+        let out = generate_wrapper_file(&[&returns, &gives, &edits], &ctx);
+
+        assert!(
+            out.contains("__RustealStruct->InitializeStruct(OutReturnValue);"),
+            "{out}"
+        );
+        assert!(
+            out.contains(
+                "__StructDesiredView->CopyScriptStruct(OutDesiredView, &__OutDesiredView);"
+            ),
+            "{out}"
+        );
+        assert!(
+            out.contains(
+                "FMinimalViewInfo& __InOutView = *reinterpret_cast<FMinimalViewInfo*>(View);"
+            ),
+            "{out}"
+        );
+        assert!(!out.contains("FMemory::Memcpy"), "{out}");
     }
 }

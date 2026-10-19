@@ -479,7 +479,7 @@ fn generate_soft_getter(
          \x20           rusteal_core::ffi_dispatch::property_get_soft_object_path({c}, prop, buf.as_mut_ptr(), buf.len() as u32, &mut out_len)\n\
          \x20       }}, \"{rust_name}\");\n\
          \x20       buf.truncate(out_len as usize);\n\
-         \x20       rusteal_core::SoftObjectRef::new(String::from_utf8(buf).unwrap_or_default())\n\
+         \x20       <{rust_type}>::new(String::from_utf8(buf).unwrap_or_default())\n\
          \x20   }}\n\n"
     ));
 }
@@ -754,7 +754,7 @@ fn generate_struct_getter(
          \x20       rusteal_core::ffi_infallible_ctx(unsafe {{\n\
          \x20           rusteal_core::ffi_dispatch::property_get_struct({c}, prop, buf.as_mut_ptr(), size as u32)\n\
          \x20       }}, \"{rust_name}\");\n\
-         \x20       rusteal_core::OwnedStruct::from_bytes(buf)\n\
+         \x20       unsafe {{ rusteal_core::OwnedStruct::from_constructed(buf) }}\n\
          \x20   }}\n\n"
     ));
 }
@@ -865,7 +865,7 @@ fn generate_fixed_array_property(
 
             (
                 format!("rusteal_core::OwnedStruct<{struct_cpp}>"),
-                "Ok(rusteal_core::OwnedStruct::from_bytes(buf))".to_string(),
+                "Ok(unsafe { rusteal_core::OwnedStruct::from_constructed(buf) })".to_string(),
                 format!("&rusteal_core::OwnedStruct<{struct_cpp}>"),
                 "let buf = val.to_bytes();".to_string(),
             )

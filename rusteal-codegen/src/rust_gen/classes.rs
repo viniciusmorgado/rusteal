@@ -247,6 +247,19 @@ fn scalar_out_rust_type_ctx(
     }
 }
 
+fn inout_struct_type(param: &ParamInfo, ctx: &CodegenContext) -> String {
+    match param
+        .struct_name
+        .as_deref()
+        .and_then(|sn| ctx.structs.get(sn))
+    {
+        Some(si) if si.has_static_struct => {
+            format!("&mut rusteal_core::OwnedStruct<{}>", si.cpp_name)
+        }
+        _ => "*mut u8".to_string(),
+    }
+}
+
 pub(super) fn is_struct_owned(struct_name: Option<&str>, ctx: &CodegenContext) -> bool {
     struct_name.is_some_and(|sn| ctx.structs.get(sn).is_some_and(|si| si.has_static_struct))
 }
@@ -432,7 +445,7 @@ fn generate_scalar_function(
                     ));
                 }
                 ConversionKind::StructOpaque if *dir == ParamDirection::InOut => {
-                    sig.push_str(&format!("{pname}: *mut u8, "));
+                    sig.push_str(&format!("{pname}: {}, ", inout_struct_type(param, ctx)));
                 }
                 _ => {
                     if has_default {
@@ -622,6 +635,11 @@ fn generate_scalar_function(
                     {
                         out.push_str(&format!("{pname}.as_bytes().as_ptr(), "));
                     }
+                    ConversionKind::StructOpaque
+                        if is_struct_owned(param.struct_name.as_deref(), ctx) =>
+                    {
+                        out.push_str(&format!("{pname}.as_mut_ptr(), "));
+                    }
                     _ => {
                         out.push_str(&format!("{pname}, "));
                     }
@@ -713,7 +731,7 @@ fn generate_scalar_function(
                 }
                 ConversionKind::StructOpaque => {
                     if is_struct_owned(rp.struct_name.as_deref(), ctx) {
-                        out.push_str("        let _ret_owned = rusteal_core::OwnedStruct::from_bytes(_ret_struct_buf);\n");
+                        out.push_str("        let _ret_owned = unsafe { rusteal_core::OwnedStruct::from_constructed(_ret_struct_buf) };\n");
                         return_parts.push("_ret_owned".to_string());
                     } else {
                         out.push_str("        let _ret_ptr = _ret_struct_buf.as_ptr();\n");
@@ -960,7 +978,7 @@ fn generate_container_function(
                     ));
                 }
                 ConversionKind::StructOpaque if dir == ParamDirection::InOut => {
-                    sig.push_str(&format!("{pname}: *mut u8, "));
+                    sig.push_str(&format!("{pname}: {}, ", inout_struct_type(param, ctx)));
                 }
                 _ => {
                     if has_default {
@@ -1198,6 +1216,11 @@ fn generate_container_function(
                             && is_struct_owned(param.struct_name.as_deref(), ctx) =>
                     {
                         out.push_str(&format!("{pname}.as_bytes().as_ptr(), "));
+                    }
+                    ConversionKind::StructOpaque
+                        if is_struct_owned(param.struct_name.as_deref(), ctx) =>
+                    {
+                        out.push_str(&format!("{pname}.as_mut_ptr(), "));
                     }
                     _ => {
                         out.push_str(&format!("{pname}, "));
@@ -1437,7 +1460,7 @@ fn emit_container_return(
                         return_param.expect("return_param must be Some in return conversion");
 
                     if is_struct_owned(rp_ref.struct_name.as_deref(), ctx) {
-                        out.push_str("        let __scalar_owned = rusteal_core::OwnedStruct::from_bytes(__scalar_ret_buf);\n");
+                        out.push_str("        let __scalar_owned = unsafe { rusteal_core::OwnedStruct::from_constructed(__scalar_ret_buf) };\n");
                         return_parts.push("__scalar_owned".to_string());
                     } else {
                         out.push_str("        let __scalar_ptr = __scalar_ret_buf.as_ptr();\n");
