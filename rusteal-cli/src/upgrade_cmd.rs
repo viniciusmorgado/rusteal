@@ -3,6 +3,24 @@ use std::path::Path;
 use crate::project_version::{self, PINNED, PLUGINS, Pins, Scope, Version};
 use crate::{build_cmd, global_config, new_cmd, setup};
 
+const MIGRATIONS: &[(&str, &str)] = &[(
+    "0.10.0",
+    "Engine soft references are SoftObjectRef<T> and engine weak references TWeakObjectPtr<T>, \
+     in properties, struct fields, function parameters and returns; they were UObjectRef<T>. \
+     A soft reference keeps its path when the asset is not loaded: path(), get() for the \
+     loaded object, load_synchronous() to load it. A weak one gives get() -> Option<UObjectRef<T>>, \
+     None once its object is destroyed. Functions that take one take &SoftObjectRef<T> or \
+     TWeakObjectPtr<T>: SoftObjectRef::new(path) or TWeakObjectPtr::from_ref(&object).",
+)];
+
+pub fn migration_notes(from: Version, to: Version) -> Vec<(Version, &'static str)> {
+    MIGRATIONS
+        .iter()
+        .filter_map(|(version, note)| Some((Version::parse(version)?, *note)))
+        .filter(|(version, _)| *version > from && *version <= to)
+        .collect()
+}
+
 pub fn run_upgrade(root: &Path) {
     let cli = Version::cli();
 
@@ -72,6 +90,18 @@ pub fn run_upgrade(root: &Path) {
             std::fs::remove_dir_all(&dir)
                 .unwrap_or_else(|e| fail(&format!("cannot remove {}: {e}", dir.display())));
         }
+    }
+
+    let notes = migration_notes(current, cli);
+
+    if !notes.is_empty() {
+        eprintln!("\n  Changes this upgrade asks of the project's Rust code:");
+
+        for (version, note) in &notes {
+            eprintln!("  - {version}: {note}");
+        }
+
+        eprintln!();
     }
 
     setup::run_setup(root, &engine);
@@ -175,6 +205,16 @@ rusteal-core = "=0.2.1"
 rusteal-ffi = "=0.2.1"
 glam = "0.33.8"
 "#;
+
+    #[test]
+    fn notes_are_the_versions_crossed() {
+        assert!(migration_notes(v("0.10.0"), v("0.10.0")).is_empty());
+        assert!(migration_notes(v("0.10.0"), v("0.12.0")).is_empty());
+
+        let notes = migration_notes(v("0.9.0"), v("0.10.0"));
+        assert_eq!(notes.len(), 1);
+        assert_eq!(notes[0].0, v("0.10.0"));
+    }
 
     #[test]
     fn rewrite_keeps_everything_but_the_pins() {
