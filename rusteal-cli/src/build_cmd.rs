@@ -178,7 +178,7 @@ impl HostPlatform {
         lib_extension: "dylib",
     };
 
-    fn lib_filename(&self, crate_name: &str) -> String {
+    pub fn lib_filename(&self, crate_name: &str) -> String {
         format!(
             "{}{}.{}",
             self.lib_prefix,

@@ -165,6 +165,7 @@ pub fn run_plugin_package(
     name: &str,
     output: &Path,
     precompiled: bool,
+    standalone: bool,
 ) {
     let plugins = find_plugins(root);
 
@@ -188,6 +189,11 @@ pub fn run_plugin_package(
     );
 
     build_cmd::run_build(root, engine, None, 1, true, Some(&plugin.name));
+
+    if standalone {
+        crate::standalone::run_standalone_package(root, engine, plugin, output);
+        return;
+    }
 
     let target = output.join(&plugin.name);
 
