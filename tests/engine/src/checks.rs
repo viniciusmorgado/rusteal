@@ -9,8 +9,12 @@ use bindings::engine::{
     ProjectileMovementComponentExt, VolumetricCloudComponent, VolumetricCloudComponentExt,
 };
 use bindings::prelude::*;
+use bindings::slate_core::{
+    EVerticalAlignment, FSlateBrush, FToolBarStyle, FToolBarStyleExt, FWrapButtonStyle,
+    FWrapButtonStyleExt,
+};
 use rusteal_runtime::runtime::{
-    DynamicCall, Inherits, SoftClassRef, SoftObjectRef, SubclassOf, Text, TWeakObjectPtr, Transform, UObjectRef, UeClass, task,
+    DynamicCall, Inherits, OwnedStruct, SoftClassRef, SoftObjectRef, SubclassOf, Text, TWeakObjectPtr, Transform, UObjectRef, UeClass, task,
 };
 
 use crate::fixtures::TestActor;
@@ -83,6 +87,7 @@ pub const ALL: &[(&str, Check)] = &[
         engine_soft_class_property_keeps_the_path,
     ),
     ("engine_text_round_trip", engine_text_round_trip),
+    ("engine_optional_fields", engine_optional_fields),
     (
         "engine_text_keeps_its_localization",
         engine_text_keeps_its_localization,
@@ -469,6 +474,42 @@ fn engine_text_keeps_its_localization(context: &Context) -> Outcome {
         ensure(
             found && namespace == "RustealTests" && key == "Greeting",
             format!("after the property, id {found} {namespace:?} {key:?}"),
+        )
+    })())
+}
+
+fn engine_optional_fields(_: &Context) -> Outcome {
+    done((|| {
+        let toolbar = OwnedStruct::<FToolBarStyle>::new();
+        let toolbar = toolbar.as_ref();
+        ensure(
+            toolbar.get_vertical_alignment_override().is_none(),
+            "a new toolbar style has an alignment",
+        )?;
+        toolbar.set_vertical_alignment_override(Some(EVerticalAlignment::VAlign_Center));
+        ensure(
+            toolbar.get_vertical_alignment_override() == Some(EVerticalAlignment::VAlign_Center),
+            "the alignment was not kept",
+        )?;
+        toolbar.set_vertical_alignment_override(None);
+        ensure(
+            toolbar.get_vertical_alignment_override().is_none(),
+            "the alignment was not cleared",
+        )?;
+
+        let wrap = OwnedStruct::<FWrapButtonStyle>::new();
+        let wrap = wrap.as_ref();
+        wrap.set_separator_thickness(Some(2.5));
+        ensure(
+            wrap.get_separator_thickness() == Some(2.5),
+            format!("thickness {:?}", wrap.get_separator_thickness()),
+        )?;
+
+        let brush = OwnedStruct::<FSlateBrush>::new();
+        wrap.set_separator_brush(Some(&brush));
+        ensure(
+            wrap.get_separator_brush().is_some(),
+            "the separator brush was not kept",
         )
     })())
 }
