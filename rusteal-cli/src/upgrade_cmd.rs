@@ -25,6 +25,12 @@ const MIGRATIONS: &[(&str, &str)] = &[
          take impl Into<Text>, so a &str or a String still works. An FText parameter with a \
          default value is a required one; pass \"\" for an empty text.",
     ),
+    (
+        "0.10.0",
+        "Engine structs with no StaticStruct (FBox, FIntPoint, FTimespan, FPlatformUserId and the \
+         rest of the engine's NoExportTypes) are OwnedStruct<T> like the others, in functions, \
+         properties and arrays; functions took and returned them as a *const u8.",
+    ),
 ];
 
 pub fn migration_notes(from: Version, to: Version) -> Vec<(Version, &'static str)> {
@@ -226,7 +232,7 @@ glam = "0.33.8"
         assert!(migration_notes(v("0.10.0"), v("0.12.0")).is_empty());
 
         let notes = migration_notes(v("0.9.0"), v("0.10.0"));
-        assert_eq!(notes.len(), 3);
+        assert_eq!(notes.len(), 4);
         assert_eq!(notes[0].0, v("0.10.0"));
     }
 

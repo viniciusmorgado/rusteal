@@ -236,7 +236,6 @@ fn scalar_out_rust_type_ctx(
         ConversionKind::StructOpaque => {
             if let Some(sn) = struct_name
                 && let Some(si) = ctx.structs.get(sn)
-                && si.has_static_struct
             {
                 return format!("rusteal_core::OwnedStruct<{}>", si.cpp_name);
             }
@@ -253,7 +252,7 @@ fn inout_struct_type(param: &ParamInfo, ctx: &CodegenContext) -> String {
         .as_deref()
         .and_then(|sn| ctx.structs.get(sn))
     {
-        Some(si) if si.has_static_struct => {
+        Some(si) => {
             format!("&mut rusteal_core::OwnedStruct<{}>", si.cpp_name)
         }
         _ => "*mut u8".to_string(),
@@ -261,7 +260,7 @@ fn inout_struct_type(param: &ParamInfo, ctx: &CodegenContext) -> String {
 }
 
 pub(super) fn is_struct_owned(struct_name: Option<&str>, ctx: &CodegenContext) -> bool {
-    struct_name.is_some_and(|sn| ctx.structs.get(sn).is_some_and(|si| si.has_static_struct))
+    struct_name.is_some_and(|sn| ctx.structs.contains_key(sn))
 }
 
 pub(super) fn is_scalar_output_returnable(dir: ParamDirection, mapped: &MappedType) -> bool {
