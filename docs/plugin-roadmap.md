@@ -50,7 +50,7 @@ Each entry says what is missing, what it takes, and what to do meanwhile.
 | **Rust classes whose parent is another library's Rust class** | Same reason: the parent's Rust type is not visible to the child's crate. | A Blueprint child of the plugin's class. |
 | **A plugin library built against another Rusteal version** | A library must match the Rusteal plugin's version exactly, as the game's does. Tolerating minor versions needs a stable API table layout. | Rebuild the plugin with the project's Rusteal version. |
 | **A plugin package for several platforms from one machine** | `rusteal plugin package --precompiled` builds for the platform it runs on, and `rusteal plugin merge` joins packages made on several; building them all from one machine needs the engine's cross-compilation and Cargo's set up together. | Package on each platform, then `rusteal plugin merge`. |
-| **Fab and engine-wide installs** | A plugin's library is found from the plugin's directory, so a plugin in `Engine/Plugins/Marketplace` should load; not tested. Fab also wants builds for every platform and engine version it lists. | Distribute the plugin as a project plugin. |
+| **Fab** | Editor plugins work installed in `Engine/Plugins/Marketplace` and in any project (`rusteal plugin package --standalone`, checked); gameplay plugins stay with Rusteal games, from GitHub. Fab also wants builds for every platform and engine version it lists, and the submission is on hold. | `--standalone` packages on each platform, joined with `rusteal plugin merge`. |
 | **macOS** | The whole of Rusteal is untested there. | — |
 
 ## Scripting
