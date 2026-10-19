@@ -16,6 +16,8 @@ pub struct RustealRustCallbacks {
     pub notify_pinned_destroyed: extern "C" fn(handle: UObjectHandle),
 
     pub on_tick: extern "C" fn(delta_seconds: f32),
+
+    pub release_delegate_callback: extern "C" fn(callback_id: u64),
 }
 
 #[repr(C)]

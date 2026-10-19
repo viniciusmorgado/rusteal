@@ -3,6 +3,7 @@
 #include "RustealLibrary.h"
 #include "RustealModule.h"
 #include "UObject/GCObject.h"
+#include "UObject/UObjectIterator.h"
 
 FName URustealDelegateProxy::FakeFuncName(TEXT("RustFakeCallable"));
 
@@ -45,9 +46,29 @@ void RustealDelegateProxiesForgetLibrary(FRustealLibrary *Library) {
       [Library](const TObjectPtr<URustealDelegateProxy> &Kept) {
         return !Kept || Kept->Library == Library;
       });
+
+  for (TObjectIterator<URustealDelegateProxy> It; It; ++It) {
+    if (It->Library == Library) {
+      It->Library = nullptr;
+      It->CallbackId = 0;
+    }
+  }
 }
 
 void URustealDelegateProxy::RustFakeCallable() {}
+
+void URustealDelegateProxy::BeginDestroy() {
+  if (Library && Library->IsLoaded() && CallbackId != 0) {
+    const uint64 Id = CallbackId;
+
+    RustealCallLibrary(Library, [Id](const FRustealRustCallbacks &Cb) {
+      Cb.release_delegate_callback(Id);
+    });
+  }
+
+  CallbackId = 0;
+  Super::BeginDestroy();
+}
 
 void URustealDelegateProxy::ProcessEvent(UFunction *Function, void *Parms) {
   if (Function->GetFName() != FakeFuncName) {

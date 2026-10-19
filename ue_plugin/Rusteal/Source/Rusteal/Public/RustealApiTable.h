@@ -564,6 +564,7 @@ struct FRustealRustCallbacks {
                                   bool is_cdo);
   void (*notify_pinned_destroyed)(RustealUObjectHandle handle);
   void (*on_tick)(float delta_seconds);
+  void (*release_delegate_callback)(uint64 callback_id);
 };
 
 struct FRustealModuleExports {
