@@ -1,6 +1,5 @@
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use rusteal_codegen::config::{LibraryKind, PluginConfig, PluginLayout};
 
@@ -28,55 +27,6 @@ fn fail(message: &str) -> ! {
 pub fn rename(text: &str, prefix: &str) -> String {
     text.replace("Rusteal", &format!("{prefix}Rusteal"))
         .replace("RUSTEAL", &format!("{}RUSTEAL", prefix.to_uppercase()))
-}
-
-pub fn rename_lookups(text: &str, prefix: &str) -> String {
-    const START: &str = "b\"Rusteal";
-    let mut out = String::with_capacity(text.len());
-    let mut rest = text;
-
-    while let Some(at) = rest.find(START) {
-        out.push_str(&rest[..at]);
-        let literal = &rest[at..];
-
-        let Some(end) = literal.find("\\0\"") else {
-            out.push_str(literal);
-            return out;
-        };
-
-        let name = &literal[2..end];
-        let after = &literal[end + 3..];
-
-        let Some(args) = after.strip_prefix(".as_ptr(),") else {
-            out.push_str(&literal[..end + 3]);
-            rest = after;
-            continue;
-        };
-
-        let spaces = args.len() - args.trim_start().len();
-        let digits: String = args
-            .trim_start()
-            .chars()
-            .take_while(char::is_ascii_digit)
-            .collect();
-
-        if digits.parse::<usize>().ok() != Some(name.len()) {
-            out.push_str(&literal[..end + 3]);
-            rest = after;
-            continue;
-        }
-
-        out.push_str(&format!(
-            "b\"{prefix}{name}\\0\".as_ptr(),{}{}",
-            &args[..spaces],
-            name.len() + prefix.len()
-        ));
-
-        rest = &args[spaces + digits.len()..];
-    }
-
-    out.push_str(rest);
-    out
 }
 
 fn is_text(path: &Path) -> bool {
@@ -181,7 +131,9 @@ pub fn vendor_runtime(plugin_dir: &Path, prefix: &str) {
                     &format!(
                         "PrivateDependencyModuleNames.Add(\"Projects\");\n        \
                          PublicDefinitions.Add(\"{upper}RUSTEAL_HOSTS_GAME_LIBRARY=0\");\n        \
-                         PublicDefinitions.Add(\"{upper}RUSTEAL_PLUGIN_VERSION={version}\");",
+                         PublicDefinitions.Add(\"{upper}RUSTEAL_PLUGIN_VERSION={version}\");\n        \
+                         PublicDefinitions.Add(\"{upper}RUSTEAL_VENDORED_PREFIX={prefix}\");\n        \
+                         PublicDefinitions.Add(\"{upper}RUSTEAL_VENDORED_ORIGINAL=Rusteal\");",
                         upper = prefix.to_uppercase(),
                         version = rusteal_version()
                     ),
@@ -280,67 +232,7 @@ fn rewrite_descriptor(descriptor: &Path, prefix: &str) {
     write(descriptor, out.as_bytes());
 }
 
-fn build_rust_library(
-    root: &Path,
-    plugin: &PluginLayout,
-    crate_name: &str,
-    bindings_dir: &str,
-    prefix: &str,
-) -> PathBuf {
-    let work = root
-        .join("Intermediate/Rusteal/Standalone")
-        .join(&plugin.name);
-    let workspace = work.join("Rust");
-    let _ = fs::remove_dir_all(&workspace);
-
-    for path in files_under(&plugin.rust_workspace()) {
-        let rel = path.strip_prefix(plugin.rust_workspace()).unwrap();
-
-        if rel.starts_with("target") {
-            continue;
-        }
-
-        let bytes = fs::read(&path)
-            .unwrap_or_else(|e| fail(&format!("cannot read {}: {e}", path.display())));
-
-        write(&workspace.join(rel), &bytes);
-    }
-
-    for path in files_under(&workspace.join(bindings_dir)) {
-        if path.extension().is_some_and(|ext| ext == "rs") {
-            let text = fs::read_to_string(&path).unwrap_or_default();
-            let renamed = rename_lookups(&text, prefix);
-
-            if renamed != text {
-                write(&path, renamed.as_bytes());
-            }
-        }
-    }
-
-    let manifest = workspace.join(crate_name).join("Cargo.toml");
-    let target_dir = work.join("target");
-
-    eprintln!("  $ cargo rustc --release ({crate_name}, Rusteal's types named {prefix}Rusteal*)");
-
-    let status = Command::new("cargo")
-        .arg("rustc")
-        .arg("--manifest-path")
-        .arg(&manifest)
-        .args(["--lib", "--crate-type", "cdylib", "--release"])
-        .env("CARGO_TARGET_DIR", &target_dir)
-        .status()
-        .unwrap_or_else(|e| fail(&format!("cannot run cargo: {e}")));
-
-    if !status.success() {
-        fail("the standalone Rust library did not build");
-    }
-
-    target_dir
-        .join("release")
-        .join(HostPlatform::CURRENT.lib_filename(crate_name))
-}
-
-pub fn run_standalone_package(root: &Path, engine: &Path, plugin: &PluginLayout, output: &Path) {
+pub fn run_standalone_package(engine: &Path, plugin: &PluginLayout, output: &Path) {
     let config = PluginConfig::load(&plugin.dir).unwrap_or_else(|e| fail(&e));
 
     if config.plugin.kind != LibraryKind::Editor || config.editor.is_some() {
@@ -379,13 +271,10 @@ pub fn run_standalone_package(root: &Path, engine: &Path, plugin: &PluginLayout,
     vendor_runtime(&source, &prefix);
     rewrite_descriptor(&source.join(format!("{}.uplugin", plugin.name)), &prefix);
 
-    let built = build_rust_library(
-        root,
-        plugin,
-        &library.crate_name,
-        library.bindings_dir,
-        &prefix,
-    );
+    let built = plugin
+        .binaries(HostPlatform::CURRENT.ubt_platform)
+        .join(HostPlatform::CURRENT.deployed_lib_filename(&plugin.library_stem_of(library)));
+
     let prebuilt = source
         .join(PREBUILT_DIR)
         .join(HostPlatform::CURRENT.ubt_platform)
@@ -450,18 +339,6 @@ mod tests {
     }
 
     #[test]
-    fn lookups_of_rusteal_types_take_the_prefix_and_their_new_length() {
-        let text = "get_static_class(b\"RustealEditorSubsystem\\0\".as_ptr(), 22)\n\
-                    find_class(b\"Actor\\0\".as_ptr(), 5)";
-
-        assert_eq!(
-            rename_lookups(text, "LevelTools"),
-            "get_static_class(b\"LevelToolsRustealEditorSubsystem\\0\".as_ptr(), 32)\n\
-             find_class(b\"Actor\\0\".as_ptr(), 5)"
-        );
-    }
-
-    #[test]
     fn the_vendored_runtime_is_renamed_and_hosts_no_game_library() {
         let dir = std::env::temp_dir().join(format!("rusteal-vendor-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
@@ -492,6 +369,14 @@ mod tests {
         );
         assert!(
             rules.contains("LEVELTOOLSRUSTEAL_HOSTS_GAME_LIBRARY=0"),
+            "{rules}"
+        );
+        assert!(
+            rules.contains("LEVELTOOLSRUSTEAL_VENDORED_PREFIX=LevelTools"),
+            "{rules}"
+        );
+        assert!(
+            rules.contains("LEVELTOOLSRUSTEAL_VENDORED_ORIGINAL=Rusteal"),
             "{rules}"
         );
 
