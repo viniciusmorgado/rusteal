@@ -143,6 +143,17 @@ pub fn rename_tree(dir: &Path, prefix: &str) {
     }
 }
 
+fn rusteal_version() -> u32 {
+    let mut parts = env!("CARGO_PKG_VERSION")
+        .split('.')
+        .map(|part| part.parse::<u32>().unwrap_or(0));
+
+    let major = parts.next().unwrap_or(0);
+    let minor = parts.next().unwrap_or(0);
+    let patch = parts.next().unwrap_or(0);
+    major * 1_000_000 + minor * 1_000 + patch
+}
+
 pub fn vendor_runtime(plugin_dir: &Path, prefix: &str) {
     for (rel, contents) in setup::PLUGIN_FILES {
         let Some(rel) = rel.strip_prefix("Rusteal/") else {
@@ -169,8 +180,10 @@ pub fn vendor_runtime(plugin_dir: &Path, prefix: &str) {
                     "PrivateDependencyModuleNames.Add(\"Projects\");",
                     &format!(
                         "PrivateDependencyModuleNames.Add(\"Projects\");\n        \
-                         PublicDefinitions.Add(\"{}RUSTEAL_HOSTS_GAME_LIBRARY=0\");",
-                        prefix.to_uppercase()
+                         PublicDefinitions.Add(\"{upper}RUSTEAL_HOSTS_GAME_LIBRARY=0\");\n        \
+                         PublicDefinitions.Add(\"{upper}RUSTEAL_PLUGIN_VERSION={version}\");",
+                        upper = prefix.to_uppercase(),
+                        version = rusteal_version()
                     ),
                     1,
                 );

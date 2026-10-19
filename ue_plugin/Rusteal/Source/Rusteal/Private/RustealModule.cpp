@@ -85,11 +85,15 @@ static FRustealApiTable GApiTable;
 static bool GApiTableFilled = false;
 
 static uint32 RustealPluginVersion() {
+#ifdef RUSTEAL_PLUGIN_VERSION
+  return RUSTEAL_PLUGIN_VERSION;
+#else
   TSharedPtr<IPlugin> Plugin =
       IPluginManager::Get().FindPlugin(TEXT("Rusteal"));
 
   return Plugin.IsValid() ? static_cast<uint32>(Plugin->GetDescriptor().Version)
                           : 0;
+#endif
 }
 
 static FString RustealVersionString(uint32 Version) {
