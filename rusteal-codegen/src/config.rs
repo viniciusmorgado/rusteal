@@ -148,7 +148,11 @@ const RUSTEAL_INTERNAL_CLASSES: &[&str] = &[
     "RustealDelegateProxy",
 ];
 
-const ENGINE_UNEXPORTED_FUNCTIONS: &[&str] = &["KismetSystemLibrary.IsValidInterface"];
+const ENGINE_UNEXPORTED_FUNCTIONS: &[&str] = &[
+    "GameplayTask_SpawnActor.SpawnActor",
+    "GameplayTask_WaitDelay.TaskWaitDelay",
+    "KismetSystemLibrary.IsValidInterface",
+];
 
 impl CodegenConfig {
     pub fn for_library(&self, kind: LibraryKind) -> CodegenConfig {
