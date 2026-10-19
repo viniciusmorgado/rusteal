@@ -373,6 +373,11 @@ fn generate_wrapper_function(out: &mut String, entry: &FuncEntry, ctx: &CodegenC
         }
     } else if is_static {
         format!("{class_cpp}::{func_name}({args})")
+    } else if let Some(iface) = func.interface.as_ref().filter(|_| is_protected) {
+        out.push_str(&format!(
+            "    struct FAccess : {iface} {{ using {iface}::{func_name}; }};\n"
+        ));
+        format!("(static_cast<{iface}*>(Self)->*&FAccess::{func_name})({args})")
     } else if let Some(iface) = &func.interface {
         format!("static_cast<{iface}*>(Self)->{func_name}({args})")
     } else if is_blueprint_native {

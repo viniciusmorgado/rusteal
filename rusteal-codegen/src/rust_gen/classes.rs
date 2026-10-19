@@ -290,9 +290,15 @@ pub(super) fn soft_constructor(param: &ParamInfo) -> &'static str {
 fn generate_function(out: &mut String, entry: &FuncEntry, class_name: &str, ctx: &CodegenContext) {
     let has_container = entry.func.params.iter().any(is_container_param);
 
-    if has_container && entry.func.params.iter().any(is_soft) {
+    if has_container
+        && entry
+            .func
+            .params
+            .iter()
+            .any(|p| is_soft(p) || p.prop_type == "DelegateProperty")
+    {
         out.push_str(&format!(
-            "    // Skipped: {}.{} (soft reference next to a container)\n\n",
+            "    // Skipped: {}.{} (soft reference or delegate next to a container)\n\n",
             class_name, entry.func.name
         ));
     } else if has_container {
@@ -700,28 +706,39 @@ fn generate_scalar_function(
             delegates::emit_param_info(out, params, func_info, &sig_expr);
         }
 
-        out.push_str(
-            "        let id = rusteal_core::delegate_registry::register_callback(move |params: rusteal_core::ffi_dispatch::NativePtr| {\n\
-             \x20           #[allow(unused_variables)] let params = params;\n\
-             \x20           unsafe {\n",
-        );
-
-        delegates::emit_param_reads(out, params);
-
-        let call_args: Vec<&str> = params.iter().map(|p| p.name.as_str()).collect();
         let owner = if is_static {
             "rusteal_core::UObjectHandle::null()"
         } else {
             "h"
         };
 
+        if params.is_empty() {
+            out.push_str(
+                "        let id = rusteal_core::delegate_registry::register_callback(move |_params: rusteal_core::ffi_dispatch::NativePtr| {\n\
+                 \x20           callback();\n\
+                 \x20       });\n",
+            );
+        } else {
+            out.push_str(
+                "        let id = rusteal_core::delegate_registry::register_callback(move |params: rusteal_core::ffi_dispatch::NativePtr| {\n\
+                 \x20           unsafe {\n",
+            );
+
+            delegates::emit_param_reads(out, params);
+
+            let call_args: Vec<&str> = params.iter().map(|p| p.name.as_str()).collect();
+
+            out.push_str(&format!(
+                "                callback({});\n\
+                 \x20           }}\n\
+                 \x20       }});\n",
+                call_args.join(", ")
+            ));
+        }
+
         out.push_str(&format!(
-            "                callback({});\n\
-             \x20           }}\n\
-             \x20       }});\n\
-             \x20       unsafe {{ rusteal_core::ffi_dispatch::delegate_make_delegate(signature, {owner}, id) }}\n\
-             \x20       }};\n",
-            call_args.join(", ")
+            "        unsafe {{ rusteal_core::ffi_dispatch::delegate_make_delegate(signature, {owner}, id) }}\n\
+             \x20       }};\n"
         ));
     }
 

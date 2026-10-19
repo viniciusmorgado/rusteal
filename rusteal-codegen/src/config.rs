@@ -151,10 +151,14 @@ const RUSTEAL_INTERNAL_CLASSES: &[&str] = &[
 const ENGINE_PLUGIN_PACKAGES: &[(&str, &str)] = &[("GameplayAbilities", "GameplayAbilities")];
 
 const ENGINE_UNEXPORTED_FUNCTIONS: &[&str] = &[
+    "AbilitySystemBlueprintLibrary.GetAbilitySystemComponentFromActiveGameplayEffectHandle",
+    "AbilitySystemBlueprintLibrary.IsActiveGameplayEffectHandleActive",
+    "AbilitySystemBlueprintLibrary.IsActiveGameplayEffectHandleValid",
     "GameplayTask_SpawnActor.SpawnActor",
     "GameplayTask_WaitDelay.TaskWaitDelay",
     "KismetSystemLibrary.IsObjectOfSoftClass",
     "KismetSystemLibrary.IsValidInterface",
+    "MovieSceneGameplayCueTrack.SetSequencerTrackHandler",
     "WidgetAnimation.BindToAnimationFinished",
     "WidgetAnimation.BindToAnimationStarted",
     "WidgetAnimation.UnbindFromAnimationFinished",
