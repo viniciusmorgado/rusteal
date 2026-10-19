@@ -302,7 +302,12 @@ fn is_inner_type_exportable(inner: &PropertyInfo, available: &HashSet<String>) -
 
     if matches!(
         inner.prop_type.as_str(),
-        "ArrayProperty" | "MapProperty" | "SetProperty" | "InterfaceProperty" | "SoftClassProperty"
+        "ArrayProperty"
+            | "MapProperty"
+            | "SetProperty"
+            | "InterfaceProperty"
+            | "SoftClassProperty"
+            | "LazyObjectProperty"
     ) {
         return false;
     }
@@ -390,7 +395,10 @@ fn filter_functions(
                 return false;
             }
 
-            if param.prop_type == "OptionalProperty" {
+            if matches!(
+                param.prop_type.as_str(),
+                "OptionalProperty" | "LazyObjectProperty"
+            ) {
                 return false;
             }
 
