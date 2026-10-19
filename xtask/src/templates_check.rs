@@ -136,6 +136,7 @@ fn ensure_dump(cli: &Path, env: &DevEnv, work: &Path, logs: &Path, repo: &Path) 
 
     let mut features: Vec<String> = config
         .lines()
+        .filter(|line| !line.trim_start().starts_with('#'))
         .filter_map(|line| line.trim().split_once("feature = \""))
         .filter_map(|(_, rest)| rest.split('"').next().map(str::to_string))
         .collect();
