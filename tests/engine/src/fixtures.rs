@@ -32,6 +32,16 @@ impl TestActor {
         self.count()
     }
 
+    #[ufunction]
+    pub fn echo(&self, value: i32) -> i32 {
+        value
+    }
+
+    #[ufunction]
+    pub fn store(&self, value: i32) {
+        self.set_count(value);
+    }
+
     #[udelegate]
     pub fn on_ping(&self, value: i32) {}
 

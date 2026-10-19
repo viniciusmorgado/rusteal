@@ -137,10 +137,11 @@ pub fn engine_test() {
     let results = work.join("results.txt");
     let _ = std::fs::remove_file(&results);
 
-    eprintln!("engine-test: running the tests in the editor, without a window");
+    eprintln!("engine-test: running the tests in a game, without a window");
     let mut child = Command::new(editor(&env.engine_root))
         .arg(project.join(format!("{PROJECT}.uproject")))
         .args([
+            "-game",
             "-nullrhi",
             "-unattended",
             "-nosplash",

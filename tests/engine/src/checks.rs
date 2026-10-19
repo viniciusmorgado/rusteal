@@ -16,6 +16,15 @@ pub const ALL: &[(&str, Check)] = &[
         "ufunction_called_by_reflection",
         ufunction_called_by_reflection,
     ),
+    (
+        "ufunction_return_by_reflection",
+        ufunction_return_by_reflection,
+    ),
+    (
+        "ufunction_param_by_reflection",
+        ufunction_param_by_reflection,
+    ),
+    ("ufunction_echo_by_reflection", ufunction_echo_by_reflection),
     ("component_is_created", component_is_created),
     ("udelegate_reaches_a_closure", udelegate_reaches_a_closure),
     ("engine_function_call", engine_function_call),
@@ -86,6 +95,41 @@ fn ufunction_called_by_reflection(context: &Context) -> Outcome {
         let result = call.call().map_err(|e| format!("{e:?}"))?;
         let sum: i32 = result.get("ReturnValue").map_err(|e| format!("{e:?}"))?;
         ensure(sum == 5, format!("Add returned {sum}"))
+    })())
+}
+
+fn ufunction_return_by_reflection(context: &Context) -> Outcome {
+    done((|| {
+        let actor = TestActor::from_obj(spawn(context)?).map_err(|e| format!("{e:?}"))?;
+        actor.set_count(9);
+        let call = DynamicCall::new(&actor.as_ref(), "ReadCount").map_err(|e| format!("{e:?}"))?;
+        let result = call.call().map_err(|e| format!("{e:?}"))?;
+        let value: i32 = result.get("ReturnValue").map_err(|e| format!("{e:?}"))?;
+        ensure(value == 9, format!("ReadCount returned {value}"))
+    })())
+}
+
+fn ufunction_param_by_reflection(context: &Context) -> Outcome {
+    done((|| {
+        let actor = TestActor::from_obj(spawn(context)?).map_err(|e| format!("{e:?}"))?;
+        let mut call = DynamicCall::new(&actor.as_ref(), "Store").map_err(|e| format!("{e:?}"))?;
+        call.set("Value", 13i32).map_err(|e| format!("{e:?}"))?;
+        call.call().map_err(|e| format!("{e:?}"))?;
+        ensure(
+            actor.count() == 13,
+            format!("Store left count at {}", actor.count()),
+        )
+    })())
+}
+
+fn ufunction_echo_by_reflection(context: &Context) -> Outcome {
+    done((|| {
+        let actor = spawn(context)?;
+        let mut call = DynamicCall::new(&actor, "Echo").map_err(|e| format!("{e:?}"))?;
+        call.set("Value", 21i32).map_err(|e| format!("{e:?}"))?;
+        let result = call.call().map_err(|e| format!("{e:?}"))?;
+        let value: i32 = result.get("ReturnValue").map_err(|e| format!("{e:?}"))?;
+        ensure(value == 21, format!("Echo returned {value}"))
     })())
 }
 
