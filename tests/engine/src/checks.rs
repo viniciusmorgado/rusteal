@@ -2,14 +2,15 @@ use std::sync::{Arc, Mutex};
 
 use bindings::engine::{
     ActorComponent, BlendableInterface, CameraComponent, CameraComponentExt,
-    FMinimalViewInfoExt, FPostProcessSettingsExt, InputSettings, InputSettingsExt, KismetGuidLibrary, FWeightedBlendableExt,
+    FMinimalViewInfoExt, FPostProcessSettingsExt, InputSettings, InputSettingsExt, KismetGuidLibrary,
+    KismetTextLibrary, TextRenderComponent, TextRenderComponentExt, FWeightedBlendableExt,
     FWeightedBlendablesExt, KismetMathLibrary, KismetStringLibrary, KismetSystemLibrary, Material,
     PlayerInput, PostProcessVolume, PostProcessVolumeExt, ProjectileMovementComponent, StaticMeshActor,
     ProjectileMovementComponentExt, VolumetricCloudComponent, VolumetricCloudComponentExt,
 };
 use bindings::prelude::*;
 use rusteal_runtime::runtime::{
-    DynamicCall, Inherits, SoftClassRef, SoftObjectRef, SubclassOf, TWeakObjectPtr, Transform, UObjectRef, UeClass, task,
+    DynamicCall, Inherits, SoftClassRef, SoftObjectRef, SubclassOf, Text, TWeakObjectPtr, Transform, UObjectRef, UeClass, task,
 };
 
 use crate::fixtures::TestActor;
@@ -80,6 +81,11 @@ pub const ALL: &[(&str, Check)] = &[
     (
         "engine_soft_class_property_keeps_the_path",
         engine_soft_class_property_keeps_the_path,
+    ),
+    ("engine_text_round_trip", engine_text_round_trip),
+    (
+        "engine_text_keeps_its_localization",
+        engine_text_keeps_its_localization,
     ),
     (
         "task_comes_back_to_the_game_thread",
@@ -425,6 +431,44 @@ fn engine_soft_class_property_keeps_the_path(_: &Context) -> Outcome {
         ensure(
             !loaded.is_null(),
             format!("{:?} does not resolve to a class", class.path()),
+        )
+    })())
+}
+
+fn engine_text_round_trip(_: &Context) -> Outcome {
+    done((|| {
+        let text = KismetTextLibrary::conv_string_to_text("ação");
+        ensure(text.to_string() == "ação", format!("got {text}"))?;
+
+        let upper = KismetTextLibrary::text_to_upper(&text);
+        ensure(upper.to_string() == "AÇÃO", format!("got {upper}"))?;
+        ensure(
+            KismetTextLibrary::conv_text_to_string("ñü") == "ñü",
+            "Conv_TextToString lost the text",
+        )
+    })())
+}
+
+fn engine_text_keeps_its_localization(context: &Context) -> Outcome {
+    done((|| {
+        let text = Text::localized("RustealTests", "Greeting", "Hello");
+        let (found, namespace, key) = KismetTextLibrary::get_text_id(&text);
+        ensure(
+            found && namespace == "RustealTests" && key == "Greeting",
+            format!("id {found} {namespace:?} {key:?}"),
+        )?;
+
+        let label = add_component::<TextRenderComponent>(context)?
+            .checked()
+            .map_err(|e| format!("checked: {e:?}"))?;
+        label.set_text(text.clone());
+
+        let read = label.get_text();
+        ensure(read == text, format!("read {read}"))?;
+        let (found, namespace, key) = KismetTextLibrary::get_text_id(read);
+        ensure(
+            found && namespace == "RustealTests" && key == "Greeting",
+            format!("after the property, id {found} {namespace:?} {key:?}"),
         )
     })())
 }
