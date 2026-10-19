@@ -176,6 +176,12 @@ struct FRustealPropertyApi {
                                 RustealFPropertyHandle prop, void **out);
   ERustealErrorCode (*set_text)(RustealUObjectHandle obj,
                                 RustealFPropertyHandle prop, const void *text);
+  ERustealErrorCode (*get_optional)(RustealUObjectHandle obj,
+                                    RustealFPropertyHandle prop, uint8 *buf,
+                                    uint32 buf_size, bool *is_set);
+  ERustealErrorCode (*set_optional)(RustealUObjectHandle obj,
+                                    RustealFPropertyHandle prop,
+                                    const uint8 *buf);
 };
 
 struct FRustealReflectionApi {
