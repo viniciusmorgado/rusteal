@@ -254,6 +254,19 @@ harness; the default modules' bindings contain no `// Skipped:` for a type
 reason that is not listed as accepted; the Classes and Types pages of the game
 developer's handbook have no "not yet" row left for types.
 
+**Accepted, not bound by type** (measured with every feature on, UE 5.8.3, after
+the engine types): one function is `// Skipped:`
+(`AbilitySystemBlueprintLibrary.BindEventWrapperToAnyOfGameplayTagsChanged`, a
+delegate next to a container), and the filter leaves out
+`KismetSystemLibrary.SetFieldPathPropertyByName` (`TFieldPath`),
+`KismetTextLibrary.EditTextSourceString` (an `FText` changed in place), about
+sixteen functions whose delegate returns a value, writes an argument or takes an
+array (`SoundSubmix.AddSpectralAnalysisDelegate`), and the `FUtf8String` and
+`VCell` properties of Verse's classes. `TSubScriptStructOf` is in no engine
+property or function. Everything else left out has a cause other than its types:
+a module the project does not bind, wildcard functions (`KismetArrayLibrary`,
+`BlueprintMapLibrary`), functions the engine does not export, network RPCs (M7).
+
 ### M2 — Async and events (≈0.12, M)
 
 Where Rust can be better than C++ and Blueprint, not only equal.
