@@ -4,6 +4,7 @@
       "cpp_name": "FVector",
       "has_static_struct": true,
       "header": "",
+      "header_public": true,
       "name": "Vector",
       "package": "CoreUObject",
       "props": [
@@ -78,6 +79,7 @@
       "cpp_name": "FVector2D",
       "has_static_struct": true,
       "header": "",
+      "header_public": true,
       "name": "Vector2D",
       "package": "CoreUObject",
       "props": [
@@ -131,6 +133,7 @@
       "cpp_name": "FVector4",
       "has_static_struct": true,
       "header": "",
+      "header_public": true,
       "name": "Vector4",
       "package": "CoreUObject",
       "props": [
@@ -226,6 +229,7 @@
       "cpp_name": "FQuat",
       "has_static_struct": true,
       "header": "",
+      "header_public": true,
       "name": "Quat",
       "package": "CoreUObject",
       "props": [
@@ -321,6 +325,7 @@
       "cpp_name": "FRotator",
       "has_static_struct": true,
       "header": "",
+      "header_public": true,
       "name": "Rotator",
       "package": "CoreUObject",
       "props": [
@@ -395,6 +400,7 @@
       "cpp_name": "FTransform",
       "has_static_struct": true,
       "header": "",
+      "header_public": true,
       "name": "Transform",
       "package": "CoreUObject",
       "props": [
@@ -469,6 +475,7 @@
       "cpp_name": "FLinearColor",
       "has_static_struct": true,
       "header": "",
+      "header_public": true,
       "name": "LinearColor",
       "package": "CoreUObject",
       "props": [
@@ -564,6 +571,7 @@
       "cpp_name": "FColor",
       "has_static_struct": true,
       "header": "",
+      "header_public": true,
       "name": "Color",
       "package": "CoreUObject",
       "props": [
@@ -659,6 +667,7 @@
       "cpp_name": "FPlane",
       "has_static_struct": true,
       "header": "",
+      "header_public": true,
       "name": "Plane",
       "package": "CoreUObject",
       "props": [
@@ -691,6 +700,7 @@
       "cpp_name": "FBox2D",
       "has_static_struct": true,
       "header": "",
+      "header_public": true,
       "name": "Box2D",
       "package": "CoreUObject",
       "props": [
@@ -765,6 +775,7 @@
       "cpp_name": "FKey",
       "has_static_struct": true,
       "header": "InputCoreTypes.h",
+      "header_public": true,
       "name": "Key",
       "package": "InputCore",
       "props": [
@@ -797,6 +808,7 @@
       "cpp_name": "FVector_NetQuantize",
       "has_static_struct": true,
       "header": "Engine/NetSerialization.h",
+      "header_public": true,
       "name": "Vector_NetQuantize",
       "package": "Engine",
       "props": [],
@@ -807,6 +819,7 @@
       "cpp_name": "FVector_NetQuantize10",
       "has_static_struct": true,
       "header": "Engine/NetSerialization.h",
+      "header_public": true,
       "name": "Vector_NetQuantize10",
       "package": "Engine",
       "props": [],
@@ -817,6 +830,7 @@
       "cpp_name": "FVector_NetQuantize100",
       "has_static_struct": true,
       "header": "Engine/NetSerialization.h",
+      "header_public": true,
       "name": "Vector_NetQuantize100",
       "package": "Engine",
       "props": [],
@@ -827,6 +841,7 @@
       "cpp_name": "FVector_NetQuantizeNormal",
       "has_static_struct": true,
       "header": "Engine/NetSerialization.h",
+      "header_public": true,
       "name": "Vector_NetQuantizeNormal",
       "package": "Engine",
       "props": [],
@@ -837,6 +852,7 @@
       "cpp_name": "FInputActionValue",
       "has_static_struct": true,
       "header": "InputActionValue.h",
+      "header_public": true,
       "name": "InputActionValue",
       "package": "EnhancedInput",
       "props": [],
@@ -847,6 +863,7 @@
       "cpp_name": "FModifyContextOptions",
       "has_static_struct": true,
       "header": "EnhancedInputSubsystemInterface.h",
+      "header_public": true,
       "name": "ModifyContextOptions",
       "package": "EnhancedInput",
       "props": [
@@ -921,6 +938,7 @@
       "cpp_name": "FEnhancedActionKeyMapping",
       "has_static_struct": true,
       "header": "EnhancedActionKeyMapping.h",
+      "header_public": true,
       "name": "EnhancedActionKeyMapping",
       "package": "EnhancedInput",
       "props": [
@@ -1132,6 +1150,7 @@
       "cpp_name": "FDataTableRowHandle",
       "has_static_struct": true,
       "header": "Engine/DataTable.h",
+      "header_public": true,
       "name": "DataTableRowHandle",
       "package": "Engine",
       "props": [
@@ -1178,6 +1197,17 @@
           "value_prop": null
         }
       ],
+      "struct_flags": 1,
+      "super": null
+    },
+    {
+      "cpp_name": "FInstancedStruct",
+      "has_static_struct": true,
+      "header": "StructUtils/InstancedStruct.h",
+      "header_public": true,
+      "name": "InstancedStruct",
+      "package": "CoreUObject",
+      "props": [],
       "struct_flags": 1,
       "super": null
     }

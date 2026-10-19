@@ -1,4 +1,5 @@
 #include "RustealApiTable.h"
+#include "StructUtils/InstancedStruct.h"
 #include "HAL/PreprocessorHelpers.h"
 #include "RustealErrors.h"
 #include "UObject/UObjectGlobals.h"
@@ -262,6 +263,37 @@ GetDelegateSignatureImpl(RustealFPropertyHandle PropHandle) {
   return RustealUFunctionHandle{nullptr};
 }
 
+static RustealUStructHandle InstancedStructTypeImpl(const uint8 *Instanced) {
+  return RustealUStructHandle{const_cast<UScriptStruct *>(
+      reinterpret_cast<const FInstancedStruct *>(Instanced)->GetScriptStruct())};
+}
+
+static bool InstancedStructGetImpl(const uint8 *Instanced,
+                                   RustealUStructHandle Struct, uint8 *Out) {
+  const FInstancedStruct *Value =
+      reinterpret_cast<const FInstancedStruct *>(Instanced);
+  UScriptStruct *Wanted = static_cast<UScriptStruct *>(Struct.ptr);
+  const UScriptStruct *Held = Value->GetScriptStruct();
+
+  if (!Wanted || !Held || !Held->IsChildOf(Wanted)) {
+    return false;
+  }
+
+  Wanted->InitializeStruct(Out);
+  Wanted->CopyScriptStruct(Out, Value->GetMemory());
+  return true;
+}
+
+static void InstancedStructSetImpl(uint8 *Instanced, RustealUStructHandle Struct,
+                                   const uint8 *Value) {
+  reinterpret_cast<FInstancedStruct *>(Instanced)->InitializeAs(
+      static_cast<UScriptStruct *>(Struct.ptr), Value);
+}
+
+static void InstancedStructResetImpl(uint8 *Instanced) {
+  reinterpret_cast<FInstancedStruct *>(Instanced)->Reset();
+}
+
 FRustealReflectionApi GReflectionApi = {
     &FindClassImpl,
     &FindPropertyImpl,
@@ -283,4 +315,8 @@ FRustealReflectionApi GReflectionApi = {
     &CopyStructImpl,
     &FindEnumImpl,
     &GetDelegateSignatureImpl,
+    &InstancedStructTypeImpl,
+    &InstancedStructGetImpl,
+    &InstancedStructSetImpl,
+    &InstancedStructResetImpl,
 };

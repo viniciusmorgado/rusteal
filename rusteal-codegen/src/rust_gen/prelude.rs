@@ -30,6 +30,10 @@ const ENTRIES: &[(&str, &str)] = &[
     ("core", "crate::manual::plane::OwnedFPlaneExt"),
     ("core", "crate::manual::ue_box2d::OwnedFBox2DExt"),
     (
+        "core",
+        "crate::manual::instanced_struct::InstancedStructExt",
+    ),
+    (
         "engine",
         "crate::engine::{Actor, ActorExt, World, WorldExt}",
     ),

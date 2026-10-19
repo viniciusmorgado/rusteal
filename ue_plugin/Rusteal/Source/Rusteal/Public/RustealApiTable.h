@@ -228,6 +228,13 @@ struct FRustealReflectionApi {
   RustealUClassHandle (*find_enum)(const uint8 *name, uint32 name_len);
 
   RustealUFunctionHandle (*get_delegate_signature)(RustealFPropertyHandle prop);
+
+  RustealUStructHandle (*instanced_struct_type)(const uint8 *instanced);
+  bool (*instanced_struct_get)(const uint8 *instanced,
+                               RustealUStructHandle ustruct, uint8 *out);
+  void (*instanced_struct_set)(uint8 *instanced, RustealUStructHandle ustruct,
+                               const uint8 *value);
+  void (*instanced_struct_reset)(uint8 *instanced);
 };
 
 struct FRustealContainerApi {

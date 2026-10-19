@@ -18,6 +18,8 @@ pub mod color;
 pub mod plane;
 #[cfg(feature = "core")]
 pub mod ue_box2d;
+#[cfg(feature = "core")]
+pub mod instanced_struct;
 
 #[cfg(feature = "input")]
 pub mod fkey;
