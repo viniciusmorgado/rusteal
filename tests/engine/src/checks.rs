@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex};
 
-use bindings::engine::KismetMathLibrary;
+use bindings::engine::{KismetMathLibrary, KismetStringLibrary};
 use bindings::prelude::*;
 use rusteal_runtime::runtime::{DynamicCall, Transform, UObjectRef, UeClass, task};
 
@@ -28,6 +28,15 @@ pub const ALL: &[(&str, Check)] = &[
     ("component_is_created", component_is_created),
     ("udelegate_reaches_a_closure", udelegate_reaches_a_closure),
     ("engine_function_call", engine_function_call),
+    ("engine_string_is_utf8", engine_string_is_utf8),
+    (
+        "engine_string_longer_than_512_bytes",
+        engine_string_longer_than_512_bytes,
+    ),
+    (
+        "rust_string_property_longer_than_512_bytes",
+        rust_string_property_longer_than_512_bytes,
+    ),
     (
         "task_comes_back_to_the_game_thread",
         task_comes_back_to_the_game_thread,
@@ -161,6 +170,34 @@ fn udelegate_reaches_a_closure(context: &Context) -> Outcome {
 fn engine_function_call(_: &Context) -> Outcome {
     let sum = KismetMathLibrary::add_int_int(40, Some(2));
     done(ensure(sum == 42, format!("Add_IntInt returned {sum}")))
+}
+
+fn engine_string_is_utf8(_: &Context) -> Outcome {
+    let joined = KismetStringLibrary::concat_str_str("ação", "ñü");
+    done(ensure(joined == "açãoñü", format!("got {joined:?}")))
+}
+
+fn engine_string_longer_than_512_bytes(_: &Context) -> Outcome {
+    let a = "ação-".repeat(120);
+    let b = "ñü-".repeat(150);
+    let joined = KismetStringLibrary::concat_str_str(&a, &b);
+
+    done(ensure(
+        joined == format!("{a}{b}"),
+        format!("got {} bytes of {}", joined.len(), a.len() + b.len()),
+    ))
+}
+
+fn rust_string_property_longer_than_512_bytes(context: &Context) -> Outcome {
+    done((|| {
+        let actor = TestActor::from_obj(spawn(context)?).map_err(|e| format!("{e:?}"))?;
+        let text = "çãõ-".repeat(300);
+        actor.set_label(&text);
+        ensure(
+            actor.label() == text,
+            format!("got {} bytes", actor.label().len()),
+        )
+    })())
 }
 
 fn task_comes_back_to_the_game_thread(_: &Context) -> Outcome {
