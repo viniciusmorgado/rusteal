@@ -516,10 +516,10 @@ pub fn container_element_rust_type(
                     return None;
                 }
 
-                if inner.prop_type == "WeakObjectProperty" {
-                    Some(format!("rusteal_core::TWeakObjectPtr<{cls}>"))
-                } else {
-                    Some(format!("rusteal_core::UObjectRef<{cls}>"))
+                match inner.prop_type.as_str() {
+                    "WeakObjectProperty" => Some(format!("rusteal_core::TWeakObjectPtr<{cls}>")),
+                    "SoftObjectProperty" => Some(format!("rusteal_core::SoftObjectRef<{cls}>")),
+                    _ => Some(format!("rusteal_core::UObjectRef<{cls}>")),
                 }
             } else {
                 Some("rusteal_core::UObjectHandle".into())
