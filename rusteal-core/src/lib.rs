@@ -13,6 +13,7 @@ pub mod containers;
 pub mod delegate_registry;
 pub mod dynamic_call;
 pub mod dynamic_value;
+mod executor;
 pub mod ffi_guard;
 pub mod fname;
 pub mod input;
