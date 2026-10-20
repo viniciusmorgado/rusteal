@@ -16,12 +16,8 @@ struct UClassArgs {
 }
 
 fn parse_uclass_args(attr: TokenStream) -> syn::Result<UClassArgs> {
-    let metas: Punctuated<Meta, Token![,]> = parse2::<syn::parse::Nothing>(attr.clone())
-        .map(|_| Punctuated::new())
-        .unwrap_or_else(|_| {
-            syn::parse::Parser::parse2(Punctuated::<Meta, Token![,]>::parse_terminated, attr)
-                .unwrap_or_default()
-        });
+    let metas: Punctuated<Meta, Token![,]> =
+        syn::parse::Parser::parse2(Punctuated::<Meta, Token![,]>::parse_terminated, attr)?;
 
     let mut parent_path: Option<syn::Path> = None;
     let mut implements = Vec::new();
@@ -80,7 +76,15 @@ fn parse_uclass_args(attr: TokenStream) -> syn::Result<UClassArgs> {
                      Example: #[uclass(parent = Actor)]",
                 ));
             }
+
+            continue;
         }
+
+        return Err(syn::Error::new_spanned(
+            meta,
+            "unknown #[uclass] argument: expected parent = ..., implements = [...] or \
+             config = \"...\"",
+        ));
     }
 
     let parent_path = parent_path.ok_or_else(|| {
@@ -325,17 +329,16 @@ fn parse_component_args(attr: &syn::Attribute) -> syn::Result<ComponentArgs> {
         name: None,
     };
 
-    let nested = match attr.parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated) {
-        Ok(n) => n,
-        Err(_) => return Ok(args),
-    };
+    if let Meta::Path(_) = attr.meta {
+        return Ok(args);
+    }
+
+    let nested = attr.parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated)?;
 
     for meta in &nested {
         match meta {
-            Meta::Path(p) => {
-                if p.is_ident("root") {
-                    args.is_root = true;
-                }
+            Meta::Path(p) if p.is_ident("root") => {
+                args.is_root = true;
             }
             Meta::NameValue(nv) if nv.path.is_ident("attach") => {
                 if let Expr::Lit(syn::ExprLit {
@@ -368,7 +371,13 @@ fn parse_component_args(attr: &syn::Attribute) -> syn::Result<ComponentArgs> {
             Meta::NameValue(nv) if nv.path.is_ident("name") => {
                 args.name = Some(str_value(&nv.value, "name")?);
             }
-            _ => {}
+            other => {
+                return Err(syn::Error::new_spanned(
+                    other,
+                    "unknown #[component] argument: expected root, attach = \"...\", \
+                     socket = \"...\" or name = \"...\"",
+                ));
+            }
         }
     }
 
@@ -1879,6 +1888,26 @@ mod tests {
             parse_uproperty_args(&attr).unwrap().bind_widget,
             Some("BindWidgetOptional")
         );
+    }
+
+    #[test]
+    fn unknown_uclass_and_component_arguments_are_errors() {
+        let err = parse_uclass_args(quote! { parent = Actor, Blueprintable })
+            .err()
+            .unwrap();
+        assert!(err.to_string().contains("unknown #[uclass] argument"));
+        assert!(parse_uclass_args(quote! { parent = Actor, config = "Game" }).is_ok());
+        assert!(parse_uclass_args(quote! { parent = Actor,, }).is_err());
+
+        let attr: syn::Attribute = parse_quote!(#[component(root, transient)]);
+        let err = parse_component_args(&attr).err().unwrap();
+        assert!(err.to_string().contains("unknown #[component] argument"));
+
+        let attr: syn::Attribute = parse_quote!(#[component]);
+        assert!(!parse_component_args(&attr).unwrap().is_root);
+
+        let attr: syn::Attribute = parse_quote!(#[component(root, name = "Body")]);
+        assert!(parse_component_args(&attr).unwrap().is_root);
     }
 
     #[test]

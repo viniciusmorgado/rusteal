@@ -44,7 +44,14 @@ struct UFunctionInfo {
     fallible: bool,
 }
 
-pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream> {
+pub fn expand_uclass_impl(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream> {
+    if !attr.is_empty() {
+        return Err(syn::Error::new_spanned(
+            attr,
+            "#[uclass_impl] takes no arguments",
+        ));
+    }
+
     let input: ItemImpl = parse2(item)?;
 
     let struct_name = match &*input.self_ty {
@@ -132,6 +139,15 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
                 .iter()
                 .any(|a| a.path().is_ident("class_defaults"))
             {
+                if let Some(attr) = method.attrs.iter().find(|a| {
+                    a.path().is_ident("class_defaults") && !matches!(a.meta, syn::Meta::Path(_))
+                }) {
+                    return Err(syn::Error::new_spanned(
+                        attr,
+                        "#[class_defaults] takes no arguments",
+                    ));
+                }
+
                 if class_defaults.is_some() {
                     return Err(syn::Error::new_spanned(
                         &method.sig,
