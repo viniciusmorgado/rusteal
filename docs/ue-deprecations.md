@@ -93,6 +93,14 @@ UHT stops exporting it and the next `rusteal build --all` stops generating it. G
 code that calls it from Rust breaks at that point, so these are listed for
 whoever uses them.
 
+The generated wrappers are compiled between `PRAGMA_DISABLE_DEPRECATION_WARNINGS`
+and `PRAGMA_ENABLE_DEPRECATION_WARNINGS`, so these deprecations do not show up as
+`-Wdeprecated-declarations` (or MSVC C4996) warnings in the build: they are
+expected, and the Rust API keeps exposing them until the engine removes them.
+UHT keeps the `DeprecatedFunction` metadata, and the exporter skips those
+functions, but it drops `UE_DEPRECATED` on functions and classes, so the
+exporter cannot tell these apart from the rest; the list below is the reference.
+
 The files are generated per project; **Where** names the generated wrapper.
 
 | ID | API | Kind | Deprecated in | Replacement | Where (`Generated/`) |
@@ -112,8 +120,10 @@ The files are generated per project; **Where** names the generated wrapper.
 | UE-DEP-015 | `UKismetInputLibrary::PointerEvent_GetTouchpadIndex` | function | UE 5.8 | none: retired | `RustealFunc_engine_KismetInputLibrary.cpp` |
 | UE-DEP-016 | `UDataLayerSubsystem::SetDataLayerRuntimeState` (label/instance overload), `SetDataLayerRuntimeStateByLabel` | function | UE 5.1 | the `UDataLayerAsset*` overload, `SetDataLayerInstanceRuntimeState` | `RustealFunc_engine_DataLayerSubsystem.cpp` |
 | UE-DEP-017 | `UPlayerMappableInputConfig` | class | UE 5.3 | `UEnhancedInputUserSettings` | `RustealFunc_enhanced_input_PlayerMappableInputConfig.cpp` |
+| UE-DEP-018 | `UAnimDataModel::GetBoneAnimationTracks`, `GetBoneTrackByIndex`, `GetBoneTrackByName`, `GetBoneTrackIndex`, `GetBoneTrackIndexByName`, `IsValidBoneTrackIndex` (deprecated on `IAnimationDataModel`) | function | UE 5.2 | the track-name queries: `IsValidBoneTrackName`, `GetBoneTrackTransform(s)`, `EvaluateBoneTrackTransform` | `RustealFunc_engine_AnimDataModel.cpp` |
+| UE-DEP-019 | `FActorDataLayer`, taken by the UE-DEP-016 overload | struct | UE 5.8 | `UDataLayerAsset` | `RustealFunc_engine_DataLayerSubsystem.cpp` |
 
-Last checked: Rusteal 0.3.0, UE 5.8.2, with the modules `rusteal new` enables
+Last checked: Rusteal 0.9.0, UE 5.8.3, with the modules `rusteal new` enables
 (`core`, `engine`, `input`, `slate`, `umg`, `enhanced-input`). Status of all:
 open, followed by the engine.
 
