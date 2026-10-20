@@ -914,6 +914,24 @@ static RustealUObjectHandle FindDefaultSubobjectImpl(RustealUObjectHandle Owner,
 }
 
 static ERustealErrorCode
+SetFunctionMetadataImpl(RustealUFunctionHandle Func, const uint8 *Key,
+                        uint32 KeyLen, const uint8 *Value, uint32 ValueLen) {
+  UFunction *Function = static_cast<UFunction *>(Func.ptr);
+
+  if (!Function) {
+    return RustealFail(ERustealErrorCode::NullArgument);
+  }
+
+#if WITH_EDITORONLY_DATA
+
+  Function->SetMetaData(ReifyUtf8ToFName(Key, KeyLen),
+                        *ReifyUtf8ToFString(Value, ValueLen));
+
+#endif
+  return ERustealErrorCode::Ok;
+}
+
+static ERustealErrorCode
 SetPropertyMetadataImpl(RustealFPropertyHandle Prop, const uint8 *Key,
                         uint32 KeyLen, const uint8 *Value, uint32 ValueLen) {
   FProperty *Property = static_cast<FProperty *>(Prop.ptr);
@@ -1503,4 +1521,5 @@ FRustealReifyApi GReifyApi = {
     &AddInterfaceImpl,        &SetClassConfigImpl,
     &CreateEnumImpl,          &CreateInterfaceImpl,
     &FinalizeInterfaceImpl,   &AddInterfaceClassImpl,
+    &SetFunctionMetadataImpl,
 };

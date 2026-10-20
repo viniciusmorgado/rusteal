@@ -450,6 +450,11 @@ struct FRustealReifyApi {
 
   ERustealErrorCode (*add_interface_class)(RustealUClassHandle cls,
                                            RustealUClassHandle interface);
+
+  ERustealErrorCode (*set_function_metadata)(RustealUFunctionHandle func,
+                                             const uint8 *key, uint32 key_len,
+                                             const uint8 *value,
+                                             uint32 value_len);
 };
 struct FRustealWidgetApi {
   RustealUObjectHandle (*create_widget)(RustealUObjectHandle owning_object,

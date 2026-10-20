@@ -683,6 +683,14 @@ pub struct RustealReifyApi {
 
     pub add_interface_class:
         unsafe extern "C" fn(cls: UClassHandle, interface: UClassHandle) -> RustealErrorCode,
+
+    pub set_function_metadata: unsafe extern "C" fn(
+        func: UFunctionHandle,
+        key: *const u8,
+        key_len: u32,
+        value: *const u8,
+        value_len: u32,
+    ) -> RustealErrorCode,
 }
 
 pub const RUSTEAL_COMP_ROOT: u32 = 1;

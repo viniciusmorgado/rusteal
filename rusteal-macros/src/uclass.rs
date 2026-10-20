@@ -157,7 +157,7 @@ fn meta_value(value: &Expr) -> syn::Result<String> {
     }
 }
 
-fn parse_meta_list(list: &syn::MetaList) -> syn::Result<Vec<(String, String)>> {
+pub(crate) fn parse_meta_list(list: &syn::MetaList) -> syn::Result<Vec<(String, String)>> {
     let entries = list.parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated)?;
     let mut out = Vec::new();
 
