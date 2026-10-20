@@ -6,6 +6,7 @@ use std::time::Duration;
 use bindings::core_ue::{
     FARFilter, FARFilterExt, FGuid, FInstancedStruct, FIntPoint, FIntPointExt,
 };
+use bindings::engine::LevelStreamingDynamic;
 use bindings::engine::SceneComponentExt;
 use bindings::engine::StaticMesh;
 use bindings::engine::{
@@ -23,11 +24,13 @@ use bindings::engine::{
     ActorExt, AsyncActionHandleSaveGame, AsyncActionHandleSaveGameExt, BlueprintAsyncActionBaseExt,
     FLatentActionInfo, FLatentActionInfoExt, SaveGame,
 };
+use bindings::manual::events::world_events;
 use bindings::prelude::*;
 use bindings::slate_core::{
     EVerticalAlignment, FSlateBrush, FToolBarStyle, FToolBarStyleExt, FWrapButtonStyle,
     FWrapButtonStyleExt,
 };
+use rusteal_runtime::runtime::http;
 use rusteal_runtime::runtime::{
     DynamicCall, FName, Inherits, OwnedStruct, Rotator, SoftClassRef, SoftObjectRef, SubclassOf,
     TWeakObjectPtr, Text, Transform, UObjectRef, UeClass, UeStruct, task, timer,
@@ -210,6 +213,14 @@ pub const ALL: &[(&str, Check)] = &[
     (
         "async_ufunction_runs_as_a_latent_node",
         async_ufunction_runs_as_a_latent_node,
+    ),
+    (
+        "native_event_fires_for_a_streamed_level",
+        native_event_fires_for_a_streamed_level,
+    ),
+    (
+        "http_requests_reach_a_local_server",
+        http_requests_reach_a_local_server,
     ),
 ];
 
@@ -1276,6 +1287,236 @@ fn async_ufunction_runs_as_a_latent_node(context: &Context) -> Outcome {
                     doomed_finished == -1,
                     format!("the destroyed owner's node fired with link {doomed_finished}"),
                 )
+            }),
+        )
+    }))
+}
+
+fn native_event_fires_for_a_streamed_level(context: &Context) -> Outcome {
+    let started = (|| {
+        let actor = spawn(context)?;
+        let added = Arc::new(Mutex::new(None));
+        let sink = added.clone();
+
+        let _task = task::spawn_local(&actor, async move {
+            let level_added = world_events::level_added().next();
+            let world: UObjectRef<bindings::core_ue::Object> = actor.upcast_to();
+
+            let (streaming, loaded) = LevelStreamingDynamic::load_level_instance(
+                world,
+                "/Engine/Maps/Entry",
+                &FVector::from_dvec3(glam::DVec3::new(0.0, 0.0, -10000.0)),
+                &FRotator::from_rotator(Rotator::ZERO),
+                Some("RustealTestsStreamed"),
+                None,
+                None,
+            );
+
+            let outcome = if !loaded || streaming.raw().is_null() {
+                Err("load_level_instance did not start".to_string())
+            } else {
+                level_added
+                    .await
+                    .map(|(level, _)| !level.raw().is_null())
+                    .map_err(|e| format!("{e:?}"))
+            };
+
+            *sink.lock().unwrap() = Some(outcome);
+        });
+
+        Ok::<_, String>(added)
+    })();
+
+    let added = match started {
+        Ok(added) => added,
+        Err(e) => return done(Err(e)),
+    };
+
+    let mut frames = 0;
+
+    Outcome::Pending(Box::new(move || {
+        frames += 1;
+
+        match added.lock().unwrap().clone() {
+            None => (frames > 1200).then(|| Err("the level was never added".to_string())),
+            Some(Ok(level)) => Some(ensure(level, "level_added gave no level")),
+            Some(Err(e)) => Some(Err(e)),
+        }
+    }))
+}
+
+fn serve_http(listener: std::net::TcpListener, requests: usize) {
+    use std::io::{BufRead, BufReader, Read, Write};
+
+    for stream in listener.incoming().take(requests) {
+        let Ok(mut stream) = stream else { continue };
+        let mut reader = BufReader::new(stream.try_clone().expect("a clone of the stream"));
+        let mut request_line = String::new();
+        let _ = reader.read_line(&mut request_line);
+
+        let mut length = 0usize;
+        let mut test_header = String::new();
+
+        loop {
+            let mut line = String::new();
+
+            if reader.read_line(&mut line).unwrap_or(0) == 0 || line == "\r\n" {
+                break;
+            }
+
+            let lower = line.to_ascii_lowercase();
+
+            if let Some(value) = lower.strip_prefix("content-length:") {
+                length = value.trim().parse().unwrap_or(0);
+            }
+
+            if let Some(value) = lower.strip_prefix("x-test:") {
+                test_header = value.trim().to_string();
+            }
+        }
+
+        let mut body = vec![0u8; length];
+        let _ = reader.read_exact(&mut body);
+
+        let mut parts = request_line.split_whitespace();
+        let method = parts.next().unwrap_or("").to_string();
+        let path = parts.next().unwrap_or("").to_string();
+
+        let reply = format!(
+            "{method} {path} x-test={test_header} body={}",
+            String::from_utf8_lossy(&body)
+        );
+
+        let status = if method == "POST" {
+            "201 Created"
+        } else {
+            "200 OK"
+        };
+
+        let _ = write!(
+            stream,
+            "HTTP/1.1 {status}\r\nContent-Type: text/plain\r\nX-Rusteal: yes\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{reply}",
+            reply.len()
+        );
+    }
+}
+
+#[derive(Default)]
+struct HttpResults {
+    get: Option<(i32, String, Option<String>)>,
+    post: Option<(i32, String)>,
+    refused: bool,
+    error: Option<String>,
+    finished: bool,
+}
+
+fn http_requests_reach_a_local_server(context: &Context) -> Outcome {
+    let started = (|| {
+        let actor = spawn(context)?;
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").map_err(|e| e.to_string())?;
+        let port = listener.local_addr().map_err(|e| e.to_string())?.port();
+        std::thread::spawn(move || serve_http(listener, 2));
+
+        let closed = std::net::TcpListener::bind("127.0.0.1:0").map_err(|e| e.to_string())?;
+        let closed_port = closed.local_addr().map_err(|e| e.to_string())?.port();
+        drop(closed);
+
+        let results = Arc::new(Mutex::new(HttpResults::default()));
+        let sink = results.clone();
+
+        let _task = task::spawn_local(&actor, async move {
+            let outcome = async {
+                let e = |e| format!("{e:?}");
+                let base = format!("http://127.0.0.1:{port}");
+
+                let got = http::get(format!("{base}/hello"))
+                    .header("X-Test", "1")
+                    .send()
+                    .await
+                    .map_err(e)?;
+
+                let posted = http::post(format!("{base}/echo"))
+                    .body("ping")
+                    .send()
+                    .await
+                    .map_err(e)?;
+
+                let refused = http::get(format!("http://127.0.0.1:{closed_port}/"))
+                    .timeout(Duration::from_secs(5))
+                    .send()
+                    .await
+                    .is_err();
+
+                Ok::<_, String>((
+                    (
+                        got.status,
+                        got.text(),
+                        got.header("x-rusteal").map(str::to_string),
+                    ),
+                    (posted.status, posted.text()),
+                    refused,
+                ))
+            }
+            .await;
+
+            let mut results = sink.lock().unwrap();
+
+            match outcome {
+                Ok((get, post, refused)) => {
+                    results.get = Some(get);
+                    results.post = Some(post);
+                    results.refused = refused;
+                }
+                Err(e) => results.error = Some(e),
+            }
+
+            results.finished = true;
+        });
+
+        Ok::<_, String>(results)
+    })();
+
+    let results = match started {
+        Ok(results) => results,
+        Err(e) => return done(Err(e)),
+    };
+
+    let mut frames = 0;
+
+    Outcome::Pending(Box::new(move || {
+        frames += 1;
+        let results = results.lock().unwrap();
+
+        if !results.finished {
+            return (frames > 3000).then(|| Err("the HTTP requests never finished".to_string()));
+        }
+
+        if let Some(e) = &results.error {
+            return Some(Err(e.clone()));
+        }
+
+        let get = results.get.clone();
+        let post = results.post.clone();
+
+        Some(
+            ensure(
+                get == Some((
+                    200,
+                    "GET /hello x-test=1 body=".to_string(),
+                    Some("yes".to_string()),
+                )),
+                format!("the GET gave {get:?}"),
+            )
+            .and_then(|_| {
+                ensure(
+                    post == Some((201, "POST /echo x-test= body=ping".to_string())),
+                    format!("the POST gave {post:?}"),
+                )
+            })
+            .and_then(|_| ensure(results.refused, "a request to a closed port succeeded"))
+            .and_then(|_| {
+                let left = http::requests_in_progress();
+                ensure(left == 0, format!("{left} HTTP requests left"))
             }),
         )
     }))
