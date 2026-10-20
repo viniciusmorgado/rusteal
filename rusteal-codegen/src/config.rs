@@ -165,6 +165,11 @@ const ENGINE_UNEXPORTED_FUNCTIONS: &[&str] = &[
     "WidgetAnimation.UnbindFromAnimationStarted",
 ];
 
+const HAND_WRITTEN_FUNCTIONS: &[&str] = &[
+    "KismetSystemLibrary.K2_SetTimerDelegate",
+    "KismetSystemLibrary.K2_SetTimerForNextTickDelegate",
+];
+
 impl CodegenConfig {
     pub fn for_library(&self, kind: LibraryKind) -> CodegenConfig {
         let mut config = self.clone();
@@ -207,7 +212,10 @@ impl CodegenConfig {
             }
         }
 
-        for function in ENGINE_UNEXPORTED_FUNCTIONS {
+        for function in ENGINE_UNEXPORTED_FUNCTIONS
+            .iter()
+            .chain(HAND_WRITTEN_FUNCTIONS)
+        {
             if !config.blocklist.functions.iter().any(|f| f == function) {
                 config.blocklist.functions.push(function.to_string());
             }
