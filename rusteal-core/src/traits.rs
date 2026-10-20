@@ -8,6 +8,14 @@ pub trait UeClass: 'static {
     fn static_class() -> UClassHandle;
 }
 
+/// A class defined in Rust with `#[uclass]`: the object it is a handle to, and the way back
+/// from that object to the Rust class.
+pub trait RustObject: UeClass + Sized {
+    fn object_handle(&self) -> UObjectHandle;
+
+    fn from_object_handle(handle: UObjectHandle) -> RustealResult<Self>;
+}
+
 pub trait UeInterface: 'static {
     fn static_class() -> UClassHandle;
 }

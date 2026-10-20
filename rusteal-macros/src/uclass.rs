@@ -631,6 +631,18 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
                 *#class_handle_name.get().expect(concat!("Failed to find UClass for ", stringify!(#struct_name), " — was it registered?"))
             }
         }
+
+        impl ::rusteal_runtime::runtime::RustObject for #struct_name {
+            fn object_handle(&self) -> ::rusteal_runtime::ffi::UObjectHandle {
+                self.__obj
+            }
+
+            fn from_object_handle(
+                handle: ::rusteal_runtime::ffi::UObjectHandle,
+            ) -> ::rusteal_runtime::runtime::RustealResult<Self> {
+                Self::from_obj(unsafe { ::rusteal_runtime::runtime::UObjectRef::<Self>::from_raw(handle) })
+            }
+        }
     };
 
     let mut accessor_methods: Vec<TokenStream> = Vec::new();

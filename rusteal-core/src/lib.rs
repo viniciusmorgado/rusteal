@@ -23,6 +23,7 @@ pub mod input;
 pub mod latent;
 pub mod loading;
 pub mod logging;
+pub mod method;
 pub mod module;
 pub mod object_ref;
 pub mod pinned;
@@ -57,6 +58,7 @@ pub use error::{
 };
 pub use ffi_guard::ffi_boundary;
 pub use logging::{LOG_DISPLAY, LOG_ERROR, LOG_WARNING};
+pub use method::method;
 pub use module::{FuncTable, Module, ModuleId, type_id};
 pub use object_ref::{Checked, ObjectPointer, UObjectRef};
 pub use pinned::Pinned;
@@ -69,7 +71,7 @@ pub use struct_ref::UStructRef;
 pub use subclass_of::SubclassOf;
 pub use text::Text;
 pub use traits::{
-    HasParent, Inherits, UeClass, UeEnum, UeHandle, UeInterface, UeStruct, ValidHandle,
+    HasParent, Inherits, RustObject, UeClass, UeEnum, UeHandle, UeInterface, UeStruct, ValidHandle,
 };
 
 pub use fname::FName;
