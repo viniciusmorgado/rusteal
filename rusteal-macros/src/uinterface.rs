@@ -7,7 +7,8 @@ use crate::prop_type;
 use crate::shape;
 use crate::uclass::{to_screaming_snake, to_snake_case};
 use crate::uclass_impl::{
-    ParamInfo, dynamic_call_body, extra_expr, supported_param, supported_return,
+    ParamInfo, dynamic_call_body, extra_expr, legacy_param as supported_param,
+    legacy_return as supported_return,
 };
 
 pub(crate) struct InterfaceSignature {
