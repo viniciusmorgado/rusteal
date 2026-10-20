@@ -143,25 +143,25 @@ impl ThirdPersonCharacter {
             return Ok(false);
         }
 
-        bind_action(&me, self.jump_action(), ETriggerEvent::Started, "Jump")?;
+        bind_action_by_name(&me, self.jump_action(), ETriggerEvent::Started, "Jump")?;
 
-        bind_action(
+        bind_action_by_name(
             &me,
             self.jump_action(),
             ETriggerEvent::Completed,
             "StopJumping",
         )?;
 
-        bind_action(&me, self.move_action(), ETriggerEvent::Triggered, "Move")?;
+        bind_action_by_name(&me, self.move_action(), ETriggerEvent::Triggered, "Move")?;
 
-        bind_action(
+        bind_action_by_name(
             &me,
             self.mouse_look_action(),
             ETriggerEvent::Triggered,
             "Look",
         )?;
 
-        bind_action(&me, self.look_action(), ETriggerEvent::Triggered, "Look")?;
+        bind_action_by_name(&me, self.look_action(), ETriggerEvent::Triggered, "Look")?;
 
         Ok(true)
     }

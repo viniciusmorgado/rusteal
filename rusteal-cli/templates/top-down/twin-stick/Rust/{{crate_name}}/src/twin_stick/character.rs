@@ -353,26 +353,26 @@ impl TwinStickCharacter {
             return Ok(());
         }
 
-        bind_action(&me, self.move_action(), ETriggerEvent::Triggered, "Move")?;
+        bind_action_by_name(&me, self.move_action(), ETriggerEvent::Triggered, "Move")?;
 
-        bind_action(
+        bind_action_by_name(
             &me,
             self.stick_aim_action(),
             ETriggerEvent::Triggered,
             "StickAim",
         )?;
 
-        bind_action(
+        bind_action_by_name(
             &me,
             self.mouse_aim_action(),
             ETriggerEvent::Triggered,
             "MouseAim",
         )?;
 
-        bind_action(&me, self.dash_action(), ETriggerEvent::Triggered, "Dash")?;
-        bind_action(&me, self.shoot_action(), ETriggerEvent::Triggered, "Shoot")?;
+        bind_action_by_name(&me, self.dash_action(), ETriggerEvent::Triggered, "Dash")?;
+        bind_action_by_name(&me, self.shoot_action(), ETriggerEvent::Triggered, "Shoot")?;
 
-        bind_action(
+        bind_action_by_name(
             &me,
             self.ao_e_action(),
             ETriggerEvent::Triggered,

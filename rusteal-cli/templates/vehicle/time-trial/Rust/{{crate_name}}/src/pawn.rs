@@ -312,68 +312,68 @@ impl VehicleAdvPawn {
             return Ok(());
         }
 
-        bind_action(
+        bind_action_by_name(
             &me,
             self.steering_action(),
             ETriggerEvent::Triggered,
             "Steering",
         )?;
-        bind_action(
+        bind_action_by_name(
             &me,
             self.steering_action(),
             ETriggerEvent::Completed,
             "Steering",
         )?;
-        bind_action(
+        bind_action_by_name(
             &me,
             self.throttle_action(),
             ETriggerEvent::Triggered,
             "Throttle",
         )?;
-        bind_action(
+        bind_action_by_name(
             &me,
             self.throttle_action(),
             ETriggerEvent::Completed,
             "Throttle",
         )?;
-        bind_action(&me, self.brake_action(), ETriggerEvent::Triggered, "Brake")?;
-        bind_action(
+        bind_action_by_name(&me, self.brake_action(), ETriggerEvent::Triggered, "Brake")?;
+        bind_action_by_name(
             &me,
             self.brake_action(),
             ETriggerEvent::Started,
             "StartBrake",
         )?;
-        bind_action(
+        bind_action_by_name(
             &me,
             self.brake_action(),
             ETriggerEvent::Completed,
             "StopBrake",
         )?;
-        bind_action(
+        bind_action_by_name(
             &me,
             self.handbrake_action(),
             ETriggerEvent::Started,
             "StartHandbrake",
         )?;
-        bind_action(
+        bind_action_by_name(
             &me,
             self.handbrake_action(),
             ETriggerEvent::Completed,
             "StopHandbrake",
         )?;
-        bind_action(
+        bind_action_by_name(
             &me,
             self.look_around_action(),
             ETriggerEvent::Triggered,
             "LookAround",
         )?;
-        bind_action(
+        bind_action_by_name(
             &me,
             self.toggle_camera_action(),
             ETriggerEvent::Triggered,
             "ToggleCamera",
         )?;
-        bind_action(
+        bind_action_by_name(
             &me,
             self.reset_vehicle_action(),
             ETriggerEvent::Triggered,

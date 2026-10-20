@@ -252,21 +252,21 @@ impl ShooterCharacter {
             return Ok(());
         }
 
-        bind_action(
+        bind_action_by_name(
             &me,
             self.fire_action(),
             ETriggerEvent::Started,
             "DoStartFiring",
         )?;
 
-        bind_action(
+        bind_action_by_name(
             &me,
             self.fire_action(),
             ETriggerEvent::Completed,
             "DoStopFiring",
         )?;
 
-        bind_action(
+        bind_action_by_name(
             &me,
             self.switch_weapon_action(),
             ETriggerEvent::Triggered,

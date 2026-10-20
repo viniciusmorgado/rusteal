@@ -151,14 +151,14 @@ impl HorrorCharacter {
             return Ok(());
         }
 
-        bind_action(
+        bind_action_by_name(
             &me,
             self.sprint_action(),
             ETriggerEvent::Started,
             "DoStartSprint",
         )?;
 
-        bind_action(
+        bind_action_by_name(
             &me,
             self.sprint_action(),
             ETriggerEvent::Completed,

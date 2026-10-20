@@ -155,13 +155,13 @@ impl Pistol {
         me.checked()?.enable_input(controller);
 
         if !self.input_bound() {
-            bind_action(
+            bind_action_by_name(
                 &me,
                 self.shoot_left_action(),
                 ETriggerEvent::Started,
                 "ShootLeft",
             )?;
-            bind_action(
+            bind_action_by_name(
                 &me,
                 self.shoot_right_action(),
                 ETriggerEvent::Started,

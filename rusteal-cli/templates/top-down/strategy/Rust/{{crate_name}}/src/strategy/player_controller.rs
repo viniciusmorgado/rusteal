@@ -469,21 +469,21 @@ impl StrategyPlayerController {
             .checked()?
             .add_mapping_context(chosen_context, 0, &OwnedStruct::new());
 
-        bind_action(
+        bind_action_by_name(
             &me,
             self.move_camera_action(),
             ETriggerEvent::Triggered,
             "MoveCamera",
         )?;
 
-        bind_action(
+        bind_action_by_name(
             &me,
             self.zoom_camera_action(),
             ETriggerEvent::Triggered,
             "ZoomCamera",
         )?;
 
-        bind_action(
+        bind_action_by_name(
             &me,
             self.reset_camera_action(),
             ETriggerEvent::Triggered,
@@ -492,49 +492,49 @@ impl StrategyPlayerController {
 
         let select_hold = self.select_hold_action();
 
-        bind_action(
+        bind_action_by_name(
             &me,
             select_hold,
             ETriggerEvent::Started,
             "SelectHoldStarted",
         )?;
 
-        bind_action(
+        bind_action_by_name(
             &me,
             select_hold,
             ETriggerEvent::Triggered,
             "SelectHoldTriggered",
         )?;
 
-        bind_action(
+        bind_action_by_name(
             &me,
             select_hold,
             ETriggerEvent::Completed,
             "SelectHoldCompleted",
         )?;
 
-        bind_action(
+        bind_action_by_name(
             &me,
             select_hold,
             ETriggerEvent::Canceled,
             "SelectHoldCompleted",
         )?;
 
-        bind_action(
+        bind_action_by_name(
             &me,
             self.select_click_action(),
             ETriggerEvent::Completed,
             "SelectClick",
         )?;
 
-        bind_action(
+        bind_action_by_name(
             &me,
             self.select_click_additive_action(),
             ETriggerEvent::Completed,
             "SelectClickAdditive",
         )?;
 
-        bind_action(
+        bind_action_by_name(
             &me,
             self.select_all_double_click_action(),
             ETriggerEvent::Completed,
@@ -543,21 +543,21 @@ impl StrategyPlayerController {
 
         let interact_hold = self.interact_hold_action();
 
-        bind_action(
+        bind_action_by_name(
             &me,
             interact_hold,
             ETriggerEvent::Started,
             "InteractHoldStarted",
         )?;
 
-        bind_action(
+        bind_action_by_name(
             &me,
             interact_hold,
             ETriggerEvent::Triggered,
             "InteractHoldTriggered",
         )?;
 
-        bind_action(
+        bind_action_by_name(
             &me,
             self.interact_click_action(),
             ETriggerEvent::Completed,
@@ -566,21 +566,21 @@ impl StrategyPlayerController {
 
         let touch_primary = self.touch_primary_hold_action();
 
-        bind_action(
+        bind_action_by_name(
             &me,
             touch_primary,
             ETriggerEvent::Started,
             "TouchPrimaryHoldStarted",
         )?;
 
-        bind_action(
+        bind_action_by_name(
             &me,
             touch_primary,
             ETriggerEvent::Triggered,
             "TouchPrimaryHoldTriggered",
         )?;
 
-        bind_action(
+        bind_action_by_name(
             &me,
             touch_primary,
             ETriggerEvent::Completed,
@@ -589,21 +589,21 @@ impl StrategyPlayerController {
 
         let touch_secondary = self.touch_secondary_action();
 
-        bind_action(
+        bind_action_by_name(
             &me,
             touch_secondary,
             ETriggerEvent::Triggered,
             "TouchSecondaryTriggered",
         )?;
 
-        bind_action(
+        bind_action_by_name(
             &me,
             touch_secondary,
             ETriggerEvent::Completed,
             "TouchSecondaryCompleted",
         )?;
 
-        bind_action(
+        bind_action_by_name(
             &me,
             touch_secondary,
             ETriggerEvent::Canceled,

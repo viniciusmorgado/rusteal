@@ -254,32 +254,32 @@ impl PlatformingCharacter {
             return Ok(false);
         }
 
-        bind_action(
+        bind_action_by_name(
             &me,
             self.jump_action(),
             ETriggerEvent::Started,
             "DoJumpStart",
         )?;
 
-        bind_action(
+        bind_action_by_name(
             &me,
             self.jump_action(),
             ETriggerEvent::Completed,
             "DoJumpEnd",
         )?;
 
-        bind_action(&me, self.move_action(), ETriggerEvent::Triggered, "Move")?;
+        bind_action_by_name(&me, self.move_action(), ETriggerEvent::Triggered, "Move")?;
 
-        bind_action(
+        bind_action_by_name(
             &me,
             self.mouse_look_action(),
             ETriggerEvent::Triggered,
             "Look",
         )?;
 
-        bind_action(&me, self.look_action(), ETriggerEvent::Triggered, "Look")?;
+        bind_action_by_name(&me, self.look_action(), ETriggerEvent::Triggered, "Look")?;
 
-        bind_action(&me, self.dash_action(), ETriggerEvent::Triggered, "Dash")?;
+        bind_action_by_name(&me, self.dash_action(), ETriggerEvent::Triggered, "Dash")?;
 
         Ok(true)
     }
