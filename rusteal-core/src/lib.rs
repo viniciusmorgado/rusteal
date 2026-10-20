@@ -12,6 +12,7 @@ pub mod console;
 pub mod containers;
 pub mod delegate_registry;
 pub mod dynamic_call;
+pub mod dynamic_value;
 pub mod ffi_guard;
 pub mod fname;
 pub mod input;
@@ -42,6 +43,7 @@ pub use console::{CommandContext, ConsoleVariable};
 pub use containers::{ContainerElement, OwnedStruct, UeArray, UeMap, UeSet, struct_size_by_name};
 pub use delegate_registry::DelegateBinding;
 pub use dynamic_call::{DynamicCall, DynamicCallResult};
+pub use dynamic_value::DynamicValue;
 pub use error::{
     ErrorContext, ErrorKind, RustealError, RustealResult, UeSubject, check_ffi, check_ffi_ctx,
     ffi_infallible, ffi_infallible_ctx,
