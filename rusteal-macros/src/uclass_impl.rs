@@ -25,6 +25,7 @@ enum FnKind {
     Pure,
     Override,
     ImplementableEvent,
+    NativeEvent,
     InterfaceImpl,
 }
 
@@ -152,6 +153,8 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
         }
     }
 
+    let mut dispatchers: Vec<ImplItem> = Vec::new();
+
     for item in &mut clean_impl.items {
         if let ImplItem::Fn(method) = item {
             if let Some(uf) = ufunctions
@@ -160,6 +163,26 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
                 && uf.kind == FnKind::ImplementableEvent
             {
                 method.block = implementable_event_body(uf);
+            }
+
+            if let Some(uf) = ufunctions
+                .iter()
+                .find(|uf| uf.method_ident == method.sig.ident)
+                && uf.kind == FnKind::NativeEvent
+            {
+                let mut dispatcher = method.clone();
+                dispatcher.block = implementable_event_body(uf);
+                dispatcher.sig.output = match &uf.return_type {
+                    Some(ret) => {
+                        let ty = &ret.rust_ty;
+                        syn::parse_quote! { -> #ty }
+                    }
+                    None => ReturnType::Default,
+                };
+                dispatcher.attrs.retain(|a| !a.path().is_ident("ufunction"));
+                dispatchers.push(ImplItem::Fn(dispatcher));
+
+                method.sig.ident = native_implementation_ident(&method.sig.ident);
             }
 
             if let Some(d) = delegates
@@ -176,6 +199,8 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
             });
         }
     }
+
+    clean_impl.items.extend(dispatchers);
 
     let interface_suffix = interface
         .as_ref()
@@ -209,6 +234,11 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
             FnKind::ImplementableEvent => quote! {
                 ::rusteal_runtime::ffi::FUNC_EVENT | ::rusteal_runtime::ffi::FUNC_BLUEPRINT_EVENT
                     | ::rusteal_runtime::ffi::FUNC_BLUEPRINT_CALLABLE | ::rusteal_runtime::ffi::FUNC_PUBLIC
+            },
+            FnKind::NativeEvent => quote! {
+                ::rusteal_runtime::ffi::FUNC_NATIVE | ::rusteal_runtime::ffi::FUNC_EVENT
+                    | ::rusteal_runtime::ffi::FUNC_BLUEPRINT_EVENT | ::rusteal_runtime::ffi::FUNC_BLUEPRINT_CALLABLE
+                    | ::rusteal_runtime::ffi::FUNC_PUBLIC
             },
             FnKind::InterfaceImpl => quote! {
                 ::rusteal_runtime::ffi::FUNC_NATIVE | ::rusteal_runtime::ffi::FUNC_EVENT
@@ -446,6 +476,13 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
         };
 
         let _ = &param_idents;
+
+        let impl_ident = if uf.kind == FnKind::NativeEvent {
+            native_implementation_ident(method_ident)
+        } else {
+            method_ident.clone()
+        };
+        let method_ident = &impl_ident;
 
         let call = match &interface {
             Some(trait_path) if uf.is_mut => {
@@ -700,6 +737,7 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
         "BlueprintPure",
         "Override",
         "BlueprintImplementableEvent",
+        "BlueprintNativeEvent",
         "Exec",
     ];
 
@@ -708,7 +746,8 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
             &method.sig,
             format!(
                 "unknown #[ufunction] argument `{unknown}`: expected BlueprintCallable, \
-                 BlueprintPure, Override, BlueprintImplementableEvent, Exec or name = \"...\""
+                 BlueprintPure, Override, BlueprintImplementableEvent, BlueprintNativeEvent, \
+                 Exec or name = \"...\""
             ),
         ));
     }
@@ -719,15 +758,18 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
         has("Override"),
         has("BlueprintPure"),
         has("BlueprintImplementableEvent"),
+        has("BlueprintNativeEvent"),
     ) {
-        (false, false, false) => FnKind::Callable,
-        (true, false, false) => FnKind::Override,
-        (false, true, false) => FnKind::Pure,
-        (false, false, true) => FnKind::ImplementableEvent,
+        (false, false, false, false) => FnKind::Callable,
+        (true, false, false, false) => FnKind::Override,
+        (false, true, false, false) => FnKind::Pure,
+        (false, false, true, false) => FnKind::ImplementableEvent,
+        (false, false, false, true) => FnKind::NativeEvent,
         _ => {
             return Err(syn::Error::new_spanned(
                 &method.sig,
-                "a #[ufunction] is one of Override, BlueprintPure and BlueprintImplementableEvent",
+                "a #[ufunction] is one of Override, BlueprintPure, BlueprintImplementableEvent \
+                 and BlueprintNativeEvent",
             ));
         }
     };
@@ -789,11 +831,14 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
 
                 let (ty, out) = match &*pat_type.ty {
                     Type::Reference(reference) if reference.mutability.is_some() => {
-                        if matches!(kind, FnKind::ImplementableEvent | FnKind::Override) {
+                        if matches!(
+                            kind,
+                            FnKind::ImplementableEvent | FnKind::NativeEvent | FnKind::Override
+                        ) {
                             return Err(syn::Error::new_spanned(
                                 &pat_type.ty,
-                                "an out parameter (&mut T) belongs to a function Rust implements: \
-                                 a BlueprintImplementableEvent has none, and an Override takes \
+                                "an out parameter (&mut T) belongs to a function only Rust \
+                                 implements: Blueprint events have none, and an Override takes \
                                  the engine's as OutRef<T>",
                             ));
                         }
@@ -970,6 +1015,10 @@ fn result_value(ty: &Type) -> Option<Type> {
     };
 
     is_result.then_some(value)
+}
+
+fn native_implementation_ident(method: &Ident) -> Ident {
+    format_ident!("{}_implementation", method.unraw())
 }
 
 fn out_write(param: &ParamInfo, idx: usize, info: Option<&prop_type::PropTypeInfo>) -> TokenStream {
