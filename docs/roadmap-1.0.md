@@ -232,6 +232,15 @@ handbooks document both kinds, each for its own reader.
 
 ### M1 — The type system, closed (≈0.11, L)
 
+**Status (2026-10-20):** done, on Linux. `cargo xtask engine-test` runs 47
+checks in a headless editor, every property kind among them in both
+directions (through properties and through reflection), and
+`cargo xtask templates-check` compiles every template against bindings with
+every feature. `TLazyObjectPtr` is checked through the weak path it shares,
+since its only engine properties are Niagara's. The breaking changes have
+their notes in `rusteal upgrade` and the handbook's versions page. Left:
+Windows and macOS.
+
 Tiers 1 and 2 for types, plus the test harness everything after it needs.
 
 - **Harness:** a headless engine test runner in the repository, run by
