@@ -30,6 +30,8 @@ enum FnKind {
 }
 
 struct UFunctionInfo {
+    metadata: Vec<(String, String)>,
+    is_static: bool,
     method_ident: Ident,
     ue_name: String,
     params: Vec<ParamInfo>,
@@ -253,6 +255,12 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
             flags_expr
         };
 
+        let flags_expr = if uf.is_static {
+            quote! { #flags_expr | ::rusteal_runtime::ffi::FUNC_STATIC }
+        } else {
+            flags_expr
+        };
+
         let total_offsets = uf.params.len() + if uf.return_type.is_some() { 1 } else { 0 };
 
         let mut offset_inits: Vec<TokenStream> = Vec::new();
@@ -459,7 +467,9 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
             (quote! {}, quote! {})
         };
 
-        let this_binding = if uf.is_mut {
+        let this_binding = if uf.is_static {
+            quote! { let _ = (obj, rust_data); }
+        } else if uf.is_mut {
             quote! {
                 let mut __this = #struct_name {
                     __obj: obj,
@@ -485,6 +495,7 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
         let method_ident = &impl_ident;
 
         let call = match &interface {
+            None if uf.is_static => quote! { #struct_name::#method_ident(#(#param_args),*) },
             Some(trait_path) if uf.is_mut => {
                 quote! { #trait_path::#method_ident(&mut __this, #(#param_args),*) }
             }
@@ -571,6 +582,25 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
                 )
             };
         });
+        }
+
+        for (key, value) in &uf.metadata {
+            let key_bytes = key.as_bytes();
+            let key_len = key.len() as u32;
+            let value_bytes = value.as_bytes();
+            let value_len = value.len() as u32;
+
+            register_stmts.push(quote! {
+                if !#func_var.is_null() {
+                    unsafe {
+                        ::rusteal_runtime::runtime::ffi_dispatch::reify_set_function_metadata(
+                            #func_var,
+                            [#(#key_bytes),*].as_ptr(), #key_len,
+                            [#(#value_bytes),*].as_ptr(), #value_len,
+                        );
+                    }
+                }
+            });
         }
 
         if uf.kind != FnKind::Override {
@@ -723,12 +753,21 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
 }
 
 fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
-    let (specifiers, explicit_name) =
-        if let Some(attr) = method.attrs.iter().find(|a| a.path().is_ident("ufunction")) {
-            parse_ufunction_specifiers(attr)?
-        } else {
-            (Vec::new(), None)
-        };
+    let spec = if let Some(attr) = method.attrs.iter().find(|a| a.path().is_ident("ufunction")) {
+        parse_ufunction_specifiers(attr)?
+    } else {
+        UFunctionSpec::default()
+    };
+
+    let specifiers = spec.specifiers;
+    let explicit_name = spec.name;
+    let mut metadata = spec.metadata;
+
+    if !metadata.iter().any(|(key, _)| key == "ToolTip")
+        && let Some(tooltip) = crate::uclass::doc_tooltip(&method.attrs)
+    {
+        metadata.push(("ToolTip".to_string(), tooltip));
+    }
 
     let has = |name: &str| specifiers.iter().any(|s| s == name);
 
@@ -738,6 +777,7 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
         "Override",
         "BlueprintImplementableEvent",
         "BlueprintNativeEvent",
+        "CallInEditor",
         "Exec",
     ];
 
@@ -747,12 +787,18 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
             format!(
                 "unknown #[ufunction] argument `{unknown}`: expected BlueprintCallable, \
                  BlueprintPure, Override, BlueprintImplementableEvent, BlueprintNativeEvent, \
-                 Exec or name = \"...\""
+                 CallInEditor, Exec, name = \"...\", category = \"...\" or meta(...)"
             ),
         ));
     }
 
     let exec = has("Exec");
+
+    if has("CallInEditor") {
+        metadata.push(("CallInEditor".to_string(), "true".to_string()));
+    }
+
+    let is_static = !matches!(method.sig.inputs.first(), Some(FnArg::Receiver(_)));
 
     let kind = match (
         has("Override"),
@@ -775,6 +821,19 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
     };
 
     let is_override = kind == FnKind::Override;
+
+    if is_static
+        && matches!(
+            kind,
+            FnKind::Override | FnKind::ImplementableEvent | FnKind::NativeEvent
+        )
+    {
+        return Err(syn::Error::new_spanned(
+            &method.sig,
+            "an event belongs to an object: it takes &self or &mut self; a function with no \
+             self is a static function (a function library's)",
+        ));
+    }
 
     let check_event_type = |ty: &Type| -> syn::Result<()> {
         if kind == FnKind::ImplementableEvent
@@ -938,6 +997,8 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
         .collect();
 
     Ok(UFunctionInfo {
+        metadata,
+        is_static,
         method_ident,
         ue_name,
         params,
@@ -975,6 +1036,8 @@ fn parse_interface_fn(method: &ImplItemFn, trait_path: &syn::Path) -> syn::Resul
         .collect();
 
     Ok(UFunctionInfo {
+        metadata: Vec::new(),
+        is_static: false,
         method_ident,
         ue_name: signature.ue_name,
         params: signature.params,
@@ -1128,12 +1191,18 @@ fn event_struct_param(ty: &Type) -> Option<Type> {
     .then_some(inner)
 }
 
-fn parse_ufunction_specifiers(attr: &syn::Attribute) -> syn::Result<(Vec<String>, Option<String>)> {
-    let mut specifiers = Vec::new();
-    let mut name = None;
+#[derive(Default)]
+struct UFunctionSpec {
+    specifiers: Vec<String>,
+    name: Option<String>,
+    metadata: Vec<(String, String)>,
+}
+
+fn parse_ufunction_specifiers(attr: &syn::Attribute) -> syn::Result<UFunctionSpec> {
+    let mut spec = UFunctionSpec::default();
 
     if let Meta::Path(_) = attr.meta {
-        return Ok((specifiers, name));
+        return Ok(spec);
     }
 
     let nested = attr.parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated)?;
@@ -1142,14 +1211,29 @@ fn parse_ufunction_specifiers(attr: &syn::Attribute) -> syn::Result<(Vec<String>
         match meta {
             Meta::Path(p) => {
                 if let Some(ident) = p.get_ident() {
-                    specifiers.push(ident.to_string());
+                    spec.specifiers.push(ident.to_string());
                 }
             }
+            Meta::List(list) if list.path.is_ident("meta") => {
+                spec.metadata.extend(crate::uclass::parse_meta_list(list)?);
+            }
+            Meta::NameValue(nv) if nv.path.is_ident("category") => match &nv.value {
+                syn::Expr::Lit(syn::ExprLit {
+                    lit: syn::Lit::Str(s),
+                    ..
+                }) => spec.metadata.push(("Category".to_string(), s.value())),
+                other => {
+                    return Err(syn::Error::new_spanned(
+                        other,
+                        "`category` is a string: category = \"Combat\"",
+                    ));
+                }
+            },
             Meta::NameValue(nv) if nv.path.is_ident("name") => match &nv.value {
                 syn::Expr::Lit(syn::ExprLit {
                     lit: syn::Lit::Str(s),
                     ..
-                }) => name = Some(s.value()),
+                }) => spec.name = Some(s.value()),
                 other => {
                     return Err(syn::Error::new_spanned(
                         other,
@@ -1166,7 +1250,7 @@ fn parse_ufunction_specifiers(attr: &syn::Attribute) -> syn::Result<(Vec<String>
         }
     }
 
-    Ok((specifiers, name))
+    Ok(spec)
 }
 
 fn implementable_event_body(uf: &UFunctionInfo) -> syn::Block {
@@ -1300,6 +1384,52 @@ mod tests {
         assert!(out.contains("Interactable :: interact (& mut __this , instigator)"));
         assert!(out.contains("FUNC_EVENT"));
         assert!(out.contains("__rusteal_register_door_interactable_functions"));
+    }
+
+    #[test]
+    fn ufunction_metadata_and_static_functions() {
+        let method: ImplItemFn = syn::parse_quote! {
+            /// Puts the counter back to zero.
+            #[ufunction(CallInEditor, category = "Debug", meta(DevelopmentOnly, Keywords = "reset clear"))]
+            fn reset_count(&self) {}
+        };
+
+        let info = parse_ufunction(&method).unwrap();
+        let metadata: Vec<(&str, &str)> = info
+            .metadata
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .collect();
+
+        assert_eq!(
+            metadata,
+            [
+                ("Category", "Debug"),
+                ("DevelopmentOnly", "true"),
+                ("Keywords", "reset clear"),
+                ("ToolTip", "Puts the counter back to zero."),
+                ("CallInEditor", "true"),
+            ]
+        );
+        assert!(!info.is_static);
+
+        let method: ImplItemFn = syn::parse_quote! {
+            #[ufunction(BlueprintPure)]
+            fn add(a: i32, b: i32) -> i32 { a + b }
+        };
+        assert!(parse_ufunction(&method).unwrap().is_static);
+
+        let method: ImplItemFn = syn::parse_quote! {
+            #[ufunction(BlueprintNativeEvent)]
+            fn react(amount: i32) -> i32 { amount }
+        };
+        assert!(parse_ufunction(&method).is_err());
+
+        let method: ImplItemFn = syn::parse_quote! {
+            #[ufunction(Reliable)]
+            fn shoot(&self) {}
+        };
+        assert!(parse_ufunction(&method).is_err());
     }
 
     #[test]
