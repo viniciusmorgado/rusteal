@@ -36,7 +36,50 @@ impl InputActionValueExt for UStructRef<FInputActionValue> {
     }
 }
 
+/// A binding made by [`bind_action`]: it lasts as long as the actor's input component keeps it
+/// (a pawn's lasts until it is unpossessed); [`ActionBinding::unbind`] removes it sooner.
+#[derive(Debug, Clone, Copy)]
+pub struct ActionBinding {
+    actor: rusteal_ffi::UObjectHandle,
+    handle: u32,
+}
+
+impl ActionBinding {
+    pub fn unbind(self) {
+        rusteal_core::input::unbind_action_raw(self.actor, self.handle);
+    }
+}
+
+/// Calls `callback` with the action's value each time `trigger_event` happens on `action`, for
+/// `actor`'s Enhanced Input component; `method(self, Self::look)` makes the callback a method of
+/// the class.
+#[track_caller]
 pub fn bind_action(
+    actor: &UObjectRef<impl UeClass>,
+    action: UObjectRef<InputAction>,
+    trigger_event: ETriggerEvent,
+    mut callback: impl FnMut(UStructRef<FInputActionValue>) + Send + 'static,
+) -> RustealResult<ActionBinding> {
+    let actor = actor.checked()?.raw();
+    let action = action.checked()?.raw();
+
+    let handle = rusteal_core::input::bind_action_closure_raw(
+        actor,
+        action,
+        trigger_event as u8,
+        move |args| {
+            let value = unsafe { rusteal_core::struct_ref_from_param(args.value as *mut u8, 0) };
+            callback(value);
+        },
+    )?;
+
+    Ok(ActionBinding { actor, handle })
+}
+
+/// Binds the UFunction named `function` of `actor`, as Blueprint's input events do: for a
+/// function a Blueprint defines. Rust code binds a closure or a method with [`bind_action`].
+#[track_caller]
+pub fn bind_action_by_name(
     actor: &UObjectRef<impl UeClass>,
     action: UObjectRef<InputAction>,
     trigger_event: ETriggerEvent,

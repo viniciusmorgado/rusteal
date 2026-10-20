@@ -4,6 +4,7 @@
 #include "InputAction.h"
 #include "InputActionValue.h"
 #include "RustealApiTable.h"
+#include "RustealLibrary.h"
 #include "RustealModule.h"
 #include "Widgets/Input/SVirtualJoystick.h"
 
@@ -207,6 +208,108 @@ static ERustealErrorCode BindActionImpl(RustealUObjectHandle ActorHandle,
   return ERustealErrorCode::Ok;
 }
 
+namespace {
+struct FRustealInputCallback;
+
+TSet<FRustealInputCallback *> GInputCallbacks;
+
+struct FRustealInputCallback {
+  FRustealLibrary *Library = nullptr;
+  uint64 CallbackId = 0;
+
+  FRustealInputCallback(FRustealLibrary *InLibrary, uint64 InCallbackId)
+      : Library(InLibrary), CallbackId(InCallbackId) {
+    GInputCallbacks.Add(this);
+  }
+
+  ~FRustealInputCallback() {
+    GInputCallbacks.Remove(this);
+
+    RustealCallLibrary(Library, [this](const FRustealRustCallbacks &Cb) {
+      Cb.release_delegate_callback(CallbackId);
+    });
+  }
+};
+} // namespace
+
+static ERustealErrorCode BindActionClosureImpl(RustealUObjectHandle ActorHandle,
+                                               RustealUObjectHandle ActionHandle,
+                                               uint8 TriggerEvent,
+                                               uint64 CallbackId,
+                                               uint32 *OutHandle) {
+  AActor *Actor = Cast<AActor>(static_cast<UObject *>(ActorHandle.ptr));
+
+  UInputAction *Action =
+      Cast<UInputAction>(static_cast<UObject *>(ActionHandle.ptr));
+
+  if (!IsValid(Actor) || !IsValid(Action)) {
+    return RustealFail(ERustealErrorCode::NullArgument);
+  }
+
+  UEnhancedInputComponent *Input =
+      Cast<UEnhancedInputComponent>(Actor->InputComponent);
+
+  if (!Input) {
+    return RustealFail(
+        ERustealErrorCode::InvalidOperation,
+        FString::Printf(TEXT("bind_action: %s has no Enhanced Input component"),
+                        *Actor->GetName()));
+  }
+
+  TSharedRef<FRustealInputCallback> Callback =
+      MakeShared<FRustealInputCallback>(RustealCurrentLibrary(), CallbackId);
+
+  FEnhancedInputActionEventBinding &Binding = Input->BindActionInstanceLambda(
+      Action, static_cast<ETriggerEvent>(TriggerEvent),
+      [Callback](const FInputActionInstance &Instance) {
+        const FInputActionValue Value = Instance.GetValue();
+
+        FRustealInputArgs Args;
+        Args.value = reinterpret_cast<const uint8 *>(&Value);
+        Args.elapsed_seconds = Instance.GetElapsedTime();
+        Args.triggered_seconds = Instance.GetTriggeredTime();
+        Args.action = RustealUObjectHandle{
+            const_cast<UInputAction *>(Instance.GetSourceAction().Get())};
+
+        RustealCallLibrary(Callback->Library,
+                           [&Callback, &Args](const FRustealRustCallbacks &Cb) {
+                             Cb.invoke_delegate_callback(
+                                 Callback->CallbackId,
+                                 reinterpret_cast<uint8 *>(&Args));
+                           });
+      });
+
+  if (OutHandle) {
+    *OutHandle = Binding.GetHandle();
+  }
+
+  return ERustealErrorCode::Ok;
+}
+
+static ERustealErrorCode UnbindActionImpl(RustealUObjectHandle ActorHandle,
+                                          uint32 Handle) {
+  AActor *Actor = Cast<AActor>(static_cast<UObject *>(ActorHandle.ptr));
+
+  if (!IsValid(Actor)) {
+    return ERustealErrorCode::Ok;
+  }
+
+  if (UEnhancedInputComponent *Input =
+          Cast<UEnhancedInputComponent>(Actor->InputComponent)) {
+    Input->RemoveBindingByHandle(Handle);
+  }
+
+  return ERustealErrorCode::Ok;
+}
+
+void RustealInputForgetLibrary(FRustealLibrary *Library) {
+  for (FRustealInputCallback *Callback : GInputCallbacks) {
+    if (Callback->Library == Library) {
+      Callback->Library = nullptr;
+    }
+  }
+}
+
 static bool ShouldDisplayTouchInterfaceImpl() {
   return SVirtualJoystick::ShouldDisplayTouchInterface();
 }
@@ -214,4 +317,6 @@ static bool ShouldDisplayTouchInterfaceImpl() {
 FRustealInputApi GInputApi = {
     &BindActionImpl,
     &ShouldDisplayTouchInterfaceImpl,
+    &BindActionClosureImpl,
+    &UnbindActionImpl,
 };
