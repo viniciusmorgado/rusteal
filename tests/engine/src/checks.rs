@@ -7,6 +7,7 @@ use bindings::core_ue::{
     FARFilter, FARFilterExt, FGuid, FInstancedStruct, FIntPoint, FIntPointExt,
 };
 use bindings::engine::SceneComponentExt;
+use bindings::engine::StaticMesh;
 use bindings::engine::{
     ActorComponent, BlendableInterface, CameraComponent, CameraComponentExt, CurveFloat,
     CurveFloatExt, ECollisionChannel, EMoveComponentAction, FMinimalViewInfoExt,
@@ -193,6 +194,10 @@ pub const ALL: &[(&str, Check)] = &[
     (
         "latent_action_of_a_destroyed_owner_is_cancelled",
         latent_action_of_a_destroyed_owner_is_cancelled,
+    ),
+    (
+        "assets_load_in_the_background",
+        assets_load_in_the_background,
     ),
 ];
 
@@ -938,6 +943,120 @@ fn latent_action_of_a_destroyed_owner_is_cancelled(context: &Context) -> Outcome
                 ensure(
                     !resumed.load(Ordering::SeqCst),
                     "the cancelled task resumed",
+                )
+            }),
+        )
+    }))
+}
+
+#[derive(Default)]
+struct LoadResults {
+    mesh: Option<String>,
+    class: Option<String>,
+    all: Vec<bool>,
+    primary_failed: bool,
+    finished: bool,
+}
+
+fn assets_load_in_the_background(context: &Context) -> Outcome {
+    let baseline = rusteal_runtime::runtime::loading::loads_in_progress();
+
+    let started = (|| {
+        let actor = spawn(context)?;
+        let results = Arc::new(Mutex::new(LoadResults::default()));
+        let sink = results.clone();
+
+        let _task = task::spawn_local(&actor, async move {
+            let cancelled = task::spawn_local(&actor, async {
+                SoftObjectRef::<StaticMesh>::new("/Engine/BasicShapes/Cylinder.Cylinder")
+                    .load_async()
+                    .await
+            });
+
+            task::next_frame().await;
+            cancelled.abort();
+
+            let mesh = SoftObjectRef::<StaticMesh>::new("/Engine/BasicShapes/Sphere.Sphere")
+                .load_async()
+                .await;
+
+            let class = SoftClassRef::<Actor>::new(STATIC_MESH_ACTOR)
+                .load_async()
+                .await;
+
+            let all = rusteal_runtime::runtime::loading::load_all(&[
+                SoftObjectRef::<StaticMesh>::new("/Engine/BasicShapes/Cone.Cone"),
+                SoftObjectRef::<StaticMesh>::new("/Engine/BasicShapes/NoSuchShape.NoSuchShape"),
+                SoftObjectRef::<StaticMesh>::new("/Engine/BasicShapes/Plane.Plane"),
+            ])
+            .await;
+
+            let primary = rusteal_runtime::runtime::loading::load_primary_asset::<
+                bindings::core_ue::Object,
+            >("NoSuchType:NoSuchAsset", &[])
+            .await;
+
+            let mut results = sink.lock().unwrap();
+            results.mesh = Some(match mesh {
+                Ok(mesh) => mesh.get_name().unwrap_or_else(|e| format!("{e:?}")),
+                Err(e) => format!("{e:?}"),
+            });
+            results.class = Some(match class {
+                Ok(class) if class.raw() == SubclassOf::<StaticMeshActor>::base().raw() => {
+                    "StaticMeshActor".to_string()
+                }
+                Ok(_) => "another class".to_string(),
+                Err(e) => format!("{e:?}"),
+            });
+            results.all = all
+                .map(|all| all.iter().map(Result::is_ok).collect())
+                .unwrap_or_default();
+            results.primary_failed = primary.is_err();
+            results.finished = true;
+        });
+
+        Ok::<_, String>(results)
+    })();
+
+    let results = match started {
+        Ok(results) => results,
+        Err(e) => return done(Err(e)),
+    };
+
+    let mut frames = 0;
+
+    Outcome::Pending(Box::new(move || {
+        frames += 1;
+        let results = results.lock().unwrap();
+
+        if !results.finished {
+            return (frames > 1200).then(|| Err("the loads never finished".to_string()));
+        }
+
+        let in_progress = rusteal_runtime::runtime::loading::loads_in_progress();
+
+        Some(
+            ensure(
+                results.mesh.as_deref() == Some("Sphere"),
+                format!("load_async gave {:?}", results.mesh),
+            )
+            .and_then(|_| {
+                ensure(
+                    results.class.as_deref() == Some("StaticMeshActor"),
+                    format!("SoftClassRef::load_async gave {:?}", results.class),
+                )
+            })
+            .and_then(|_| {
+                ensure(
+                    results.all == [true, false, true],
+                    format!("load_all gave {:?}", results.all),
+                )
+            })
+            .and_then(|_| ensure(results.primary_failed, "an unknown primary asset loaded"))
+            .and_then(|_| {
+                ensure(
+                    in_progress <= baseline,
+                    format!("{in_progress} loads in progress, {baseline} before"),
                 )
             }),
         )
