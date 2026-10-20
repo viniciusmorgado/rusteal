@@ -210,6 +210,12 @@ pub fn generate_class(class: &ClassInfo, ctx: &CodegenContext) -> String {
     out
 }
 
+pub(super) fn is_latent_info(param: &ParamInfo) -> bool {
+    param.prop_type == "StructProperty"
+        && param.struct_name.as_deref() == Some("LatentActionInfo")
+        && type_map::param_direction(param) == ParamDirection::In
+}
+
 fn is_static_fn(entry: &FuncEntry) -> bool {
     entry.func.is_static || (entry.func.func_flags & FUNC_STATIC != 0)
 }
@@ -298,6 +304,11 @@ fn generate_function(out: &mut String, entry: &FuncEntry, class_name: &str, ctx:
     {
         out.push_str(&format!(
             "    // Skipped: {}.{} (soft reference or delegate next to a container)\n\n",
+            class_name, entry.func.name
+        ));
+    } else if has_container && entry.func.params.iter().any(is_latent_info) {
+        out.push_str(&format!(
+            "    // Skipped: {}.{} (latent function with a container)\n\n",
             class_name, entry.func.name
         ));
     } else if has_container {
@@ -413,6 +424,7 @@ fn generate_scalar_function(
     };
 
     let is_static = func.is_static || (func.func_flags & FUNC_STATIC != 0);
+    let latent = func.params.iter().any(is_latent_info);
 
     let mut sig = String::new();
 
@@ -429,6 +441,10 @@ fn generate_scalar_function(
 
     for (param, dir, mapped) in &all_mapped {
         if *dir == ParamDirection::Return {
+            continue;
+        }
+
+        if is_latent_info(param) {
             continue;
         }
 
@@ -531,7 +547,11 @@ fn generate_scalar_function(
         sig.truncate(sig.len() - 2);
     }
 
-    if return_rust_type == "()" {
+    if latent {
+        sig.push_str(&format!(
+            ") -> impl std::future::Future<Output = {return_rust_type}>"
+        ));
+    } else if return_rust_type == "()" {
         sig.push(')');
     } else {
         sig.push_str(&format!(") -> {return_rust_type}"));
@@ -562,7 +582,11 @@ fn generate_scalar_function(
         }
     }
 
-    out.push_str("        {\n");
+    if latent {
+        out.push_str("        async move {\n");
+    } else {
+        out.push_str("        {\n");
+    }
 
     let mut ffi_params = String::new();
 
@@ -570,7 +594,12 @@ fn generate_scalar_function(
         ffi_params.push_str("rusteal_core::UObjectHandle, ");
     }
 
-    for (_param, dir, mapped) in &all_mapped {
+    for (param, dir, mapped) in &all_mapped {
+        if is_latent_info(param) {
+            ffi_params.push_str("u64, ");
+            continue;
+        }
+
         match dir {
             ParamDirection::In | ParamDirection::InOut => match mapped.rust_to_ffi {
                 ConversionKind::Delegate => {
@@ -741,7 +770,12 @@ fn generate_scalar_function(
         ));
     }
 
-    out.push_str("        rusteal_core::ffi_infallible(unsafe { __rusteal_fn(");
+    if latent {
+        out.push_str("        let __latent = rusteal_core::latent::LatentCall::new();\n");
+        out.push_str("        let __latent_code = unsafe { __rusteal_fn(");
+    } else {
+        out.push_str("        rusteal_core::ffi_infallible(unsafe { __rusteal_fn(");
+    }
 
     if !is_static {
         out.push_str("h, ");
@@ -749,6 +783,11 @@ fn generate_scalar_function(
 
     for (param, dir, mapped) in &all_mapped {
         let pname = escape_reserved(&to_snake_case(&param.name));
+
+        if is_latent_info(param) {
+            out.push_str("__latent.id(), ");
+            continue;
+        }
 
         match dir {
             ParamDirection::In | ParamDirection::InOut => {
@@ -828,7 +867,18 @@ fn generate_scalar_function(
         out.truncate(out_len - 2);
     }
 
-    out.push_str(") });\n");
+    if latent {
+        out.push_str(&format!(
+            ") }};\n\
+             \x20       match rusteal_core::check_ffi(__latent_code) {{\n\
+             \x20           Ok(()) => __latent.await,\n\
+             \x20           Err(e) => e.__log_in(rusteal_core::LOG_WARNING, \"{class_name}.{}\"),\n\
+             \x20       }}\n",
+            func.name
+        ));
+    } else {
+        out.push_str(") });\n");
+    }
 
     for (pname, ..) in &delegate_params {
         out.push_str(&format!(

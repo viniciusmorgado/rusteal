@@ -146,6 +146,7 @@ const RUSTEAL_INTERNAL_CLASSES: &[&str] = &[
     "RustealReifiedClass",
     "RustealReifiedFunction",
     "RustealDelegateProxy",
+    "RustealLatentProxy",
 ];
 
 const ENGINE_PLUGIN_PACKAGES: &[(&str, &str)] = &[("GameplayAbilities", "GameplayAbilities")];
