@@ -35,65 +35,65 @@ static FProperty *CreatePropertyByType(FFieldVariant Owner, FName PropName,
 
   switch (PropType) {
   case ERustealReifyPropType::Bool: {
-    FBoolProperty *BoolProp = new FBoolProperty(Owner, PropName, RF_Public);
+    FBoolProperty *BoolProp = new FBoolProperty(Owner, PropName);
     BoolProp->SetBoolSize(sizeof(bool), true);
     Prop = BoolProp;
     break;
   }
   case ERustealReifyPropType::Int8: {
-    Prop = new FInt8Property(Owner, PropName, RF_Public);
+    Prop = new FInt8Property(Owner, PropName);
     break;
   }
   case ERustealReifyPropType::Int16: {
-    Prop = new FInt16Property(Owner, PropName, RF_Public);
+    Prop = new FInt16Property(Owner, PropName);
     break;
   }
   case ERustealReifyPropType::Int32: {
-    Prop = new FIntProperty(Owner, PropName, RF_Public);
+    Prop = new FIntProperty(Owner, PropName);
     break;
   }
   case ERustealReifyPropType::Int64: {
-    Prop = new FInt64Property(Owner, PropName, RF_Public);
+    Prop = new FInt64Property(Owner, PropName);
     break;
   }
   case ERustealReifyPropType::UInt8: {
-    Prop = new FByteProperty(Owner, PropName, RF_Public);
+    Prop = new FByteProperty(Owner, PropName);
     break;
   }
   case ERustealReifyPropType::UInt16: {
-    Prop = new FUInt16Property(Owner, PropName, RF_Public);
+    Prop = new FUInt16Property(Owner, PropName);
     break;
   }
   case ERustealReifyPropType::UInt32: {
-    Prop = new FUInt32Property(Owner, PropName, RF_Public);
+    Prop = new FUInt32Property(Owner, PropName);
     break;
   }
   case ERustealReifyPropType::UInt64: {
-    Prop = new FUInt64Property(Owner, PropName, RF_Public);
+    Prop = new FUInt64Property(Owner, PropName);
     break;
   }
   case ERustealReifyPropType::Float: {
-    Prop = new FFloatProperty(Owner, PropName, RF_Public);
+    Prop = new FFloatProperty(Owner, PropName);
     break;
   }
   case ERustealReifyPropType::Double: {
-    Prop = new FDoubleProperty(Owner, PropName, RF_Public);
+    Prop = new FDoubleProperty(Owner, PropName);
     break;
   }
   case ERustealReifyPropType::String: {
-    Prop = new FStrProperty(Owner, PropName, RF_Public);
+    Prop = new FStrProperty(Owner, PropName);
     break;
   }
   case ERustealReifyPropType::Name: {
-    Prop = new FNameProperty(Owner, PropName, RF_Public);
+    Prop = new FNameProperty(Owner, PropName);
     break;
   }
   case ERustealReifyPropType::Text: {
-    Prop = new FTextProperty(Owner, PropName, RF_Public);
+    Prop = new FTextProperty(Owner, PropName);
     break;
   }
   case ERustealReifyPropType::Object: {
-    FObjectProperty *ObjProp = new FObjectProperty(Owner, PropName, RF_Public);
+    FObjectProperty *ObjProp = new FObjectProperty(Owner, PropName);
     if (Extra && Extra->class_handle.ptr) {
       ObjProp->PropertyClass = static_cast<UClass *>(Extra->class_handle.ptr);
     } else {
@@ -103,7 +103,7 @@ static FProperty *CreatePropertyByType(FFieldVariant Owner, FName PropName,
     break;
   }
   case ERustealReifyPropType::Class: {
-    FClassProperty *ClsProp = new FClassProperty(Owner, PropName, RF_Public);
+    FClassProperty *ClsProp = new FClassProperty(Owner, PropName);
     if (Extra) {
       ClsProp->PropertyClass =
           Extra->class_handle.ptr
@@ -133,8 +133,7 @@ static FProperty *CreatePropertyByType(FFieldVariant Owner, FName PropName,
 
       return nullptr;
     }
-    FStructProperty *StructProp =
-        new FStructProperty(Owner, PropName, RF_Public);
+    FStructProperty *StructProp = new FStructProperty(Owner, PropName);
     StructProp->Struct = ScriptStruct;
     Prop = StructProp;
     break;
@@ -149,10 +148,10 @@ static FProperty *CreatePropertyByType(FFieldVariant Owner, FName PropName,
 
       return nullptr;
     }
-    FEnumProperty *EnumProp = new FEnumProperty(Owner, PropName, RF_Public);
+    FEnumProperty *EnumProp = new FEnumProperty(Owner, PropName);
     EnumProp->SetEnum(EnumType);
     FNumericProperty *UnderlyingProp =
-        new FByteProperty(EnumProp, TEXT("UnderlyingType"), RF_Public);
+        new FByteProperty(EnumProp, TEXT("UnderlyingType"));
     EnumProp->AddCppProperty(UnderlyingProp);
     Prop = EnumProp;
     break;
@@ -181,8 +180,7 @@ static FProperty *CreatePropertyByType(FFieldVariant Owner, FName PropName,
     break;
   }
   case ERustealReifyPropType::SoftObject: {
-    FSoftObjectProperty *SoftProp =
-        new FSoftObjectProperty(Owner, PropName, RF_Public);
+    FSoftObjectProperty *SoftProp = new FSoftObjectProperty(Owner, PropName);
     SoftProp->PropertyClass =
         (Extra && Extra->class_handle.ptr)
             ? static_cast<UClass *>(Extra->class_handle.ptr)
@@ -191,8 +189,7 @@ static FProperty *CreatePropertyByType(FFieldVariant Owner, FName PropName,
     break;
   }
   case ERustealReifyPropType::WeakObject: {
-    FWeakObjectProperty *WeakProp =
-        new FWeakObjectProperty(Owner, PropName, RF_Public);
+    FWeakObjectProperty *WeakProp = new FWeakObjectProperty(Owner, PropName);
     WeakProp->PropertyClass =
         (Extra && Extra->class_handle.ptr)
             ? static_cast<UClass *>(Extra->class_handle.ptr)
@@ -201,8 +198,7 @@ static FProperty *CreatePropertyByType(FFieldVariant Owner, FName PropName,
     break;
   }
   case ERustealReifyPropType::SoftClass: {
-    FSoftClassProperty *SoftProp =
-        new FSoftClassProperty(Owner, PropName, RF_Public);
+    FSoftClassProperty *SoftProp = new FSoftClassProperty(Owner, PropName);
     SoftProp->PropertyClass = UClass::StaticClass();
     SoftProp->SetMetaClass((Extra && Extra->meta_class_handle.ptr)
                                ? static_cast<UClass *>(Extra->meta_class_handle.ptr)
@@ -221,8 +217,7 @@ static FProperty *CreatePropertyByType(FFieldVariant Owner, FName PropName,
 
       return nullptr;
     }
-    FInterfaceProperty *IfaceProp =
-        new FInterfaceProperty(Owner, PropName, RF_Public);
+    FInterfaceProperty *IfaceProp = new FInterfaceProperty(Owner, PropName);
     IfaceProp->InterfaceClass = InterfaceClass;
     Prop = IfaceProp;
     break;
@@ -231,7 +226,7 @@ static FProperty *CreatePropertyByType(FFieldVariant Owner, FName PropName,
     const ERustealReifyPropType ElementType =
         Extra ? static_cast<ERustealReifyPropType>(Extra->inner_prop_type)
               : ERustealReifyPropType::Array;
-    FSetProperty *SetProp = new FSetProperty(Owner, PropName, RF_Public);
+    FSetProperty *SetProp = new FSetProperty(Owner, PropName);
     FProperty *Element = CreatePropertyByType(FFieldVariant(SetProp), PropName,
                                               ElementType, Extra);
     if (!Element) {
@@ -251,7 +246,7 @@ static FProperty *CreatePropertyByType(FFieldVariant Owner, FName PropName,
 
       return nullptr;
     }
-    FMapProperty *MapProp = new FMapProperty(Owner, PropName, RF_Public);
+    FMapProperty *MapProp = new FMapProperty(Owner, PropName);
     FProperty *Key = CreatePropertyByType(
         FFieldVariant(MapProp), *(PropName.ToString() + TEXT("_Key")),
         static_cast<ERustealReifyPropType>(Extra->inner_prop_type), Extra);
@@ -1203,7 +1198,7 @@ static ERustealErrorCode AddInterfaceImpl(RustealUClassHandle Cls,
   }
 
   if (GPendingInterfaces.IsEmpty()) {
-    FCoreDelegates::OnPostEngineInit.AddStatic(&ResolvePendingInterfaces);
+    FCoreDelegates::GetOnPostEngineInit().AddStatic(&ResolvePendingInterfaces);
   }
 
   GPendingInterfaces.Emplace(Class, InterfacePath);
@@ -1278,7 +1273,9 @@ static RustealUClassHandle CreateEnumImpl(const uint8 *Name, uint32 NameLen,
       NewObject<UEnum>(RustealPackage, EnumName, RF_Public | RF_Standalone);
 
   NewEnum->CppType = EnumString;
-  NewEnum->SetEnums(Pairs, UEnum::ECppForm::EnumClass);
+  NewEnum->SetEnums(Pairs, UEnum::ECppForm::EnumClass,
+                    UEnum::EUnderlyingType::int64, EEnumFlags::None,
+                    UEnum::EAddMaxKeyIfMissing::Yes);
 #if WITH_EDITORONLY_DATA
 
   NewEnum->SetMetaData(TEXT("BlueprintType"), TEXT("true"));

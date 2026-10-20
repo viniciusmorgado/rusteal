@@ -148,7 +148,7 @@ RustealDelegateApi_RemoveMulticast(RustealUObjectHandle ObjHandle,
   }
 
   TArray<UObject *> Children;
-  GetObjectsWithOuter(Object, Children, false);
+  GetObjectsWithOuter(Object, Children, EGetObjectsFlags::None);
 
   for (UObject *Child : Children) {
     URustealDelegateProxy *Proxy = Cast<URustealDelegateProxy>(Child);
