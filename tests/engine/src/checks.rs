@@ -19,6 +19,10 @@ use bindings::engine::{
     ProjectileMovementComponentExt, StaticMeshActor, TextRenderComponent, TextRenderComponentExt,
     TimelineComponent, TimelineComponentExt, VolumetricCloudComponent, VolumetricCloudComponentExt,
 };
+use bindings::engine::{
+    ActorExt, AsyncActionHandleSaveGame, AsyncActionHandleSaveGameExt, BlueprintAsyncActionBaseExt,
+    FLatentActionInfo, FLatentActionInfoExt, SaveGame,
+};
 use bindings::prelude::*;
 use bindings::slate_core::{
     EVerticalAlignment, FSlateBrush, FToolBarStyle, FToolBarStyleExt, FWrapButtonStyle,
@@ -198,6 +202,14 @@ pub const ALL: &[(&str, Check)] = &[
     (
         "assets_load_in_the_background",
         assets_load_in_the_background,
+    ),
+    (
+        "delegates_resolve_their_next_firing",
+        delegates_resolve_their_next_firing,
+    ),
+    (
+        "async_ufunction_runs_as_a_latent_node",
+        async_ufunction_runs_as_a_latent_node,
     ),
 ];
 
@@ -1057,6 +1069,212 @@ fn assets_load_in_the_background(context: &Context) -> Outcome {
                 ensure(
                     in_progress <= baseline,
                     format!("{in_progress} loads in progress, {baseline} before"),
+                )
+            }),
+        )
+    }))
+}
+
+#[derive(Default)]
+struct NextResults {
+    pinged: Option<i32>,
+    destroyed: bool,
+    saved: Option<bool>,
+    error: Option<String>,
+    finished: bool,
+}
+
+fn delegates_resolve_their_next_firing(context: &Context) -> Outcome {
+    let started = (|| {
+        let actor = spawn(context)?;
+        let other = spawn(context)?;
+        let results = Arc::new(Mutex::new(NextResults::default()));
+        let sink = results.clone();
+
+        let _task = task::spawn_local(&actor, async move {
+            let outcome = async {
+                let e = |e| format!("{e:?}");
+                let me = TestActor::from_obj(actor).map_err(e)?;
+
+                let pinged = me.on_ping_next();
+                me.ping(5);
+                let pinged = pinged.await.map_err(e)?;
+
+                let checked = other.checked().map_err(e)?;
+                let destroyed = checked.on_destroyed().next();
+                checked.k2_destroy_actor();
+                let destroyed = destroyed.await.map_err(e)?;
+
+                let world: UObjectRef<bindings::core_ue::Object> = actor.upcast_to();
+                let save = GameplayStatics::create_save_game_object(
+                    SubclassOf::<crate::fixtures::TestSave>::base().upcast_to::<SaveGame>(),
+                );
+                let action = AsyncActionHandleSaveGame::async_save_game_to_slot(
+                    world,
+                    save,
+                    "RustealTests",
+                    0,
+                );
+                let action = action.checked().map_err(e)?;
+                let completed = action.completed().next();
+                action.activate();
+                let (_, saved) = completed.await.map_err(e)?;
+
+                Ok::<_, String>((pinged, destroyed.raw() == other.raw(), saved))
+            }
+            .await;
+
+            let mut results = sink.lock().unwrap();
+
+            match outcome {
+                Ok((pinged, destroyed, saved)) => {
+                    results.pinged = Some(pinged);
+                    results.destroyed = destroyed;
+                    results.saved = Some(saved);
+                }
+                Err(e) => results.error = Some(e),
+            }
+
+            results.finished = true;
+        });
+
+        Ok::<_, String>(results)
+    })();
+
+    let results = match started {
+        Ok(results) => results,
+        Err(e) => return done(Err(e)),
+    };
+
+    let mut frames = 0;
+
+    Outcome::Pending(Box::new(move || {
+        frames += 1;
+        let results = results.lock().unwrap();
+
+        if !results.finished {
+            return (frames > 1200).then(|| Err("the awaited delegates never fired".to_string()));
+        }
+
+        if let Some(e) = &results.error {
+            return Some(Err(e.clone()));
+        }
+
+        Some(
+            ensure(
+                results.pinged == Some(5),
+                format!("on_ping_next gave {:?}", results.pinged),
+            )
+            .and_then(|_| {
+                ensure(
+                    results.destroyed,
+                    "on_destroyed().next() gave another actor",
+                )
+            })
+            .and_then(|_| {
+                ensure(
+                    results.saved == Some(true),
+                    format!("the save game action gave {:?}", results.saved),
+                )
+            }),
+        )
+    }))
+}
+
+fn latent_info(
+    target: UObjectRef<TestActor>,
+    linkage: i32,
+    uuid: i32,
+) -> OwnedStruct<FLatentActionInfo> {
+    let info = OwnedStruct::<FLatentActionInfo>::new();
+    let fields = info.as_ref();
+    fields.set_linkage(linkage);
+    fields.set_uuid(uuid);
+    fields.set_execution_function(FName::new("LatentFinished").handle());
+    fields.set_callback_target(target.upcast_to());
+    info
+}
+
+fn call_count_up(
+    actor: UObjectRef<TestActor>,
+    steps: i32,
+    info: &OwnedStruct<FLatentActionInfo>,
+) -> Result<(), String> {
+    let e = |e| format!("{e:?}");
+    let mut call = DynamicCall::new(&actor, "CountUp").map_err(e)?;
+    call.set("Steps", steps).map_err(e)?;
+    call.set_struct("LatentInfo", info).map_err(e)?;
+    call.call().map_err(e)?;
+    Ok(())
+}
+
+fn async_ufunction_runs_as_a_latent_node(context: &Context) -> Outcome {
+    let started = (|| {
+        let actor = spawn(context)?;
+        let target = spawn(context)?;
+        let doomed = spawn(context)?;
+        let doomed_target = spawn(context)?;
+
+        let info = latent_info(target, 7, 42);
+        call_count_up(actor, 3, &info)?;
+        call_count_up(actor, 3, &info)?;
+
+        call_count_up(doomed, 1000, &latent_info(doomed_target, 9, 43))?;
+
+        Ok::<_, String>((actor, target, doomed, doomed_target))
+    })();
+
+    let (actor, target, doomed, doomed_target) = match started {
+        Ok(started) => started,
+        Err(e) => return done(Err(e)),
+    };
+
+    let mut frames = 0;
+    let mut destroyed_at: Option<usize> = None;
+
+    Outcome::Pending(Box::new(move || {
+        frames += 1;
+        let e = |e| format!("{e:?}");
+
+        if frames == 3 {
+            if let Ok(doomed) = doomed.checked() {
+                doomed.k2_destroy_actor();
+            }
+
+            destroyed_at = Some(frames);
+        }
+
+        let finished = TestActor::from_obj(target)
+            .map(|t| t.finished_link())
+            .unwrap_or(-2);
+
+        if (finished != 7 || destroyed_at.is_none_or(|at| frames < at + 10)) && frames < 1200 {
+            return None;
+        }
+
+        let count = match TestActor::from_obj(actor).map_err(e) {
+            Ok(actor) => actor.count(),
+            Err(e) => return Some(Err(e)),
+        };
+
+        let doomed_finished = TestActor::from_obj(doomed_target)
+            .map(|t| t.finished_link())
+            .unwrap_or(-2);
+
+        let live = rusteal_runtime::runtime::latent::live_latent_functions();
+
+        Some(
+            ensure(
+                finished == 7,
+                format!(
+                    "the latent node finished with link {finished}, count {count}, {live} latent functions alive"
+                ),
+            )
+            .and_then(|_| ensure(count == 3, format!("the node ran to count {count}")))
+            .and_then(|_| {
+                ensure(
+                    doomed_finished == -1,
+                    format!("the destroyed owner's node fired with link {doomed_finished}"),
                 )
             }),
         )

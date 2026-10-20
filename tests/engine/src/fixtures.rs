@@ -1,6 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
-use bindings::engine::{BlueprintFunctionLibrary, ECollisionChannel, Material, SceneComponent};
+use bindings::engine::{
+    BlueprintFunctionLibrary, ECollisionChannel, Material, SaveGame, SceneComponent,
+};
 use bindings::prelude::*;
 use rusteal_runtime::runtime::{
     FName, OwnedStruct, ScriptInterface, SoftClassRef, SoftObjectRef, SubclassOf, TWeakObjectPtr,
@@ -138,6 +140,9 @@ pub struct TestActor {
 
     #[uproperty(BlueprintReadWrite)]
     serial: i64,
+
+    #[uproperty(BlueprintReadWrite, default = -1)]
+    finished_link: i32,
 }
 
 #[uclass_impl]
@@ -204,6 +209,19 @@ impl TestActor {
         }
 
         counts
+    }
+
+    #[ufunction]
+    pub async fn count_up(self, steps: i32) {
+        for _ in 0..steps {
+            rusteal_runtime::runtime::task::next_frame().await;
+            self.set_count(self.count() + 1);
+        }
+    }
+
+    #[ufunction]
+    pub fn latent_finished(&self, linkage: i32) {
+        self.set_finished_link(linkage);
     }
 
     #[ufunction]
@@ -336,4 +354,10 @@ impl TestLibrary {
     pub fn shout(words: String) -> String {
         words.to_uppercase()
     }
+}
+
+#[uclass(parent = SaveGame)]
+pub struct TestSave {
+    #[uproperty(SaveGame)]
+    score: i32,
 }
