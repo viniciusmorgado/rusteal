@@ -149,10 +149,17 @@ pub fn register_module(module: &Module) {
 
     let ordered = dependency_order(&ordered);
 
-    let blocks: Vec<&ClassFunctionRegistration> = inventory::iter::<ClassFunctionRegistration>
+    let mut blocks: Vec<&ClassFunctionRegistration> = inventory::iter::<ClassFunctionRegistration>
         .into_iter()
         .filter(|r| owned(r.krate))
         .collect();
+
+    blocks.sort_by_key(|block| {
+        ordered
+            .iter()
+            .position(|reg| reg.type_id == block.type_id)
+            .unwrap_or(usize::MAX)
+    });
 
     for freg in &blocks {
         (freg.register_functions)();
