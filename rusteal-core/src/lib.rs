@@ -2,6 +2,7 @@
 
 pub mod api;
 pub mod error;
+pub mod event;
 pub mod traits;
 
 #[allow(unused_imports, unused_unsafe, unsafe_op_in_unsafe_fn, clippy::all)]

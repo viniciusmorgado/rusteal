@@ -421,6 +421,45 @@ pub(crate) fn binding_methods(struct_name: &Ident, d: &DelegateInfo) -> TokenStr
 
     let receive = format!("receiving {ue_name}");
 
+    let next_method = (!single).then(|| {
+        let next = format_ident!("{}_next", d.method_ident.unraw());
+        let names: Vec<Ident> = (0..d.params.len()).map(|i| format_ident!("__p{i}")).collect();
+
+        let (output, value) = match names.len() {
+            0 => (quote! { () }, quote! { () }),
+            1 => {
+                let ty = &callback_types[0];
+                let name = &names[0];
+                (quote! { #ty }, quote! { #name })
+            }
+            _ => (
+                quote! { (#(#callback_types),*) },
+                quote! { (#(#names),*) },
+            ),
+        };
+
+        let next_doc = format!(
+            " The next time `{ue_name}` fires, with its parameters: it binds now, and unbinds once it has fired."
+        );
+
+        quote! {
+            #[doc = #next_doc]
+            pub fn #next(
+                &self,
+            ) -> impl ::std::future::Future<Output = ::rusteal_runtime::runtime::RustealResult<#output>> + 'static {
+                let (__sender, __receiver) = ::rusteal_runtime::runtime::event::once();
+                let __binding = self.#add(move |#(#names),*| __sender.send(#value));
+
+                async move {
+                    let __binding = __binding?;
+                    let __value = __receiver.await;
+                    drop(__binding);
+                    __value
+                }
+            }
+        }
+    });
+
     quote! {
         impl #struct_name {
             #[doc = #add_doc]
@@ -457,6 +496,8 @@ pub(crate) fn binding_methods(struct_name: &Ident, d: &DelegateInfo) -> TokenStr
                     },
                 )
             }
+
+            #next_method
 
             #[doc = #add_ufunction_doc]
             pub fn #add_ufunction(
