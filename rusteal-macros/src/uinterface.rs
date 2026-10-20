@@ -7,8 +7,7 @@ use crate::prop_type;
 use crate::shape;
 use crate::uclass::{to_screaming_snake, to_snake_case};
 use crate::uclass_impl::{
-    ParamInfo, dynamic_call_body, extra_expr, legacy_param as supported_param,
-    legacy_return as supported_return,
+    ParamInfo, dynamic_call_body, extra_expr, supported_param, supported_return,
 };
 
 pub(crate) struct InterfaceSignature {
@@ -238,7 +237,7 @@ pub fn expand_uinterface(attr: TokenStream, item: TokenStream) -> syn::Result<To
                     )
                 }))
                 .map(|(param, flags)| {
-                    let info = prop_type::map_type(&param.rust_ty).unwrap();
+                    let info = prop_type::map_fn_type(&param.rust_ty).unwrap();
                     let param_name = &param.ue_name;
                     let prop_type_expr = &info.prop_type_expr;
                     let extra = extra_expr(&info);
@@ -413,7 +412,7 @@ mod tests {
         assert!(expand(quote! { trait A { fn f(self); } }).is_err());
         assert!(expand(quote! { trait A { fn f(); } }).is_err());
         assert!(expand(quote! { trait A { fn f<T>(&self, t: T); } }).is_err());
-        assert!(expand(quote! { trait A { fn f(&self, s: String); } }).is_err());
+        assert!(expand(quote! { trait A { fn f(&self, s: usize); } }).is_err());
         assert!(expand(quote! { trait A { const X: i32; } }).is_err());
         assert!(expand(quote! { trait A<T> { fn f(&self); } }).is_err());
         assert!(expand(quote! { trait A: Clone { fn f(&self); } }).is_err());
