@@ -9,7 +9,7 @@ use crate::module::{self, ModuleId};
 use crate::sync::Mutex;
 
 pub use crate::executor::{
-    JoinHandle, next_frame, run_blocking, spawn_local, spawn_local_unowned, yield_now,
+    AbortHandle, JoinHandle, next_frame, run_blocking, spawn_local, spawn_local_unowned, yield_now,
 };
 
 type Job = Box<dyn FnOnce() + Send>;
