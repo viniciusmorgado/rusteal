@@ -23,6 +23,8 @@ pub struct Loadout {
 #[uinterface]
 pub trait Pingable {
     fn ping_value(&self) -> i32;
+
+    fn describe(&self, name: String, tags: Vec<FName>) -> Text;
 }
 
 #[uclass(parent = Actor)]
@@ -102,6 +104,10 @@ pub struct TestActor {
 impl Pingable for TestActor {
     fn ping_value(&self) -> i32 {
         99
+    }
+
+    fn describe(&self, name: String, tags: Vec<FName>) -> Text {
+        Text::from(format!("{name}: {}", tags.len()))
     }
 }
 

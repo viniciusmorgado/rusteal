@@ -129,6 +129,10 @@ pub const ALL: &[(&str, Check)] = &[
         ufunction_takes_and_returns_any_type,
     ),
     (
+        "interface_function_takes_any_type",
+        interface_function_takes_any_type,
+    ),
+    (
         "task_comes_back_to_the_game_thread",
         task_comes_back_to_the_game_thread,
     ),
@@ -1001,6 +1005,17 @@ fn ufunction_takes_and_returns_any_type(context: &Context) -> Outcome {
             .map_err(e)?;
         let path: String = call.call().map_err(e)?.value("ReturnValue").map_err(e)?;
         ensure(path == STATIC_MESH_ACTOR, format!("path {path:?}"))
+    })())
+}
+
+fn interface_function_takes_any_type(context: &Context) -> Outcome {
+    done((|| {
+        let actor = spawn(context)?;
+        let target = actor
+            .interface::<dyn Pingable>()
+            .map_err(|e| format!("{e:?}"))?;
+        let text = target.describe("Ada".to_string(), vec![FName::new("a"), FName::new("b")]);
+        ensure(text.to_string() == "Ada: 2", format!("described {text}"))
     })())
 }
 
