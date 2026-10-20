@@ -588,6 +588,9 @@ pub struct RustealDelegateApi {
         prop: FPropertyHandle,
         params: *mut u8,
     ) -> RustealErrorCode,
+
+    pub latent_cancel: unsafe extern "C" fn(callback_id: u64) -> RustealErrorCode,
+    pub live_latent_proxies: unsafe extern "C" fn() -> u32,
 }
 
 #[repr(C)]

@@ -375,6 +375,9 @@ static ERustealErrorCode RustealDelegateApi_AddFunction(
   return RustealFailType(RawProp, TEXT("FDelegateProperty"));
 }
 
+ERustealErrorCode RustealLatent_Cancel(uint64 CallbackId);
+uint32 RustealLatent_LiveProxies();
+
 FRustealDelegateApi GDelegateApi = {
     &RustealDelegateApi_BindDelegate,       &RustealDelegateApi_UnbindDelegate,
     &RustealDelegateApi_AddMulticast,       &RustealDelegateApi_RemoveMulticast,
@@ -383,4 +386,6 @@ FRustealDelegateApi GDelegateApi = {
     &RustealDelegateApi_MakeDelegate,
     &RustealDelegateApi_FreeDelegate,
     &RustealDelegateApi_ExecuteDelegate,
+    &RustealLatent_Cancel,
+    &RustealLatent_LiveProxies,
 };
