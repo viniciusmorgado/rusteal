@@ -283,6 +283,12 @@ static FProperty *CreatePropertyByType(FFieldVariant Owner, FName PropName,
 
 static void CopyParamsFromParentFunction(UFunction *NewFunc,
                                          UFunction *ParentFunc) {
+  FField **Tail = &NewFunc->ChildProperties;
+
+  while (*Tail) {
+    Tail = &(*Tail)->Next;
+  }
+
   for (FField *SrcField = ParentFunc->ChildProperties; SrcField;
        SrcField = SrcField->Next) {
     FProperty *SrcProp = CastField<FProperty>(SrcField);
@@ -291,88 +297,16 @@ static void CopyParamsFromParentFunction(UFunction *NewFunc,
       continue;
     }
 
-    ERustealReifyPropType PropType;
-    FRustealReifyPropExtra Extra = {};
+    FProperty *NewProp =
+        CastFieldChecked<FProperty>(FField::Duplicate(SrcProp, NewFunc));
 
-    if (SrcProp->IsA<FBoolProperty>()) {
-      PropType = ERustealReifyPropType::Bool;
-    } else if (SrcProp->IsA<FInt8Property>()) {
-      PropType = ERustealReifyPropType::Int8;
-    } else if (SrcProp->IsA<FInt16Property>()) {
-      PropType = ERustealReifyPropType::Int16;
-    } else if (SrcProp->IsA<FIntProperty>()) {
-      PropType = ERustealReifyPropType::Int32;
-    } else if (SrcProp->IsA<FInt64Property>()) {
-      PropType = ERustealReifyPropType::Int64;
-    } else if (SrcProp->IsA<FByteProperty>()) {
-      PropType = ERustealReifyPropType::UInt8;
-    } else if (SrcProp->IsA<FUInt16Property>()) {
-      PropType = ERustealReifyPropType::UInt16;
-    } else if (SrcProp->IsA<FUInt32Property>()) {
-      PropType = ERustealReifyPropType::UInt32;
-    } else if (SrcProp->IsA<FUInt64Property>()) {
-      PropType = ERustealReifyPropType::UInt64;
-    } else if (SrcProp->IsA<FFloatProperty>()) {
-      PropType = ERustealReifyPropType::Float;
-    } else if (SrcProp->IsA<FDoubleProperty>()) {
-      PropType = ERustealReifyPropType::Double;
-    } else if (SrcProp->IsA<FStrProperty>()) {
-      PropType = ERustealReifyPropType::String;
-    } else if (SrcProp->IsA<FNameProperty>()) {
-      PropType = ERustealReifyPropType::Name;
-    } else if (SrcProp->IsA<FTextProperty>()) {
-      PropType = ERustealReifyPropType::Text;
-    } else if (SrcProp->IsA<FStructProperty>()) {
-      PropType = ERustealReifyPropType::Struct;
-      Extra.struct_handle.ptr = CastField<FStructProperty>(SrcProp)->Struct;
-    } else if (SrcProp->IsA<FClassProperty>()) {
-      PropType = ERustealReifyPropType::Class;
-
-      Extra.class_handle.ptr =
-          CastField<FClassProperty>(SrcProp)->PropertyClass;
-
-      Extra.meta_class_handle.ptr =
-          CastField<FClassProperty>(SrcProp)->MetaClass;
-    } else if (SrcProp->IsA<FObjectProperty>()) {
-      PropType = ERustealReifyPropType::Object;
-
-      Extra.class_handle.ptr =
-          CastField<FObjectProperty>(SrcProp)->PropertyClass;
-    } else if (SrcProp->IsA<FEnumProperty>()) {
-      PropType = ERustealReifyPropType::Enum;
-      Extra.enum_handle.ptr = CastField<FEnumProperty>(SrcProp)->GetEnum();
-    } else {
-      UE_LOG(LogRusteal, Warning,
-             TEXT("[Rusteal] CopyParamsFromParent: unsupported property type "
-                  "'%s' for param '%s', skipping"),
-             *SrcProp->GetClass()->GetName(), *SrcProp->GetName());
-
-      continue;
+    if (NewProp->HasAnyPropertyFlags(CPF_OutParm) &&
+        !NewProp->HasAnyPropertyFlags(CPF_ReturnParm)) {
+      NewFunc->FunctionFlags |= FUNC_HasOutParms;
     }
 
-    FProperty *NewProp = CreatePropertyByType(
-        FFieldVariant(NewFunc), SrcProp->GetFName(), PropType, &Extra);
-
-    if (NewProp) {
-      NewProp->PropertyFlags = SrcProp->PropertyFlags;
-
-      if (NewProp->HasAnyPropertyFlags(CPF_OutParm) &&
-          !NewProp->HasAnyPropertyFlags(CPF_ReturnParm)) {
-        NewFunc->FunctionFlags |= FUNC_HasOutParms;
-      }
-
-      if (!NewFunc->ChildProperties) {
-        NewFunc->ChildProperties = NewProp;
-      } else {
-        FField *Last = NewFunc->ChildProperties;
-
-        while (Last->Next) {
-          Last = Last->Next;
-        }
-
-        Last->Next = NewProp;
-      }
-    }
+    *Tail = NewProp;
+    Tail = &NewProp->Next;
   }
 }
 
