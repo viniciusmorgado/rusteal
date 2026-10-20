@@ -55,25 +55,25 @@ refers to the next section.
 |---|---|---|
 | Engine `TScriptInterface` functions and properties: the dump named the native `I` class, so all were dropped, and `get_object` refused an `FInterfaceProperty` | done | M1 |
 | Engine strings cut at 512 bytes, converted to ANSI, and a cut could split a UTF-8 character | done | M1 |
-| Engine structs holding a `TArray` (or other owning members) read by copy into `OwnedStruct::from_bytes`, never destroyed: each read leaks | bug | M1 |
+| Engine structs holding a `TArray` (or other owning members) read by copy into `OwnedStruct::from_bytes`, never destroyed: each read leaks | done | M1 |
 | Engine `TSoftObjectPtr` and `TWeakObjectPtr` properties typed as strong `UObjectRef`: an unloaded soft reference read as null, its path lost; now `SoftObjectRef<T>` and `TWeakObjectPtr<T>` | done | M1 |
 | A feature whose modules come from an engine plugin got empty bindings: UHT did not run again after the plugin was added | done | M1 |
-| `TSoftClassPtr`, `TLazyObjectPtr`, `TOptional`, `TFieldPath` engine properties dropped | missing | M1 |
+| `TSoftClassPtr`, `TLazyObjectPtr`, `TOptional`, `TFieldPath` engine properties dropped; now `SoftClassRef<T>`, `TWeakObjectPtr<T>` and `Option<T>`, `TFieldPath` accepted (below) | done | M1 |
 | `FText` passed through `ToString`, losing its localization data; now `Text`, the engine's `FText` | done | M1 |
 | `Text::localized` in Rust code is not read by the engine's text gatherer: its texts are translated only when the localization data has their namespace and key (String Tables work) | missing | M8 |
 | Engine structs Rust read were shallow copies: arrays freed under Rust (function returns) or leaked (properties, containers) | done | M1 |
 | Engine `TSoftClassPtr` properties and functions dropped; now `SoftClassRef<T>` | done | M1 |
-| `FInstancedStruct` opaque, `TSubScriptStructOf` (new in 5.8) not mapped | partial | M1 |
-| Engine functions taking a delegate dropped | missing | M1 |
-| `#[uproperty]`: `TMap`, `TSet`, `FText`, `i8`/`i16`/`u16`/`u32`/`u64`, weak, soft class, interface and delegate properties, arrays of strings and soft references | missing | M1 |
-| `#[uproperty]` metadata (`ClampMin`, `EditCondition`, `Units`, `ToolTip`...), any `meta` | missing | M1 |
-| `#[ufunction]` parameters: `String`, `FName`, `FText`, arrays, maps, sets, soft references | missing | M1 |
-| `#[ufunction]` returning a struct, several outputs (out parameters) outside `Override` | missing | M1 |
-| `BlueprintNativeEvent` declared in Rust, `CallInEditor`, `Category`, function metadata | missing | M1 |
-| Static functions: Blueprint function libraries in Rust | missing | M1 |
-| `#[udelegate]`: single-cast and sparse delegates, strings and arrays in signatures | partial | M1 |
-| Override events whose parent signature has strings, arrays or soft references (`CopyParamsFromParent` drops them) | partial | M1 |
-| Unknown `#[uclass]`/`#[component]` arguments ignored instead of refused | sharp edge | M1 |
+| `FInstancedStruct` opaque, `TSubScriptStructOf` (new in 5.8) not mapped; now `make`, `get`, `set`, `reset`, and `TSubScriptStructOf` is in no engine property or function | done | M1 |
+| Engine functions taking a delegate dropped; now they take a closure | done | M1 |
+| `#[uproperty]`: `TMap`, `TSet`, `FText`, `i8`/`i16`/`u16`/`u32`/`u64`, weak, soft class, interface and delegate properties, arrays of strings and soft references; a delegate property is a `#[udelegate]` | done | M1 |
+| `#[uproperty]` metadata (`ClampMin`, `EditCondition`, `Units`, `ToolTip`...), any `meta` | done | M1 |
+| `#[ufunction]` parameters: `String`, `FName`, `FText`, arrays, maps, sets, soft references | done | M1 |
+| `#[ufunction]` returning a struct, several outputs (out parameters) outside `Override` | done | M1 |
+| `BlueprintNativeEvent` declared in Rust, `CallInEditor`, `Category`, function metadata | done | M1 |
+| Static functions: Blueprint function libraries in Rust | done | M1 |
+| `#[udelegate]`: single-cast and sparse delegates, strings and arrays in signatures | done | M1 |
+| Override events whose parent signature has strings, arrays or soft references (`CopyParamsFromParent` drops them) | done | M1 |
+| Unknown `#[uclass]`/`#[component]` arguments ignored instead of refused | done | M1 |
 
 ### Multiplayer
 
