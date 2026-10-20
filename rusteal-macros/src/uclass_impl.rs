@@ -844,8 +844,8 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
         {
             return Err(syn::Error::new_spanned(
                 ty,
-                "a BlueprintImplementableEvent takes scalars, objects, classes and structs \
-                 (&OwnedStruct<T>), and returns scalars, objects and classes",
+                "a BlueprintImplementableEvent takes and returns structs as OwnedStruct<T> \
+                 (or takes &OwnedStruct<T>), not UStructRef<T>: the Blueprint keeps no reference",
             ));
         }
 
