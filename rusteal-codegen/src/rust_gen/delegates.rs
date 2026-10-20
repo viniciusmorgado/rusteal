@@ -336,6 +336,10 @@ pub fn generate_delegate_structs(out: &mut String, delegates: &[DelegateInfo], c
             if is_multicast { ": once, however many times it is called" } else { "" },
         ));
 
+        if is_multicast {
+            emit_next(out, &d.params);
+        }
+
         out.push_str(&format!(
             "    #[track_caller]\n    pub fn {method_name}(&self, mut callback: impl FnMut({callback_sig}) + Send + 'static) -> rusteal_core::RustealResult<rusteal_core::DelegateBinding> {{\n"
         ));
@@ -393,6 +397,38 @@ pub fn generate_delegate_structs(out: &mut String, delegates: &[DelegateInfo], c
 
         out.push_str("}\n\n");
     }
+}
+
+fn emit_next(out: &mut String, params: &[DelegateParam]) {
+    let names: Vec<&str> = params.iter().map(|p| p.name.as_str()).collect();
+    let types: Vec<&str> = params.iter().map(|p| p.rust_type.as_str()).collect();
+
+    let (output, value) = match params.len() {
+        0 => ("()".to_string(), "()".to_string()),
+        1 => (types[0].to_string(), names[0].to_string()),
+        _ => (
+            format!("({})", types.join(", ")),
+            format!("({})", names.join(", ")),
+        ),
+    };
+
+    let args = names.join(", ");
+
+    out.push_str(&format!(
+        "    /// The next time the delegate fires, with its parameters: it binds now, and unbinds\n\
+         \x20   /// once it has fired.\n\
+         \x20   #[track_caller]\n\
+         \x20   pub fn next(&self) -> impl std::future::Future<Output = rusteal_core::RustealResult<{output}>> + 'static {{\n\
+         \x20       let (__sender, __receiver) = rusteal_core::event::once();\n\
+         \x20       let __binding = self.add(move |{args}| __sender.send({value}));\n\
+         \x20       async move {{\n\
+         \x20           let __binding = __binding?;\n\
+         \x20           let __value = __receiver.await;\n\
+         \x20           drop(__binding);\n\
+         \x20           __value\n\
+         \x20       }}\n\
+         \x20   }}\n\n"
+    ));
 }
 
 pub(super) fn emit_param_info(
