@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use bindings::core_ue::{
@@ -170,6 +171,10 @@ pub const ALL: &[(&str, Check)] = &[
     (
         "task_comes_back_to_the_game_thread",
         task_comes_back_to_the_game_thread,
+    ),
+    (
+        "async_task_runs_over_frames_and_stops_with_its_owner",
+        async_task_runs_over_frames_and_stops_with_its_owner,
     ),
 ];
 
@@ -466,6 +471,83 @@ fn udelegate_listener_survives_garbage_collection(context: &Context) -> Outcome 
             value == 9,
             format!("after a garbage collection the listener saw {value}"),
         ))
+    }))
+}
+
+struct SetOnDrop(Arc<AtomicBool>);
+
+impl Drop for SetOnDrop {
+    fn drop(&mut self) {
+        self.0.store(true, Ordering::SeqCst);
+    }
+}
+
+fn async_task_runs_over_frames_and_stops_with_its_owner(context: &Context) -> Outcome {
+    let started = (|| {
+        let actor = spawn(context)?;
+        let doomed = spawn(context)?;
+        let steps = Arc::new(AtomicUsize::new(0));
+        let dropped = Arc::new(AtomicBool::new(false));
+        let answer = Arc::new(Mutex::new(None));
+
+        let counter = steps.clone();
+        let counting = task::spawn_local(&actor, async move {
+            for _ in 0..3 {
+                task::next_frame().await;
+                counter.fetch_add(1, Ordering::SeqCst);
+            }
+
+            let worked = task::run_blocking(|| 6 * 7).await;
+            worked.unwrap_or(0)
+        });
+
+        let sink = answer.clone();
+        let _join = task::spawn_local(&actor, async move {
+            *sink.lock().unwrap() = counting.await;
+        });
+
+        let guard = SetOnDrop(dropped.clone());
+        let _parked = task::spawn_local(&doomed, async move {
+            let _guard = guard;
+            std::future::pending::<()>().await;
+        });
+
+        doomed
+            .checked()
+            .map_err(|e| format!("checked: {e:?}"))?
+            .k2_destroy_actor();
+
+        Ok::<_, String>((steps, dropped, answer))
+    })();
+
+    let (steps, dropped, answer) = match started {
+        Ok(started) => started,
+        Err(e) => return done(Err(e)),
+    };
+
+    let mut frames = 0;
+
+    Outcome::Pending(Box::new(move || {
+        frames += 1;
+
+        let answer = *answer.lock().unwrap();
+
+        if answer.is_none() && frames < 120 {
+            return None;
+        }
+
+        let steps = steps.load(Ordering::SeqCst);
+
+        Some(
+            ensure(steps == 3, format!("the task counted {steps} frames"))
+                .and_then(|_| ensure(answer == Some(42), format!("the join gave {answer:?}")))
+                .and_then(|_| {
+                    ensure(
+                        dropped.load(Ordering::SeqCst),
+                        "the task of a destroyed actor was not dropped",
+                    )
+                }),
+        )
     }))
 }
 
