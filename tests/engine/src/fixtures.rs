@@ -187,6 +187,11 @@ impl TestActor {
         class.path().to_string()
     }
 
+    #[ufunction(BlueprintNativeEvent)]
+    pub fn reaction(&self, amount: i32) -> i32 {
+        amount * 2
+    }
+
     #[ufunction]
     pub fn split_name(
         &self,
@@ -200,5 +205,16 @@ impl TestActor {
         *rest = words.collect();
         *count = 1 + rest.len() as i32;
         !first.is_empty()
+    }
+}
+
+#[uclass(parent = TestActor)]
+pub struct ChildTestActor {}
+
+#[uclass_impl]
+impl ChildTestActor {
+    #[ufunction(Override)]
+    fn reaction(&self, amount: i32) -> i32 {
+        amount * 3
     }
 }
