@@ -350,7 +350,7 @@ impl VRSpectator {
 
         for (action, function) in bindings {
             if action.is_valid() {
-                bind_action(&me, action, ETriggerEvent::Started, function)?;
+                bind_action_by_name(&me, action, ETriggerEvent::Started, function)?;
             }
         }
 

@@ -265,32 +265,32 @@ impl SideScrollingCharacter {
             return Ok(false);
         }
 
-        bind_action(
+        bind_action_by_name(
             &me,
             self.jump_action(),
             ETriggerEvent::Started,
             "DoJumpStart",
         )?;
 
-        bind_action(
+        bind_action_by_name(
             &me,
             self.jump_action(),
             ETriggerEvent::Completed,
             "DoJumpEnd",
         )?;
 
-        bind_action(
+        bind_action_by_name(
             &me,
             self.interact_action(),
             ETriggerEvent::Triggered,
             "DoInteract",
         )?;
 
-        bind_action(&me, self.move_action(), ETriggerEvent::Triggered, "Move")?;
+        bind_action_by_name(&me, self.move_action(), ETriggerEvent::Triggered, "Move")?;
 
-        bind_action(&me, self.drop_action(), ETriggerEvent::Triggered, "Drop")?;
+        bind_action_by_name(&me, self.drop_action(), ETriggerEvent::Triggered, "Drop")?;
 
-        bind_action(
+        bind_action_by_name(
             &me,
             self.drop_action(),
             ETriggerEvent::Completed,

@@ -235,7 +235,7 @@ impl Menu {
 
         for (action, event, function) in bindings {
             if action.is_valid() {
-                bind_action(&me, action, event, function)?;
+                bind_action_by_name(&me, action, event, function)?;
             }
         }
 

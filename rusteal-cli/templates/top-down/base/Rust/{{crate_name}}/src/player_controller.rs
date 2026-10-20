@@ -145,23 +145,23 @@ impl TopDownPlayerController {
             .add_mapping_context(self.default_mapping_context(), 0, &OwnedStruct::new());
 
         let click = self.set_destination_click_action();
-        bind_action(&me, click, ETriggerEvent::Started, "OnInputStarted")?;
+        bind_action_by_name(&me, click, ETriggerEvent::Started, "OnInputStarted")?;
 
-        bind_action(
+        bind_action_by_name(
             &me,
             click,
             ETriggerEvent::Triggered,
             "OnSetDestinationTriggered",
         )?;
 
-        bind_action(
+        bind_action_by_name(
             &me,
             click,
             ETriggerEvent::Completed,
             "OnSetDestinationReleased",
         )?;
 
-        bind_action(
+        bind_action_by_name(
             &me,
             click,
             ETriggerEvent::Canceled,
@@ -169,10 +169,10 @@ impl TopDownPlayerController {
         )?;
 
         let touch = self.set_destination_touch_action();
-        bind_action(&me, touch, ETriggerEvent::Started, "OnInputStarted")?;
-        bind_action(&me, touch, ETriggerEvent::Triggered, "OnTouchTriggered")?;
-        bind_action(&me, touch, ETriggerEvent::Completed, "OnTouchReleased")?;
-        bind_action(&me, touch, ETriggerEvent::Canceled, "OnTouchReleased")?;
+        bind_action_by_name(&me, touch, ETriggerEvent::Started, "OnInputStarted")?;
+        bind_action_by_name(&me, touch, ETriggerEvent::Triggered, "OnTouchTriggered")?;
+        bind_action_by_name(&me, touch, ETriggerEvent::Completed, "OnTouchReleased")?;
+        bind_action_by_name(&me, touch, ETriggerEvent::Canceled, "OnTouchReleased")?;
 
         Ok(true)
     }

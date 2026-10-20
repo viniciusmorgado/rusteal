@@ -359,39 +359,39 @@ impl CombatCharacter {
             return Ok(false);
         }
 
-        bind_action(&me, self.move_action(), ETriggerEvent::Triggered, "Move")?;
+        bind_action_by_name(&me, self.move_action(), ETriggerEvent::Triggered, "Move")?;
 
-        bind_action(&me, self.look_action(), ETriggerEvent::Triggered, "Look")?;
+        bind_action_by_name(&me, self.look_action(), ETriggerEvent::Triggered, "Look")?;
 
-        bind_action(
+        bind_action_by_name(
             &me,
             self.mouse_look_action(),
             ETriggerEvent::Triggered,
             "Look",
         )?;
 
-        bind_action(
+        bind_action_by_name(
             &me,
             self.combo_attack_action(),
             ETriggerEvent::Started,
             "ComboAttackPressed",
         )?;
 
-        bind_action(
+        bind_action_by_name(
             &me,
             self.charged_attack_action(),
             ETriggerEvent::Started,
             "ChargedAttackPressed",
         )?;
 
-        bind_action(
+        bind_action_by_name(
             &me,
             self.charged_attack_action(),
             ETriggerEvent::Completed,
             "ChargedAttackReleased",
         )?;
 
-        bind_action(
+        bind_action_by_name(
             &me,
             self.toggle_camera_action(),
             ETriggerEvent::Triggered,
