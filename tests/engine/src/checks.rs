@@ -21,7 +21,7 @@ use rusteal_runtime::runtime::{
     TWeakObjectPtr, Text, Transform, UObjectRef, UeClass, UeStruct, task,
 };
 
-use crate::fixtures::{Loadout, LoadoutExt, Pingable, TestActor};
+use crate::fixtures::{ChildTestActor, Loadout, LoadoutExt, Pingable, TestActor};
 use crate::runner::{Check, Context, Outcome};
 
 pub const ALL: &[(&str, Check)] = &[
@@ -133,6 +133,10 @@ pub const ALL: &[(&str, Check)] = &[
         interface_function_takes_any_type,
     ),
     ("ufunction_out_parameters", ufunction_out_parameters),
+    (
+        "native_event_dispatches_to_the_override",
+        native_event_dispatches_to_the_override,
+    ),
     (
         "task_comes_back_to_the_game_thread",
         task_comes_back_to_the_game_thread,
@@ -1037,6 +1041,32 @@ fn ufunction_out_parameters(context: &Context) -> Outcome {
         ensure(
             ok && first == "Ada" && rest == ["King", "Lovelace"] && count == 3,
             format!("{ok} {first:?} {rest:?} {count}"),
+        )
+    })())
+}
+
+fn native_event_dispatches_to_the_override(context: &Context) -> Outcome {
+    done((|| {
+        let e = |e| format!("{e:?}");
+        let actor = test_actor(context)?;
+        ensure(
+            actor.reaction(5) == 10,
+            format!("native {}", actor.reaction(5)),
+        )?;
+
+        let transform = FTransform::from_transform(Transform::IDENTITY);
+        let child = context
+            .world
+            .spawn_actor::<ChildTestActor>(&transform)
+            .map_err(e)?;
+        let as_parent = TestActor::from_obj(child.upcast()).map_err(e)?;
+        ensure(
+            as_parent.reaction(5) == 15,
+            format!("the override was not called: {}", as_parent.reaction(5)),
+        )?;
+        ensure(
+            as_parent.reaction_implementation(5) == 10,
+            "the parent's implementation changed",
         )
     })())
 }
