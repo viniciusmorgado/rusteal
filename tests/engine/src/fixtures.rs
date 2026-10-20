@@ -206,6 +206,16 @@ impl TestActor {
         amount * 2
     }
 
+    #[ufunction(BlueprintNativeEvent)]
+    pub fn summary(
+        &self,
+        items: Vec<String>,
+        owner: SoftObjectRef<Actor>,
+        counts: HashMap<FName, i32>,
+    ) -> String {
+        format!("{} items", items.len() + counts.len() + owner.path().len())
+    }
+
     #[ufunction]
     pub fn split_name(
         &self,
@@ -230,6 +240,21 @@ impl ChildTestActor {
     #[ufunction(Override)]
     fn reaction(&self, amount: i32) -> i32 {
         amount * 3
+    }
+
+    #[ufunction(Override)]
+    fn summary(
+        &self,
+        items: Vec<String>,
+        owner: SoftObjectRef<Actor>,
+        counts: HashMap<FName, i32>,
+    ) -> String {
+        format!(
+            "{} of {} counting {}",
+            items.join("+"),
+            owner.path(),
+            counts.values().sum::<i32>()
+        )
     }
 }
 

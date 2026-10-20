@@ -151,6 +151,10 @@ pub const ALL: &[(&str, Check)] = &[
         native_event_dispatches_to_the_override,
     ),
     (
+        "override_takes_containers_and_soft_references",
+        override_takes_containers_and_soft_references,
+    ),
+    (
         "static_functions_of_a_library",
         static_functions_of_a_library,
     ),
@@ -1212,6 +1216,29 @@ fn native_event_dispatches_to_the_override(context: &Context) -> Outcome {
         ensure(
             as_parent.reaction_implementation(5) == 10,
             "the parent's implementation changed",
+        )
+    })())
+}
+
+fn override_takes_containers_and_soft_references(context: &Context) -> Outcome {
+    done((|| {
+        let e = |e| format!("{e:?}");
+        let transform = FTransform::from_transform(Transform::IDENTITY);
+        let child = context
+            .world
+            .spawn_actor::<ChildTestActor>(&transform)
+            .map_err(e)?;
+        let as_parent = TestActor::from_obj(child.upcast()).map_err(e)?;
+
+        let summary = as_parent.summary(
+            vec!["Sword".into(), "Shield".into()],
+            SoftObjectRef::new("/Engine/BasicShapes/Cube.Cube"),
+            HashMap::from([(FName::new("Gold"), 3), (FName::new("Iron"), 4)]),
+        );
+
+        ensure(
+            summary == "Sword+Shield of /Engine/BasicShapes/Cube.Cube counting 7",
+            format!("the override answered {summary:?}"),
         )
     })())
 }
