@@ -1,8 +1,10 @@
+use std::collections::{HashMap, HashSet};
+
 use bindings::engine::{Material, SceneComponent};
 use bindings::prelude::*;
 use rusteal_runtime::runtime::{
-    FName, ScriptInterface, SoftClassRef, SoftObjectRef, TWeakObjectPtr, Text, UeArray, UeMap,
-    UeSet,
+    FName, OwnedStruct, ScriptInterface, SoftClassRef, SoftObjectRef, TWeakObjectPtr, Text,
+    UeArray, UeMap, UeSet,
 };
 use rusteal_runtime::{uclass, uclass_impl, uinterface, ustruct};
 
@@ -131,5 +133,51 @@ impl TestActor {
     #[ufunction]
     pub fn ping(&self, value: i32) {
         self.on_ping(value);
+    }
+
+    #[ufunction]
+    pub fn greet(&self, name: String, title: Text) -> String {
+        format!("{title} {name}")
+    }
+
+    #[ufunction]
+    pub fn tally(&self, words: Vec<String>) -> HashMap<String, i32> {
+        let mut counts = HashMap::new();
+
+        for word in words {
+            *counts.entry(word).or_insert(0) += 1;
+        }
+
+        counts
+    }
+
+    #[ufunction]
+    pub fn unique(&self, names: HashSet<FName>) -> u32 {
+        names.len() as u32
+    }
+
+    #[ufunction]
+    pub fn widen(&self, value: u16, delta: i8) -> u64 {
+        (value as i64 + delta as i64) as u64
+    }
+
+    #[ufunction]
+    pub fn caption_for(&self, key: FName) -> Text {
+        Text::localized("RustealTests", &key.to_string(), "A caption")
+    }
+
+    #[ufunction]
+    pub fn scale(&self, vector: OwnedStruct<FVector>, by: f64) -> OwnedStruct<FVector> {
+        FVector::from_dvec3(vector.to_dvec3() * by)
+    }
+
+    #[ufunction]
+    pub fn has_partner(&self, partner: Option<ScriptInterface<dyn Pingable>>) -> bool {
+        partner.is_some()
+    }
+
+    #[ufunction]
+    pub fn class_path(&self, class: SoftClassRef<Actor>) -> String {
+        class.path().to_string()
     }
 }

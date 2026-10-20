@@ -125,6 +125,10 @@ pub const ALL: &[(&str, Check)] = &[
     ("rust_container_properties", rust_container_properties),
     ("rust_struct_fields", rust_struct_fields),
     (
+        "ufunction_takes_and_returns_any_type",
+        ufunction_takes_and_returns_any_type,
+    ),
+    (
         "task_comes_back_to_the_game_thread",
         task_comes_back_to_the_game_thread,
     ),
@@ -928,6 +932,75 @@ fn rust_struct_fields(_: &Context) -> Outcome {
             fields.counts().find(&FName::new("Ammo")).map_err(e)? == 30,
             "the map was not copied with the struct",
         )
+    })())
+}
+
+fn ufunction_takes_and_returns_any_type(context: &Context) -> Outcome {
+    done((|| {
+        let e = |e| format!("{e:?}");
+        let actor = spawn(context)?;
+        let other = spawn(context)?;
+
+        let mut call = DynamicCall::new(&actor, "Greet").map_err(e)?;
+        call.set_value("Name", &"Ada".to_string()).map_err(e)?;
+        call.set_value("Title", &Text::from("Dr.")).map_err(e)?;
+        let greeting: String = call.call().map_err(e)?.value("ReturnValue").map_err(e)?;
+        ensure(greeting == "Dr. Ada", format!("greeting {greeting:?}"))?;
+
+        let mut call = DynamicCall::new(&actor, "Tally").map_err(e)?;
+        let words: Vec<String> = ["a", "b", "a"].map(String::from).to_vec();
+        call.set_value("Words", &words).map_err(e)?;
+        let counts: std::collections::HashMap<String, i32> =
+            call.call().map_err(e)?.value("ReturnValue").map_err(e)?;
+        ensure(
+            counts.get("a") == Some(&2) && counts.get("b") == Some(&1),
+            format!("counts {counts:?}"),
+        )?;
+
+        let mut call = DynamicCall::new(&actor, "Unique").map_err(e)?;
+        let names: std::collections::HashSet<FName> =
+            [FName::new("x"), FName::new("y")].into_iter().collect();
+        call.set_value("Names", &names).map_err(e)?;
+        let unique: u32 = call.call().map_err(e)?.value("ReturnValue").map_err(e)?;
+        ensure(unique == 2, format!("unique {unique}"))?;
+
+        let mut call = DynamicCall::new(&actor, "Widen").map_err(e)?;
+        call.set_value("Value", &60000u16).map_err(e)?;
+        call.set_value("Delta", &-7i8).map_err(e)?;
+        let wide: u64 = call.call().map_err(e)?.value("ReturnValue").map_err(e)?;
+        ensure(wide == 59993, format!("wide {wide}"))?;
+
+        let mut call = DynamicCall::new(&actor, "CaptionFor").map_err(e)?;
+        call.set_value("Key", &FName::new("Banner")).map_err(e)?;
+        let caption: Text = call.call().map_err(e)?.value("ReturnValue").map_err(e)?;
+        let (found, _, key) = KismetTextLibrary::get_text_id(&caption);
+        ensure(found && key == "Banner", format!("caption key {key:?}"))?;
+
+        let mut call = DynamicCall::new(&actor, "Scale").map_err(e)?;
+        call.set_value(
+            "Vector",
+            &FVector::from_dvec3(rusteal_runtime::glam::DVec3::new(1.0, 2.0, 3.0)),
+        )
+        .map_err(e)?;
+        call.set_value("By", &2.0f64).map_err(e)?;
+        let scaled: OwnedStruct<FVector> =
+            call.call().map_err(e)?.value("ReturnValue").map_err(e)?;
+        ensure(
+            scaled.to_dvec3() == rusteal_runtime::glam::DVec3::new(2.0, 4.0, 6.0),
+            format!("scaled {:?}", scaled.to_dvec3()),
+        )?;
+
+        let mut call = DynamicCall::new(&actor, "HasPartner").map_err(e)?;
+        let partner = other.interface::<dyn Pingable>().map_err(e)?;
+        call.set_value("Partner", &Some(partner)).map_err(e)?;
+        let has: bool = call.call().map_err(e)?.value("ReturnValue").map_err(e)?;
+        ensure(has, "the partner did not arrive")?;
+
+        let mut call = DynamicCall::new(&actor, "ClassPath").map_err(e)?;
+        call.set_value("Class", &SoftClassRef::<Actor>::new(STATIC_MESH_ACTOR))
+            .map_err(e)?;
+        let path: String = call.call().map_err(e)?.value("ReturnValue").map_err(e)?;
+        ensure(path == STATIC_MESH_ACTOR, format!("path {path:?}"))
     })())
 }
 
