@@ -21,6 +21,8 @@ const _: () = assert!(offset_of!(RustealReifyPropExtra, value) == 48);
 
 const _: () = assert!(size_of::<crate::api_table::RustealConsoleArgs>() == 24);
 const _: () = assert!(size_of::<crate::api_table::RustealNativeEventArgs>() == 24);
+const _: () = assert!(size_of::<crate::api_table::RustealInputArgs>() == 24);
+const _: () = assert!(offset_of!(crate::api_table::RustealInputArgs, action) == 16);
 const _: () = assert!(offset_of!(crate::api_table::RustealNativeEventArgs, a) == 16);
 const _: () = assert!(offset_of!(crate::api_table::RustealConsoleArgs, args_len) == 8);
 const _: () = assert!(offset_of!(crate::api_table::RustealConsoleArgs, world) == 16);

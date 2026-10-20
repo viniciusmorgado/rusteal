@@ -740,6 +740,24 @@ pub struct RustealInputApi {
     ) -> RustealErrorCode,
 
     pub should_display_touch_interface: unsafe extern "C" fn() -> bool,
+
+    pub bind_action_closure: unsafe extern "C" fn(
+        actor: UObjectHandle,
+        action: UObjectHandle,
+        trigger_event: u8,
+        callback_id: u64,
+        out_handle: *mut u32,
+    ) -> RustealErrorCode,
+    pub unbind_action: unsafe extern "C" fn(actor: UObjectHandle, handle: u32) -> RustealErrorCode,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct RustealInputArgs {
+    pub value: *const u8,
+    pub elapsed_seconds: f32,
+    pub triggered_seconds: f32,
+    pub action: UObjectHandle,
 }
 
 #[repr(u32)]

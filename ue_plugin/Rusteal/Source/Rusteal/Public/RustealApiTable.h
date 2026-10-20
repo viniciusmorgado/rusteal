@@ -494,6 +494,14 @@ struct FRustealInputApi {
                                    uint32 function_name_len);
 
   bool (*should_display_touch_interface)();
+
+  ERustealErrorCode (*bind_action_closure)(RustealUObjectHandle actor,
+                                           RustealUObjectHandle action,
+                                           uint8 trigger_event,
+                                           uint64 callback_id,
+                                           uint32 *out_handle);
+  ERustealErrorCode (*unbind_action)(RustealUObjectHandle actor,
+                                     uint32 handle);
 };
 
 enum class ERustealNativeEvent : uint32 {
@@ -516,6 +524,13 @@ struct FRustealNativeEventArgs {
   RustealUObjectHandle second;
   uint32 a;
   uint32 b;
+};
+
+struct FRustealInputArgs {
+  const uint8 *value;
+  float elapsed_seconds;
+  float triggered_seconds;
+  RustealUObjectHandle action;
 };
 
 struct FRustealConsoleArgs {
