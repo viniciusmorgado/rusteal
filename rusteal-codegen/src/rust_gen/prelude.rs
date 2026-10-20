@@ -41,6 +41,11 @@ const ENTRIES: &[(&str, &str)] = &[
         "engine",
         "crate::manual::world_ext::{ObjectWorldExt, SpawnCollisionMethod, SpawnParams, WorldSpawnExt, find_object, load_class, load_object}",
     ),
+    (
+        "engine",
+        "crate::manual::events::{core_events, game_mode_events, world_events}",
+    ),
+    ("ai", "crate::manual::events::PathFollowingEventsExt"),
     ("engine", "crate::manual::collision::object_type_query"),
     (
         "engine",

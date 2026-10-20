@@ -202,6 +202,60 @@
     },
     {
       "cpp_form": 2,
+      "cpp_name": "EWidgetClipping",
+      "name": "EWidgetClipping",
+      "package": "SlateCore",
+      "pairs": [
+        [
+          "Inherit",
+          0
+        ],
+        [
+          "ClipToBounds",
+          1
+        ],
+        [
+          "ClipToBoundsWithoutIntersecting",
+          2
+        ],
+        [
+          "ClipToBoundsAlways",
+          3
+        ],
+        [
+          "OnDemand",
+          4
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 2,
+      "cpp_name": "EFlowDirectionPreference",
+      "name": "EFlowDirectionPreference",
+      "package": "SlateCore",
+      "pairs": [
+        [
+          "Inherit",
+          0
+        ],
+        [
+          "Culture",
+          1
+        ],
+        [
+          "LeftToRight",
+          2
+        ],
+        [
+          "RightToLeft",
+          3
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 2,
       "cpp_name": "EUINavigation",
       "name": "EUINavigation",
       "package": "SlateCore",
@@ -243,54 +297,21 @@
     },
     {
       "cpp_form": 2,
-      "cpp_name": "EFlowDirectionPreference",
-      "name": "EFlowDirectionPreference",
-      "package": "SlateCore",
+      "cpp_name": "EReplicationSystem",
+      "name": "EReplicationSystem",
+      "package": "NetCore",
       "pairs": [
         [
-          "Inherit",
+          "Default",
           0
         ],
         [
-          "Culture",
+          "Generic",
           1
         ],
         [
-          "LeftToRight",
+          "Iris",
           2
-        ],
-        [
-          "RightToLeft",
-          3
-        ]
-      ],
-      "underlying_type": "uint8"
-    },
-    {
-      "cpp_form": 2,
-      "cpp_name": "EWidgetClipping",
-      "name": "EWidgetClipping",
-      "package": "SlateCore",
-      "pairs": [
-        [
-          "Inherit",
-          0
-        ],
-        [
-          "ClipToBounds",
-          1
-        ],
-        [
-          "ClipToBoundsWithoutIntersecting",
-          2
-        ],
-        [
-          "ClipToBoundsAlways",
-          3
-        ],
-        [
-          "OnDemand",
-          4
         ]
       ],
       "underlying_type": "uint8"
@@ -2026,6 +2047,44 @@
     },
     {
       "cpp_form": 2,
+      "cpp_name": "EMappingContextInputModeFilterOptions",
+      "name": "EMappingContextInputModeFilterOptions",
+      "package": "EnhancedInput",
+      "pairs": [
+        [
+          "UseProjectDefaultQuery",
+          0
+        ],
+        [
+          "UseCustomQuery",
+          1
+        ],
+        [
+          "DoNotFilter",
+          2
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 2,
+      "cpp_name": "EMappingContextRegistrationTrackingMode",
+      "name": "EMappingContextRegistrationTrackingMode",
+      "package": "EnhancedInput",
+      "pairs": [
+        [
+          "Untracked",
+          0
+        ],
+        [
+          "CountRegistrations",
+          1
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 2,
       "cpp_name": "EInputMappingRebuildType",
       "name": "EInputMappingRebuildType",
       "package": "EnhancedInput",
@@ -2146,6 +2205,31 @@
     },
     {
       "cpp_form": 2,
+      "cpp_name": "EInputActionValueType",
+      "name": "EInputActionValueType",
+      "package": "EnhancedInput",
+      "pairs": [
+        [
+          "Boolean",
+          0
+        ],
+        [
+          "Axis1D",
+          1
+        ],
+        [
+          "Axis2D",
+          2
+        ],
+        [
+          "Axis3D",
+          3
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 2,
       "cpp_name": "EPlayerMappableKeySettingBehaviors",
       "name": "EPlayerMappableKeySettingBehaviors",
       "package": "EnhancedInput",
@@ -2178,69 +2262,6 @@
         [
           "Cumulative",
           1
-        ]
-      ],
-      "underlying_type": "uint8"
-    },
-    {
-      "cpp_form": 2,
-      "cpp_name": "EMappingContextInputModeFilterOptions",
-      "name": "EMappingContextInputModeFilterOptions",
-      "package": "EnhancedInput",
-      "pairs": [
-        [
-          "UseProjectDefaultQuery",
-          0
-        ],
-        [
-          "UseCustomQuery",
-          1
-        ],
-        [
-          "DoNotFilter",
-          2
-        ]
-      ],
-      "underlying_type": "uint8"
-    },
-    {
-      "cpp_form": 2,
-      "cpp_name": "EMappingContextRegistrationTrackingMode",
-      "name": "EMappingContextRegistrationTrackingMode",
-      "package": "EnhancedInput",
-      "pairs": [
-        [
-          "Untracked",
-          0
-        ],
-        [
-          "CountRegistrations",
-          1
-        ]
-      ],
-      "underlying_type": "uint8"
-    },
-    {
-      "cpp_form": 2,
-      "cpp_name": "EInputActionValueType",
-      "name": "EInputActionValueType",
-      "package": "EnhancedInput",
-      "pairs": [
-        [
-          "Boolean",
-          0
-        ],
-        [
-          "Axis1D",
-          1
-        ],
-        [
-          "Axis2D",
-          2
-        ],
-        [
-          "Axis3D",
-          3
         ]
       ],
       "underlying_type": "uint8"

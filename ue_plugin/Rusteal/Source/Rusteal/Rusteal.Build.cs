@@ -21,6 +21,7 @@ public class Rusteal : ModuleRules
         ]);
 
         PrivateDependencyModuleNames.Add("Projects");
+        PrivateDependencyModuleNames.AddRange(["HTTP", "AIModule"]);
 
         string StaticSwitch = StaticSwitchFile(Target);
 

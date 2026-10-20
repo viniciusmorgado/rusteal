@@ -245,6 +245,21 @@ ERustealErrorCode RustealLoading_Finish(uint64 CallbackId,
                                         uint32 Capacity, uint32 *OutCount);
 ERustealErrorCode RustealLoading_Cancel(uint64 CallbackId);
 uint32 RustealLoading_InProgress();
+ERustealErrorCode RustealEvents_Bind(uint32 Kind, RustealUObjectHandle Target,
+                                     uint64 CallbackId);
+ERustealErrorCode RustealEvents_Unbind(uint64 CallbackId);
+ERustealErrorCode RustealHttp_Send(const uint8 *Verb, uint32 VerbLen,
+                                   const uint8 *Url, uint32 UrlLen,
+                                   const uint8 *Headers, uint32 HeadersLen,
+                                   const uint8 *Body, uint32 BodyLen,
+                                   float TimeoutSeconds, uint64 CallbackId);
+ERustealErrorCode RustealHttp_Finish(uint64 CallbackId, int32 *OutStatus,
+                                     uint8 *Headers, uint32 HeadersCapacity,
+                                     uint32 *OutHeadersLen, uint8 *Body,
+                                     uint32 BodyCapacity, uint32 *OutBodyLen,
+                                     bool *OutSucceeded);
+ERustealErrorCode RustealHttp_Cancel(uint64 CallbackId);
+uint32 RustealHttp_InProgress();
 
 FRustealWorldApi GWorldApi = {
     &SpawnActorImpl,
@@ -268,4 +283,10 @@ FRustealWorldApi GWorldApi = {
     &RustealLoading_Finish,
     &RustealLoading_Cancel,
     &RustealLoading_InProgress,
+    &RustealEvents_Bind,
+    &RustealEvents_Unbind,
+    &RustealHttp_Send,
+    &RustealHttp_Finish,
+    &RustealHttp_Cancel,
+    &RustealHttp_InProgress,
 };

@@ -496,6 +496,28 @@ struct FRustealInputApi {
   bool (*should_display_touch_interface)();
 };
 
+enum class ERustealNativeEvent : uint32 {
+  PreExit = 0,
+  WillEnterBackground = 1,
+  HasEnteredForeground = 2,
+  WillDeactivate = 3,
+  HasReactivated = 4,
+  WorldInitialized = 10,
+  WorldCleanup = 11,
+  LevelAdded = 12,
+  LevelRemoved = 13,
+  PostLogin = 20,
+  Logout = 21,
+  MoveRequestFinished = 30,
+};
+
+struct FRustealNativeEventArgs {
+  RustealUObjectHandle first;
+  RustealUObjectHandle second;
+  uint32 a;
+  uint32 b;
+};
+
 struct FRustealConsoleArgs {
   const uint8 *args;
   uint32 args_len;
@@ -586,6 +608,24 @@ struct FRustealWorldApi {
                                    uint32 capacity, uint32 *out_count);
   ERustealErrorCode (*load_cancel)(uint64 callback_id);
   uint32 (*loads_in_progress)();
+
+  ERustealErrorCode (*bind_native_event)(uint32 kind,
+                                         RustealUObjectHandle target,
+                                         uint64 callback_id);
+  ERustealErrorCode (*unbind_native_event)(uint64 callback_id);
+
+  ERustealErrorCode (*http_send)(const uint8 *verb, uint32 verb_len,
+                                 const uint8 *url, uint32 url_len,
+                                 const uint8 *headers, uint32 headers_len,
+                                 const uint8 *body, uint32 body_len,
+                                 float timeout_seconds, uint64 callback_id);
+  ERustealErrorCode (*http_finish)(uint64 callback_id, int32 *out_status,
+                                   uint8 *headers, uint32 headers_capacity,
+                                   uint32 *out_headers_len, uint8 *body,
+                                   uint32 body_capacity, uint32 *out_body_len,
+                                   bool *out_succeeded);
+  ERustealErrorCode (*http_cancel)(uint64 callback_id);
+  uint32 (*http_in_progress)();
 };
 
 struct FRustealPlatformApi {

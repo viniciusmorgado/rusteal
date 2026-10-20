@@ -47,6 +47,11 @@ static_assert(offsetof(FRustealReifyPropExtra, value_prop_type) == 40,
 static_assert(offsetof(FRustealReifyPropExtra, value) == 48,
               "FRustealReifyPropExtra::value at offset 48");
 
+static_assert(sizeof(FRustealNativeEventArgs) == 24,
+              "FRustealNativeEventArgs must be 24 bytes");
+static_assert(offsetof(FRustealNativeEventArgs, a) == 16,
+              "FRustealNativeEventArgs::a at offset 16");
+
 static_assert(sizeof(FRustealConsoleArgs) == 24,
               "FRustealConsoleArgs must be 24 bytes");
 static_assert(offsetof(FRustealConsoleArgs, args_len) == 8,

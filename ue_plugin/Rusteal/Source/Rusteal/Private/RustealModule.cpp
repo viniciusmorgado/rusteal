@@ -56,6 +56,8 @@ extern void RustealTimersForgetLibrary(FRustealLibrary *Library);
 extern void RustealLatentProxiesForgetLibrary(FRustealLibrary *Library);
 extern void RustealLoadingForgetLibrary(FRustealLibrary *Library);
 extern void RustealLatentFunctionsForgetLibrary(FRustealLibrary *Library);
+extern void RustealEventsForgetLibrary(FRustealLibrary *Library);
+extern void RustealHttpForgetLibrary(FRustealLibrary *Library);
 
 extern void RustealPinnedForgetLibrary(FRustealLibrary *Library);
 extern void RustealDelegateProxiesForgetLibrary(FRustealLibrary *Library);
@@ -451,6 +453,8 @@ static void UnloadLibrary(FRustealLibrary &Library) {
   RustealLatentProxiesForgetLibrary(&Library);
   RustealLoadingForgetLibrary(&Library);
   RustealLatentFunctionsForgetLibrary(&Library);
+  RustealEventsForgetLibrary(&Library);
+  RustealHttpForgetLibrary(&Library);
 
   if (Library.Handle) {
     FreeHandle(Library);
