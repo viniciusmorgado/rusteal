@@ -97,23 +97,6 @@ impl PropKind {
                 | PropKind::Str
         )
     }
-
-    pub fn property_only(&self) -> bool {
-        matches!(
-            self,
-            PropKind::OwnedStruct { .. }
-                | PropKind::Name
-                | PropKind::Str
-                | PropKind::SoftObject { .. }
-                | PropKind::RawScalar { .. }
-                | PropKind::Text
-                | PropKind::Weak { .. }
-                | PropKind::SoftClass { .. }
-                | PropKind::Interface { .. }
-                | PropKind::Map { .. }
-                | PropKind::Set { .. }
-        )
-    }
 }
 
 impl PropTypeInfo {

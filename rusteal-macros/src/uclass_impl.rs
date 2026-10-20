@@ -769,11 +769,7 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
                 let event_struct =
                     kind == FnKind::ImplementableEvent && event_struct_param(&ty).is_some();
 
-                let supported = if kind == FnKind::ImplementableEvent {
-                    legacy_param(&ty)
-                } else {
-                    supported_param(&ty)
-                };
+                let supported = supported_param(&ty);
 
                 if !is_override && !event_struct && !supported {
                     return Err(syn::Error::new_spanned(
@@ -781,8 +777,7 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
                         "unsupported ufunction parameter type: supported are what a #[uproperty] \
                          holds, but UeArray, UeMap and UeSet: Vec<T>, HashMap<K, V> and HashSet<T> \
                          instead, copied, and Option<ScriptInterface<dyn I>>; UStructRef<T> for a \
-                         struct the engine lends. A BlueprintImplementableEvent takes the scalars, \
-                         objects, classes, enums and &OwnedStruct<T>",
+                         struct the engine lends",
                     ));
                 }
 
@@ -829,11 +824,7 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
             } else {
                 check_event_type(ty)?;
 
-                let supported = if kind == FnKind::ImplementableEvent {
-                    legacy_return(ty)
-                } else {
-                    supported_return(ty)
-                };
+                let supported = supported_return(ty);
 
                 if !is_override && !supported {
                     return Err(syn::Error::new_spanned(
@@ -971,12 +962,6 @@ pub(crate) fn crossed_as_property(kind: &prop_type::PropKind) -> bool {
     )
 }
 
-pub(crate) fn legacy_param(ty: &Type) -> bool {
-    prop_type::map_type(ty).is_some_and(|info| {
-        !matches!(info.kind, prop_type::PropKind::Array { .. }) && !info.kind.property_only()
-    })
-}
-
 pub(crate) fn supported_return(ty: &Type) -> bool {
     prop_type::map_fn_type(ty).is_some_and(|info| {
         !matches!(
@@ -986,15 +971,6 @@ pub(crate) fn supported_return(ty: &Type) -> bool {
                 | prop_type::PropKind::Set { .. }
                 | prop_type::PropKind::Struct { .. }
         )
-    })
-}
-
-pub(crate) fn legacy_return(ty: &Type) -> bool {
-    prop_type::map_type(ty).is_some_and(|info| {
-        !matches!(
-            info.kind,
-            prop_type::PropKind::Array { .. } | prop_type::PropKind::Struct { .. }
-        ) && !info.kind.property_only()
     })
 }
 
@@ -1092,6 +1068,12 @@ pub(crate) fn dynamic_call_body(
                 return quote! { call.set_struct(#param, #rust_name)?; };
             }
 
+            if prop_type::map_fn_type(&p.rust_ty)
+                .is_some_and(|info| crossed_as_property(&info.kind))
+            {
+                return quote! { call.set_value(#param, &#rust_name)?; };
+            }
+
             let kind = prop_type::map_type(&p.rust_ty).map(|info| info.kind);
 
             if matches!(kind, Some(prop_type::PropKind::Struct { .. })) {
@@ -1116,6 +1098,15 @@ pub(crate) fn dynamic_call_body(
             quote! { let _ = result; Ok(()) },
             TokenStream::new(),
         ),
+        Some(ty)
+            if prop_type::map_fn_type(ty).is_some_and(|info| crossed_as_property(&info.kind)) =>
+        {
+            (
+                quote! { #ty },
+                quote! { result.value::<#ty>("ReturnValue") },
+                quote! { <#ty as ::core::default::Default>::default() },
+            )
+        }
         Some(ty) => match prop_type::map_type(ty).map(|info| info.kind) {
             Some(prop_type::PropKind::Object { .. }) => (
                 quote! { #ty },
@@ -1207,7 +1198,7 @@ mod tests {
         assert!(
             expand(quote! {
                 impl Interactable for Door {
-                    fn interact(&mut self, name: String) {}
+                    fn interact(&mut self, name: usize) {}
                 }
             })
             .is_err()
