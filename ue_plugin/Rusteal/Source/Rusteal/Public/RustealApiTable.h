@@ -348,6 +348,9 @@ struct FRustealDelegateApi {
   ERustealErrorCode (*execute_delegate)(RustealUObjectHandle obj,
                                         RustealFPropertyHandle prop,
                                         uint8 *params);
+
+  ERustealErrorCode (*latent_cancel)(uint64 callback_id);
+  uint32 (*live_latent_proxies)();
 };
 
 enum class ERustealReifyDelegateKind : uint32 {
