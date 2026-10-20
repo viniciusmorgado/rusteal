@@ -8,6 +8,10 @@ use crate::lock_or_recover;
 use crate::module::{self, ModuleId};
 use crate::sync::Mutex;
 
+pub use crate::executor::{
+    JoinHandle, next_frame, run_blocking, spawn_local, spawn_local_unowned, yield_now,
+};
+
 type Job = Box<dyn FnOnce() + Send>;
 type TickFn = Box<dyn FnMut(f32) + Send>;
 
@@ -137,7 +141,7 @@ fn with_tasks<R>(module: ModuleId, f: impl FnOnce(&mut ModuleTasks) -> R) -> R {
     f(lock_or_recover(&TASKS).entry(module).or_default())
 }
 
-fn log(level: u8, message: &str) {
+pub(crate) fn log(level: u8, message: &str) {
     if crate::api::is_api_initialized() {
         unsafe {
             crate::ffi_dispatch::logging_log(level, message.as_ptr(), message.len() as u32);
@@ -145,7 +149,7 @@ fn log(level: u8, message: &str) {
     }
 }
 
-fn engine() -> bool {
+pub(crate) fn engine() -> bool {
     crate::api::is_api_initialized() && !crate::api::api().platform.is_null()
 }
 
@@ -266,6 +270,9 @@ pub fn tick(delta_seconds: f32) {
         }
     }
 
+    crate::executor::sweep_dead_owners(module);
+    crate::executor::run(module);
+
     let mut running = with_tasks(module, |tasks| std::mem::take(&mut tasks.tickers));
 
     for (_, hook) in running.iter_mut() {
@@ -285,6 +292,7 @@ pub fn tick(delta_seconds: f32) {
 #[doc(hidden)]
 pub fn shutdown() {
     let module = module::current();
+    crate::executor::shutdown(module);
     let started = crate::time::Instant::now();
     let mut warned = false;
 
