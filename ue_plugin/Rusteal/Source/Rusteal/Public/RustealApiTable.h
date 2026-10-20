@@ -320,7 +320,8 @@ struct FRustealDelegateApi {
                                      RustealFPropertyHandle prop,
                                      uint64 callback_id);
   ERustealErrorCode (*unbind_delegate)(RustealUObjectHandle obj,
-                                       RustealFPropertyHandle prop);
+                                       RustealFPropertyHandle prop,
+                                       uint64 callback_id);
   ERustealErrorCode (*add_multicast)(RustealUObjectHandle obj,
                                      RustealFPropertyHandle prop,
                                      uint64 callback_id);
@@ -343,6 +344,16 @@ struct FRustealDelegateApi {
   void *(*make_delegate)(RustealUFunctionHandle signature,
                          RustealUObjectHandle owner, uint64 callback_id);
   void (*free_delegate)(void *delegate);
+
+  ERustealErrorCode (*execute_delegate)(RustealUObjectHandle obj,
+                                        RustealFPropertyHandle prop,
+                                        uint8 *params);
+};
+
+enum class ERustealReifyDelegateKind : uint32 {
+  Multicast = 0,
+  Single = 1,
+  Sparse = 2,
 };
 
 enum class ERustealReifyPropType : uint32 {
@@ -430,7 +441,7 @@ struct FRustealReifyApi {
 
   RustealUFunctionHandle (*add_delegate)(RustealUClassHandle cls,
                                          const uint8 *name, uint32 name_len,
-                                         uint64 prop_flags);
+                                         uint64 prop_flags, uint32 kind);
 
   ERustealErrorCode (*add_interface)(RustealUClassHandle cls, const uint8 *path,
                                      uint32 path_len);

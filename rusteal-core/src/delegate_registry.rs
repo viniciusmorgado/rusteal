@@ -127,7 +127,11 @@ impl Drop for DelegateBinding {
                         self.callback_id,
                     );
                 } else {
-                    let _ = crate::ffi_dispatch::delegate_unbind_delegate(self.owner, self.prop);
+                    let _ = crate::ffi_dispatch::delegate_unbind_delegate(
+                        self.owner,
+                        self.prop,
+                        self.callback_id,
+                    );
                 }
             }
         }

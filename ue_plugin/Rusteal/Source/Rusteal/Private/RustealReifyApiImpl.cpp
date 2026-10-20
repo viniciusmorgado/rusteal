@@ -9,6 +9,7 @@
 #include "RustealLibrary.h"
 #include "RustealModule.h"
 #include "UObject/Interface.h"
+#include "UObject/SparseDelegate.h"
 #include "UObject/UObjectArray.h"
 #include "UObject/UObjectGlobals.h"
 #include "UObject/UObjectIterator.h"
@@ -686,8 +687,7 @@ static ERustealErrorCode
 AddFunctionParamImpl(RustealUFunctionHandle Func, const uint8 *Name,
                      uint32 NameLen, uint32 PropType, uint64 ParamFlags,
                      const FRustealReifyPropExtra *Extra) {
-  URustealReifiedFunction *Function =
-      Cast<URustealReifiedFunction>(static_cast<UFunction *>(Func.ptr));
+  UFunction *Function = static_cast<UFunction *>(Func.ptr);
 
   if (!Function) {
     return RustealFail(ERustealErrorCode::NullArgument);
@@ -737,6 +737,18 @@ AddFunctionParamImpl(RustealUFunctionHandle Func, const uint8 *Name,
   return ERustealErrorCode::Ok;
 }
 
+static void RegisterSparseDelegates(UClass *Class, const UObject *CDO) {
+  for (TFieldIterator<FMulticastSparseDelegateProperty> It(
+           Class, EFieldIteratorFlags::ExcludeSuper);
+       It; ++It) {
+    const USparseDelegateFunction *Signature =
+        CastChecked<USparseDelegateFunction>(It->SignatureFunction);
+
+    FSparseDelegateStorage::RegisterDelegateOffset(
+        CDO, Signature->DelegateName, It->GetOffset_ForInternal());
+  }
+}
+
 static ERustealErrorCode FinalizeClassImpl(RustealUClassHandle Cls) {
   URustealReifiedClass *Class =
       Cast<URustealReifiedClass>(static_cast<UClass *>(Cls.ptr));
@@ -774,6 +786,7 @@ static ERustealErrorCode FinalizeClassImpl(RustealUClassHandle Cls) {
                           false, Class);
 
   UObject *CDO = Class->GetDefaultObject(true);
+  RegisterSparseDelegates(Class, CDO);
   Class->PostLoadDefaultObject(CDO);
 
   if (AActor *ActorCDO = Cast<AActor>(CDO)) {
@@ -1085,7 +1098,7 @@ static ERustealErrorCode FinalizeStructImpl(RustealUStructHandle Handle) {
 
 static RustealUFunctionHandle AddDelegateImpl(RustealUClassHandle Cls,
                                               const uint8 *Name, uint32 NameLen,
-                                              uint64 PropFlags) {
+                                              uint64 PropFlags, uint32 Kind) {
   UClass *Class = static_cast<UClass *>(Cls.ptr);
 
   if (!Class) {
@@ -1094,35 +1107,94 @@ static RustealUFunctionHandle AddDelegateImpl(RustealUClassHandle Cls,
 
   const FName PropName = ReifyUtf8ToFName(Name, NameLen);
 
-  for (TFieldIterator<FMulticastDelegateProperty> It(
-           Class, EFieldIteratorFlags::ExcludeSuper);
+  for (TFieldIterator<FProperty> It(Class, EFieldIteratorFlags::ExcludeSuper);
        It; ++It) {
-    if (It->GetFName() == PropName) {
-      return RustealUFunctionHandle{It->SignatureFunction};
+    if (It->GetFName() != PropName) {
+      continue;
     }
+
+    if (const FMulticastDelegateProperty *Multi =
+            CastField<FMulticastDelegateProperty>(*It)) {
+      return RustealUFunctionHandle{Multi->SignatureFunction};
+    }
+
+    if (const FDelegateProperty *Single = CastField<FDelegateProperty>(*It)) {
+      return RustealUFunctionHandle{Single->SignatureFunction};
+    }
+
+    return RustealUFunctionHandle{nullptr};
   }
 
   const FName SignatureName(
       *FString::Printf(TEXT("%s__DelegateSignature"), *PropName.ToString()));
 
-  URustealReifiedFunction *Signature =
-      NewObject<URustealReifiedFunction>(Class, SignatureName, RF_Public);
+  const ERustealReifyDelegateKind DelegateKind =
+      static_cast<ERustealReifyDelegateKind>(Kind);
 
-  Signature->FunctionFlags =
-      FUNC_Public | FUNC_Delegate | FUNC_MulticastDelegate;
+  UFunction *Signature = nullptr;
+  FProperty *Prop = nullptr;
 
-  Signature->CallbackId = 0;
+  switch (DelegateKind) {
+  case ERustealReifyDelegateKind::Single: {
+    Signature =
+        NewObject<URustealReifiedFunction>(Class, SignatureName, RF_Public);
+
+    Signature->FunctionFlags = FUNC_Public | FUNC_Delegate;
+
+    FDelegateProperty *Single =
+        new FDelegateProperty(FFieldVariant(Class), PropName);
+
+    Single->SignatureFunction = Signature;
+    Prop = Single;
+    break;
+  }
+
+  case ERustealReifyDelegateKind::Sparse: {
+    USparseDelegateFunction *Sparse =
+        NewObject<USparseDelegateFunction>(Class, SignatureName, RF_Public);
+
+    Sparse->FunctionFlags =
+        FUNC_Public | FUNC_Delegate | FUNC_MulticastDelegate;
+
+    Sparse->OwningClassName = Class->GetFName();
+    Sparse->DelegateName = PropName;
+    Signature = Sparse;
+
+    FMulticastSparseDelegateProperty *Multi =
+        new FMulticastSparseDelegateProperty(FFieldVariant(Class), PropName);
+
+    Multi->SignatureFunction = Sparse;
+    Multi->PropertyFlags |= CPF_BlueprintAssignable | CPF_BlueprintCallable;
+    Prop = Multi;
+    break;
+  }
+
+  default: {
+    Signature =
+        NewObject<URustealReifiedFunction>(Class, SignatureName, RF_Public);
+
+    Signature->FunctionFlags =
+        FUNC_Public | FUNC_Delegate | FUNC_MulticastDelegate;
+
+    FMulticastInlineDelegateProperty *Multi =
+        new FMulticastInlineDelegateProperty(FFieldVariant(Class), PropName);
+
+    Multi->SignatureFunction = Signature;
+    Multi->PropertyFlags |= CPF_BlueprintAssignable | CPF_BlueprintCallable;
+    Prop = Multi;
+    break;
+  }
+  }
+
+  if (URustealReifiedFunction *Reified =
+          Cast<URustealReifiedFunction>(Signature)) {
+    Reified->CallbackId = 0;
+  }
 
   Signature->Next = Class->Children;
   Class->Children = Signature;
 
-  FMulticastInlineDelegateProperty *Prop = new FMulticastInlineDelegateProperty(
-      FFieldVariant(Class), PropName, RF_Public);
-
-  Prop->SignatureFunction = Signature;
-
-  Prop->PropertyFlags |= CPF_BlueprintAssignable | CPF_BlueprintCallable |
-                         static_cast<EPropertyFlags>(PropFlags);
+  Prop->PropertyFlags |= static_cast<EPropertyFlags>(PropFlags);
 
   Class->AddCppProperty(Prop);
 

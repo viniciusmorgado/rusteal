@@ -538,8 +538,11 @@ pub struct RustealDelegateApi {
         prop: FPropertyHandle,
         callback_id: u64,
     ) -> RustealErrorCode,
-    pub unbind_delegate:
-        unsafe extern "C" fn(obj: UObjectHandle, prop: FPropertyHandle) -> RustealErrorCode,
+    pub unbind_delegate: unsafe extern "C" fn(
+        obj: UObjectHandle,
+        prop: FPropertyHandle,
+        callback_id: u64,
+    ) -> RustealErrorCode,
     pub add_multicast: unsafe extern "C" fn(
         obj: UObjectHandle,
         prop: FPropertyHandle,
@@ -579,6 +582,12 @@ pub struct RustealDelegateApi {
         callback_id: u64,
     ) -> *mut u8,
     pub free_delegate: unsafe extern "C" fn(delegate: *mut u8),
+
+    pub execute_delegate: unsafe extern "C" fn(
+        obj: UObjectHandle,
+        prop: FPropertyHandle,
+        params: *mut u8,
+    ) -> RustealErrorCode,
 }
 
 #[repr(C)]
@@ -656,6 +665,7 @@ pub struct RustealReifyApi {
         name: *const u8,
         name_len: u32,
         prop_flags: u64,
+        kind: u32,
     ) -> UFunctionHandle,
 
     pub add_interface:

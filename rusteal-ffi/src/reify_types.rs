@@ -30,6 +30,14 @@ pub enum RustealReifyPropType {
     Set = 24,
 }
 
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RustealReifyDelegateKind {
+    Multicast = 0,
+    Single = 1,
+    Sparse = 2,
+}
+
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
 pub struct RustealReifyPropExtra {

@@ -54,7 +54,8 @@ RustealDelegateApi_BindDelegate(RustealUObjectHandle ObjHandle,
 
 static ERustealErrorCode
 RustealDelegateApi_UnbindDelegate(RustealUObjectHandle ObjHandle,
-                                  RustealFPropertyHandle PropHandle) {
+                                  RustealFPropertyHandle PropHandle,
+                                  uint64 CallbackId) {
   RUSTEAL_CHECK_ARGS(ObjHandle, PropHandle);
 
   FDelegateProperty *DelegateProp = CastField<FDelegateProperty>(RawProp);
@@ -70,12 +71,38 @@ RustealDelegateApi_UnbindDelegate(RustealUObjectHandle ObjHandle,
     return RustealFail(ERustealErrorCode::InternalError);
   }
 
-  if (URustealDelegateProxy *Old =
-          Cast<URustealDelegateProxy>(Delegate->GetUObject())) {
-    URustealDelegateProxy::Release(Old);
+  URustealDelegateProxy *Bound =
+      Cast<URustealDelegateProxy>(Delegate->GetUObject());
+
+  if (!Bound || Bound->CallbackId != CallbackId ||
+      Bound->Library != RustealCurrentLibrary()) {
+    return ERustealErrorCode::Ok;
   }
 
+  URustealDelegateProxy::Release(Bound);
   Delegate->Unbind();
+  return ERustealErrorCode::Ok;
+}
+
+static ERustealErrorCode
+RustealDelegateApi_ExecuteDelegate(RustealUObjectHandle ObjHandle,
+                                   RustealFPropertyHandle PropHandle,
+                                   uint8 *Params) {
+  RUSTEAL_CHECK_ARGS(ObjHandle, PropHandle);
+
+  FDelegateProperty *DelegateProp = CastField<FDelegateProperty>(RawProp);
+
+  if (!DelegateProp) {
+    return RustealFailType(RawProp, TEXT("FDelegateProperty"));
+  }
+
+  const FScriptDelegate *Delegate =
+      DelegateProp->GetPropertyValuePtr_InContainer(Object);
+
+  if (Delegate && Delegate->IsBound()) {
+    Delegate->ProcessDelegate<UObject>(Params);
+  }
+
   return ERustealErrorCode::Ok;
 }
 
@@ -333,7 +360,15 @@ static ERustealErrorCode RustealDelegateApi_AddFunction(
       return RustealFailType(RawProp, TEXT("FDelegateProperty"));
     }
 
-    *DelegateProp->GetPropertyValuePtr_InContainer(Object) = ScriptDelegate;
+    FScriptDelegate *Delegate =
+        DelegateProp->GetPropertyValuePtr_InContainer(Object);
+
+    if (URustealDelegateProxy *Old =
+            Cast<URustealDelegateProxy>(Delegate->GetUObject())) {
+      URustealDelegateProxy::Release(Old);
+    }
+
+    *Delegate = ScriptDelegate;
     return ERustealErrorCode::Ok;
   }
 
@@ -347,4 +382,5 @@ FRustealDelegateApi GDelegateApi = {
     &RustealDelegateApi_AddFunction,
     &RustealDelegateApi_MakeDelegate,
     &RustealDelegateApi_FreeDelegate,
+    &RustealDelegateApi_ExecuteDelegate,
 };

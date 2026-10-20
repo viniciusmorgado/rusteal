@@ -144,6 +144,17 @@ impl DynamicCall {
     }
 
     #[track_caller]
+    pub fn execute(self) -> RustealResult<()> {
+        if self.delegate.is_null() {
+            return Err(RustealError::invalid_operation("not a delegate call"));
+        }
+
+        check_ffi(unsafe {
+            ffi_dispatch::delegate_execute_delegate(self.obj, self.delegate, self.params)
+        })
+    }
+
+    #[track_caller]
     pub fn call(mut self) -> RustealResult<DynamicCallResult> {
         let code =
             unsafe { ffi_dispatch::reflection_call_function(self.obj, self.func, self.params) };
