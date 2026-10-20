@@ -837,4 +837,29 @@ pub struct RustealWorldApi {
         row_name: FNameHandle,
         row_struct: UStructHandle,
     ) -> *mut u8,
+
+    pub set_timer: unsafe extern "C" fn(
+        context: UObjectHandle,
+        rate: f32,
+        looping: bool,
+        max_once_per_frame: bool,
+        first_delay: f32,
+        callback_id: u64,
+        out_handle: *mut u64,
+    ) -> RustealErrorCode,
+
+    pub set_timer_for_next_tick: unsafe extern "C" fn(
+        context: UObjectHandle,
+        callback_id: u64,
+        out_handle: *mut u64,
+    ) -> RustealErrorCode,
+
+    pub clear_timer: unsafe extern "C" fn(context: UObjectHandle, handle: u64) -> RustealErrorCode,
+
+    pub pause_timer:
+        unsafe extern "C" fn(context: UObjectHandle, handle: u64, paused: bool) -> RustealErrorCode,
+
+    pub timer_remaining: unsafe extern "C" fn(context: UObjectHandle, handle: u64) -> f32,
+
+    pub live_timer_callbacks: unsafe extern "C" fn() -> u32,
 }
