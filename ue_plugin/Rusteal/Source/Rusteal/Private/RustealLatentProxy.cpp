@@ -134,3 +134,115 @@ void RustealLatentProxiesForgetLibrary(FRustealLibrary *Library) {
     Proxy->CallbackId = 0;
   }
 }
+
+namespace {
+class FRustealLatentAction;
+
+TMap<uint64, FRustealLatentAction *> GLatentActions;
+uint64 GNextLatentAction = 1;
+
+class FRustealLatentAction : public FPendingLatentAction {
+public:
+  FName ExecutionFunction;
+  int32 OutputLink;
+  FWeakObjectPtr CallbackTarget;
+  FRustealLibrary *Library;
+  uint64 AbortCallbackId;
+  uint64 Id;
+  bool bDone = false;
+  bool bAbandoned = false;
+
+  FRustealLatentAction(const FLatentActionInfo &Info, FRustealLibrary *InLibrary,
+                       uint64 InAbortCallbackId, uint64 InId)
+      : ExecutionFunction(Info.ExecutionFunction), OutputLink(Info.Linkage),
+        CallbackTarget(Info.CallbackTarget), Library(InLibrary),
+        AbortCallbackId(InAbortCallbackId), Id(InId) {
+    GLatentActions.Add(Id, this);
+  }
+
+  virtual ~FRustealLatentAction() override {
+    GLatentActions.Remove(Id);
+
+    RustealCallLibrary(Library, [this](const FRustealRustCallbacks &Cb) {
+      Cb.release_delegate_callback(AbortCallbackId);
+    });
+  }
+
+  virtual void UpdateOperation(FLatentResponse &Response) override {
+    if (!Library || bAbandoned) {
+      Response.DoneIf(true);
+      return;
+    }
+
+    Response.FinishAndTriggerIf(bDone, ExecutionFunction, OutputLink,
+                                CallbackTarget);
+  }
+
+  virtual void NotifyObjectDestroyed() override { Abort(); }
+
+  virtual void NotifyActionAborted() override { Abort(); }
+
+  void Abort() {
+    if (bDone) {
+      return;
+    }
+
+    RustealCallLibrary(Library, [this](const FRustealRustCallbacks &Cb) {
+      Cb.invoke_delegate_callback(AbortCallbackId, nullptr);
+    });
+  }
+};
+} // namespace
+
+uint64 RustealLatent_FunctionBegin(RustealUObjectHandle Owner,
+                                   const uint8 *Info, uint64 AbortCallbackId) {
+  UObject *Object = static_cast<UObject *>(Owner.ptr);
+
+  if (!IsValid(Object) || !Info || !GEngine) {
+    return 0;
+  }
+
+  const FLatentActionInfo &LatentInfo =
+      *reinterpret_cast<const FLatentActionInfo *>(Info);
+
+  UWorld *World =
+      GEngine->GetWorldFromContextObject(Object, EGetWorldErrorMode::ReturnNull);
+
+  if (!World || !LatentInfo.CallbackTarget) {
+    return 0;
+  }
+
+  FLatentActionManager &Manager = World->GetLatentActionManager();
+
+  if (Manager.FindExistingAction<FRustealLatentAction>(LatentInfo.CallbackTarget,
+                                                       LatentInfo.UUID)) {
+    return 0;
+  }
+
+  const uint64 Id = GNextLatentAction++;
+
+  Manager.AddNewAction(LatentInfo.CallbackTarget, LatentInfo.UUID,
+                       new FRustealLatentAction(LatentInfo, RustealCurrentLibrary(),
+                                                AbortCallbackId, Id));
+
+  return Id;
+}
+
+void RustealLatent_FunctionFinish(uint64 Id, bool bCompleted) {
+  if (FRustealLatentAction **Found = GLatentActions.Find(Id)) {
+    (*Found)->bDone = true;
+    (*Found)->bAbandoned = !bCompleted;
+  }
+}
+
+uint32 RustealLatent_LiveFunctions() {
+  return static_cast<uint32>(GLatentActions.Num());
+}
+
+void RustealLatentFunctionsForgetLibrary(FRustealLibrary *Library) {
+  for (const TPair<uint64, FRustealLatentAction *> &Entry : GLatentActions) {
+    if (Entry.Value->Library == Library) {
+      Entry.Value->Library = nullptr;
+    }
+  }
+}

@@ -591,6 +591,11 @@ pub struct RustealDelegateApi {
 
     pub latent_cancel: unsafe extern "C" fn(callback_id: u64) -> RustealErrorCode,
     pub live_latent_proxies: unsafe extern "C" fn() -> u32,
+
+    pub latent_function_begin:
+        unsafe extern "C" fn(owner: UObjectHandle, info: *const u8, abort_callback_id: u64) -> u64,
+    pub latent_function_finish: unsafe extern "C" fn(action: u64, completed: bool),
+    pub live_latent_functions: unsafe extern "C" fn() -> u32,
 }
 
 #[repr(C)]

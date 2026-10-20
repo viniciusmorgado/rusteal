@@ -42,6 +42,7 @@ struct UFunctionInfo {
     name_expr: TokenStream,
     param_name_exprs: Vec<TokenStream>,
     fallible: bool,
+    is_async: bool,
 }
 
 pub fn expand_uclass_impl(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream> {
@@ -277,7 +278,8 @@ pub fn expand_uclass_impl(attr: TokenStream, item: TokenStream) -> syn::Result<T
             flags_expr
         };
 
-        let total_offsets = uf.params.len() + if uf.return_type.is_some() { 1 } else { 0 };
+        let total_offsets =
+            uf.params.len() + usize::from(uf.return_type.is_some()) + usize::from(uf.is_async);
 
         let mut offset_inits: Vec<TokenStream> = Vec::new();
 
@@ -302,6 +304,20 @@ pub fn expand_uclass_impl(attr: TokenStream, item: TokenStream) -> syn::Result<T
                         func,
                         b"ReturnValue".as_ptr(),
                         11u32,
+                    );
+
+                    (::rusteal_runtime::runtime::ffi_dispatch::reflection_get_property_offset(p), p)
+                }
+            });
+        }
+
+        if uf.is_async {
+            offset_inits.push(quote! {
+                {
+                    let p = ::rusteal_runtime::runtime::ffi_dispatch::reflection_get_function_param(
+                        func,
+                        b"LatentInfo".as_ptr(),
+                        10u32,
                     );
 
                     (::rusteal_runtime::runtime::ffi_dispatch::reflection_get_property_offset(p), p)
@@ -526,23 +542,52 @@ pub fn expand_uclass_impl(attr: TokenStream, item: TokenStream) -> syn::Result<T
             __error.__raise(&format!("{}::{}", #struct_label, #ue_name));
         };
 
-        let call_expr = match (uf.fallible, uf.return_type.is_some()) {
-            (true, true) => quote! {
-                let __ret = match #call {
-                    Ok(value) => value,
-                    Err(__error) => {
-                        #raise
-                        return;
+        let latent_idx = syn::Index::from(uf.params.len());
+
+        let call_expr = if uf.is_async {
+            let run = if uf.fallible {
+                quote! {
+                    if let Err(__error) = __future.await {
+                        __error.__log_in(
+                            ::rusteal_runtime::runtime::LOG_WARNING,
+                            &format!("{}::{}", #struct_label, #ue_name),
+                        );
                     }
-                };
-            },
-            (true, false) => quote! {
-                if let Err(__error) = #call {
-                    #raise
                 }
-            },
-            (false, true) => quote! { let __ret = #call; },
-            (false, false) => quote! { #call; },
+            } else {
+                quote! { __future.await; }
+            };
+
+            quote! {
+                let __future = #call;
+
+                unsafe {
+                    ::rusteal_runtime::runtime::latent::start_latent_function(
+                        obj,
+                        params.add(offsets[#latent_idx].0 as usize) as *const u8,
+                        async move { #run },
+                    );
+                }
+            }
+        } else {
+            match (uf.fallible, uf.return_type.is_some()) {
+                (true, true) => quote! {
+                    let __ret = match #call {
+                        Ok(value) => value,
+                        Err(__error) => {
+                            #raise
+                            return;
+                        }
+                    };
+                },
+                (true, false) => quote! {
+                    if let Err(__error) = #call {
+                        #raise
+                    }
+                },
+                (false, true) => quote! { let __ret = #call; },
+                (false, false) => quote! { #call; },
+            }
         };
 
         let func_var = format_ident!("__func_{}", method_ident);
@@ -643,6 +688,24 @@ pub fn expand_uclass_impl(attr: TokenStream, item: TokenStream) -> syn::Result<T
                             #prop_type_expr as u32,
                             #param_flags,
                             #extra_expr,
+                        );
+                    }
+                });
+            }
+
+            if uf.is_async {
+                register_stmts.push(quote! {
+                    unsafe {
+                        ::rusteal_runtime::runtime::ffi_dispatch::reify_add_function_param(
+                            #func_var,
+                            b"LatentInfo".as_ptr(),
+                            10u32,
+                            ::rusteal_runtime::ffi::RustealReifyPropType::Struct as u32,
+                            ::rusteal_runtime::ffi::CPF_PARM,
+                            &::rusteal_runtime::ffi::RustealReifyPropExtra {
+                                struct_handle: ::rusteal_runtime::runtime::latent::latent_info_struct(),
+                                ..::core::default::Default::default()
+                            },
                         );
                     }
                 });
@@ -881,6 +944,35 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
     let ue_name = explicit_name
         .unwrap_or_else(|| prop_type::to_pascal_case(&method_ident.unraw().to_string()));
 
+    let is_async = method.sig.asyncness.is_some();
+
+    if is_async {
+        let by_value = matches!(
+            method.sig.inputs.first(),
+            Some(FnArg::Receiver(r)) if matches!(r.kind, ReceiverKind::Value)
+        );
+
+        if kind != FnKind::Callable || exec {
+            return Err(syn::Error::new_spanned(
+                &method.sig,
+                "an async #[ufunction] is a BlueprintCallable latent node: not an event, \
+                 an Override, BlueprintPure or Exec",
+            ));
+        }
+
+        if !by_value {
+            return Err(syn::Error::new_spanned(
+                &method.sig,
+                "an async #[ufunction] takes `self` (the class is a handle): a `&self` or \
+                 `&mut self` borrow cannot live across an .await while the engine runs other \
+                 code on the object",
+            ));
+        }
+
+        metadata.push(("Latent".to_string(), String::new()));
+        metadata.push(("LatentInfo".to_string(), "LatentInfo".to_string()));
+    }
+
     let is_mut = method.sig.inputs.first().is_some_and(|arg| match arg {
         FnArg::Receiver(r) => {
             r.mutability.is_some() || matches!(r.kind, ReceiverKind::Reference(_, _, Some(_)))
@@ -1012,6 +1104,14 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
         })
         .collect();
 
+    if is_async && (params.iter().any(|p: &ParamInfo| p.out) || return_type.is_some()) {
+        return Err(syn::Error::new_spanned(
+            &method.sig,
+            "an async #[ufunction] returns nothing (or RustealResult<()>) and has no out \
+             parameters: a latent node's outputs are set when it starts, before it finishes",
+        ));
+    }
+
     Ok(UFunctionInfo {
         metadata,
         is_static,
@@ -1025,6 +1125,7 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
         name_expr,
         param_name_exprs,
         fallible,
+        is_async,
     })
 }
 
@@ -1064,6 +1165,7 @@ fn parse_interface_fn(method: &ImplItemFn, trait_path: &syn::Path) -> syn::Resul
         name_expr,
         param_name_exprs,
         fallible: false,
+        is_async: false,
     })
 }
 
@@ -1400,6 +1502,35 @@ mod tests {
         assert!(out.contains("Interactable :: interact (& mut __this , instigator)"));
         assert!(out.contains("FUNC_EVENT"));
         assert!(out.contains("__rusteal_register_door_interactable_functions"));
+    }
+
+    #[test]
+    fn async_ufunctions_are_latent_nodes_taking_self() {
+        let method: ImplItemFn = syn::parse_quote! {
+            #[ufunction]
+            async fn open(self, speed: f32) {}
+        };
+
+        let info = parse_ufunction(&method).unwrap();
+        assert!(info.is_async);
+        assert!(
+            info.metadata
+                .iter()
+                .any(|(key, value)| key == "LatentInfo" && value == "LatentInfo")
+        );
+
+        let bad: Vec<ImplItemFn> = vec![
+            syn::parse_quote! { #[ufunction] async fn a(&self) {} },
+            syn::parse_quote! { #[ufunction] async fn b(&mut self) {} },
+            syn::parse_quote! { #[ufunction(BlueprintPure)] async fn c(self) {} },
+            syn::parse_quote! { #[ufunction] async fn d(self) -> i32 { 1 } },
+            syn::parse_quote! { #[ufunction] async fn e(self, out: &mut i32) {} },
+            syn::parse_quote! { #[ufunction] async fn f() {} },
+        ];
+
+        for method in &bad {
+            assert!(parse_ufunction(method).is_err(), "{}", method.sig.ident);
+        }
     }
 
     #[test]
