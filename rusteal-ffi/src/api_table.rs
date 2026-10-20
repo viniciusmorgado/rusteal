@@ -865,4 +865,28 @@ pub struct RustealWorldApi {
     pub timer_remaining: unsafe extern "C" fn(context: UObjectHandle, handle: u64) -> f32,
 
     pub live_timer_callbacks: unsafe extern "C" fn() -> u32,
+
+    pub load_async: unsafe extern "C" fn(
+        paths: *const u8,
+        paths_len: u32,
+        callback_id: u64,
+    ) -> RustealErrorCode,
+
+    pub load_primary_assets: unsafe extern "C" fn(
+        ids: *const u8,
+        ids_len: u32,
+        bundles: *const u8,
+        bundles_len: u32,
+        callback_id: u64,
+    ) -> RustealErrorCode,
+
+    pub load_finish: unsafe extern "C" fn(
+        callback_id: u64,
+        out_objects: *mut UObjectHandle,
+        capacity: u32,
+        out_count: *mut u32,
+    ) -> RustealErrorCode,
+
+    pub load_cancel: unsafe extern "C" fn(callback_id: u64) -> RustealErrorCode,
+    pub loads_in_progress: unsafe extern "C" fn() -> u32,
 }

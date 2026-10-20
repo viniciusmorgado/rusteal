@@ -233,6 +233,18 @@ ERustealErrorCode RustealTimer_PauseTimer(RustealUObjectHandle Context,
                                           uint64 Packed, bool bPaused);
 float RustealTimer_TimerRemaining(RustealUObjectHandle Context, uint64 Packed);
 uint32 RustealTimer_LiveTimerCallbacks();
+ERustealErrorCode RustealLoading_LoadAsync(const uint8 *Paths, uint32 PathsLen,
+                                           uint64 CallbackId);
+ERustealErrorCode RustealLoading_LoadPrimaryAssets(const uint8 *Ids,
+                                                   uint32 IdsLen,
+                                                   const uint8 *Bundles,
+                                                   uint32 BundlesLen,
+                                                   uint64 CallbackId);
+ERustealErrorCode RustealLoading_Finish(uint64 CallbackId,
+                                        RustealUObjectHandle *OutObjects,
+                                        uint32 Capacity, uint32 *OutCount);
+ERustealErrorCode RustealLoading_Cancel(uint64 CallbackId);
+uint32 RustealLoading_InProgress();
 
 FRustealWorldApi GWorldApi = {
     &SpawnActorImpl,
@@ -251,4 +263,9 @@ FRustealWorldApi GWorldApi = {
     &RustealTimer_PauseTimer,
     &RustealTimer_TimerRemaining,
     &RustealTimer_LiveTimerCallbacks,
+    &RustealLoading_LoadAsync,
+    &RustealLoading_LoadPrimaryAssets,
+    &RustealLoading_Finish,
+    &RustealLoading_Cancel,
+    &RustealLoading_InProgress,
 };

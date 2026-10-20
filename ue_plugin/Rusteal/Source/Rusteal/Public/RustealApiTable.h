@@ -568,6 +568,18 @@ struct FRustealWorldApi {
                                    bool paused);
   float (*timer_remaining)(RustealUObjectHandle context, uint64 handle);
   uint32 (*live_timer_callbacks)();
+
+  ERustealErrorCode (*load_async)(const uint8 *paths, uint32 paths_len,
+                                  uint64 callback_id);
+  ERustealErrorCode (*load_primary_assets)(const uint8 *ids, uint32 ids_len,
+                                           const uint8 *bundles,
+                                           uint32 bundles_len,
+                                           uint64 callback_id);
+  ERustealErrorCode (*load_finish)(uint64 callback_id,
+                                   RustealUObjectHandle *out_objects,
+                                   uint32 capacity, uint32 *out_count);
+  ERustealErrorCode (*load_cancel)(uint64 callback_id);
+  uint32 (*loads_in_progress)();
 };
 
 struct FRustealPlatformApi {

@@ -56,6 +56,16 @@ impl<T: UeClass> SoftObjectRef<T> {
 
         Ok(unsafe { UObjectRef::from_raw(handle) })
     }
+
+    /// Loads the asset in the background, resuming when it is in memory; awaited in a task
+    /// started with `task::spawn_local`.
+    ///
+    /// Nothing keeps the loaded object but what stores it: keep it in a `#[uproperty]` or pin it.
+    pub fn load_async(
+        &self,
+    ) -> impl std::future::Future<Output = RustealResult<UObjectRef<T>>> + 'static {
+        crate::loading::load_one(self.path.clone())
+    }
 }
 
 impl<T: UeClass> Default for SoftObjectRef<T> {
