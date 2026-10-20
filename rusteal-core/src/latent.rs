@@ -93,3 +93,70 @@ impl Drop for LatentCall {
 pub fn live_latent_proxies() -> u32 {
     unsafe { crate::ffi_dispatch::delegate_live_latent_proxies() }
 }
+
+struct FinishAction {
+    action: Arc<std::sync::atomic::AtomicU64>,
+    completed: bool,
+}
+
+impl Drop for FinishAction {
+    fn drop(&mut self) {
+        let action = self.action.load(std::sync::atomic::Ordering::SeqCst);
+
+        if action != 0 && crate::api::is_api_initialized() {
+            unsafe { crate::ffi_dispatch::delegate_latent_function_finish(action, self.completed) };
+        }
+    }
+}
+
+/// Runs an async `#[ufunction]` called as a Blueprint latent node: the node's output fires when
+/// `future` finishes; the future is dropped, and the output does not fire, when the node is
+/// aborted or `owner` is destroyed.
+///
+/// A second call while the node's action runs does nothing, as a Blueprint latent node does.
+///
+/// # Safety
+/// `info` points to the `FLatentActionInfo` parameter of the call.
+#[doc(hidden)]
+pub unsafe fn start_latent_function(
+    owner: rusteal_ffi::UObjectHandle,
+    info: *const u8,
+    future: impl Future<Output = ()> + 'static,
+) {
+    let action = Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let finish = FinishAction {
+        action: action.clone(),
+        completed: false,
+    };
+
+    let task = crate::executor::spawn_owned_by(owner, async move {
+        let mut finish = finish;
+        future.await;
+        finish.completed = true;
+    });
+
+    let abort = task.abort_handle();
+    let abort_id = register_callback(move |_| abort.abort());
+
+    let id = unsafe { crate::ffi_dispatch::delegate_latent_function_begin(owner, info, abort_id) };
+
+    if id == 0 {
+        unregister_callback(abort_id);
+        task.abort();
+        return;
+    }
+
+    action.store(id, std::sync::atomic::Ordering::SeqCst);
+}
+
+#[doc(hidden)]
+pub fn live_latent_functions() -> u32 {
+    unsafe { crate::ffi_dispatch::delegate_live_latent_functions() }
+}
+
+/// The `UScriptStruct` of `FLatentActionInfo`, the hidden parameter of a latent `#[ufunction]`.
+#[doc(hidden)]
+pub fn latent_info_struct() -> rusteal_ffi::UStructHandle {
+    let name = "LatentActionInfo";
+    unsafe { crate::ffi_dispatch::reflection_find_struct(name.as_ptr(), name.len() as u32) }
+}

@@ -377,6 +377,10 @@ static ERustealErrorCode RustealDelegateApi_AddFunction(
 
 ERustealErrorCode RustealLatent_Cancel(uint64 CallbackId);
 uint32 RustealLatent_LiveProxies();
+uint64 RustealLatent_FunctionBegin(RustealUObjectHandle Owner,
+                                   const uint8 *Info, uint64 AbortCallbackId);
+void RustealLatent_FunctionFinish(uint64 Id, bool bCompleted);
+uint32 RustealLatent_LiveFunctions();
 
 FRustealDelegateApi GDelegateApi = {
     &RustealDelegateApi_BindDelegate,       &RustealDelegateApi_UnbindDelegate,
@@ -388,4 +392,7 @@ FRustealDelegateApi GDelegateApi = {
     &RustealDelegateApi_ExecuteDelegate,
     &RustealLatent_Cancel,
     &RustealLatent_LiveProxies,
+    &RustealLatent_FunctionBegin,
+    &RustealLatent_FunctionFinish,
+    &RustealLatent_LiveFunctions,
 };
