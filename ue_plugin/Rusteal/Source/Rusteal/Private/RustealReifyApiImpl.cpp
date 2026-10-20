@@ -972,6 +972,8 @@ static ERustealErrorCode FinalizeStructImpl(RustealUStructHandle Handle) {
   Struct->Bind();
   Struct->StaticLink(true);
   Struct->PrepareCppStructOps();
+  // Cooked builds use this ancestry cache when checking data-table row types.
+  Struct->SetSuperStruct(Struct->GetSuperStruct());
 
   NotifyRegistrationEvent(
       Struct->GetOutermost()->GetFName(), Struct->GetFName(),
