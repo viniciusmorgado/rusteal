@@ -186,4 +186,19 @@ impl TestActor {
     pub fn class_path(&self, class: SoftClassRef<Actor>) -> String {
         class.path().to_string()
     }
+
+    #[ufunction]
+    pub fn split_name(
+        &self,
+        full: String,
+        first: &mut String,
+        rest: &mut Vec<String>,
+        count: &mut i32,
+    ) -> bool {
+        let mut words = full.split(' ').map(String::from);
+        *first = words.next().unwrap_or_default();
+        *rest = words.collect();
+        *count = 1 + rest.len() as i32;
+        !first.is_empty()
+    }
 }

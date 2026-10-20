@@ -132,6 +132,7 @@ pub const ALL: &[(&str, Check)] = &[
         "interface_function_takes_any_type",
         interface_function_takes_any_type,
     ),
+    ("ufunction_out_parameters", ufunction_out_parameters),
     (
         "task_comes_back_to_the_game_thread",
         task_comes_back_to_the_game_thread,
@@ -1016,6 +1017,27 @@ fn interface_function_takes_any_type(context: &Context) -> Outcome {
             .map_err(|e| format!("{e:?}"))?;
         let text = target.describe("Ada".to_string(), vec![FName::new("a"), FName::new("b")]);
         ensure(text.to_string() == "Ada: 2", format!("described {text}"))
+    })())
+}
+
+fn ufunction_out_parameters(context: &Context) -> Outcome {
+    done((|| {
+        let e = |e| format!("{e:?}");
+        let actor = spawn(context)?;
+        let mut call = DynamicCall::new(&actor, "SplitName").map_err(e)?;
+        call.set_value("Full", &"Ada King Lovelace".to_string())
+            .map_err(e)?;
+        let result = call.call().map_err(e)?;
+
+        let ok: bool = result.value("ReturnValue").map_err(e)?;
+        let first: String = result.value("First").map_err(e)?;
+        let rest: Vec<String> = result.value("Rest").map_err(e)?;
+        let count: i32 = result.value("Count").map_err(e)?;
+
+        ensure(
+            ok && first == "Ada" && rest == ["King", "Lovelace"] && count == 3,
+            format!("{ok} {first:?} {rest:?} {count}"),
+        )
     })())
 }
 
