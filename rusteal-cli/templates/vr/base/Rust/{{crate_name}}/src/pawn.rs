@@ -20,7 +20,7 @@ use bindings::xr_base::{
 };
 use glam::DVec3;
 use rusteal_runtime::runtime::{
-    FName, OwnedStruct, Rotator, RustealResult, SubclassOf, UObjectRef, UStructRef,
+    FName, OwnedStruct, Rotator, RustealResult, SubclassOf, UObjectRef, UStructRef, method,
 };
 use rusteal_runtime::{uclass, uclass_impl};
 
@@ -457,7 +457,7 @@ impl XRPawn {
     }
 
     #[ufunction]
-    fn hide_unhide_hand(&mut self, b_hide: bool, b_right_hand: bool) {
+    pub fn hide_unhide_hand(&mut self, b_hide: bool, b_right_hand: bool) {
         let (held, other) = if b_right_hand {
             (self.hand_right(), self.hand_left())
         } else {
@@ -613,178 +613,191 @@ impl XRPawn {
             return Ok(());
         }
 
+        let bindings_with_value = [
+            (
+                self.turn_action(),
+                ETriggerEvent::Triggered,
+                method(self, Self::turn_triggered),
+            ),
+            (
+                self.hand_grasp_left_action(),
+                ETriggerEvent::Triggered,
+                method(self, Self::hand_grasp_left),
+            ),
+            (
+                self.hand_grasp_right_action(),
+                ETriggerEvent::Triggered,
+                method(self, Self::hand_grasp_right),
+            ),
+            (
+                self.hand_index_curl_left_action(),
+                ETriggerEvent::Triggered,
+                method(self, Self::hand_index_curl_left),
+            ),
+            (
+                self.hand_index_curl_right_action(),
+                ETriggerEvent::Triggered,
+                method(self, Self::hand_index_curl_right),
+            ),
+        ];
+
+        for (action, event, callback) in bindings_with_value {
+            if action.is_valid() {
+                bind_action(&me, action, event, callback)?;
+            }
+        }
+
         let bindings = [
-            (self.move_action(), ETriggerEvent::Started, "MoveStarted"),
+            (
+                self.move_action(),
+                ETriggerEvent::Started,
+                method(self, Self::move_started),
+            ),
             (
                 self.move_action(),
                 ETriggerEvent::Triggered,
-                "MoveTriggered",
+                method(self, Self::move_triggered),
             ),
             (
                 self.move_action(),
                 ETriggerEvent::Completed,
-                "MoveCompleted",
-            ),
-            (
-                self.turn_action(),
-                ETriggerEvent::Triggered,
-                "TurnTriggered",
+                method(self, Self::move_completed),
             ),
             (
                 self.grab_left_pressed_action(),
                 ETriggerEvent::Triggered,
-                "GrabLeftPressed",
+                method(self, Self::grab_left_pressed),
             ),
             (
                 self.grab_right_pressed_action(),
                 ETriggerEvent::Triggered,
-                "GrabRightPressed",
+                method(self, Self::grab_right_pressed),
             ),
             (
                 self.grab_left_released_action(),
                 ETriggerEvent::Triggered,
-                "GrabLeftReleased",
+                method(self, Self::grab_left_released),
             ),
             (
                 self.grab_right_released_action(),
                 ETriggerEvent::Triggered,
-                "GrabRightReleased",
+                method(self, Self::grab_right_released),
             ),
             (
                 self.menu_toggle_left_action(),
                 ETriggerEvent::Triggered,
-                "MenuToggleLeft",
+                method(self, Self::menu_toggle_left),
             ),
             (
                 self.menu_toggle_right_action(),
                 ETriggerEvent::Triggered,
-                "MenuToggleRight",
-            ),
-            (
-                self.hand_grasp_left_action(),
-                ETriggerEvent::Triggered,
-                "HandGraspLeft",
+                method(self, Self::menu_toggle_right),
             ),
             (
                 self.hand_grasp_left_action(),
                 ETriggerEvent::Canceled,
-                "HandGraspLeftEnd",
+                method(self, Self::hand_grasp_left_end),
             ),
             (
                 self.hand_grasp_left_action(),
                 ETriggerEvent::Completed,
-                "HandGraspLeftEnd",
-            ),
-            (
-                self.hand_grasp_right_action(),
-                ETriggerEvent::Triggered,
-                "HandGraspRight",
+                method(self, Self::hand_grasp_left_end),
             ),
             (
                 self.hand_grasp_right_action(),
                 ETriggerEvent::Canceled,
-                "HandGraspRightEnd",
+                method(self, Self::hand_grasp_right_end),
             ),
             (
                 self.hand_grasp_right_action(),
                 ETriggerEvent::Completed,
-                "HandGraspRightEnd",
-            ),
-            (
-                self.hand_index_curl_left_action(),
-                ETriggerEvent::Triggered,
-                "HandIndexCurlLeft",
+                method(self, Self::hand_grasp_right_end),
             ),
             (
                 self.hand_index_curl_left_action(),
                 ETriggerEvent::Canceled,
-                "HandIndexCurlLeftEnd",
+                method(self, Self::hand_index_curl_left_end),
             ),
             (
                 self.hand_index_curl_left_action(),
                 ETriggerEvent::Completed,
-                "HandIndexCurlLeftEnd",
-            ),
-            (
-                self.hand_index_curl_right_action(),
-                ETriggerEvent::Triggered,
-                "HandIndexCurlRight",
+                method(self, Self::hand_index_curl_left_end),
             ),
             (
                 self.hand_index_curl_right_action(),
                 ETriggerEvent::Canceled,
-                "HandIndexCurlRightEnd",
+                method(self, Self::hand_index_curl_right_end),
             ),
             (
                 self.hand_index_curl_right_action(),
                 ETriggerEvent::Completed,
-                "HandIndexCurlRightEnd",
+                method(self, Self::hand_index_curl_right_end),
             ),
             (
                 self.hand_point_left_action(),
                 ETriggerEvent::Started,
-                "HandPointLeftTouched",
+                method(self, Self::hand_point_left_touched),
             ),
             (
                 self.hand_point_left_action(),
                 ETriggerEvent::Canceled,
-                "HandPointLeftTouched",
+                method(self, Self::hand_point_left_touched),
             ),
             (
                 self.hand_point_left_action(),
                 ETriggerEvent::Completed,
-                "HandPointLeftUntouched",
+                method(self, Self::hand_point_left_untouched),
             ),
             (
                 self.hand_point_right_action(),
                 ETriggerEvent::Started,
-                "HandPointRightTouched",
+                method(self, Self::hand_point_right_touched),
             ),
             (
                 self.hand_point_right_action(),
                 ETriggerEvent::Canceled,
-                "HandPointRightTouched",
+                method(self, Self::hand_point_right_touched),
             ),
             (
                 self.hand_point_right_action(),
                 ETriggerEvent::Completed,
-                "HandPointRightUntouched",
+                method(self, Self::hand_point_right_untouched),
             ),
             (
                 self.hand_thumb_up_left_action(),
                 ETriggerEvent::Started,
-                "HandThumbUpLeftTouched",
+                method(self, Self::hand_thumb_up_left_touched),
             ),
             (
                 self.hand_thumb_up_left_action(),
                 ETriggerEvent::Canceled,
-                "HandThumbUpLeftTouched",
+                method(self, Self::hand_thumb_up_left_touched),
             ),
             (
                 self.hand_thumb_up_left_action(),
                 ETriggerEvent::Completed,
-                "HandThumbUpLeftUntouched",
+                method(self, Self::hand_thumb_up_left_untouched),
             ),
             (
                 self.hand_thumb_up_right_action(),
                 ETriggerEvent::Started,
-                "HandThumbUpRightTouched",
+                method(self, Self::hand_thumb_up_right_touched),
             ),
             (
                 self.hand_thumb_up_right_action(),
                 ETriggerEvent::Canceled,
-                "HandThumbUpRightTouched",
+                method(self, Self::hand_thumb_up_right_touched),
             ),
             (
                 self.hand_thumb_up_right_action(),
                 ETriggerEvent::Completed,
-                "HandThumbUpRightUntouched",
+                method(self, Self::hand_thumb_up_right_untouched),
             ),
         ];
 
-        for (action, event, function) in bindings {
+        for (action, event, mut callback) in bindings {
             if action.is_valid() {
-                bind_action_by_name(&me, action, event, function)?;
+                bind_action(&me, action, event, move |_| callback())?;
             }
         }
 

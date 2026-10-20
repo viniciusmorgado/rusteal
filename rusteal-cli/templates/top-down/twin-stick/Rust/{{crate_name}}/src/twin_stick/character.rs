@@ -1,14 +1,19 @@
+use std::time::Duration;
+
 use bindings::engine::{
     ActorExt, CameraComponent, CameraComponentExt, Character, CharacterExt,
     CharacterMovementComponentExt, Controller, ESpawnActorCollisionHandlingMethod, ETraceTypeQuery,
-    FHitResultExt, GameplayStatics, KismetMathLibrary, KismetSystemLibrary, MovementComponentExt,
-    PawnExt, PlayerController, PlayerControllerExt, SceneComponentExt, SpringArmComponent,
+    FHitResultExt, GameplayStatics, KismetMathLibrary, MovementComponentExt, PawnExt,
+    PlayerController, PlayerControllerExt, SceneComponentExt, SpringArmComponent,
     SpringArmComponentExt,
 };
 use bindings::enhanced_input::{ETriggerEvent, FInputActionValue, InputAction};
 use bindings::prelude::*;
 use glam::DVec2;
-use rusteal_runtime::runtime::{Rotator, RustealResult, SubclassOf, UObjectRef, UStructRef};
+use rusteal_runtime::runtime::timer::{self, TimerHandle};
+use rusteal_runtime::runtime::{
+    Rotator, RustealResult, SubclassOf, UObjectRef, UStructRef, method,
+};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use super::aoe_attack::TwinStickAoEAttack;
@@ -93,6 +98,8 @@ pub struct TwinStickCharacter {
     last_move_input: DVec2,
 
     auto_fire_active: bool,
+
+    auto_fire_timer: Option<TimerHandle>,
 }
 
 #[uclass_impl]
@@ -147,7 +154,9 @@ impl TwinStickCharacter {
 
     #[ufunction(Override)]
     fn receive_end_play(&mut self, _end_play_reason: u8) {
-        KismetSystemLibrary::k2_clear_timer(self.as_ref().upcast_to(), "ResetAutoFire");
+        if let Some(timer) = self.auto_fire_timer() {
+            timer.clear();
+        }
     }
 
     #[ufunction(Override)]
@@ -268,15 +277,18 @@ impl TwinStickCharacter {
 
             self.do_shoot();
 
-            KismetSystemLibrary::k2_set_timer(
-                self.as_ref().upcast_to(),
-                "ResetAutoFire",
-                self.auto_fire_delay(),
+            if let Some(timer) = self.auto_fire_timer() {
+                timer.clear();
+            }
+
+            let timer = timer::set_timer(
+                &self.as_ref(),
+                Duration::from_secs_f32(self.auto_fire_delay()),
                 false,
-                None,
-                None,
-                None,
+                method(self, Self::reset_auto_fire),
             );
+
+            self.set_auto_fire_timer(timer.ok());
         }
     }
 
@@ -353,30 +365,46 @@ impl TwinStickCharacter {
             return Ok(());
         }
 
-        bind_action_by_name(&me, self.move_action(), ETriggerEvent::Triggered, "Move")?;
+        bind_action(
+            &me,
+            self.move_action(),
+            ETriggerEvent::Triggered,
+            method(self, Self::r#move),
+        )?;
 
-        bind_action_by_name(
+        bind_action(
             &me,
             self.stick_aim_action(),
             ETriggerEvent::Triggered,
-            "StickAim",
+            method(self, Self::stick_aim),
         )?;
 
-        bind_action_by_name(
+        bind_action(
             &me,
             self.mouse_aim_action(),
             ETriggerEvent::Triggered,
-            "MouseAim",
+            method(self, Self::mouse_aim),
         )?;
 
-        bind_action_by_name(&me, self.dash_action(), ETriggerEvent::Triggered, "Dash")?;
-        bind_action_by_name(&me, self.shoot_action(), ETriggerEvent::Triggered, "Shoot")?;
+        bind_action(
+            &me,
+            self.dash_action(),
+            ETriggerEvent::Triggered,
+            method(self, Self::dash),
+        )?;
 
-        bind_action_by_name(
+        bind_action(
+            &me,
+            self.shoot_action(),
+            ETriggerEvent::Triggered,
+            method(self, Self::shoot),
+        )?;
+
+        bind_action(
             &me,
             self.ao_e_action(),
             ETriggerEvent::Triggered,
-            "AoEAttack",
+            method(self, Self::ao_e_attack),
         )?;
 
         Ok(())

@@ -13,7 +13,7 @@ use bindings::umg::UserWidgetExt;
 use glam::{DQuat, DVec2, DVec3};
 use rusteal_runtime::runtime::input::should_display_touch_interface;
 use rusteal_runtime::runtime::{
-    OwnedStruct, Rotator, RustealResult, SubclassOf, UObjectRef, UStructRef,
+    OwnedStruct, Rotator, RustealResult, SubclassOf, UObjectRef, UStructRef, method,
 };
 use rusteal_runtime::{uclass, uclass_impl};
 
@@ -469,145 +469,131 @@ impl StrategyPlayerController {
             .checked()?
             .add_mapping_context(chosen_context, 0, &OwnedStruct::new());
 
-        bind_action_by_name(
+        bind_action(
             &me,
             self.move_camera_action(),
             ETriggerEvent::Triggered,
-            "MoveCamera",
+            method(self, Self::move_camera),
         )?;
 
-        bind_action_by_name(
+        bind_action(
             &me,
             self.zoom_camera_action(),
             ETriggerEvent::Triggered,
-            "ZoomCamera",
+            method(self, Self::zoom_camera),
         )?;
 
-        bind_action_by_name(
-            &me,
+        self.bind_input(
             self.reset_camera_action(),
             ETriggerEvent::Triggered,
-            "ResetCamera",
+            Self::reset_camera,
         )?;
 
         let select_hold = self.select_hold_action();
 
-        bind_action_by_name(
-            &me,
+        self.bind_input(
             select_hold,
             ETriggerEvent::Started,
-            "SelectHoldStarted",
+            Self::select_hold_started,
         )?;
 
-        bind_action_by_name(
-            &me,
+        self.bind_input(
             select_hold,
             ETriggerEvent::Triggered,
-            "SelectHoldTriggered",
+            Self::select_hold_triggered,
         )?;
 
-        bind_action_by_name(
-            &me,
+        self.bind_input(
             select_hold,
             ETriggerEvent::Completed,
-            "SelectHoldCompleted",
+            Self::select_hold_completed,
         )?;
 
-        bind_action_by_name(
-            &me,
+        self.bind_input(
             select_hold,
             ETriggerEvent::Canceled,
-            "SelectHoldCompleted",
+            Self::select_hold_completed,
         )?;
 
-        bind_action_by_name(
-            &me,
+        self.bind_input(
             self.select_click_action(),
             ETriggerEvent::Completed,
-            "SelectClick",
+            Self::select_click,
         )?;
 
-        bind_action_by_name(
-            &me,
+        self.bind_input(
             self.select_click_additive_action(),
             ETriggerEvent::Completed,
-            "SelectClickAdditive",
+            Self::select_click_additive,
         )?;
 
-        bind_action_by_name(
-            &me,
+        self.bind_input(
             self.select_all_double_click_action(),
             ETriggerEvent::Completed,
-            "SelectAllDoubleClick",
+            Self::select_all_double_click,
         )?;
 
         let interact_hold = self.interact_hold_action();
 
-        bind_action_by_name(
-            &me,
+        self.bind_input(
             interact_hold,
             ETriggerEvent::Started,
-            "InteractHoldStarted",
+            Self::interact_hold_started,
         )?;
 
-        bind_action_by_name(
-            &me,
+        self.bind_input(
             interact_hold,
             ETriggerEvent::Triggered,
-            "InteractHoldTriggered",
+            Self::interact_hold_triggered,
         )?;
 
-        bind_action_by_name(
-            &me,
+        self.bind_input(
             self.interact_click_action(),
             ETriggerEvent::Completed,
-            "InteractClick",
+            Self::interact_click,
         )?;
 
         let touch_primary = self.touch_primary_hold_action();
 
-        bind_action_by_name(
+        bind_action(
             &me,
             touch_primary,
             ETriggerEvent::Started,
-            "TouchPrimaryHoldStarted",
+            method(self, Self::touch_primary_hold_started),
         )?;
 
-        bind_action_by_name(
+        bind_action(
             &me,
             touch_primary,
             ETriggerEvent::Triggered,
-            "TouchPrimaryHoldTriggered",
+            method(self, Self::touch_primary_hold_triggered),
         )?;
 
-        bind_action_by_name(
-            &me,
+        self.bind_input(
             touch_primary,
             ETriggerEvent::Completed,
-            "TouchPrimaryHoldCompleted",
+            Self::touch_primary_hold_completed,
         )?;
 
         let touch_secondary = self.touch_secondary_action();
 
-        bind_action_by_name(
+        bind_action(
             &me,
             touch_secondary,
             ETriggerEvent::Triggered,
-            "TouchSecondaryTriggered",
+            method(self, Self::touch_secondary_triggered),
         )?;
 
-        bind_action_by_name(
-            &me,
+        self.bind_input(
             touch_secondary,
             ETriggerEvent::Completed,
-            "TouchSecondaryCompleted",
+            Self::touch_secondary_completed,
         )?;
 
-        bind_action_by_name(
-            &me,
+        self.bind_input(
             touch_secondary,
             ETriggerEvent::Canceled,
-            "TouchSecondaryCompleted",
+            Self::touch_secondary_completed,
         )?;
 
         if self.should_use_touch_controls() {
@@ -622,6 +608,18 @@ impl StrategyPlayerController {
                 Err(_) => log::error!("Could not spawn mobile controls widget."),
             }
         }
+
+        Ok(())
+    }
+
+    fn bind_input(
+        &self,
+        action: UObjectRef<InputAction>,
+        trigger_event: ETriggerEvent,
+        handler: fn(&mut Self),
+    ) -> RustealResult<()> {
+        let mut handler = method(self, handler);
+        bind_action(&self.as_ref(), action, trigger_event, move |_| handler())?;
 
         Ok(())
     }

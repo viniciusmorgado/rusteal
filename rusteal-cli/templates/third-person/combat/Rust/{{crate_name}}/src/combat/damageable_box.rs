@@ -1,10 +1,13 @@
+use std::time::Duration;
+
 use bindings::engine::{
-    Actor, ActorComponentExt, ActorExt, ECollisionChannel, KismetSystemLibrary,
-    PrimitiveComponentExt, StaticMeshComponent,
+    Actor, ActorComponentExt, ActorExt, ECollisionChannel, PrimitiveComponentExt,
+    StaticMeshComponent,
 };
 use bindings::prelude::*;
 use glam::DVec3;
-use rusteal_runtime::runtime::{FName, OwnedStruct, RustealResult, UObjectRef};
+use rusteal_runtime::runtime::timer::{self, TimerHandle};
+use rusteal_runtime::runtime::{FName, OwnedStruct, RustealResult, UObjectRef, method};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use super::interfaces::CombatDamageable;
@@ -20,6 +23,8 @@ pub struct CombatDamageableBox {
 
     #[uproperty(EditAnywhere, default = model::BOX_DEATH_DELAY_TIME)]
     death_delay_time: f32,
+
+    removal_timer: Option<TimerHandle>,
 }
 
 #[uclass_impl]
@@ -39,7 +44,9 @@ impl CombatDamageableBox {
 
     #[ufunction(Override)]
     fn receive_end_play(&mut self, _end_play_reason: u8) {
-        KismetSystemLibrary::k2_clear_timer(self.as_ref().upcast_to(), "RemoveFromLevel");
+        if let Some(removal_timer) = self.removal_timer() {
+            removal_timer.clear();
+        }
     }
 
     #[ufunction(BlueprintCallable)]
@@ -102,15 +109,20 @@ impl CombatDamageable for CombatDamageableBox {
 
         self.on_box_destroyed();
 
-        KismetSystemLibrary::k2_set_timer(
-            self.as_ref().upcast_to(),
-            "RemoveFromLevel",
-            self.death_delay_time(),
+        if let Some(removal_timer) = self.removal_timer() {
+            removal_timer.clear();
+        }
+
+        let removal_timer = timer::set_timer(
+            &self.as_ref(),
+            Duration::from_secs_f32(self.death_delay_time()),
             false,
-            None,
-            None,
-            None,
-        );
+            method(self, Self::remove_from_level),
+        )
+        .inspect_err(|e| log::warn!("[Combat] box removal timer: {e}"))
+        .ok();
+
+        self.set_removal_timer(removal_timer);
     }
 
     fn apply_healing(&mut self, _healing: f32, _healer: UObjectRef<Actor>) {}

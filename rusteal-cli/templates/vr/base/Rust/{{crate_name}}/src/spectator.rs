@@ -12,7 +12,9 @@ use bindings::head_mounted_display::ESpectatorScreenMode;
 use bindings::prelude::*;
 use bindings::xr_base::HeadMountedDisplayFunctionLibrary;
 use glam::DVec3;
-use rusteal_runtime::runtime::{OwnedStruct, Rotator, RustealResult, SubclassOf, UObjectRef};
+use rusteal_runtime::runtime::{
+    OwnedStruct, Rotator, RustealResult, SubclassOf, UObjectRef, method,
+};
 use rusteal_runtime::{uclass, uclass_impl, uenum};
 
 use crate::model;
@@ -342,15 +344,18 @@ impl VRSpectator {
         subsystem.add_mapping_context(self.spectator_mapping_context(), 0, &OwnedStruct::new());
 
         let bindings = [
-            (self.toggle_action(), "Toggle"),
-            (self.fov_reset_action(), "FovReset"),
-            (self.reset_rotation_action(), "ResetRotation"),
-            (self.fade_in_out_action(), "FadeInOut"),
+            (self.toggle_action(), method(self, Self::toggle)),
+            (self.fov_reset_action(), method(self, Self::fov_reset)),
+            (
+                self.reset_rotation_action(),
+                method(self, Self::reset_rotation),
+            ),
+            (self.fade_in_out_action(), method(self, Self::fade_in_out)),
         ];
 
-        for (action, function) in bindings {
+        for (action, mut callback) in bindings {
             if action.is_valid() {
-                bind_action_by_name(&me, action, ETriggerEvent::Started, function)?;
+                bind_action(&me, action, ETriggerEvent::Started, move |_| callback())?;
             }
         }
 
