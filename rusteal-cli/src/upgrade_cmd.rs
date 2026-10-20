@@ -47,6 +47,12 @@ const MIGRATIONS: &[(&str, &str)] = &[
          GameplayStatics::load_stream_level...) return a future and no longer take an \
          FLatentActionInfo: await them in a task started with task::spawn_local.",
     ),
+    (
+        "0.10.0",
+        "bind_action takes a closure, or a method of the class with method(self, Self::look), \
+         checked by the compiler; the binding by function name is bind_action_by_name, for a \
+         function a Blueprint defines.",
+    ),
 ];
 
 pub fn migration_notes(from: Version, to: Version) -> Vec<(Version, &'static str)> {
@@ -248,7 +254,7 @@ glam = "0.33.8"
         assert!(migration_notes(v("0.10.0"), v("0.12.0")).is_empty());
 
         let notes = migration_notes(v("0.9.0"), v("0.10.0"));
-        assert_eq!(notes.len(), 7);
+        assert_eq!(notes.len(), 8);
         assert_eq!(notes[0].0, v("0.10.0"));
     }
 
