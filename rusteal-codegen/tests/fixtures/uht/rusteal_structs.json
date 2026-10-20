@@ -1210,6 +1210,17 @@
       "props": [],
       "struct_flags": 1,
       "super": null
+    },
+    {
+      "cpp_name": "FTimerHandle",
+      "has_static_struct": true,
+      "header": "Engine/TimerHandle.h",
+      "header_public": true,
+      "name": "TimerHandle",
+      "package": "Engine",
+      "props": [],
+      "struct_flags": 1,
+      "super": null
     }
   ]
 }

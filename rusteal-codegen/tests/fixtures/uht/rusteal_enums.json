@@ -380,6 +380,111 @@
       "underlying_type": "uint8"
     },
     {
+      "cpp_form": 1,
+      "cpp_name": "EDrawDebugTrace",
+      "name": "EDrawDebugTrace",
+      "package": "Engine",
+      "pairs": [
+        [
+          "None",
+          0
+        ],
+        [
+          "ForOneFrame",
+          1
+        ],
+        [
+          "ForDuration",
+          2
+        ],
+        [
+          "Persistent",
+          3
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 2,
+      "cpp_name": "EDrawDebugSceneDepthPriorityGroup",
+      "name": "EDrawDebugSceneDepthPriorityGroup",
+      "package": "Engine",
+      "pairs": [
+        [
+          "World",
+          0
+        ],
+        [
+          "Foreground",
+          1
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 1,
+      "cpp_name": "EMoveComponentAction",
+      "name": "EMoveComponentAction",
+      "package": "Engine",
+      "pairs": [
+        [
+          "Move",
+          0
+        ],
+        [
+          "Stop",
+          1
+        ],
+        [
+          "Return",
+          2
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 1,
+      "cpp_name": "EQuitPreference",
+      "name": "EQuitPreference",
+      "package": "Engine",
+      "pairs": [
+        [
+          "Quit",
+          0
+        ],
+        [
+          "Background",
+          1
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 2,
+      "cpp_name": "EEditorPropertyValueState",
+      "name": "EEditorPropertyValueState",
+      "package": "Engine",
+      "pairs": [
+        [
+          "Default",
+          0
+        ],
+        [
+          "Overridden",
+          1
+        ],
+        [
+          "NotFound",
+          2
+        ],
+        [
+          "AccessDenied",
+          3
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
       "cpp_form": 2,
       "cpp_name": "EAttachmentRule",
       "name": "EAttachmentRule",
@@ -1894,6 +1999,27 @@
         [
           "Custom",
           14
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 2,
+      "cpp_name": "EPropertyAccessChangeNotifyMode",
+      "name": "EPropertyAccessChangeNotifyMode",
+      "package": "CoreUObject",
+      "pairs": [
+        [
+          "Default",
+          0
+        ],
+        [
+          "Never",
+          1
+        ],
+        [
+          "Always",
+          2
         ]
       ],
       "underlying_type": "uint8"

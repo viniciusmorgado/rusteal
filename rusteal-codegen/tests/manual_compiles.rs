@@ -37,6 +37,7 @@ const CLASSES: &[&str] = &[
     "Widget",
     "UserWidget",
     "DataTable",
+    "KismetSystemLibrary",
 ];
 
 const ENUMS: &[&str] = &[
@@ -67,6 +68,7 @@ const STRUCTS: &[&str] = &[
     "EnhancedActionKeyMapping",
     "DataTableRowHandle",
     "InstancedStruct",
+    "TimerHandle",
 ];
 
 const RUSTEAL_TOML: &str = r#"[project]

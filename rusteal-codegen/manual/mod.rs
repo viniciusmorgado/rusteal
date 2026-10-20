@@ -28,6 +28,9 @@ pub mod fkey;
 pub mod world_ext;
 
 #[cfg(feature = "engine")]
+pub mod timer_ext;
+
+#[cfg(feature = "engine")]
 pub mod net_quantize;
 
 #[cfg(feature = "engine")]
