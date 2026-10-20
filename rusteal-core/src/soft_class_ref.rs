@@ -66,6 +66,19 @@ impl<T: UeClass> SoftClassRef<T> {
 
         SubclassOf::from_class(UClassHandle(handle.0))
     }
+
+    /// Loads the class in the background, resuming when it is in memory; awaited in a task
+    /// started with `task::spawn_local`.
+    pub fn load_async(
+        &self,
+    ) -> impl std::future::Future<Output = RustealResult<SubclassOf<T>>> + 'static {
+        let path = self.path.clone();
+
+        async move {
+            let handle = crate::loading::load_raw(path).await?;
+            SubclassOf::from_class(UClassHandle(handle.0))
+        }
+    }
 }
 
 impl<T: UeClass> Default for SoftClassRef<T> {

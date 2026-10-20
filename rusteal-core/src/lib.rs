@@ -18,6 +18,7 @@ pub mod ffi_guard;
 pub mod fname;
 pub mod input;
 pub mod latent;
+pub mod loading;
 pub mod logging;
 pub mod module;
 pub mod object_ref;
