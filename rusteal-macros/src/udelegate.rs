@@ -18,11 +18,20 @@ enum ParamKind {
     Class,
     Enum,
     Struct(Box<Type>),
+    Value,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum DelegateKind {
+    Multicast,
+    Single,
+    Sparse,
 }
 
 pub(crate) struct DelegateInfo {
     pub(crate) method_ident: Ident,
     ue_name: String,
+    kind: DelegateKind,
     params: Vec<DelegateParam>,
 }
 
@@ -38,17 +47,31 @@ pub(crate) fn parse_udelegate(method: &ImplItemFn) -> syn::Result<DelegateInfo> 
         .unwrap();
 
     let mut explicit_name = None;
+    let mut kind = DelegateKind::Multicast;
 
     if let Meta::List(_) = attr.meta {
         attr.parse_nested_meta(|meta| {
-            if meta.path.is_ident("name") {
+            let chosen = if meta.path.is_ident("name") {
                 let value: syn::LitStr = meta.value()?.parse()?;
                 explicit_name = Some(value.value());
 
-                Ok(())
+                return Ok(());
+            } else if meta.path.is_ident("single") {
+                DelegateKind::Single
+            } else if meta.path.is_ident("sparse") {
+                DelegateKind::Sparse
             } else {
-                Err(meta.error("unknown #[udelegate] argument: expected name = \"...\""))
+                return Err(meta.error(
+                    "unknown #[udelegate] argument: expected name = \"...\", single or sparse",
+                ));
+            };
+
+            if kind != DelegateKind::Multicast {
+                return Err(meta.error("a #[udelegate] is either single or sparse, not both"));
             }
+
+            kind = chosen;
+            Ok(())
         })?;
     }
 
@@ -72,9 +95,15 @@ pub(crate) fn parse_udelegate(method: &ImplItemFn) -> syn::Result<DelegateInfo> 
     }
 
     if !method.block.stmts.is_empty() {
+        let action = if kind == DelegateKind::Single {
+            "executes"
+        } else {
+            "broadcasts"
+        };
+
         return Err(syn::Error::new_spanned(
             &method.block,
-            "a #[udelegate] has an empty body: calling the method broadcasts the delegate",
+            format!("a #[udelegate] has an empty body: calling the method {action} the delegate"),
         ));
     }
 
@@ -97,8 +126,8 @@ pub(crate) fn parse_udelegate(method: &ImplItemFn) -> syn::Result<DelegateInfo> 
         let kind = param_kind(&ty).ok_or_else(|| {
             syn::Error::new_spanned(
                 &ty,
-                "a #[udelegate] takes bool/i32/i64/u8/f32/f64, UObjectRef<T>, SubclassOf<T>, \
-                 UE enums and structs as &OwnedStruct<T>",
+                "a #[udelegate] takes the types a #[ufunction] takes, structs as \
+                 &OwnedStruct<T> or OwnedStruct<T>",
             )
         })?;
 
@@ -118,6 +147,7 @@ pub(crate) fn parse_udelegate(method: &ImplItemFn) -> syn::Result<DelegateInfo> 
     Ok(DelegateInfo {
         method_ident,
         ue_name,
+        kind,
         params,
     })
 }
@@ -133,7 +163,13 @@ fn param_kind(ty: &Type) -> Option<ParamKind> {
         .then_some(ParamKind::Struct(Box::new(inner)));
     }
 
-    match prop_type::map_type(ty)?.kind {
+    let kind = prop_type::map_fn_type(ty)?.kind;
+
+    if crate::uclass_impl::crossed_as_property(&kind) {
+        return Some(ParamKind::Value);
+    }
+
+    match kind {
         PropKind::Scalar { .. } => Some(ParamKind::Scalar),
         PropKind::Object { .. } => Some(ParamKind::Object),
         PropKind::Class { .. } => Some(ParamKind::Class),
@@ -177,22 +213,29 @@ pub(crate) fn broadcast_body(struct_name: &Ident, d: &DelegateInfo) -> syn::Bloc
                     quote! { call.set(#param, ::rusteal_runtime::ffi::UObjectHandle(#name.raw().0))?; }
                 }
                 ParamKind::Struct(_) => quote! { call.set_struct(#param, #name)?; },
+                ParamKind::Value => quote! { call.set_value(#param, &#name)?; },
             }
         })
         .collect();
+
+    let (run, action) = if d.kind == DelegateKind::Single {
+        (quote! { call.execute() }, "executing ")
+    } else {
+        (quote! { call.broadcast() }, "broadcasting ")
+    };
 
     syn::parse_quote! {{
         let __broadcast = || -> ::rusteal_runtime::runtime::RustealResult<()> {
             let mut call = ::rusteal_runtime::runtime::DynamicCall::for_delegate(&self.as_ref(), #prop)?;
 
             #(#sets)*
-            call.broadcast()
+            #run
         };
 
         if let Err(e) = __broadcast() {
             e.__log_in(
                 ::rusteal_runtime::runtime::LOG_WARNING,
-                concat!("broadcasting ", #ue_name),
+                concat!(#action, #ue_name),
             );
         }
     }}
@@ -201,6 +244,12 @@ pub(crate) fn broadcast_body(struct_name: &Ident, d: &DelegateInfo) -> syn::Bloc
 pub(crate) fn register_stmts(d: &DelegateInfo) -> TokenStream {
     let bytes = d.ue_name.as_bytes();
     let len = d.ue_name.len() as u32;
+
+    let kind = match d.kind {
+        DelegateKind::Multicast => quote! { Multicast },
+        DelegateKind::Single => quote! { Single },
+        DelegateKind::Sparse => quote! { Sparse },
+    };
 
     let params: Vec<TokenStream> = d
         .params
@@ -211,7 +260,7 @@ pub(crate) fn register_stmts(d: &DelegateInfo) -> TokenStream {
                 _ => p.rust_ty.clone(),
             };
 
-            let info = prop_type::map_type(&reg_ty).unwrap();
+            let info = prop_type::map_fn_type(&reg_ty).unwrap();
             let prop_type_expr = &info.prop_type_expr;
             let extra = crate::uclass_impl::extra_expr(&info);
             let pbytes = p.ue_name.as_bytes();
@@ -237,6 +286,7 @@ pub(crate) fn register_stmts(d: &DelegateInfo) -> TokenStream {
                 [#(#bytes),*].as_ptr(),
                 #len,
                 0u64,
+                ::rusteal_runtime::ffi::RustealReifyDelegateKind::#kind as u32,
             );
 
             if !__signature.is_null() {
@@ -247,26 +297,31 @@ pub(crate) fn register_stmts(d: &DelegateInfo) -> TokenStream {
 }
 
 pub(crate) fn binding_methods(struct_name: &Ident, d: &DelegateInfo) -> TokenStream {
-    let add = format_ident!("{}_add", d.method_ident.unraw());
-    let add_ufunction = format_ident!("{}_add_ufunction", d.method_ident.unraw());
+    let single = d.kind == DelegateKind::Single;
+    let verb = if single { "bind" } else { "add" };
+    let add = format_ident!("{}_{verb}", d.method_ident.unraw());
+    let add_ufunction = format_ident!("{}_{verb}_ufunction", d.method_ident.unraw());
     let ue_name = &d.ue_name;
     let prop = prop_lookup(struct_name, ue_name);
     let n = d.params.len();
 
-    let param_bytes: Vec<TokenStream> = d
+    let param_entries: Vec<TokenStream> = d
         .params
         .iter()
         .map(|p| {
             let b = p.ue_name.as_bytes();
             let l = p.ue_name.len() as u32;
 
-            quote! {
-                ::rusteal_runtime::runtime::ffi_dispatch::reflection_get_property_offset(
-                    ::rusteal_runtime::runtime::ffi_dispatch::reflection_get_function_param(
-                        signature, [#(#b),*].as_ptr(), #l,
-                    ),
+            quote! {{
+                let param = ::rusteal_runtime::runtime::ffi_dispatch::reflection_get_function_param(
+                    signature, [#(#b),*].as_ptr(), #l,
+                );
+
+                (
+                    ::rusteal_runtime::runtime::ffi_dispatch::reflection_get_property_offset(param),
+                    param,
                 )
-            }
+            }}
         })
         .collect();
 
@@ -292,19 +347,19 @@ pub(crate) fn binding_methods(struct_name: &Ident, d: &DelegateInfo) -> TokenStr
 
             let handle = quote! {
                 ::rusteal_runtime::runtime::ffi_dispatch::native_mem_read::<::rusteal_runtime::ffi::UObjectHandle>(
-                    params, offsets[#idx] as usize,
+                    params, offsets[#idx].0 as usize,
                 )
             };
 
-            match &p.kind {
+            let read = match &p.kind {
                 ParamKind::Scalar => quote! {
-                    ::rusteal_runtime::runtime::ffi_dispatch::native_mem_read::<#ty>(params, offsets[#idx] as usize)
+                    ::rusteal_runtime::runtime::ffi_dispatch::native_mem_read::<#ty>(params, offsets[#idx].0 as usize)
                 },
                 ParamKind::Enum => quote! {
                     {
                         let raw = ::rusteal_runtime::runtime::ffi_dispatch::native_mem_read::<
                             <#ty as ::rusteal_runtime::runtime::UeEnum>::Repr,
-                        >(params, offsets[#idx] as usize);
+                        >(params, offsets[#idx].0 as usize);
 
                         <#ty as ::rusteal_runtime::runtime::UeEnum>::from_i64(i64::try_from(raw).unwrap_or(-1))
                             .expect(concat!("an invalid value for ", stringify!(#ty)))
@@ -317,25 +372,54 @@ pub(crate) fn binding_methods(struct_name: &Ident, d: &DelegateInfo) -> TokenStr
                 ParamKind::Struct(inner) => quote! {
                     {
                         let r: ::rusteal_runtime::runtime::UStructRef<_> =
-                            ::rusteal_runtime::runtime::struct_ref_from_param(params, offsets[#idx] as usize);
+                            ::rusteal_runtime::runtime::struct_ref_from_param(params, offsets[#idx].0 as usize);
 
                         let owned: #inner = r.to_owned();
 
                         owned
                     }
                 },
-            }
+                ParamKind::Value => {
+                    return quote! {
+                        <#ty as ::rusteal_runtime::runtime::DynamicValue>::read_from(
+                            ::rusteal_runtime::ffi::UObjectHandle(params as *mut std::ffi::c_void),
+                            offsets[#idx].1,
+                        )?
+                    };
+                }
+            };
+
+            quote! { unsafe { #read } }
         })
         .collect();
 
-    let add_doc = format!(
-        " Bind a closure to `{ue_name}`; dropping the returned binding unbinds it, `detach()` keeps it."
-    );
+    let (bind_fn, binding_desc) = if single {
+        (
+            quote! { bind_unicast },
+            "dropping the returned binding unbinds it, unless another binding replaced it",
+        )
+    } else {
+        (
+            quote! { bind_multicast },
+            "dropping the returned binding unbinds it",
+        )
+    };
 
-    let add_ufunction_doc = format!(
-        " Bind `target`'s UFunction named `function` to `{ue_name}`, as C++'s `AddDynamic` does: \
-         once, however many times it is called."
-    );
+    let add_doc = format!(" Bind a closure to `{ue_name}`; {binding_desc}, `detach()` keeps it.");
+
+    let add_ufunction_doc = if single {
+        format!(
+            " Bind `target`'s UFunction named `function` to `{ue_name}`, as C++'s `BindUFunction` \
+             does, replacing what it was bound to."
+        )
+    } else {
+        format!(
+            " Bind `target`'s UFunction named `function` to `{ue_name}`, as C++'s `AddDynamic` \
+             does: once, however many times it is called."
+        )
+    };
+
+    let receive = format!("receiving {ue_name}");
 
     quote! {
         impl #struct_name {
@@ -346,22 +430,30 @@ pub(crate) fn binding_methods(struct_name: &Ident, d: &DelegateInfo) -> TokenStr
             ) -> ::rusteal_runtime::runtime::RustealResult<::rusteal_runtime::runtime::DelegateBinding> {
                 let prop = #prop;
                 let owner = self.as_ref().checked()?.raw();
-                static OFFSETS: std::sync::OnceLock<[u32; #n]> = std::sync::OnceLock::new();
+                static OFFSETS: std::sync::OnceLock<[(u32, ::rusteal_runtime::ffi::FPropertyHandle); #n]> =
+                    std::sync::OnceLock::new();
 
                 let offsets = *OFFSETS.get_or_init(|| unsafe {
                     #[allow(unused_variables)]
                     let signature = ::rusteal_runtime::runtime::ffi_dispatch::reflection_get_delegate_signature(prop);
-                    [#(#param_bytes),*]
+                    [#(#param_entries),*]
                 });
 
-                ::rusteal_runtime::runtime::delegate_registry::bind_multicast(
+                ::rusteal_runtime::runtime::delegate_registry::#bind_fn(
                     owner,
                     prop,
                     move |params: ::rusteal_runtime::runtime::ffi_dispatch::NativePtr| {
                         #[allow(unused_variables)]
                         let (params, offsets) = (params, offsets);
 
-                        callback(#(unsafe { #reads }),*)
+                        let mut __receive = || -> ::rusteal_runtime::runtime::RustealResult<()> {
+                            callback(#(#reads),*);
+                            Ok(())
+                        };
+
+                        if let Err(e) = __receive() {
+                            e.__log_in(::rusteal_runtime::runtime::LOG_WARNING, #receive);
+                        }
                     },
                 )
             }
@@ -416,13 +508,50 @@ mod tests {
     }
 
     #[test]
+    fn single_and_sparse_delegates_take_any_function_type() {
+        let single: ImplItemFn = parse_quote! {
+            #[udelegate(single, name = "OnAsked")]
+            pub fn asked(&self, question: String, tags: Vec<FName>) {}
+        };
+
+        let d = parse_udelegate(&single).unwrap();
+        assert_eq!(d.kind, DelegateKind::Single);
+        assert_eq!(d.ue_name, "OnAsked");
+        assert!(matches!(d.params[0].kind, ParamKind::Value));
+        assert!(matches!(d.params[1].kind, ParamKind::Value));
+
+        let out = binding_methods(&parse_quote!(Npc), &d).to_string();
+        assert!(out.contains("asked_bind"));
+        assert!(out.contains("asked_bind_ufunction"));
+        assert!(out.contains("bind_unicast"));
+        assert!(out.contains("DynamicValue"));
+
+        assert!(register_stmts(&d).to_string().contains("RustealReifyDelegateKind :: Single"));
+
+        let sparse: ImplItemFn = parse_quote! {
+            #[udelegate(sparse)]
+            pub fn on_scored(&self, points: i32, by: HashMap<String, i32>) {}
+        };
+
+        let d = parse_udelegate(&sparse).unwrap();
+        assert_eq!(d.kind, DelegateKind::Sparse);
+
+        let out = binding_methods(&parse_quote!(Npc), &d).to_string();
+        assert!(out.contains("on_scored_add"));
+        assert!(out.contains("bind_multicast"));
+        assert!(register_stmts(&d).to_string().contains("RustealReifyDelegateKind :: Sparse"));
+    }
+
+    #[test]
     fn rejects_what_a_delegate_cannot_be() {
         let bad: Vec<ImplItemFn> = vec![
             parse_quote! { #[udelegate] fn a(&mut self) {} },
             parse_quote! { #[udelegate] fn b(&self) -> i32 {} },
             parse_quote! { #[udelegate] fn c(&self) { let x = 1; } },
-            parse_quote! { #[udelegate] fn d(&self, s: String) {} },
+            parse_quote! { #[udelegate] fn d(&self, s: &str) {} },
             parse_quote! { #[udelegate(other = "x")] fn e(&self) {} },
+            parse_quote! { #[udelegate(single, sparse)] fn f(&self) {} },
+            parse_quote! { #[udelegate(Reliable)] fn g(&self) {} },
         ];
 
         for method in &bad {
