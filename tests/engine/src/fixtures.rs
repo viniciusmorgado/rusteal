@@ -136,6 +136,15 @@ impl TestActor {
     #[udelegate]
     pub fn on_ping(&self, value: i32) {}
 
+    #[udelegate]
+    pub fn on_named(&self, name: String, tags: Vec<FName>, title: Text) {}
+
+    #[udelegate(single)]
+    pub fn on_asked(&self, question: String, weights: HashMap<String, i32>) {}
+
+    #[udelegate(sparse)]
+    pub fn on_scored(&self, points: i32, by: String) {}
+
     #[ufunction]
     pub fn ping(&self, value: i32) {
         self.on_ping(value);

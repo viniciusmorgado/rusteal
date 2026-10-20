@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use bindings::core_ue::{FGuid, FInstancedStruct, FIntPoint, FIntPointExt};
@@ -47,6 +48,18 @@ pub const ALL: &[(&str, Check)] = &[
     (
         "udelegate_listener_survives_garbage_collection",
         udelegate_listener_survives_garbage_collection,
+    ),
+    (
+        "udelegate_carries_strings_arrays_and_texts",
+        udelegate_carries_strings_arrays_and_texts,
+    ),
+    (
+        "single_udelegate_calls_its_one_binding",
+        single_udelegate_calls_its_one_binding,
+    ),
+    (
+        "sparse_udelegate_keeps_listeners_per_object",
+        sparse_udelegate_keeps_listeners_per_object,
     ),
     ("engine_function_call", engine_function_call),
     ("engine_string_is_utf8", engine_string_is_utf8),
@@ -268,6 +281,134 @@ fn udelegate_reaches_a_closure(context: &Context) -> Outcome {
         actor.ping(7);
         let value = *seen.lock().unwrap();
         ensure(value == 7, format!("the listener saw {value}"))
+    })())
+}
+
+fn udelegate_carries_strings_arrays_and_texts(context: &Context) -> Outcome {
+    done((|| {
+        let actor = TestActor::from_obj(spawn(context)?).map_err(|e| format!("{e:?}"))?;
+        let seen = Arc::new(Mutex::new(None));
+        let sink = seen.clone();
+
+        let _binding = actor
+            .on_named_add(move |name, tags, title| {
+                *sink.lock().unwrap() = Some((name, tags, title));
+            })
+            .map_err(|e| format!("{e:?}"))?;
+
+        let long = "ç".repeat(400);
+
+        actor.on_named(
+            long.clone(),
+            vec![FName::new("Fast"), FName::new("Loud")],
+            Text::from("Captain"),
+        );
+
+        let (name, tags, title) = seen
+            .lock()
+            .unwrap()
+            .take()
+            .ok_or("the listener saw nothing")?;
+        ensure(
+            name == long,
+            format!("the name crossed as {} bytes", name.len()),
+        )?;
+        let tags: Vec<String> = tags.iter().map(FName::to_string).collect();
+        ensure(
+            tags == ["Fast", "Loud"],
+            format!("the tags crossed as {tags:?}"),
+        )?;
+        ensure(
+            title.to_string() == "Captain",
+            format!("the title crossed as {title}"),
+        )
+    })())
+}
+
+fn single_udelegate_calls_its_one_binding(context: &Context) -> Outcome {
+    done((|| {
+        let actor = TestActor::from_obj(spawn(context)?).map_err(|e| format!("{e:?}"))?;
+        let weights = HashMap::from([("Gold".to_string(), 3), ("Iron".to_string(), 1)]);
+
+        actor.on_asked("Nobody listens".into(), weights.clone());
+
+        let first = Arc::new(Mutex::new(Vec::new()));
+        let second = Arc::new(Mutex::new(Vec::new()));
+        let (first_sink, second_sink) = (first.clone(), second.clone());
+
+        let first_binding = actor
+            .on_asked_bind(move |question, weights| {
+                first_sink.lock().unwrap().push((question, weights));
+            })
+            .map_err(|e| format!("{e:?}"))?;
+
+        actor.on_asked("Which ore?".into(), weights.clone());
+
+        let second_binding = actor
+            .on_asked_bind(move |question, weights| {
+                second_sink.lock().unwrap().push((question, weights));
+            })
+            .map_err(|e| format!("{e:?}"))?;
+
+        drop(first_binding);
+        actor.on_asked("And now?".into(), weights.clone());
+
+        drop(second_binding);
+        actor.on_asked("Anyone?".into(), weights.clone());
+
+        let first = first.lock().unwrap();
+        let second = second.lock().unwrap();
+
+        ensure(
+            first.len() == 1 && first[0] == ("Which ore?".to_string(), weights.clone()),
+            format!("the first binding saw {first:?}"),
+        )?;
+
+        ensure(
+            second.len() == 1 && second[0] == ("And now?".to_string(), weights),
+            format!("the second binding saw {second:?}"),
+        )
+    })())
+}
+
+fn sparse_udelegate_keeps_listeners_per_object(context: &Context) -> Outcome {
+    done((|| {
+        let a = TestActor::from_obj(spawn(context)?).map_err(|e| format!("{e:?}"))?;
+        let b = TestActor::from_obj(spawn(context)?).map_err(|e| format!("{e:?}"))?;
+
+        a.on_scored(1, "Nobody".into());
+
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let (a_sink, a_sink_2, b_sink) = (seen.clone(), seen.clone(), seen.clone());
+
+        let a_first = a
+            .on_scored_add(move |points, by| a_sink.lock().unwrap().push(("a1", points, by)))
+            .map_err(|e| format!("{e:?}"))?;
+
+        let _a_second = a
+            .on_scored_add(move |points, by| a_sink_2.lock().unwrap().push(("a2", points, by)))
+            .map_err(|e| format!("{e:?}"))?;
+
+        let _b = b
+            .on_scored_add(move |points, by| b_sink.lock().unwrap().push(("b", points, by)))
+            .map_err(|e| format!("{e:?}"))?;
+
+        a.on_scored(10, "Ada".into());
+        drop(a_first);
+        a.on_scored(20, "Ada".into());
+        b.on_scored(30, "Lin".into());
+
+        let mut seen = seen.lock().unwrap().clone();
+        seen.sort();
+
+        let expected = vec![
+            ("a1", 10, "Ada".to_string()),
+            ("a2", 10, "Ada".to_string()),
+            ("a2", 20, "Ada".to_string()),
+            ("b", 30, "Lin".to_string()),
+        ];
+
+        ensure(seen == expected, format!("the listeners saw {seen:?}"))
     })())
 }
 
@@ -1080,7 +1221,9 @@ fn static_functions_of_a_library(_: &Context) -> Outcome {
         let e = |e| format!("{e:?}");
         ensure(TestLibrary::add_three(1, 2, 3) == 6, "add_three from Rust")?;
 
-        let library = SubclassOf::<TestLibrary>::base().default_object().map_err(e)?;
+        let library = SubclassOf::<TestLibrary>::base()
+            .default_object()
+            .map_err(e)?;
 
         let mut call = DynamicCall::new(&library, "AddThree").map_err(e)?;
         call.set_value("A", &1i32).map_err(e)?;
