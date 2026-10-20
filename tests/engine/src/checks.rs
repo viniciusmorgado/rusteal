@@ -6,16 +6,17 @@ use std::time::Duration;
 use bindings::core_ue::{
     FARFilter, FARFilterExt, FGuid, FInstancedStruct, FIntPoint, FIntPointExt,
 };
+use bindings::engine::SceneComponentExt;
 use bindings::engine::{
     ActorComponent, BlendableInterface, CameraComponent, CameraComponentExt, CurveFloat,
-    CurveFloatExt, ECollisionChannel, FMinimalViewInfoExt, FPerQualityLevelInt,
-    FPerQualityLevelIntExt, FPostProcessSettingsExt, FRichCurveExt, FRichCurveKey,
-    FRichCurveKeyExt, FWeightedBlendableExt, FWeightedBlendablesExt, GameplayStatics,
-    InputSettings, InputSettingsExt, KismetGuidLibrary, KismetMathLibrary, KismetStringLibrary,
-    KismetSystemLibrary, KismetTextLibrary, Material, PlayerInput, PostProcessVolume,
-    PostProcessVolumeExt, ProjectileMovementComponent, ProjectileMovementComponentExt,
-    StaticMeshActor, TextRenderComponent, TextRenderComponentExt, TimelineComponent,
-    TimelineComponentExt, VolumetricCloudComponent, VolumetricCloudComponentExt,
+    CurveFloatExt, ECollisionChannel, EMoveComponentAction, FMinimalViewInfoExt,
+    FPerQualityLevelInt, FPerQualityLevelIntExt, FPostProcessSettingsExt, FRichCurveExt,
+    FRichCurveKey, FRichCurveKeyExt, FWeightedBlendableExt, FWeightedBlendablesExt,
+    GameplayStatics, InputSettings, InputSettingsExt, KismetGuidLibrary, KismetMathLibrary,
+    KismetStringLibrary, KismetSystemLibrary, KismetTextLibrary, Material, PlayerInput,
+    PostProcessVolume, PostProcessVolumeExt, ProjectileMovementComponent,
+    ProjectileMovementComponentExt, StaticMeshActor, TextRenderComponent, TextRenderComponentExt,
+    TimelineComponent, TimelineComponentExt, VolumetricCloudComponent, VolumetricCloudComponentExt,
 };
 use bindings::prelude::*;
 use bindings::slate_core::{
@@ -23,7 +24,7 @@ use bindings::slate_core::{
     FWrapButtonStyleExt,
 };
 use rusteal_runtime::runtime::{
-    DynamicCall, FName, Inherits, OwnedStruct, SoftClassRef, SoftObjectRef, SubclassOf,
+    DynamicCall, FName, Inherits, OwnedStruct, Rotator, SoftClassRef, SoftObjectRef, SubclassOf,
     TWeakObjectPtr, Text, Transform, UObjectRef, UeClass, UeStruct, task, timer,
 };
 
@@ -184,6 +185,14 @@ pub const ALL: &[(&str, Check)] = &[
     (
         "sleep_follows_world_time_and_pause",
         sleep_follows_world_time_and_pause,
+    ),
+    (
+        "latent_engine_functions_resume_their_task",
+        latent_engine_functions_resume_their_task,
+    ),
+    (
+        "latent_action_of_a_destroyed_owner_is_cancelled",
+        latent_action_of_a_destroyed_owner_is_cancelled,
     ),
 ];
 
@@ -757,6 +766,181 @@ fn sleep_follows_world_time_and_pause(context: &Context) -> Outcome {
                 )
             }
         }
+    }))
+}
+
+#[derive(Default)]
+struct LatentResults {
+    waited: f64,
+    loaded: bool,
+    moved_to: Option<glam::DVec3>,
+    error: Option<String>,
+    finished: bool,
+}
+
+fn latent_engine_functions_resume_their_task(context: &Context) -> Outcome {
+    let started = (|| {
+        let actor = spawn(context)?;
+        let results = Arc::new(Mutex::new(LatentResults::default()));
+        let sink = results.clone();
+
+        let _task = task::spawn_local(&actor, async move {
+            let world: UObjectRef<bindings::core_ue::Object> = actor.upcast_to();
+
+            let before = GameplayStatics::get_time_seconds(world);
+            KismetSystemLibrary::delay(world, 0.2).await;
+            let waited = GameplayStatics::get_time_seconds(world) - before;
+            KismetSystemLibrary::delay_until_next_frame(world).await;
+
+            let loaded = Arc::new(AtomicBool::new(false));
+            let flag = loaded.clone();
+
+            KismetSystemLibrary::load_asset(
+                world,
+                &SoftObjectRef::new("/Engine/BasicShapes/Cube.Cube"),
+                move |object| flag.store(!object.raw().is_null(), Ordering::SeqCst),
+            )
+            .await;
+
+            let moved = async {
+                let root = TestActor::from_obj(actor)
+                    .and_then(|actor| actor.root())
+                    .map_err(|e| format!("{e:?}"))?;
+
+                KismetSystemLibrary::move_component_to(
+                    root,
+                    &FVector::from_dvec3(glam::DVec3::new(0.0, 0.0, 300.0)),
+                    &FRotator::from_rotator(Rotator::ZERO),
+                    false,
+                    false,
+                    0.1,
+                    false,
+                    EMoveComponentAction::Move,
+                )
+                .await;
+
+                let checked = root.checked().map_err(|e| format!("{e:?}"))?;
+                Ok::<_, String>(checked.get_relative_location().to_dvec3())
+            }
+            .await;
+
+            let mut results = sink.lock().unwrap();
+            results.waited = waited;
+            results.loaded = loaded.load(Ordering::SeqCst);
+
+            match moved {
+                Ok(at) => results.moved_to = Some(at),
+                Err(e) => results.error = Some(e),
+            }
+
+            results.finished = true;
+        });
+
+        Ok::<_, String>(results)
+    })();
+
+    let results = match started {
+        Ok(results) => results,
+        Err(e) => return done(Err(e)),
+    };
+
+    let mut frames = 0;
+
+    Outcome::Pending(Box::new(move || {
+        frames += 1;
+        let results = results.lock().unwrap();
+
+        if !results.finished {
+            return (frames > 1200).then(|| Err("the latent calls never finished".to_string()));
+        }
+
+        if let Some(e) = &results.error {
+            return Some(Err(e.clone()));
+        }
+
+        let waited = results.waited;
+        let loaded = results.loaded;
+        let moved_to = results.moved_to;
+
+        Some(
+            ensure(waited >= 0.199, format!("delay(0.2) waited {waited} s"))
+                .and_then(|_| ensure(loaded, "load_asset gave no object"))
+                .and_then(|_| {
+                    ensure(
+                        moved_to.is_some_and(|at| (at.z - 300.0).abs() < 0.01),
+                        format!("move_component_to ended at {moved_to:?}"),
+                    )
+                }),
+        )
+    }))
+}
+
+fn latent_action_of_a_destroyed_owner_is_cancelled(context: &Context) -> Outcome {
+    let baseline = rusteal_runtime::runtime::latent::live_latent_proxies();
+
+    let started = (|| {
+        let doomed = spawn(context)?;
+        let resumed = Arc::new(AtomicBool::new(false));
+        let dropped = Arc::new(AtomicBool::new(false));
+        let flag = resumed.clone();
+        let guard = SetOnDrop(dropped.clone());
+
+        let _task = task::spawn_local(&doomed, async move {
+            let _guard = guard;
+            KismetSystemLibrary::delay(doomed.upcast_to(), 10.0).await;
+            flag.store(true, Ordering::SeqCst);
+        });
+
+        Ok::<_, String>((doomed, resumed, dropped))
+    })();
+
+    let (doomed, resumed, dropped) = match started {
+        Ok(started) => started,
+        Err(e) => return done(Err(e)),
+    };
+
+    let mut frames = 0;
+    let mut destroyed_at: Option<rusteal_runtime::runtime::time::Instant> = None;
+
+    Outcome::Pending(Box::new(move || {
+        frames += 1;
+
+        let Some(at) = destroyed_at else {
+            if frames < 3 {
+                return None;
+            }
+
+            if rusteal_runtime::runtime::latent::live_latent_proxies() <= baseline {
+                return Some(Err("the delay made no latent proxy".to_string()));
+            }
+
+            if let Ok(actor) = doomed.checked() {
+                actor.k2_destroy_actor();
+            }
+
+            destroyed_at = Some(rusteal_runtime::runtime::time::Instant::now());
+            return None;
+        };
+
+        let live = rusteal_runtime::runtime::latent::live_latent_proxies();
+
+        if live > baseline && at.elapsed() < Duration::from_secs(5) {
+            return None;
+        }
+
+        Some(
+            ensure(
+                live <= baseline,
+                format!("{live} latent proxies 5 s after the owner died, {baseline} before"),
+            )
+            .and_then(|_| ensure(dropped.load(Ordering::SeqCst), "the task was not dropped"))
+            .and_then(|_| {
+                ensure(
+                    !resumed.load(Ordering::SeqCst),
+                    "the cancelled task resumed",
+                )
+            }),
+        )
     }))
 }
 
