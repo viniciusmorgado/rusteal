@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::future::Future;
 use std::panic::AssertUnwindSafe;
 use std::pin::Pin;
@@ -34,6 +34,7 @@ thread_local! {
 }
 
 static READY: Mutex<BTreeMap<ModuleId, Vec<u64>>> = Mutex::new(BTreeMap::new());
+static ABORTED: Mutex<Option<HashSet<u64>>> = Mutex::new(None);
 static NEXT_TASK: AtomicU64 = AtomicU64::new(1);
 
 struct TaskWaker {
@@ -87,6 +88,43 @@ impl<T> JoinHandle<T> {
     pub fn is_finished(&self) -> bool {
         self.state.borrow().done
     }
+
+    /// A handle that cancels the task from any thread, or from a callback that must be `Send`.
+    pub fn abort_handle(&self) -> AbortHandle {
+        AbortHandle {
+            module: self.module,
+            id: self.id,
+        }
+    }
+}
+
+/// Cancels a task started with [`spawn_local`]; unlike [`JoinHandle`], it is `Send`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AbortHandle {
+    module: ModuleId,
+    id: u64,
+}
+
+impl AbortHandle {
+    /// Cancels the task: its future is dropped before it is polled again, on the game thread.
+    pub fn abort(&self) {
+        lock_or_recover(&ABORTED)
+            .get_or_insert_with(HashSet::new)
+            .insert(self.id);
+
+        let wake = TaskWaker {
+            module: self.module,
+            id: self.id,
+        };
+
+        Arc::new(wake).wake();
+    }
+}
+
+fn take_aborted(id: u64) -> bool {
+    lock_or_recover(&ABORTED)
+        .as_mut()
+        .is_some_and(|aborted| aborted.remove(&id))
 }
 
 impl<T> Future for JoinHandle<T> {
@@ -129,6 +167,14 @@ pub fn spawn_local<T: 'static>(
     future: impl Future<Output = T> + 'static,
 ) -> JoinHandle<T> {
     let weak = unsafe { crate::ffi_dispatch::core_make_weak(owner.raw()) };
+    spawn_with(Some(weak), future)
+}
+
+pub(crate) fn spawn_owned_by<T: 'static>(
+    owner: rusteal_ffi::UObjectHandle,
+    future: impl Future<Output = T> + 'static,
+) -> JoinHandle<T> {
+    let weak = unsafe { crate::ffi_dispatch::core_make_weak(owner) };
     spawn_with(Some(weak), future)
 }
 
@@ -229,10 +275,11 @@ pub(crate) fn run(module: ModuleId) {
         });
 
         let Some(mut task) = task else {
+            take_aborted(id);
             continue;
         };
 
-        if *task.abort.borrow() || !owner_alive(task.owner) {
+        if *task.abort.borrow() || take_aborted(id) || !owner_alive(task.owner) {
             drop(task);
             continue;
         }
@@ -245,7 +292,7 @@ pub(crate) fn run(module: ModuleId) {
         match polled {
             Ok(Poll::Ready(())) => {}
             Ok(Poll::Pending) => {
-                if !*task.abort.borrow() {
+                if !*task.abort.borrow() && !take_aborted(id) {
                     EXECUTORS.with(|executors| {
                         executors
                             .borrow_mut()
@@ -405,6 +452,7 @@ mod tests {
     static BLOCKING: Module = Module::new("executor_blocking", "", &FUNCS);
     static UNLOAD: Module = Module::new("executor_unload", "", &FUNCS);
     static PANIC: Module = Module::new("executor_panic", "", &FUNCS);
+    static ABORT_HANDLE: Module = Module::new("executor_abort_handle", "", &FUNCS);
 
     struct Dropped(Rc<Cell<bool>>);
 
@@ -478,6 +526,30 @@ mod tests {
 
         tick(0.0);
         assert_eq!(*joined.borrow(), Some(None));
+    }
+
+    #[test]
+    fn an_abort_handle_cancels_from_another_thread() {
+        let _scope = ABORT_HANDLE.enter();
+        let dropped = Rc::new(Cell::new(false));
+        let guard = Dropped(dropped.clone());
+
+        let task = spawn_local_unowned(async move {
+            let _guard = guard;
+            std::future::pending::<()>().await;
+        });
+
+        tick(0.0);
+        let handle = task.abort_handle();
+        std::thread::spawn(move || handle.abort()).join().unwrap();
+
+        assert!(!dropped.get());
+        tick(0.0);
+        assert!(
+            dropped.get(),
+            "the abort from another thread did not drop the task"
+        );
+        assert!(task.is_finished());
     }
 
     #[test]
