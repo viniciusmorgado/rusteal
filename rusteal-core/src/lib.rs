@@ -34,6 +34,7 @@ mod sync;
 pub mod task;
 pub mod text;
 pub mod time;
+pub mod timer;
 pub mod ue_math;
 pub mod weak_ptr;
 pub mod widget;

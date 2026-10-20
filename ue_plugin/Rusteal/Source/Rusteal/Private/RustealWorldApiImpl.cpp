@@ -220,6 +220,20 @@ static uint8 *FindDataTableRowImpl(RustealUObjectHandle TableHandle,
   return Table->FindRowUnchecked(Name);
 }
 
+ERustealErrorCode RustealTimer_SetTimer(RustealUObjectHandle Context,
+                                        float Rate, bool bLooping,
+                                        bool bMaxOncePerFrame, float FirstDelay,
+                                        uint64 CallbackId, uint64 *OutHandle);
+ERustealErrorCode RustealTimer_SetTimerForNextTick(RustealUObjectHandle Context,
+                                                   uint64 CallbackId,
+                                                   uint64 *OutHandle);
+ERustealErrorCode RustealTimer_ClearTimer(RustealUObjectHandle Context,
+                                          uint64 Packed);
+ERustealErrorCode RustealTimer_PauseTimer(RustealUObjectHandle Context,
+                                          uint64 Packed, bool bPaused);
+float RustealTimer_TimerRemaining(RustealUObjectHandle Context, uint64 Packed);
+uint32 RustealTimer_LiveTimerCallbacks();
+
 FRustealWorldApi GWorldApi = {
     &SpawnActorImpl,
     &GetAllActorsOfClassImpl,
@@ -231,4 +245,10 @@ FRustealWorldApi GWorldApi = {
     &FinishSpawningImpl,
     &ChannelToObjectTypeImpl,
     &FindDataTableRowImpl,
+    &RustealTimer_SetTimer,
+    &RustealTimer_SetTimerForNextTick,
+    &RustealTimer_ClearTimer,
+    &RustealTimer_PauseTimer,
+    &RustealTimer_TimerRemaining,
+    &RustealTimer_LiveTimerCallbacks,
 };

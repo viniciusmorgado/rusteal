@@ -551,6 +551,20 @@ struct FRustealWorldApi {
   uint8 *(*find_data_table_row)(RustealUObjectHandle table,
                                 RustealFNameHandle row_name,
                                 RustealUStructHandle row_struct);
+
+  ERustealErrorCode (*set_timer)(RustealUObjectHandle context, float rate,
+                                 bool looping, bool max_once_per_frame,
+                                 float first_delay, uint64 callback_id,
+                                 uint64 *out_handle);
+  ERustealErrorCode (*set_timer_for_next_tick)(RustealUObjectHandle context,
+                                               uint64 callback_id,
+                                               uint64 *out_handle);
+  ERustealErrorCode (*clear_timer)(RustealUObjectHandle context,
+                                   uint64 handle);
+  ERustealErrorCode (*pause_timer)(RustealUObjectHandle context, uint64 handle,
+                                   bool paused);
+  float (*timer_remaining)(RustealUObjectHandle context, uint64 handle);
+  uint32 (*live_timer_callbacks)();
 };
 
 struct FRustealPlatformApi {

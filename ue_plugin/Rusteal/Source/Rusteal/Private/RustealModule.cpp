@@ -52,6 +52,7 @@ extern void RustealRegisterComponentListResync();
 extern void RustealUnregisterComponentListResync();
 
 extern void RustealConsoleForgetLibrary(FRustealLibrary *Library);
+extern void RustealTimersForgetLibrary(FRustealLibrary *Library);
 
 extern void RustealPinnedForgetLibrary(FRustealLibrary *Library);
 extern void RustealDelegateProxiesForgetLibrary(FRustealLibrary *Library);
@@ -443,6 +444,7 @@ static void UnloadLibrary(FRustealLibrary &Library) {
   RustealPinnedForgetLibrary(&Library);
   RustealDelegateProxiesForgetLibrary(&Library);
   RustealConsoleForgetLibrary(&Library);
+  RustealTimersForgetLibrary(&Library);
 
   if (Library.Handle) {
     FreeHandle(Library);
