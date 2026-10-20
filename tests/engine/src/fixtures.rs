@@ -3,10 +3,11 @@ use std::collections::{HashMap, HashSet};
 use bindings::engine::{
     BlueprintFunctionLibrary, ECollisionChannel, Material, SaveGame, SceneComponent,
 };
+use bindings::enhanced_input::FInputActionValue;
 use bindings::prelude::*;
 use rusteal_runtime::runtime::{
     FName, OwnedStruct, ScriptInterface, SoftClassRef, SoftObjectRef, SubclassOf, TWeakObjectPtr,
-    Text, UObjectRef, UeArray, UeMap, UeSet,
+    Text, UObjectRef, UStructRef, UeArray, UeMap, UeSet,
 };
 use rusteal_runtime::{uclass, uclass_impl, uenum, uinterface, ustruct};
 
@@ -310,6 +311,18 @@ impl TestActor {
         *rest = words.collect();
         *count = 1 + rest.len() as i32;
         !first.is_empty()
+    }
+}
+
+impl TestActor {
+    pub fn pinged(&mut self, value: i32) {
+        self.set_serial(i64::from(value));
+    }
+
+    pub fn jumped(&self, value: UStructRef<FInputActionValue>) {
+        if value.get_bool() {
+            self.set_level(self.level().saturating_add(1));
+        }
     }
 }
 

@@ -24,7 +24,12 @@ use bindings::engine::{
     ActorExt, AsyncActionHandleSaveGame, AsyncActionHandleSaveGameExt, BlueprintAsyncActionBaseExt,
     FLatentActionInfo, FLatentActionInfoExt, SaveGame,
 };
+use bindings::enhanced_input::{
+    EInputActionValueType, ETriggerEvent, EnhancedInputLibrary,
+    EnhancedInputLocalPlayerSubsystemExt, InputAction,
+};
 use bindings::manual::events::world_events;
+use bindings::manual::input_ext::{bind_action, enhanced_input_subsystem};
 use bindings::prelude::*;
 use bindings::slate_core::{
     EVerticalAlignment, FSlateBrush, FToolBarStyle, FToolBarStyleExt, FWrapButtonStyle,
@@ -221,6 +226,10 @@ pub const ALL: &[(&str, Check)] = &[
     (
         "http_requests_reach_a_local_server",
         http_requests_reach_a_local_server,
+    ),
+    (
+        "input_and_delegates_reach_closures_and_methods",
+        input_and_delegates_reach_closures_and_methods,
     ),
 ];
 
@@ -1517,6 +1526,137 @@ fn http_requests_reach_a_local_server(context: &Context) -> Outcome {
             .and_then(|_| {
                 let left = http::requests_in_progress();
                 ensure(left == 0, format!("{left} HTTP requests left"))
+            }),
+        )
+    }))
+}
+
+fn input_and_delegates_reach_closures_and_methods(context: &Context) -> Outcome {
+    let started = (|| {
+        let e = |e| format!("{e:?}");
+        let actor = spawn(context)?;
+        let me = TestActor::from_obj(actor).map_err(e)?;
+
+        me.on_ping_add(rusteal_runtime::runtime::method(&me, TestActor::pinged))
+            .map_err(e)?
+            .detach();
+        me.ping(11);
+        let pinged = me.serial();
+        me.set_level(0);
+
+        let world: UObjectRef<bindings::core_ue::Object> = actor.upcast_to();
+        let controller = GameplayStatics::get_player_controller(world, 0);
+
+        if controller.raw().is_null() {
+            return Err("the harness has no player controller".to_string());
+        }
+
+        let action =
+            bindings::manual::world_ext::new_object::<InputAction>(&controller).map_err(e)?;
+        let pinned_action = action.pin().map_err(e)?;
+
+        let presses = Arc::new(AtomicUsize::new(0));
+        let counter = presses.clone();
+
+        let closure = bind_action(
+            &controller,
+            action,
+            ETriggerEvent::Triggered,
+            move |value| {
+                if value.get_bool() {
+                    counter.fetch_add(1, Ordering::SeqCst);
+                }
+            },
+        )
+        .map_err(e)?;
+
+        actor.checked().map_err(e)?.enable_input(controller);
+        bind_action(
+            &me.as_ref(),
+            action,
+            ETriggerEvent::Triggered,
+            rusteal_runtime::runtime::method(&me, TestActor::jumped),
+        )
+        .map_err(e)?;
+
+        let subsystem = enhanced_input_subsystem(controller).map_err(e)?;
+
+        Ok::<_, String>((
+            actor,
+            action,
+            pinned_action,
+            subsystem,
+            closure,
+            presses,
+            pinged,
+        ))
+    })();
+
+    let (actor, action, pinned_action, subsystem, closure, presses, pinged) = match started {
+        Ok(started) => started,
+        Err(e) => return done(Err(e)),
+    };
+
+    let mut frames = 0;
+    let mut closure = Some(closure);
+    let mut presses_when_unbound = 0;
+
+    Outcome::Pending(Box::new(move || {
+        frames += 1;
+
+        if frames <= 20 {
+            if let Ok(subsystem) = subsystem.checked() {
+                let pressed = EnhancedInputLibrary::make_input_action_value_of_type(
+                    1.0,
+                    0.0,
+                    0.0,
+                    EInputActionValueType::Boolean,
+                );
+                subsystem.inject_input_for_action(action, &pressed, &[], &[]);
+            }
+        }
+
+        if frames == 10 {
+            presses_when_unbound = presses.load(Ordering::SeqCst);
+
+            if let Some(binding) = closure.take() {
+                binding.unbind();
+            }
+        }
+
+        if frames < 30 {
+            return None;
+        }
+
+        let _ = &pinned_action;
+
+        let presses_now = presses.load(Ordering::SeqCst);
+        let jumps = TestActor::from_obj(actor).map(|me| me.level()).unwrap_or(0);
+
+        Some(
+            ensure(
+                pinged == 11,
+                format!("the method bound to the delegate saw {pinged}"),
+            )
+            .and_then(|_| {
+                ensure(
+                    presses_when_unbound > 0,
+                    "the closure bound to the action was not called",
+                )
+            })
+            .and_then(|_| {
+                ensure(
+                    presses_now == presses_when_unbound,
+                    format!(
+                        "the unbound closure went on: {presses_when_unbound} then {presses_now}"
+                    ),
+                )
+            })
+            .and_then(|_| {
+                ensure(
+                    jumps as usize > presses_when_unbound,
+                    format!("the method bound to the action ran {jumps} times"),
+                )
             }),
         )
     }))
