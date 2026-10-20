@@ -7,7 +7,7 @@ use bindings::engine::{
 };
 use bindings::enhanced_input::{ETriggerEvent, FInputActionValue, InputAction};
 use bindings::prelude::*;
-use rusteal_runtime::runtime::{FName, Rotator, RustealResult, UObjectRef, UStructRef};
+use rusteal_runtime::runtime::{FName, Rotator, RustealResult, UObjectRef, UStructRef, method};
 use rusteal_runtime::{uclass, uclass_impl};
 
 #[uclass(
@@ -185,39 +185,35 @@ impl FirstPersonCharacter {
             return Ok(false);
         }
 
-        bind_action_by_name(
-            &me,
-            self.jump_action(),
-            ETriggerEvent::Started,
-            "DoJumpStart",
-        )?;
+        let mut jump_start = method(self, Self::do_jump_start);
+        bind_action(&me, self.jump_action(), ETriggerEvent::Started, move |_| {
+            jump_start()
+        })?;
 
-        bind_action_by_name(
-            &me,
-            self.jump_action(),
-            ETriggerEvent::Completed,
-            "DoJumpEnd",
-        )?;
+        let mut jump_end = method(self, Self::do_jump_end);
+        bind_action(&me, self.jump_action(), ETriggerEvent::Completed, move |_| {
+            jump_end()
+        })?;
 
-        bind_action_by_name(
+        bind_action(
             &me,
             self.move_action(),
             ETriggerEvent::Triggered,
-            "MoveInput",
+            method(self, Self::move_input),
         )?;
 
-        bind_action_by_name(
+        bind_action(
             &me,
             self.look_action(),
             ETriggerEvent::Triggered,
-            "LookInput",
+            method(self, Self::look_input),
         )?;
 
-        bind_action_by_name(
+        bind_action(
             &me,
             self.mouse_look_action(),
             ETriggerEvent::Triggered,
-            "LookInput",
+            method(self, Self::look_input),
         )?;
 
         Ok(true)

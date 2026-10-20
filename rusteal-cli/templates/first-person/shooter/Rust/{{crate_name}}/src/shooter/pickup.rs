@@ -1,11 +1,14 @@
+use std::time::Duration;
+
 use bindings::engine::{
     Actor, ActorExt, ECollisionChannel, ECollisionEnabled, ECollisionResponse, FDataTableRowHandle,
-    KismetSystemLibrary, PrimitiveComponentExt, SceneComponent, SceneComponentExt, SphereComponent,
-    StaticMesh, StaticMeshComponent, StaticMeshComponentExt,
+    PrimitiveComponentExt, SceneComponent, SceneComponentExt, SphereComponent, StaticMesh,
+    StaticMeshComponent, StaticMeshComponentExt,
 };
 use bindings::prelude::*;
+use rusteal_runtime::runtime::timer::{self, TimerHandle};
 use rusteal_runtime::runtime::{
-    FName, OwnedStruct, RustealResult, SoftObjectRef, SubclassOf, UObjectRef,
+    FName, OwnedStruct, RustealResult, SoftObjectRef, SubclassOf, UObjectRef, method,
 };
 use rusteal_runtime::{uclass, uclass_impl, ustruct};
 
@@ -42,6 +45,8 @@ pub struct ShooterPickup {
 
     #[uproperty(EditAnywhere, category = "Pickup", default = 4.0)]
     respawn_time: f32,
+
+    respawn_timer: Option<TimerHandle>,
 }
 
 #[uclass_impl]
@@ -97,7 +102,9 @@ impl ShooterPickup {
 
     #[ufunction(Override)]
     fn receive_end_play(&mut self, _end_play_reason: u8) {
-        KismetSystemLibrary::k2_clear_timer(self.as_ref().upcast_to(), "RespawnPickup");
+        if let Some(respawn_timer) = self.respawn_timer() {
+            respawn_timer.clear();
+        }
     }
 
     #[ufunction(Override)]
@@ -118,15 +125,19 @@ impl ShooterPickup {
 
         me.set_actor_tick_enabled(false);
 
-        KismetSystemLibrary::k2_set_timer(
-            me.as_ref().upcast_to(),
-            "RespawnPickup",
-            self.respawn_time(),
+        if let Some(respawn_timer) = self.respawn_timer() {
+            respawn_timer.clear();
+        }
+
+        let respawn_timer = timer::set_timer(
+            &self.as_ref(),
+            Duration::from_secs_f32(self.respawn_time()),
             false,
-            None,
-            None,
-            None,
-        );
+            method(self, Self::respawn_pickup),
+        )
+        .ok();
+
+        self.set_respawn_timer(respawn_timer);
     }
 
     #[ufunction]

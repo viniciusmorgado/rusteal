@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use bindings::engine::{
     Actor, ActorComponentExt, ActorExt, CameraComponent, CapsuleComponentExt, Character,
     CharacterExt, CharacterMovementComponentExt, ECollisionChannel, ECollisionResponse,
@@ -7,7 +9,10 @@ use bindings::engine::{
 };
 use bindings::enhanced_input::{ETriggerEvent, FInputActionValue, InputAction};
 use bindings::prelude::*;
-use rusteal_runtime::runtime::{OwnedStruct, Rotator, RustealResult, UObjectRef, UStructRef};
+use rusteal_runtime::runtime::timer::{self, TimerHandle};
+use rusteal_runtime::runtime::{
+    OwnedStruct, Rotator, RustealResult, UObjectRef, UStructRef, method,
+};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use super::interactable;
@@ -60,6 +65,8 @@ pub struct SideScrollingCharacter {
     max_coyote_time: f32,
 
     state: MoveState,
+
+    wall_jump_timer: Option<TimerHandle>,
 }
 
 #[uclass_impl]
@@ -130,7 +137,9 @@ impl SideScrollingCharacter {
 
     #[ufunction(Override)]
     fn receive_end_play(&mut self, _end_play_reason: u8) {
-        KismetSystemLibrary::k2_clear_timer(self.as_ref().upcast_to(), "ResetWallJump");
+        if let Some(wall_jump_timer) = self.wall_jump_timer() {
+            wall_jump_timer.clear();
+        }
     }
 
     #[ufunction(Override)]
@@ -265,36 +274,49 @@ impl SideScrollingCharacter {
             return Ok(false);
         }
 
-        bind_action_by_name(
-            &me,
-            self.jump_action(),
-            ETriggerEvent::Started,
-            "DoJumpStart",
-        )?;
+        let mut do_jump_start = method(self, Self::do_jump_start);
 
-        bind_action_by_name(
+        bind_action(&me, self.jump_action(), ETriggerEvent::Started, move |_| {
+            do_jump_start()
+        })?;
+
+        let mut do_jump_end = method(self, Self::do_jump_end);
+
+        bind_action(
             &me,
             self.jump_action(),
             ETriggerEvent::Completed,
-            "DoJumpEnd",
+            move |_| do_jump_end(),
         )?;
 
-        bind_action_by_name(
+        let mut do_interact = method(self, Self::do_interact);
+
+        bind_action(
             &me,
             self.interact_action(),
             ETriggerEvent::Triggered,
-            "DoInteract",
+            move |_| do_interact(),
         )?;
 
-        bind_action_by_name(&me, self.move_action(), ETriggerEvent::Triggered, "Move")?;
+        bind_action(
+            &me,
+            self.move_action(),
+            ETriggerEvent::Triggered,
+            method(self, Self::r#move),
+        )?;
 
-        bind_action_by_name(&me, self.drop_action(), ETriggerEvent::Triggered, "Drop")?;
+        bind_action(
+            &me,
+            self.drop_action(),
+            ETriggerEvent::Triggered,
+            method(self, Self::drop),
+        )?;
 
-        bind_action_by_name(
+        bind_action(
             &me,
             self.drop_action(),
             ETriggerEvent::Completed,
-            "DropReleased",
+            method(self, Self::drop_released),
         )?;
 
         Ok(true)
@@ -412,7 +434,7 @@ impl SideScrollingCharacter {
         Ok(())
     }
 
-    fn wall_jump(&self, state: &mut MoveState) -> RustealResult<bool> {
+    fn wall_jump(&mut self, state: &mut MoveState) -> RustealResult<bool> {
         let me = self.as_ref().checked()?;
 
         let start = me.k2_get_actor_location().to_dvec3();
@@ -457,15 +479,18 @@ impl SideScrollingCharacter {
 
         state.has_wall_jumped = true;
 
-        KismetSystemLibrary::k2_set_timer(
-            self.as_ref().upcast_to(),
-            "ResetWallJump",
-            self.delay_between_wall_jumps(),
+        if let Some(wall_jump_timer) = self.wall_jump_timer() {
+            wall_jump_timer.clear();
+        }
+
+        let wall_jump_timer = timer::set_timer(
+            &self.as_ref(),
+            Duration::from_secs_f32(self.delay_between_wall_jumps()),
             false,
-            None,
-            None,
-            None,
-        );
+            method(self, Self::reset_wall_jump),
+        )?;
+
+        self.set_wall_jump_timer(Some(wall_jump_timer));
 
         Ok(true)
     }

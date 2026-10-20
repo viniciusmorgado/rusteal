@@ -15,7 +15,7 @@ use bindings::umg::{
     WidgetInteractionComponent, WidgetInteractionComponentExt,
 };
 use glam::{DVec2, DVec3};
-use rusteal_runtime::runtime::{FName, OwnedStruct, RustealResult, SubclassOf, UObjectRef};
+use rusteal_runtime::runtime::{FName, OwnedStruct, RustealResult, SubclassOf, UObjectRef, method};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use crate::model;
@@ -204,38 +204,38 @@ impl Menu {
             (
                 self.menu_interact_left_action(),
                 ETriggerEvent::Triggered,
-                "InteractLeftPressed",
+                method(self, Self::interact_left_pressed),
             ),
             (
                 self.menu_interact_left_action(),
                 ETriggerEvent::Canceled,
-                "InteractLeftReleased",
+                method(self, Self::interact_left_released),
             ),
             (
                 self.menu_interact_left_action(),
                 ETriggerEvent::Completed,
-                "InteractLeftReleased",
+                method(self, Self::interact_left_released),
             ),
             (
                 self.menu_interact_right_action(),
                 ETriggerEvent::Triggered,
-                "InteractRightPressed",
+                method(self, Self::interact_right_pressed),
             ),
             (
                 self.menu_interact_right_action(),
                 ETriggerEvent::Canceled,
-                "InteractRightReleased",
+                method(self, Self::interact_right_released),
             ),
             (
                 self.menu_interact_right_action(),
                 ETriggerEvent::Completed,
-                "InteractRightReleased",
+                method(self, Self::interact_right_released),
             ),
         ];
 
-        for (action, event, function) in bindings {
+        for (action, event, mut callback) in bindings {
             if action.is_valid() {
-                bind_action_by_name(&me, action, event, function)?;
+                bind_action(&me, action, event, move |_| callback())?;
             }
         }
 

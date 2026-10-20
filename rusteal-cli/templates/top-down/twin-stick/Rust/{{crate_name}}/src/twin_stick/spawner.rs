@@ -1,7 +1,10 @@
-use bindings::engine::{Actor, ActorExt, GameplayStatics, KismetMathLibrary, KismetSystemLibrary};
+use std::time::Duration;
+
+use bindings::engine::{Actor, ActorExt, GameplayStatics, KismetMathLibrary};
 use bindings::navigation::{NavigationSystemV1, RecastNavMesh};
 use bindings::prelude::*;
-use rusteal_runtime::runtime::{Rotator, SubclassOf, UObjectRef};
+use rusteal_runtime::runtime::timer::{self, TimerHandle};
+use rusteal_runtime::runtime::{Rotator, SubclassOf, UObjectRef, method};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use super::game_mode::TwinStickGameMode;
@@ -31,6 +34,10 @@ pub struct TwinStickSpawner {
     nav_data: UObjectRef<RecastNavMesh>,
 
     spawn_count: i32,
+
+    spawn_group_timer: Option<TimerHandle>,
+
+    spawn_npc_timer: Option<TimerHandle>,
 }
 
 #[uclass_impl]
@@ -49,24 +56,27 @@ impl TwinStickSpawner {
             None => log::info!("Could not find recast navmesh"),
         }
 
-        KismetSystemLibrary::k2_set_timer(
-            me,
-            "SpawnNPCGroup",
-            self.spawn_group_delay(),
+        let group = timer::set_timer(
+            &self.as_ref(),
+            Duration::from_secs_f32(self.spawn_group_delay()),
             true,
-            None,
-            None,
-            None,
+            method(self, Self::spawn_npc_group),
         );
+
+        self.set_spawn_group_timer(group.ok());
 
         self.spawn_npc_group();
     }
 
     #[ufunction(Override)]
     fn receive_end_play(&mut self, _end_play_reason: u8) {
-        let me = self.as_ref().upcast_to();
-        KismetSystemLibrary::k2_clear_timer(me, "SpawnNPCGroup");
-        KismetSystemLibrary::k2_clear_timer(me, "SpawnNPC");
+        if let Some(timer) = self.spawn_group_timer() {
+            timer.clear();
+        }
+
+        if let Some(timer) = self.spawn_npc_timer() {
+            timer.clear();
+        }
     }
 
     #[ufunction(name = "SpawnNPCGroup")]
@@ -123,15 +133,18 @@ impl TwinStickSpawner {
                 f64::from(self.max_spawn_delay()),
             );
 
-            KismetSystemLibrary::k2_set_timer(
-                me.as_ref().upcast_to(),
-                "SpawnNPC",
-                delay as f32,
+            if let Some(timer) = self.spawn_npc_timer() {
+                timer.clear();
+            }
+
+            let spawn = timer::set_timer(
+                &self.as_ref(),
+                Duration::from_secs_f32(delay as f32),
                 false,
-                None,
-                None,
-                None,
+                method(self, Self::spawn_npc),
             );
+
+            self.set_spawn_npc_timer(spawn.ok());
         }
     }
 }

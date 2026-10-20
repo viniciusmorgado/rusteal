@@ -1,11 +1,13 @@
+use std::time::Duration;
+
 use bindings::engine::{
-    ActorExt, CharacterExt, CharacterMovementComponentExt, ELightUnits, KismetSystemLibrary,
-    LightComponentExt, LocalLightComponentExt, PawnExt, SceneComponentExt, SpotLightComponent,
-    SpotLightComponentExt,
+    ActorExt, CharacterExt, CharacterMovementComponentExt, ELightUnits, LightComponentExt,
+    LocalLightComponentExt, PawnExt, SceneComponentExt, SpotLightComponent, SpotLightComponentExt,
 };
 use bindings::enhanced_input::{ETriggerEvent, InputAction};
 use bindings::prelude::*;
-use rusteal_runtime::runtime::{Rotator, RustealResult, UObjectRef};
+use rusteal_runtime::runtime::timer::{self, TimerHandle};
+use rusteal_runtime::runtime::{Rotator, RustealResult, UObjectRef, method};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use super::model::{SprintSettings, SprintState, SprintUpdate};
@@ -49,6 +51,8 @@ pub struct HorrorCharacter {
     sprint_listener: UObjectRef<HorrorUI>,
 
     sprint: SprintState,
+
+    sprint_timer: Option<TimerHandle>,
 }
 
 #[uclass_impl]
@@ -85,20 +89,22 @@ impl HorrorCharacter {
         self.set_sprint(sprint);
         self.apply(update);
 
-        KismetSystemLibrary::k2_set_timer(
-            self.as_ref().upcast_to(),
-            "SprintFixedTick",
-            self.sprint_fixed_tick_time(),
+        let sprint_timer = timer::set_timer(
+            &self.as_ref(),
+            Duration::from_secs_f32(self.sprint_fixed_tick_time()),
             true,
-            None,
-            None,
-            None,
-        );
+            method(self, Self::sprint_fixed_tick),
+        )
+        .ok();
+
+        self.set_sprint_timer(sprint_timer);
     }
 
     #[ufunction(Override)]
     fn receive_end_play(&mut self, _end_play_reason: u8) {
-        KismetSystemLibrary::k2_clear_timer(self.as_ref().upcast_to(), "SprintFixedTick");
+        if let Some(sprint_timer) = self.sprint_timer() {
+            sprint_timer.clear();
+        }
     }
 
     #[ufunction(Override)]
@@ -151,18 +157,20 @@ impl HorrorCharacter {
             return Ok(());
         }
 
-        bind_action_by_name(
+        let mut start_sprint = method(self, Self::do_start_sprint);
+        bind_action(
             &me,
             self.sprint_action(),
             ETriggerEvent::Started,
-            "DoStartSprint",
+            move |_| start_sprint(),
         )?;
 
-        bind_action_by_name(
+        let mut end_sprint = method(self, Self::do_end_sprint);
+        bind_action(
             &me,
             self.sprint_action(),
             ETriggerEvent::Completed,
-            "DoEndSprint",
+            move |_| end_sprint(),
         )?;
 
         Ok(())

@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use bindings::engine::{
     Actor, ActorComponentExt, ActorExt, Character, DamageType, ECanBeCharacterBase,
     ECollisionChannel, ECollisionEnabled, ECollisionResponse, FHitResult, FHitResultExt,
@@ -7,8 +9,9 @@ use bindings::engine::{
 };
 use bindings::prelude::*;
 use glam::DVec3;
+use rusteal_runtime::runtime::timer::{self, TimerHandle};
 use rusteal_runtime::runtime::{
-    FName, OwnedStruct, RustealResult, SubclassOf, UObjectRef, UStructRef,
+    FName, OwnedStruct, RustealResult, SubclassOf, UObjectRef, UStructRef, method,
 };
 use rusteal_runtime::{uclass, uclass_impl};
 
@@ -54,6 +57,8 @@ pub struct ShooterProjectile {
     deferred_destruction_time: f32,
 
     hit: bool,
+
+    destruction_timer: Option<TimerHandle>,
 }
 
 #[uclass_impl]
@@ -90,7 +95,9 @@ impl ShooterProjectile {
 
     #[ufunction(Override)]
     fn receive_end_play(&mut self, _end_play_reason: u8) {
-        KismetSystemLibrary::k2_clear_timer(self.as_ref().upcast_to(), "OnDeferredDestruction");
+        if let Some(destruction_timer) = self.destruction_timer() {
+            destruction_timer.clear();
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -142,15 +149,15 @@ impl ShooterProjectile {
         self.bp_on_projectile_hit(&hit.to_owned());
 
         if self.deferred_destruction_time() > 0.0 {
-            KismetSystemLibrary::k2_set_timer(
-                me.as_ref().upcast_to(),
-                "OnDeferredDestruction",
-                self.deferred_destruction_time(),
+            let destruction_timer = timer::set_timer(
+                &self.as_ref(),
+                Duration::from_secs_f32(self.deferred_destruction_time()),
                 false,
-                None,
-                None,
-                None,
-            );
+                method(self, Self::on_deferred_destruction),
+            )
+            .ok();
+
+            self.set_destruction_timer(destruction_timer);
         } else {
             me.k2_destroy_actor();
         }

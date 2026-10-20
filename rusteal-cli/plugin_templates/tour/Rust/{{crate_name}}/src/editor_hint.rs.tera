@@ -6,7 +6,7 @@ use bindings::umg::{
     ESlateVisibility, EUMGSequencePlayMode, UserWidget, UserWidgetExt, Widget, WidgetAnimation,
     WidgetExt,
 };
-use rusteal_runtime::runtime::{RustealResult, SubclassOf, UObjectRef, UeClass};
+use rusteal_runtime::runtime::{RustealResult, SubclassOf, UObjectRef};
 use rusteal_runtime::{uclass, uclass_impl};
 
 #[uclass(parent = UserWidget)]

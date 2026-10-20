@@ -75,7 +75,7 @@ impl TwinStickProjectile {
         _normal_impulse: UStructRef<FVector>,
         _hit: UStructRef<FHitResult>,
     ) {
-        if let Ok(npc) = TwinStickNPC::from_obj(other) {
+        if let Ok(mut npc) = TwinStickNPC::from_obj(other) {
             npc.projectile_impact();
 
             if let Ok(me) = self.as_ref().checked() {

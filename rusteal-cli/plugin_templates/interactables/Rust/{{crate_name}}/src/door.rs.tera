@@ -7,7 +7,7 @@ use bindings::engine::{
 use bindings::prelude::*;
 use glam::{DQuat, DVec3};
 use rusteal_runtime::runtime::{
-    OwnedStruct, Rotator, RustealResult, SubclassOf, Transform, UObjectRef,
+    OwnedStruct, Rotator, RustealResult, SubclassOf, Transform, UObjectRef, method,
 };
 use rusteal_runtime::{uclass, uclass_impl};
 
@@ -168,10 +168,10 @@ impl UnlockableDoor {
             self.set_closed_position_0(&door.get_relative_location());
         }
 
-        let me = self.as_ref();
-
         if let Ok(trigger) = TriggerSwitch::from_obj(self.trigger())
-            && let Err(e) = trigger.trigger_add_ufunction(&me, "Unlock")
+            && let Err(e) = trigger
+                .trigger_add(method(self, Self::unlock))
+                .map(|binding| binding.detach())
         {
             log::warn!("[Interactables] door: {e}");
         }

@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use bindings::engine::{
     Actor, ActorExt, AnimInstanceExt, AnimMontage, CameraComponent, CameraComponentExt,
     CapsuleComponentExt, Character, CharacterExt, CharacterMovementComponentExt, Controller,
@@ -10,8 +12,9 @@ use bindings::enhanced_input::{ETriggerEvent, FInputActionValue, InputAction};
 use bindings::prelude::*;
 use bindings::umg::{WidgetComponent, WidgetComponentExt};
 use glam::DVec3;
+use rusteal_runtime::runtime::timer::{self, TimerHandle};
 use rusteal_runtime::runtime::{
-    FName, OwnedStruct, RustealResult, UObjectRef, UStructRef, UeArray,
+    FName, OwnedStruct, RustealResult, UObjectRef, UStructRef, UeArray, method,
 };
 use rusteal_runtime::{uclass, uclass_impl};
 
@@ -121,6 +124,8 @@ pub struct CombatCharacter {
     attack: AttackState,
 
     attack_end_bound: bool,
+
+    respawn_timer: Option<TimerHandle>,
 }
 
 #[uclass_impl]
@@ -163,7 +168,9 @@ impl CombatCharacter {
 
     #[ufunction(Override)]
     fn receive_end_play(&mut self, _end_play_reason: u8) {
-        KismetSystemLibrary::k2_clear_timer(self.as_ref().upcast_to(), "RespawnCharacter");
+        if let Some(respawn_timer) = self.respawn_timer() {
+            respawn_timer.clear();
+        }
     }
 
     #[ufunction(Override)]
@@ -359,43 +366,61 @@ impl CombatCharacter {
             return Ok(false);
         }
 
-        bind_action_by_name(&me, self.move_action(), ETriggerEvent::Triggered, "Move")?;
+        bind_action(
+            &me,
+            self.move_action(),
+            ETriggerEvent::Triggered,
+            method(self, Self::r#move),
+        )?;
 
-        bind_action_by_name(&me, self.look_action(), ETriggerEvent::Triggered, "Look")?;
+        bind_action(
+            &me,
+            self.look_action(),
+            ETriggerEvent::Triggered,
+            method(self, Self::look),
+        )?;
 
-        bind_action_by_name(
+        bind_action(
             &me,
             self.mouse_look_action(),
             ETriggerEvent::Triggered,
-            "Look",
+            method(self, Self::look),
         )?;
 
-        bind_action_by_name(
+        let mut combo_attack_pressed = method(self, Self::combo_attack_pressed);
+
+        bind_action(
             &me,
             self.combo_attack_action(),
             ETriggerEvent::Started,
-            "ComboAttackPressed",
+            move |_| combo_attack_pressed(),
         )?;
 
-        bind_action_by_name(
+        let mut charged_attack_pressed = method(self, Self::charged_attack_pressed);
+
+        bind_action(
             &me,
             self.charged_attack_action(),
             ETriggerEvent::Started,
-            "ChargedAttackPressed",
+            move |_| charged_attack_pressed(),
         )?;
 
-        bind_action_by_name(
+        let mut charged_attack_released = method(self, Self::charged_attack_released);
+
+        bind_action(
             &me,
             self.charged_attack_action(),
             ETriggerEvent::Completed,
-            "ChargedAttackReleased",
+            move |_| charged_attack_released(),
         )?;
 
-        bind_action_by_name(
+        let mut toggle_camera = method(self, Self::toggle_camera);
+
+        bind_action(
             &me,
             self.toggle_camera_action(),
             ETriggerEvent::Triggered,
-            "ToggleCamera",
+            move |_| toggle_camera(),
         )?;
 
         Ok(true)
@@ -810,15 +835,20 @@ impl CombatDamageable for CombatCharacter {
             boom.set_target_arm_length(self.death_camera_distance());
         }
 
-        KismetSystemLibrary::k2_set_timer(
-            self.as_ref().upcast_to(),
-            "RespawnCharacter",
-            self.respawn_time(),
+        if let Some(respawn_timer) = self.respawn_timer() {
+            respawn_timer.clear();
+        }
+
+        let respawn_timer = timer::set_timer(
+            &self.as_ref(),
+            Duration::from_secs_f32(self.respawn_time()),
             false,
-            None,
-            None,
-            None,
-        );
+            method(self, Self::respawn_character),
+        )
+        .inspect_err(|e| log::warn!("[Combat] character respawn timer: {e}"))
+        .ok();
+
+        self.set_respawn_timer(respawn_timer);
     }
 
     fn apply_healing(&mut self, _healing: f32, _healer: UObjectRef<Actor>) {}

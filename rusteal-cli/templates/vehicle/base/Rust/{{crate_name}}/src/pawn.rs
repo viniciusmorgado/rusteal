@@ -1,16 +1,18 @@
+use std::time::Duration;
+
 use bindings::chaos_vehicles::{
     ChaosVehicleMovementComponentExt, ChaosWheeledVehicleMovementComponent, WheeledVehiclePawn,
     WheeledVehiclePawnExt,
 };
 use bindings::engine::{
-    ActorComponentExt, CameraComponent, KismetMathLibrary, KismetSystemLibrary,
-    NavMovementComponentExt, PawnExt, PrimitiveComponentExt, SceneComponentExt, SpringArmComponent,
-    SpringArmComponentExt,
+    ActorComponentExt, CameraComponent, KismetMathLibrary, NavMovementComponentExt, PawnExt,
+    PrimitiveComponentExt, SceneComponentExt, SpringArmComponent, SpringArmComponentExt,
 };
 use bindings::enhanced_input::{ETriggerEvent, FInputActionValue, InputAction};
 use bindings::prelude::*;
 use glam::DVec3;
-use rusteal_runtime::runtime::{FName, Rotator, RustealResult, UObjectRef, UStructRef};
+use rusteal_runtime::runtime::timer::{self, TimerHandle};
+use rusteal_runtime::runtime::{FName, Rotator, RustealResult, UObjectRef, UStructRef, method};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use crate::model;
@@ -58,6 +60,7 @@ pub struct VehicleAdvPawn {
 
     front_camera_active: bool,
     previous_flip_check: bool,
+    flip_check_timer: Option<TimerHandle>,
 }
 
 #[uclass_impl]
@@ -104,20 +107,22 @@ impl VehicleAdvPawn {
 
     #[ufunction(Override)]
     pub(crate) fn receive_begin_play(&mut self) {
-        KismetSystemLibrary::k2_set_timer(
-            self.as_ref().upcast_to(),
-            "FlippedCheck",
-            self.flip_check_time(),
+        match timer::set_timer(
+            &self.as_ref(),
+            Duration::from_secs_f32(self.flip_check_time()),
             true,
-            None,
-            None,
-            None,
-        );
+            method(self, Self::flipped_check),
+        ) {
+            Ok(timer) => self.set_flip_check_timer(Some(timer)),
+            Err(e) => log::warn!("[Vehicle] failed to set the flip check timer: {e}"),
+        }
     }
 
     #[ufunction(Override)]
     pub(crate) fn receive_end_play(&mut self, _end_play_reason: u8) {
-        KismetSystemLibrary::k2_clear_timer(self.as_ref().upcast_to(), "FlippedCheck");
+        if let Some(timer) = self.flip_check_timer() {
+            timer.clear();
+        }
     }
 
     #[ufunction(Override)]
@@ -312,72 +317,84 @@ impl VehicleAdvPawn {
             return Ok(());
         }
 
-        bind_action_by_name(
+        let mut start_brake = method(self, Self::start_brake);
+        let mut stop_brake = method(self, Self::stop_brake);
+        let mut start_handbrake = method(self, Self::start_handbrake);
+        let mut stop_handbrake = method(self, Self::stop_handbrake);
+        let mut toggle_camera = method(self, Self::toggle_camera);
+        let mut reset_vehicle = method(self, Self::reset_vehicle);
+
+        bind_action(
             &me,
             self.steering_action(),
             ETriggerEvent::Triggered,
-            "Steering",
+            method(self, Self::steering),
         )?;
-        bind_action_by_name(
+        bind_action(
             &me,
             self.steering_action(),
             ETriggerEvent::Completed,
-            "Steering",
+            method(self, Self::steering),
         )?;
-        bind_action_by_name(
+        bind_action(
             &me,
             self.throttle_action(),
             ETriggerEvent::Triggered,
-            "Throttle",
+            method(self, Self::throttle),
         )?;
-        bind_action_by_name(
+        bind_action(
             &me,
             self.throttle_action(),
             ETriggerEvent::Completed,
-            "Throttle",
+            method(self, Self::throttle),
         )?;
-        bind_action_by_name(&me, self.brake_action(), ETriggerEvent::Triggered, "Brake")?;
-        bind_action_by_name(
+        bind_action(
+            &me,
+            self.brake_action(),
+            ETriggerEvent::Triggered,
+            method(self, Self::brake),
+        )?;
+        bind_action(
             &me,
             self.brake_action(),
             ETriggerEvent::Started,
-            "StartBrake",
+            move |_| start_brake(),
         )?;
-        bind_action_by_name(
+        bind_action(
             &me,
             self.brake_action(),
             ETriggerEvent::Completed,
-            "StopBrake",
+            move |_| stop_brake(),
         )?;
-        bind_action_by_name(
+        bind_action(
             &me,
             self.handbrake_action(),
             ETriggerEvent::Started,
-            "StartHandbrake",
+            move |_| start_handbrake(),
         )?;
-        bind_action_by_name(
+        bind_action(
             &me,
             self.handbrake_action(),
             ETriggerEvent::Completed,
-            "StopHandbrake",
+            move |_| stop_handbrake(),
         )?;
-        bind_action_by_name(
+        bind_action(
             &me,
             self.look_around_action(),
             ETriggerEvent::Triggered,
-            "LookAround",
+            method(self, Self::look_around),
         )?;
-        bind_action_by_name(
+        bind_action(
             &me,
             self.toggle_camera_action(),
             ETriggerEvent::Triggered,
-            "ToggleCamera",
+            move |_| toggle_camera(),
         )?;
-        bind_action_by_name(
+        bind_action(
             &me,
             self.reset_vehicle_action(),
             ETriggerEvent::Triggered,
-            "ResetVehicle",
+            move |_| reset_vehicle(),
         )?;
 
         Ok(())

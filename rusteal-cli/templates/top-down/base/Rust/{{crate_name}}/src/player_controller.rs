@@ -11,7 +11,7 @@ use bindings::input_core::ETouchIndex;
 use bindings::niagara::{ENCPoolMethod, NiagaraFunctionLibrary, NiagaraSystem};
 use bindings::prelude::*;
 use glam::DVec3;
-use rusteal_runtime::runtime::{OwnedStruct, Rotator, RustealResult, UObjectRef};
+use rusteal_runtime::runtime::{OwnedStruct, Rotator, RustealResult, UObjectRef, method};
 use rusteal_runtime::{uclass, uclass_impl};
 
 #[uclass(parent = PlayerController)]
@@ -145,36 +145,45 @@ impl TopDownPlayerController {
             .add_mapping_context(self.default_mapping_context(), 0, &OwnedStruct::new());
 
         let click = self.set_destination_click_action();
-        bind_action_by_name(&me, click, ETriggerEvent::Started, "OnInputStarted")?;
+        self.bind_input(click, ETriggerEvent::Started, Self::on_input_started)?;
 
-        bind_action_by_name(
-            &me,
+        self.bind_input(
             click,
             ETriggerEvent::Triggered,
-            "OnSetDestinationTriggered",
+            Self::on_set_destination_triggered,
         )?;
 
-        bind_action_by_name(
-            &me,
+        self.bind_input(
             click,
             ETriggerEvent::Completed,
-            "OnSetDestinationReleased",
+            Self::on_set_destination_released,
         )?;
 
-        bind_action_by_name(
-            &me,
+        self.bind_input(
             click,
             ETriggerEvent::Canceled,
-            "OnSetDestinationReleased",
+            Self::on_set_destination_released,
         )?;
 
         let touch = self.set_destination_touch_action();
-        bind_action_by_name(&me, touch, ETriggerEvent::Started, "OnInputStarted")?;
-        bind_action_by_name(&me, touch, ETriggerEvent::Triggered, "OnTouchTriggered")?;
-        bind_action_by_name(&me, touch, ETriggerEvent::Completed, "OnTouchReleased")?;
-        bind_action_by_name(&me, touch, ETriggerEvent::Canceled, "OnTouchReleased")?;
+        self.bind_input(touch, ETriggerEvent::Started, Self::on_input_started)?;
+        self.bind_input(touch, ETriggerEvent::Triggered, Self::on_touch_triggered)?;
+        self.bind_input(touch, ETriggerEvent::Completed, Self::on_touch_released)?;
+        self.bind_input(touch, ETriggerEvent::Canceled, Self::on_touch_released)?;
 
         Ok(true)
+    }
+
+    fn bind_input(
+        &self,
+        action: UObjectRef<InputAction>,
+        trigger_event: ETriggerEvent,
+        handler: fn(&mut Self),
+    ) -> RustealResult<()> {
+        let mut handler = method(self, handler);
+        bind_action(&self.as_ref(), action, trigger_event, move |_| handler())?;
+
+        Ok(())
     }
 
     fn update_cached_destination(&mut self) {

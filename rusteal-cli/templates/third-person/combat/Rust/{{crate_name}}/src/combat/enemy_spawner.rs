@@ -1,10 +1,13 @@
+use std::time::Duration;
+
 use bindings::engine::{
     Actor, ArrowComponent, CapsuleComponent, CapsuleComponentExt,
-    ESpawnActorCollisionHandlingMethod, GameplayStatics, KismetSystemLibrary,
-    PrimitiveComponentExt, SceneComponent, SceneComponentExt,
+    ESpawnActorCollisionHandlingMethod, GameplayStatics, PrimitiveComponentExt, SceneComponent,
+    SceneComponentExt,
 };
 use bindings::prelude::*;
-use rusteal_runtime::runtime::{FName, RustealResult, SubclassOf, UObjectRef, UeArray};
+use rusteal_runtime::runtime::timer::{self, TimerHandle};
+use rusteal_runtime::runtime::{FName, RustealResult, SubclassOf, UObjectRef, UeArray, method};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use super::enemy::CombatEnemy;
@@ -44,6 +47,8 @@ pub struct CombatEnemySpawner {
     actors_to_activate_when_depleted: UeArray<UObjectRef<Actor>>,
 
     has_been_activated: bool,
+
+    pending_timer: Option<TimerHandle>,
 }
 
 #[uclass_impl]
@@ -72,14 +77,14 @@ impl CombatEnemySpawner {
     #[ufunction(Override)]
     fn receive_begin_play(&mut self) {
         if self.b_should_spawn_enemies_immediately() {
-            self.set_timer("SpawnEnemy", self.initial_spawn_delay());
+            self.set_timer(self.initial_spawn_delay(), method(self, Self::spawn_enemy));
         }
     }
 
     #[ufunction(Override)]
     fn receive_end_play(&mut self, _end_play_reason: u8) {
-        for function in ["SpawnEnemy", "SpawnerDepleted"] {
-            KismetSystemLibrary::k2_clear_timer(self.as_ref().upcast_to(), function);
+        if let Some(pending_timer) = self.pending_timer() {
+            pending_timer.clear();
         }
     }
 
@@ -140,27 +145,31 @@ impl CombatEnemySpawner {
         self.set_spawn_count(spawn_count);
 
         if spawn_count <= 0 {
-            self.set_timer("SpawnerDepleted", self.activation_delay());
+            self.set_timer(
+                self.activation_delay(),
+                method(self, Self::spawner_depleted),
+            );
             return;
         }
 
-        self.set_timer("SpawnEnemy", self.respawn_delay());
+        self.set_timer(self.respawn_delay(), method(self, Self::spawn_enemy));
     }
 
-    fn set_timer(&self, function: &str, time: f32) {
-        for pending in ["SpawnEnemy", "SpawnerDepleted"] {
-            KismetSystemLibrary::k2_clear_timer(self.as_ref().upcast_to(), pending);
+    fn set_timer(&mut self, time: f32, callback: impl FnMut() + Send + 'static) {
+        if let Some(pending_timer) = self.pending_timer() {
+            pending_timer.clear();
         }
 
-        KismetSystemLibrary::k2_set_timer(
-            self.as_ref().upcast_to(),
-            function,
-            time,
+        let pending_timer = timer::set_timer(
+            &self.as_ref(),
+            Duration::from_secs_f32(time),
             false,
-            None,
-            None,
-            None,
-        );
+            callback,
+        )
+        .inspect_err(|e| log::warn!("[Combat] spawner timer: {e}"))
+        .ok();
+
+        self.set_pending_timer(pending_timer);
     }
 }
 

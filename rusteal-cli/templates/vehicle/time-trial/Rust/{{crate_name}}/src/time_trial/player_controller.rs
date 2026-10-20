@@ -4,7 +4,9 @@ use bindings::enhanced_input::{EnhancedInputLocalPlayerSubsystemExt, InputMappin
 use bindings::prelude::*;
 use bindings::umg::{UserWidget, UserWidgetExt};
 use rusteal_runtime::runtime::input::should_display_touch_interface;
-use rusteal_runtime::runtime::{OwnedStruct, RustealResult, SubclassOf, UObjectRef, UeArray};
+use rusteal_runtime::runtime::{
+    OwnedStruct, RustealResult, SubclassOf, UObjectRef, UeArray, method,
+};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use super::game_mode::TimeTrialGameMode;
@@ -201,7 +203,9 @@ impl TimeTrialPlayerController {
                     .checked()?
                     .add_to_player_screen(Some(0));
                 self.set_ui_widget(widget);
-                TimeTrialUI::from_obj(widget)?.on_race_start_add_ufunction(&me, "StartRace")?;
+                TimeTrialUI::from_obj(widget)?
+                    .on_race_start_add(method(self, Self::start_race))?
+                    .detach();
             }
             Err(_) => log::error!("Could not spawn Time Trial UI widget."),
         }

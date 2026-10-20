@@ -10,11 +10,12 @@ use bindings::input_core::EControllerHand;
 use bindings::prelude::*;
 use glam::DVec3;
 use rusteal_runtime::runtime::{
-    DynamicCall, FName, OwnedStruct, Rotator, RustealResult, SubclassOf, UObjectRef,
+    FName, OwnedStruct, Rotator, RustealResult, SubclassOf, UObjectRef, method,
 };
 use rusteal_runtime::{uclass, uclass_impl};
 
 use crate::grab_component::{EGrabType, GrabComponent};
+use crate::pawn::XRPawn;
 use crate::projectile::Projectile;
 
 #[uclass(parent = Actor)]
@@ -155,17 +156,20 @@ impl Pistol {
         me.checked()?.enable_input(controller);
 
         if !self.input_bound() {
-            bind_action_by_name(
+            let mut shoot_left = method(self, Self::shoot_left);
+            let mut shoot_right = method(self, Self::shoot_right);
+
+            bind_action(
                 &me,
                 self.shoot_left_action(),
                 ETriggerEvent::Started,
-                "ShootLeft",
+                move |_| shoot_left(),
             )?;
-            bind_action_by_name(
+            bind_action(
                 &me,
                 self.shoot_right_action(),
                 ETriggerEvent::Started,
-                "ShootRight",
+                move |_| shoot_right(),
             )?;
             self.set_input_bound(true);
         }
@@ -193,10 +197,7 @@ impl Pistol {
         let grab = self.grab()?;
         let owner = grab.motion_controller_ref().checked()?.get_owner();
 
-        let mut call = DynamicCall::new(&owner, "HideUnhideHand")?;
-        call.set("bHide", hide)?;
-        call.set("bRightHand", self.held_by_right()?)?;
-        call.call()?;
+        XRPawn::from_obj(owner)?.hide_unhide_hand(hide, self.held_by_right()?);
         Ok(())
     }
 

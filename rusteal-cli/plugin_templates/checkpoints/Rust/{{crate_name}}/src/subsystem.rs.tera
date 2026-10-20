@@ -3,7 +3,7 @@ use bindings::engine::{
     Actor, ActorExt, ControllerExt, GameplayStatics, SubsystemBlueprintLibrary, WorldSubsystem,
 };
 use bindings::rusteal::RustealWorldSubsystem;
-use rusteal_runtime::runtime::{RustealResult, SubclassOf, UObjectRef, UeClass};
+use rusteal_runtime::runtime::{RustealResult, SubclassOf, UObjectRef};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use crate::save_data::CheckpointSaveData;

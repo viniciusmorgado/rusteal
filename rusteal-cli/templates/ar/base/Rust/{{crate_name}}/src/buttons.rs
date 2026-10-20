@@ -10,7 +10,9 @@ use bindings::umg::{
     Button, ButtonExt, ESlateVisibility, Image, ImageExt, TextBlock, TextBlockExt, UserWidget,
     WidgetBlueprintLibrary, WidgetExt,
 };
-use rusteal_runtime::runtime::{FName, LinearColor, OwnedStruct, RustealResult, UObjectRef};
+use rusteal_runtime::runtime::{
+    FName, LinearColor, OwnedStruct, RustealResult, UObjectRef, method,
+};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use crate::enums::{EIconType, EUIStyle};
@@ -160,8 +162,14 @@ impl CapsuleButton {
             button.set_visibility(ESlateVisibility::Hidden);
         }
 
-        button.on_pressed().add_ufunction(&me, "ButtonPressed")?;
-        button.on_released().add_ufunction(&me, "ButtonReleased")?;
+        button
+            .on_pressed()
+            .add(method(self, Self::button_pressed))?
+            .detach();
+        button
+            .on_released()
+            .add(method(self, Self::button_released))?
+            .detach();
         Ok(())
     }
 }
@@ -359,8 +367,14 @@ impl ToggleButton {
         button.set_style(&style);
         self.change_style(EUIStyle::Light);
 
-        button.on_pressed().add_ufunction(&me, "ButtonPressed")?;
-        button.on_released().add_ufunction(&me, "ButtonReleased")?;
+        button
+            .on_pressed()
+            .add(method(self, Self::button_pressed))?
+            .detach();
+        button
+            .on_released()
+            .add(method(self, Self::button_released))?
+            .detach();
         Ok(())
     }
 }

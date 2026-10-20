@@ -7,7 +7,7 @@ use bindings::engine::{
 };
 use bindings::enhanced_input::{ETriggerEvent, FInputActionValue, InputAction};
 use bindings::prelude::*;
-use rusteal_runtime::runtime::{Rotator, RustealResult, UObjectRef, UStructRef};
+use rusteal_runtime::runtime::{Rotator, RustealResult, UObjectRef, UStructRef, method};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use model::{LookInput, MoveInput};
@@ -143,25 +143,43 @@ impl ThirdPersonCharacter {
             return Ok(false);
         }
 
-        bind_action_by_name(&me, self.jump_action(), ETriggerEvent::Started, "Jump")?;
+        bind_action(&me, self.jump_action(), ETriggerEvent::Started, move |_| {
+            if let Ok(character) = me.checked() {
+                character.jump();
+            }
+        })?;
 
-        bind_action_by_name(
+        bind_action(
             &me,
             self.jump_action(),
             ETriggerEvent::Completed,
-            "StopJumping",
+            move |_| {
+                if let Ok(character) = me.checked() {
+                    character.stop_jumping();
+                }
+            },
         )?;
 
-        bind_action_by_name(&me, self.move_action(), ETriggerEvent::Triggered, "Move")?;
+        bind_action(
+            &me,
+            self.move_action(),
+            ETriggerEvent::Triggered,
+            method(self, Self::r#move),
+        )?;
 
-        bind_action_by_name(
+        bind_action(
             &me,
             self.mouse_look_action(),
             ETriggerEvent::Triggered,
-            "Look",
+            method(self, Self::look),
         )?;
 
-        bind_action_by_name(&me, self.look_action(), ETriggerEvent::Triggered, "Look")?;
+        bind_action(
+            &me,
+            self.look_action(),
+            ETriggerEvent::Triggered,
+            method(self, Self::look),
+        )?;
 
         Ok(true)
     }

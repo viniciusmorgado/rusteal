@@ -1,7 +1,10 @@
-use bindings::engine::{GameModeBase, GameplayStatics, KismetSystemLibrary};
+use std::time::Duration;
+
+use bindings::engine::{GameModeBase, GameplayStatics};
 use bindings::prelude::*;
 use bindings::umg::UserWidgetExt;
-use rusteal_runtime::runtime::{SubclassOf, UObjectRef};
+use rusteal_runtime::runtime::timer::{self, TimerHandle};
+use rusteal_runtime::runtime::{SubclassOf, UObjectRef, method};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use super::model::{Combo, ComboUpdate};
@@ -30,6 +33,8 @@ pub struct TwinStickGameMode {
     combo: Combo,
 
     npc_count: i32,
+
+    reset_combo_timer: Option<TimerHandle>,
 }
 
 #[uclass_impl]
@@ -41,7 +46,9 @@ impl TwinStickGameMode {
 
     #[ufunction(Override)]
     fn receive_end_play(&mut self, _end_play_reason: u8) {
-        KismetSystemLibrary::k2_clear_timer(self.as_ref().upcast_to(), "ResetCombo");
+        if let Some(timer) = self.reset_combo_timer() {
+            timer.clear();
+        }
     }
 
     #[ufunction]
@@ -102,7 +109,7 @@ impl TwinStickGameMode {
         }
     }
 
-    fn apply(&self, update: ComboUpdate) {
+    fn apply(&mut self, update: ComboUpdate) {
         if update.combo_changed
             && let Ok(ui) = TwinStickUI::from_obj(self.ui_widget())
         {
@@ -110,15 +117,18 @@ impl TwinStickGameMode {
         }
 
         if update.restart_cooldown {
-            KismetSystemLibrary::k2_set_timer(
-                self.as_ref().upcast_to(),
-                "ResetCombo",
-                self.combo_cooldown(),
+            if let Some(timer) = self.reset_combo_timer() {
+                timer.clear();
+            }
+
+            let timer = timer::set_timer(
+                &self.as_ref(),
+                Duration::from_secs_f32(self.combo_cooldown()),
                 false,
-                None,
-                None,
-                None,
+                method(self, Self::reset_combo),
             );
+
+            self.set_reset_combo_timer(timer.ok());
         }
     }
 }

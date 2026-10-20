@@ -3,7 +3,7 @@ use bindings::engine::{
     MaterialInterface, PrimitiveComponentExt, StaticMeshComponent,
 };
 use bindings::prelude::*;
-use rusteal_runtime::runtime::{FName, LinearColor, RustealResult, UObjectRef};
+use rusteal_runtime::runtime::{FName, LinearColor, RustealResult, UObjectRef, method};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use crate::components;
@@ -81,7 +81,7 @@ impl TriggerLight {
         let me = self.as_ref();
 
         if let Ok(trigger) = TriggerSwitch::from_obj(self.trigger()) {
-            trigger.trigger_add_ufunction(&me, "Toggle")?;
+            trigger.trigger_add(method(self, Self::toggle))?.detach();
         }
 
         let material = KismetMaterialLibrary::create_dynamic_material_instance(

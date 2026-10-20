@@ -1,6 +1,6 @@
 use bindings::prelude::*;
 use bindings::umg::{UserWidget, UserWidgetExt, WidgetExt};
-use rusteal_runtime::runtime::{RustealResult, SubclassOf, UObjectRef};
+use rusteal_runtime::runtime::{RustealResult, SubclassOf, UObjectRef, method};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use super::model::LapTimes;
@@ -69,7 +69,9 @@ impl TimeTrialUI {
         self.set_start_ui(start_ui);
 
         let countdown = TimeTrialStartUI::from_obj(start_ui)?;
-        countdown.on_countdown_finished_add_ufunction(&self.as_ref(), "StartRace")?;
+        countdown
+            .on_countdown_finished_add(method(self, Self::start_race))?
+            .detach();
         countdown.start_countdown();
 
         Ok(())

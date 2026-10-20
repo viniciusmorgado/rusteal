@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use bindings::engine::{
     Actor, ActorExt, AnimMontage, CharacterExt, CharacterMovementComponentExt, Controller,
     DamageType, EAttachmentRule, ECollisionEnabled, EDrawDebugTrace, ETraceTypeQuery,
@@ -8,7 +10,10 @@ use bindings::engine::{
 use bindings::enhanced_input::{ETriggerEvent, InputAction};
 use bindings::prelude::*;
 use glam::DVec3;
-use rusteal_runtime::runtime::{FName, Rotator, RustealResult, SubclassOf, UObjectRef, UeArray};
+use rusteal_runtime::runtime::timer::{self, TimerHandle};
+use rusteal_runtime::runtime::{
+    FName, Rotator, RustealResult, SubclassOf, UObjectRef, UeArray, method,
+};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use super::game_mode::ShooterGameMode;
@@ -63,6 +68,8 @@ pub struct ShooterCharacter {
 
     #[uproperty(EditAnywhere, category = "Destruction", default = 5.0)]
     respawn_time: f32,
+
+    respawn_timer: Option<TimerHandle>,
 }
 
 #[uclass_impl]
@@ -102,7 +109,9 @@ impl ShooterCharacter {
 
     #[ufunction(Override)]
     fn receive_end_play(&mut self, _end_play_reason: u8) {
-        KismetSystemLibrary::k2_clear_timer(self.as_ref().upcast_to(), "OnRespawn");
+        if let Some(respawn_timer) = self.respawn_timer() {
+            respawn_timer.clear();
+        }
     }
 
     #[ufunction(Override)]
@@ -252,25 +261,25 @@ impl ShooterCharacter {
             return Ok(());
         }
 
-        bind_action_by_name(
-            &me,
-            self.fire_action(),
-            ETriggerEvent::Started,
-            "DoStartFiring",
-        )?;
+        let mut start_firing = method(self, Self::do_start_firing);
+        bind_action(&me, self.fire_action(), ETriggerEvent::Started, move |_| {
+            start_firing()
+        })?;
 
-        bind_action_by_name(
+        let mut stop_firing = method(self, Self::do_stop_firing);
+        bind_action(
             &me,
             self.fire_action(),
             ETriggerEvent::Completed,
-            "DoStopFiring",
+            move |_| stop_firing(),
         )?;
 
-        bind_action_by_name(
+        let mut switch_weapon = method(self, Self::do_switch_weapon);
+        bind_action(
             &me,
             self.switch_weapon_action(),
             ETriggerEvent::Triggered,
-            "DoSwitchWeapon",
+            move |_| switch_weapon(),
         )?;
 
         Ok(())
@@ -343,15 +352,19 @@ impl ShooterCharacter {
 
         self.bp_on_death();
 
-        KismetSystemLibrary::k2_set_timer(
-            self.as_ref().upcast_to(),
-            "OnRespawn",
-            self.respawn_time(),
+        if let Some(respawn_timer) = self.respawn_timer() {
+            respawn_timer.clear();
+        }
+
+        let respawn_timer = timer::set_timer(
+            &self.as_ref(),
+            Duration::from_secs_f32(self.respawn_time()),
             false,
-            None,
-            None,
-            None,
-        );
+            method(self, Self::on_respawn),
+        )
+        .ok();
+
+        self.set_respawn_timer(respawn_timer);
     }
 }
 
