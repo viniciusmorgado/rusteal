@@ -526,7 +526,11 @@ mod tests {
         assert!(out.contains("bind_unicast"));
         assert!(out.contains("DynamicValue"));
 
-        assert!(register_stmts(&d).to_string().contains("RustealReifyDelegateKind :: Single"));
+        assert!(
+            register_stmts(&d)
+                .to_string()
+                .contains("RustealReifyDelegateKind :: Single")
+        );
 
         let sparse: ImplItemFn = parse_quote! {
             #[udelegate(sparse)]
@@ -539,7 +543,11 @@ mod tests {
         let out = binding_methods(&parse_quote!(Npc), &d).to_string();
         assert!(out.contains("on_scored_add"));
         assert!(out.contains("bind_multicast"));
-        assert!(register_stmts(&d).to_string().contains("RustealReifyDelegateKind :: Sparse"));
+        assert!(
+            register_stmts(&d)
+                .to_string()
+                .contains("RustealReifyDelegateKind :: Sparse")
+        );
     }
 
     #[test]
