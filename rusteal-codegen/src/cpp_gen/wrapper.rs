@@ -91,10 +91,7 @@ pub fn generate_wrapper_file(entries: &[&FuncEntry], ctx: &CodegenContext) -> St
     out.push_str("#include <type_traits>\n");
     out.push('\n');
 
-    out.push_str("#ifdef _MSC_VER\n");
-    out.push_str("#pragma warning(push)\n");
-    out.push_str("#pragma warning(disable: 4996)\n");
-    out.push_str("#endif\n\n");
+    out.push_str("PRAGMA_DISABLE_DEPRECATION_WARNINGS\n\n");
 
     out.push_str("#ifndef RUSTEAL_ERROR_CODES_DEFINED\n");
     out.push_str("#define RUSTEAL_ERROR_CODES_DEFINED\n");
@@ -106,9 +103,7 @@ pub fn generate_wrapper_file(entries: &[&FuncEntry], ctx: &CodegenContext) -> St
         generate_wrapper_function(&mut out, entry, ctx);
     }
 
-    out.push_str("#ifdef _MSC_VER\n");
-    out.push_str("#pragma warning(pop)\n");
-    out.push_str("#endif\n");
+    out.push_str("PRAGMA_ENABLE_DEPRECATION_WARNINGS\n");
 
     out
 }
