@@ -21,7 +21,7 @@ use rusteal_runtime::runtime::{
     TWeakObjectPtr, Text, Transform, UObjectRef, UeClass, UeStruct, task,
 };
 
-use crate::fixtures::{ChildTestActor, Loadout, LoadoutExt, Pingable, TestActor};
+use crate::fixtures::{ChildTestActor, Loadout, LoadoutExt, Pingable, TestActor, TestLibrary};
 use crate::runner::{Check, Context, Outcome};
 
 pub const ALL: &[(&str, Check)] = &[
@@ -136,6 +136,10 @@ pub const ALL: &[(&str, Check)] = &[
     (
         "native_event_dispatches_to_the_override",
         native_event_dispatches_to_the_override,
+    ),
+    (
+        "static_functions_of_a_library",
+        static_functions_of_a_library,
     ),
     (
         "task_comes_back_to_the_game_thread",
@@ -1068,6 +1072,27 @@ fn native_event_dispatches_to_the_override(context: &Context) -> Outcome {
             as_parent.reaction_implementation(5) == 10,
             "the parent's implementation changed",
         )
+    })())
+}
+
+fn static_functions_of_a_library(_: &Context) -> Outcome {
+    done((|| {
+        let e = |e| format!("{e:?}");
+        ensure(TestLibrary::add_three(1, 2, 3) == 6, "add_three from Rust")?;
+
+        let library = SubclassOf::<TestLibrary>::base().default_object().map_err(e)?;
+
+        let mut call = DynamicCall::new(&library, "AddThree").map_err(e)?;
+        call.set_value("A", &1i32).map_err(e)?;
+        call.set_value("B", &20i32).map_err(e)?;
+        call.set_value("C", &300i32).map_err(e)?;
+        let sum: i32 = call.call().map_err(e)?.value("ReturnValue").map_err(e)?;
+        ensure(sum == 321, format!("sum {sum}"))?;
+
+        let mut call = DynamicCall::new(&library, "Shout").map_err(e)?;
+        call.set_value("Words", &"ação".to_string()).map_err(e)?;
+        let loud: String = call.call().map_err(e)?.value("ReturnValue").map_err(e)?;
+        ensure(loud == "AÇÃO", format!("loud {loud:?}"))
     })())
 }
 

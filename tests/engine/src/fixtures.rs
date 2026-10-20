@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use bindings::engine::{Material, SceneComponent};
+use bindings::engine::{BlueprintFunctionLibrary, Material, SceneComponent};
 use bindings::prelude::*;
 use rusteal_runtime::runtime::{
     FName, OwnedStruct, ScriptInterface, SoftClassRef, SoftObjectRef, TWeakObjectPtr, Text,
@@ -187,6 +187,11 @@ impl TestActor {
         class.path().to_string()
     }
 
+    #[ufunction(CallInEditor, category = "Debug")]
+    pub fn reset_count(&self) {
+        self.set_count(0);
+    }
+
     #[ufunction(BlueprintNativeEvent)]
     pub fn reaction(&self, amount: i32) -> i32 {
         amount * 2
@@ -216,5 +221,22 @@ impl ChildTestActor {
     #[ufunction(Override)]
     fn reaction(&self, amount: i32) -> i32 {
         amount * 3
+    }
+}
+
+#[uclass(parent = BlueprintFunctionLibrary)]
+pub struct TestLibrary {}
+
+#[uclass_impl]
+impl TestLibrary {
+    /// Adds three numbers.
+    #[ufunction(BlueprintPure, category = "Rusteal Tests")]
+    pub fn add_three(a: i32, b: i32, c: i32) -> i32 {
+        a + b + c
+    }
+
+    #[ufunction]
+    pub fn shout(words: String) -> String {
+        words.to_uppercase()
     }
 }
