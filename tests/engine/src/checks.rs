@@ -1,10 +1,13 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use bindings::core_ue::{FGuid, FInstancedStruct, FIntPoint, FIntPointExt};
+use bindings::core_ue::{
+    FARFilter, FARFilterExt, FGuid, FInstancedStruct, FIntPoint, FIntPointExt,
+};
 use bindings::engine::{
     ActorComponent, BlendableInterface, CameraComponent, CameraComponentExt, CurveFloat,
-    CurveFloatExt, FMinimalViewInfoExt, FPostProcessSettingsExt, FRichCurveExt, FRichCurveKey,
+    CurveFloatExt, ECollisionChannel, FMinimalViewInfoExt, FPerQualityLevelInt,
+    FPerQualityLevelIntExt, FPostProcessSettingsExt, FRichCurveExt, FRichCurveKey,
     FRichCurveKeyExt, FWeightedBlendableExt, FWeightedBlendablesExt, InputSettings,
     InputSettingsExt, KismetGuidLibrary, KismetMathLibrary, KismetStringLibrary,
     KismetSystemLibrary, KismetTextLibrary, Material, PlayerInput, PostProcessVolume,
@@ -22,7 +25,9 @@ use rusteal_runtime::runtime::{
     TWeakObjectPtr, Text, Transform, UObjectRef, UeClass, UeStruct, task,
 };
 
-use crate::fixtures::{ChildTestActor, Loadout, LoadoutExt, Pingable, TestActor, TestLibrary};
+use crate::fixtures::{
+    ChildTestActor, Loadout, LoadoutExt, Mood, Pingable, TestActor, TestLibrary,
+};
 use crate::runner::{Check, Context, Outcome};
 
 pub const ALL: &[(&str, Check)] = &[
@@ -137,6 +142,10 @@ pub const ALL: &[(&str, Check)] = &[
     ("rust_reference_properties", rust_reference_properties),
     ("rust_container_properties", rust_container_properties),
     ("rust_struct_fields", rust_struct_fields),
+    (
+        "every_other_property_kind_round_trips",
+        every_other_property_kind_round_trips,
+    ),
     (
         "ufunction_takes_and_returns_any_type",
         ufunction_takes_and_returns_any_type,
@@ -1068,6 +1077,125 @@ fn rust_container_properties(context: &Context) -> Outcome {
             .map_err(e)?;
         let (found, _, key) = KismetTextLibrary::get_text_id(captions.get(0).map_err(e)?);
         ensure(found && key == "Line", format!("caption key {key:?}"))
+    })())
+}
+
+fn every_other_property_kind_round_trips(context: &Context) -> Outcome {
+    done((|| {
+        let e = |e| format!("{e:?}");
+        let actor = test_actor(context)?;
+        let other = spawn(context)?;
+        let mesh_class = SubclassOf::<StaticMeshActor>::base().upcast_to::<Actor>();
+
+        actor.set_buddy(other.upcast());
+        actor.set_buddy_class(mesh_class);
+        actor.set_tag(FName::new("Leader"));
+        actor.set_mood(Mood::Wary);
+        actor.set_channel(ECollisionChannel::ECC_Camera);
+        actor.set_skin(&SoftObjectRef::new(DEFAULT_MATERIAL));
+        actor.set_spot(&FVector::from_dvec3(glam::DVec3::new(1.0, 2.0, 3.0)));
+        actor.set_level(200);
+        actor.set_elapsed(1.5e300);
+        actor.set_serial(i64::MIN);
+
+        let gear = OwnedStruct::<Loadout>::new();
+        gear.as_ref().set_title("Medic");
+        actor.set_gear(&gear);
+
+        ensure(
+            actor.buddy().raw() == other.raw(),
+            "the object was not kept",
+        )?;
+        ensure(
+            actor.buddy_class().raw() == mesh_class.raw(),
+            "the class was not kept",
+        )?;
+        ensure(actor.tag() == "Leader", format!("tag {}", actor.tag()))?;
+        ensure(
+            actor.mood() == Mood::Wary,
+            format!("mood {:?}", actor.mood()),
+        )?;
+        ensure(
+            actor.channel() == ECollisionChannel::ECC_Camera,
+            format!("channel {:?}", actor.channel()),
+        )?;
+        ensure(
+            actor.skin().path() == DEFAULT_MATERIAL,
+            "the soft path was lost",
+        )?;
+        ensure(
+            actor.spot().to_dvec3() == glam::DVec3::new(1.0, 2.0, 3.0),
+            format!("spot {:?}", actor.spot().to_dvec3()),
+        )?;
+        ensure(actor.level() == 200, format!("level {}", actor.level()))?;
+        ensure(
+            actor.elapsed() == 1.5e300,
+            format!("elapsed {}", actor.elapsed()),
+        )?;
+        ensure(
+            actor.serial() == i64::MIN,
+            format!("serial {}", actor.serial()),
+        )?;
+        ensure(
+            actor.gear().as_ref().title().to_string() == "Medic",
+            "the struct was not copied",
+        )?;
+
+        let shown = OwnedStruct::<Loadout>::new();
+        shown.as_ref().set_title("Scout");
+
+        let mut call = DynamicCall::new(&actor.as_ref(), "Mirror").map_err(e)?;
+        call.set_value("Buddy", &actor.as_ref().upcast())
+            .map_err(e)?;
+        call.set_value("Class", &SubclassOf::<Actor>::base())
+            .map_err(e)?;
+        call.set("Mood", Mood::Angry).map_err(e)?;
+        call.set("Channel", ECollisionChannel::ECC_Visibility)
+            .map_err(e)?;
+        call.set_value(
+            "Skin",
+            &SoftObjectRef::<Material>::new("/Game/M_Skin.M_Skin"),
+        )
+        .map_err(e)?;
+        call.set_value("Gear", &shown).map_err(e)?;
+        call.set("Level", 7u8).map_err(e)?;
+        call.set("Serial", -9i64).map_err(e)?;
+        let echoed: String = call.call().map_err(e)?.value("ReturnValue").map_err(e)?;
+
+        ensure(
+            echoed == "Angry ECC_Visibility /Game/M_Skin.M_Skin 7 -9",
+            format!("the function saw {echoed:?}"),
+        )?;
+        ensure(
+            actor.buddy().raw() == actor.as_ref().raw(),
+            "the object parameter",
+        )?;
+        ensure(
+            actor.buddy_class().raw() == SubclassOf::<Actor>::base().raw(),
+            "the class parameter",
+        )?;
+        ensure(actor.mood() == Mood::Angry, "the enum parameter")?;
+        ensure(
+            actor.gear().as_ref().title().to_string() == "Scout",
+            "the struct parameter",
+        )?;
+
+        let quality = OwnedStruct::<FPerQualityLevelInt>::new();
+        quality.as_ref().per_quality().add(&2, &40).map_err(e)?;
+        let copy = quality.clone();
+        ensure(
+            copy.as_ref().per_quality().find(&2).map_err(e)? == 40,
+            "an engine map field was not kept",
+        )?;
+
+        let filter = OwnedStruct::<FARFilter>::new();
+        let set = filter.as_ref().recursive_classes_exclusion_set();
+        set.add(&FName::new("Actor").handle()).map_err(e)?;
+        set.add(&FName::new("Actor").handle()).map_err(e)?;
+        ensure(
+            set.len().map_err(e)? == 1,
+            "an engine set field kept duplicates",
+        )
     })())
 }
 

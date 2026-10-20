@@ -1,12 +1,12 @@
 use std::collections::{HashMap, HashSet};
 
-use bindings::engine::{BlueprintFunctionLibrary, Material, SceneComponent};
+use bindings::engine::{BlueprintFunctionLibrary, ECollisionChannel, Material, SceneComponent};
 use bindings::prelude::*;
 use rusteal_runtime::runtime::{
-    FName, OwnedStruct, ScriptInterface, SoftClassRef, SoftObjectRef, TWeakObjectPtr, Text,
-    UeArray, UeMap, UeSet,
+    FName, OwnedStruct, ScriptInterface, SoftClassRef, SoftObjectRef, SubclassOf, TWeakObjectPtr,
+    Text, UObjectRef, UeArray, UeMap, UeSet,
 };
-use rusteal_runtime::{uclass, uclass_impl, uinterface, ustruct};
+use rusteal_runtime::{uclass, uclass_impl, uenum, uinterface, ustruct};
 
 #[ustruct]
 pub struct Loadout {
@@ -25,6 +25,13 @@ pub trait Pingable {
     fn ping_value(&self) -> i32;
 
     fn describe(&self, name: String, tags: Vec<FName>) -> Text;
+}
+
+#[uenum]
+pub enum Mood {
+    Calm = 0,
+    Wary = 1,
+    Angry = 3,
 }
 
 #[uclass(parent = Actor)]
@@ -98,6 +105,39 @@ pub struct TestActor {
 
     #[uproperty(EditAnywhere, meta(ClampMin = 0, ClampMax = 100, Units = "cm"))]
     range: f32,
+
+    #[uproperty(BlueprintReadWrite)]
+    buddy: UObjectRef<Actor>,
+
+    #[uproperty(BlueprintReadWrite)]
+    buddy_class: SubclassOf<Actor>,
+
+    #[uproperty(BlueprintReadWrite)]
+    tag: FName,
+
+    #[uproperty(BlueprintReadWrite)]
+    mood: Mood,
+
+    #[uproperty(BlueprintReadWrite)]
+    channel: ECollisionChannel,
+
+    #[uproperty(BlueprintReadWrite)]
+    skin: SoftObjectRef<Material>,
+
+    #[uproperty(BlueprintReadWrite)]
+    spot: OwnedStruct<FVector>,
+
+    #[uproperty(BlueprintReadWrite)]
+    gear: OwnedStruct<Loadout>,
+
+    #[uproperty(BlueprintReadWrite)]
+    level: u8,
+
+    #[uproperty(BlueprintReadWrite)]
+    elapsed: f64,
+
+    #[uproperty(BlueprintReadWrite)]
+    serial: i64,
 }
 
 #[uclass_impl]
@@ -164,6 +204,29 @@ impl TestActor {
         }
 
         counts
+    }
+
+    #[ufunction]
+    pub fn mirror(
+        &self,
+        buddy: UObjectRef<Actor>,
+        class: SubclassOf<Actor>,
+        mood: Mood,
+        channel: ECollisionChannel,
+        skin: SoftObjectRef<Material>,
+        gear: OwnedStruct<Loadout>,
+        level: u8,
+        serial: i64,
+    ) -> String {
+        self.set_buddy(buddy);
+        self.set_buddy_class(class);
+        self.set_mood(mood);
+        self.set_channel(channel);
+        self.set_skin(&skin);
+        self.set_gear(&gear);
+        self.set_level(level);
+        self.set_serial(serial);
+        format!("{mood:?} {channel:?} {} {level} {serial}", skin.path())
     }
 
     #[ufunction]
