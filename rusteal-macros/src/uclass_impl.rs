@@ -235,7 +235,7 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
                         #param_name.len() as u32,
                     );
 
-                    ::rusteal_runtime::runtime::ffi_dispatch::reflection_get_property_offset(p)
+                    (::rusteal_runtime::runtime::ffi_dispatch::reflection_get_property_offset(p), p)
                 }
             });
         }
@@ -249,7 +249,7 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
                         11u32,
                     );
 
-                    ::rusteal_runtime::runtime::ffi_dispatch::reflection_get_property_offset(p)
+                    (::rusteal_runtime::runtime::ffi_dispatch::reflection_get_property_offset(p), p)
                 }
             });
         }
@@ -264,7 +264,7 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
 
             let read_handle = quote! {
                 ::rusteal_runtime::runtime::ffi_dispatch::native_mem_read::<::rusteal_runtime::ffi::UObjectHandle>(
-                    params, offsets[#idx] as usize,
+                    params, offsets[#idx].0 as usize,
                 )
             };
 
@@ -273,12 +273,31 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
                 Type::Path(tp) if tp.path.segments.last().is_some_and(|seg| seg.ident == "OutRef")
             );
 
-            let read = match prop_type::map_type(rust_ty).map(|info| info.kind) {
+            let fn_info = prop_type::map_fn_type(rust_ty);
+
+            let read = match fn_info.as_ref().map(|info| &info.kind) {
                 _ if is_out_ref => quote! {
-                    ::rusteal_runtime::runtime::out_ref_from_param(params, offsets[#idx] as usize)
+                    ::rusteal_runtime::runtime::out_ref_from_param(params, offsets[#idx].0 as usize)
                 },
+                Some(kind) if crossed_as_property(kind) => {
+                    let info = fn_info.as_ref().expect("a supported parameter type");
+                    let (read, _) = crate::uclass::accessor_parts(
+                        kind,
+                        &info.rust_type,
+                        &quote! { ::rusteal_runtime::ffi::UObjectHandle(params as *mut std::ffi::c_void) },
+                        &param.ue_name,
+                    );
+
+                    quote! {
+                        {
+                            let prop = offsets[#idx].1;
+                            #read
+                        }
+                    }
+                }
+
                 Some(prop_type::PropKind::Struct { .. }) => quote! {
-                    ::rusteal_runtime::runtime::struct_ref_from_param(params, offsets[#idx] as usize)
+                    ::rusteal_runtime::runtime::struct_ref_from_param(params, offsets[#idx].0 as usize)
                 },
                 Some(prop_type::PropKind::Object { .. }) => quote! {
                     <#rust_ty>::from_raw(#read_handle)
@@ -295,7 +314,7 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
 
                         let raw = ::rusteal_runtime::runtime::ffi_dispatch::native_mem_read::<
                             <#rust_ty as ::rusteal_runtime::runtime::UeEnum>::Repr,
-                        >(params, offsets[#idx] as usize);
+                        >(params, offsets[#idx].0 as usize);
 
                         <#rust_ty as ::rusteal_runtime::runtime::UeEnum>::from_i64(
                             i64::try_from(raw).unwrap_or(-1),
@@ -304,7 +323,7 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
                     }
                 },
                 _ => quote! {
-                    ::rusteal_runtime::runtime::ffi_dispatch::native_mem_read::<#rust_ty>(params, offsets[#idx] as usize)
+                    ::rusteal_runtime::runtime::ffi_dispatch::native_mem_read::<#rust_ty>(params, offsets[#idx].0 as usize)
                 },
             };
 
@@ -322,12 +341,38 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
                 quote! {
                     unsafe {
                         ::rusteal_runtime::runtime::ffi_dispatch::native_mem_write(
-                            params, offsets[#ret_idx] as usize, #value,
+                            params, offsets[#ret_idx].0 as usize, #value,
                         );
                     }
                 }
             };
-            match prop_type::map_type(ret_ty).map(|info| info.kind) {
+            let ret_info = prop_type::map_fn_type(ret_ty);
+
+            match ret_info.as_ref().map(|info| &info.kind) {
+                Some(kind)
+                    if crossed_as_property(kind)
+                        && !matches!(kind, prop_type::PropKind::OwnedStruct { .. }) =>
+                {
+                    let info = ret_info.as_ref().expect("a supported return type");
+                    let (_, setter) = crate::uclass::accessor_parts(
+                        kind,
+                        &info.rust_type,
+                        &quote! { ::rusteal_runtime::ffi::UObjectHandle(params as *mut std::ffi::c_void) },
+                        "ReturnValue",
+                    );
+                    let (_, write) = setter.expect("a returned type has a setter");
+
+                    (
+                        quote! {},
+                        quote! {
+                            {
+                                let prop = offsets[#ret_idx].1;
+                                let val = __ret;
+                                #write
+                            }
+                        },
+                    )
+                }
                 Some(prop_type::PropKind::Object { .. }) => (
                     write(quote! { ::rusteal_runtime::ffi::UObjectHandle::null() }),
                     write(quote! { __ret.raw() }),
@@ -342,7 +387,7 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
                         unsafe {
                             let _ = ::rusteal_runtime::runtime::ffi_dispatch::reflection_copy_struct(
                                 <#strukt as ::rusteal_runtime::runtime::UeStruct>::static_struct(),
-                                params.add(offsets[#ret_idx] as usize),
+                                params.add(offsets[#ret_idx].0 as usize),
                                 __ret.as_bytes().as_ptr(),
                             );
                         }
@@ -440,7 +485,7 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
                 let callback_id = ::rusteal_runtime::runtime::reify_registry::register_function(
                     #struct_name::__RUSTEAL_TYPE_ID,
                     move |obj: ::rusteal_runtime::ffi::UObjectHandle, rust_data: *mut u8, params: ::rusteal_runtime::runtime::ffi_dispatch::NativePtr| {
-                        static OFFSETS: std::sync::OnceLock<[u32; #total_offsets]> = std::sync::OnceLock::new();
+                        static OFFSETS: std::sync::OnceLock<[(u32, ::rusteal_runtime::ffi::FPropertyHandle); #total_offsets]> = std::sync::OnceLock::new();
 
                         let offsets = OFFSETS.get_or_init(|| unsafe {
                             let cls = <#struct_name as ::rusteal_runtime::runtime::UeClass>::static_class();
@@ -479,7 +524,7 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
                 let reg_ty =
                     event_struct_param(&param.rust_ty).unwrap_or_else(|| param.rust_ty.clone());
 
-                let info = prop_type::map_type(&reg_ty).unwrap();
+                let info = prop_type::map_fn_type(&reg_ty).unwrap();
                 let prop_type_expr = &info.prop_type_expr;
                 let extra_expr = extra_expr(&info);
 
@@ -498,7 +543,7 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
             }
 
             if let Some(ref ret) = uf.return_type {
-                let info = prop_type::map_type(&ret.rust_ty).unwrap();
+                let info = prop_type::map_fn_type(&ret.rust_ty).unwrap();
                 let prop_type_expr = &info.prop_type_expr;
                 let extra_expr = extra_expr(&info);
 
@@ -724,25 +769,24 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
                 let event_struct =
                     kind == FnKind::ImplementableEvent && event_struct_param(&ty).is_some();
 
-                if !is_override && !event_struct && !supported_param(&ty) {
+                let supported = if kind == FnKind::ImplementableEvent {
+                    legacy_param(&ty)
+                } else {
+                    supported_param(&ty)
+                };
+
+                if !is_override && !event_struct && !supported {
                     return Err(syn::Error::new_spanned(
                         &ty,
-                        "unsupported ufunction parameter type: supported are bool/i32/i64/u8/f32/f64, \
-                         UObjectRef<T>, SubclassOf<T>, UStructRef<T> and UE enums",
+                        "unsupported ufunction parameter type: supported are what a #[uproperty] \
+                         holds, but UeArray, UeMap and UeSet: Vec<T>, HashMap<K, V> and HashSet<T> \
+                         instead, copied, and Option<ScriptInterface<dyn I>>; UStructRef<T> for a \
+                         struct the engine lends. A BlueprintImplementableEvent takes the scalars, \
+                         objects, classes, enums and &OwnedStruct<T>",
                     ));
                 }
 
                 check_event_type(&ty)?;
-
-                if is_override
-                    && prop_type::map_type(&ty).is_some_and(|info| info.kind.property_only())
-                {
-                    return Err(syn::Error::new_spanned(
-                        &ty,
-                        "an Override takes a struct as UStructRef<T>, and a scalar out \
-                         parameter as OutRef<T>",
-                    ));
-                }
 
                 let ue_name = prop_type::to_ue_name(&name.unraw().to_string());
 
@@ -785,11 +829,17 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
             } else {
                 check_event_type(ty)?;
 
-                if !is_override && !supported_return(ty) {
+                let supported = if kind == FnKind::ImplementableEvent {
+                    legacy_return(ty)
+                } else {
+                    supported_return(ty)
+                };
+
+                if !is_override && !supported {
                     return Err(syn::Error::new_spanned(
                         ty,
-                        "unsupported ufunction return type: supported are bool/i32/i64/u8/f32/f64, \
-                         UObjectRef<T>, SubclassOf<T> and UE enums",
+                        "unsupported ufunction return type: supported are what a parameter takes, \
+                         but UStructRef<T>: an OwnedStruct<T> for a struct",
                     ));
                 }
 
@@ -893,12 +943,53 @@ fn result_value(ty: &Type) -> Option<Type> {
 }
 
 pub(crate) fn supported_param(ty: &Type) -> bool {
+    prop_type::map_fn_type(ty).is_some_and(|info| {
+        !matches!(
+            info.kind,
+            prop_type::PropKind::Array { .. }
+                | prop_type::PropKind::Map { .. }
+                | prop_type::PropKind::Set { .. }
+        )
+    })
+}
+
+pub(crate) fn crossed_as_property(kind: &prop_type::PropKind) -> bool {
+    matches!(
+        kind,
+        prop_type::PropKind::Str
+            | prop_type::PropKind::Name
+            | prop_type::PropKind::Text
+            | prop_type::PropKind::RawScalar { .. }
+            | prop_type::PropKind::OwnedStruct { .. }
+            | prop_type::PropKind::SoftObject { .. }
+            | prop_type::PropKind::SoftClass { .. }
+            | prop_type::PropKind::Weak { .. }
+            | prop_type::PropKind::Interface { .. }
+            | prop_type::PropKind::Vec { .. }
+            | prop_type::PropKind::HashMap { .. }
+            | prop_type::PropKind::HashSet { .. }
+    )
+}
+
+pub(crate) fn legacy_param(ty: &Type) -> bool {
     prop_type::map_type(ty).is_some_and(|info| {
         !matches!(info.kind, prop_type::PropKind::Array { .. }) && !info.kind.property_only()
     })
 }
 
 pub(crate) fn supported_return(ty: &Type) -> bool {
+    prop_type::map_fn_type(ty).is_some_and(|info| {
+        !matches!(
+            info.kind,
+            prop_type::PropKind::Array { .. }
+                | prop_type::PropKind::Map { .. }
+                | prop_type::PropKind::Set { .. }
+                | prop_type::PropKind::Struct { .. }
+        )
+    })
+}
+
+pub(crate) fn legacy_return(ty: &Type) -> bool {
     prop_type::map_type(ty).is_some_and(|info| {
         !matches!(
             info.kind,

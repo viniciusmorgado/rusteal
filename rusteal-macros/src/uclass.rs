@@ -1170,6 +1170,344 @@ impl Accessor {
     }
 }
 
+pub(crate) type SetterParts = Option<(TokenStream, TokenStream)>;
+
+pub(crate) fn accessor_parts(
+    kind: &prop_type::PropKind,
+    rust_ty: &TokenStream,
+    container: &TokenStream,
+    ue_name: &str,
+) -> (TokenStream, SetterParts) {
+    match kind {
+        prop_type::PropKind::Scalar {
+            getter_fn,
+            setter_fn,
+            zero_expr,
+        } => {
+            let getter_dispatch = format_ident!("property_{}", getter_fn);
+            let setter_dispatch = format_ident!("property_{}", setter_fn);
+
+            (
+                quote! {
+                    let mut val: #rust_ty = #zero_expr;
+                    unsafe { ::rusteal_runtime::runtime::ffi_dispatch::#getter_dispatch(#container, prop, &mut val); }
+                    val
+                },
+                Some((
+                    quote! { #rust_ty },
+                    quote! {
+                        unsafe { ::rusteal_runtime::runtime::ffi_dispatch::#setter_dispatch(#container, prop, val); }
+                    },
+                )),
+            )
+        }
+        prop_type::PropKind::Object { .. } => (
+            quote! {
+                let mut h = ::rusteal_runtime::ffi::UObjectHandle::null();
+                unsafe { ::rusteal_runtime::runtime::ffi_dispatch::property_get_object(#container, prop, &mut h); }
+                unsafe { <#rust_ty>::from_raw(h) }
+            },
+            Some((
+                quote! { #rust_ty },
+                quote! {
+                    unsafe { ::rusteal_runtime::runtime::ffi_dispatch::property_set_object(#container, prop, val.raw()); }
+                },
+            )),
+        ),
+        prop_type::PropKind::Class { .. } => (
+            quote! {
+                let mut h = ::rusteal_runtime::ffi::UObjectHandle::null();
+                unsafe { ::rusteal_runtime::runtime::ffi_dispatch::property_get_object(#container, prop, &mut h); }
+                unsafe { <#rust_ty>::from_raw(::rusteal_runtime::ffi::UClassHandle(h.0)) }
+            },
+            Some((
+                quote! { #rust_ty },
+                quote! {
+                    unsafe {
+                        ::rusteal_runtime::runtime::ffi_dispatch::property_set_object(
+                            #container, prop, ::rusteal_runtime::ffi::UObjectHandle(val.raw().0),
+                        );
+                    }
+                },
+            )),
+        ),
+        prop_type::PropKind::Array { .. } => (quote! { <#rust_ty>::new(#container, prop) }, None),
+        prop_type::PropKind::OwnedStruct { .. } => (
+            quote! {
+                let size = unsafe { ::rusteal_runtime::runtime::ffi_dispatch::reflection_get_property_size(prop) } as usize;
+                let mut buf = vec![0u8; size];
+                ::rusteal_runtime::runtime::ffi_infallible_ctx(unsafe {
+                    ::rusteal_runtime::runtime::ffi_dispatch::property_get_struct(#container, prop, buf.as_mut_ptr(), size as u32)
+                }, #ue_name);
+                unsafe { ::rusteal_runtime::runtime::OwnedStruct::from_constructed(buf) }
+            },
+            Some((
+                quote! { &#rust_ty },
+                quote! {
+                    let bytes = val.to_bytes();
+                    ::rusteal_runtime::runtime::ffi_infallible_ctx(unsafe {
+                        ::rusteal_runtime::runtime::ffi_dispatch::property_set_struct(#container, prop, bytes.as_ptr(), bytes.len() as u32)
+                    }, #ue_name);
+                },
+            )),
+        ),
+        prop_type::PropKind::SoftObject { .. } => (
+            quote! {
+                let mut len: u32 = 0;
+                unsafe {
+                    ::rusteal_runtime::runtime::ffi_dispatch::property_get_soft_object_path(
+                        #container, prop, std::ptr::null_mut(), 0, &mut len,
+                    );
+                }
+                let mut buf = vec![0u8; len as usize];
+                unsafe {
+                    ::rusteal_runtime::runtime::ffi_dispatch::property_get_soft_object_path(
+                        #container, prop, buf.as_mut_ptr(), len, &mut len,
+                    );
+                }
+                buf.truncate(len as usize);
+                ::rusteal_runtime::runtime::SoftObjectRef::new(String::from_utf8(buf).unwrap_or_default())
+            },
+            Some((
+                quote! { &#rust_ty },
+                quote! {
+                    let path = val.path();
+                    unsafe {
+                        ::rusteal_runtime::runtime::ffi_dispatch::property_set_soft_object_path(
+                            #container, prop, path.as_ptr(), path.len() as u32,
+                        );
+                    }
+                },
+            )),
+        ),
+        prop_type::PropKind::Name => (
+            quote! {
+                let mut h = ::rusteal_runtime::runtime::FName::NONE.handle();
+                unsafe { ::rusteal_runtime::runtime::ffi_dispatch::property_get_fname(#container, prop, &mut h); }
+                ::rusteal_runtime::runtime::FName(h)
+            },
+            Some((
+                quote! { #rust_ty },
+                quote! {
+                    unsafe { ::rusteal_runtime::runtime::ffi_dispatch::property_set_fname(#container, prop, val.handle()); }
+                },
+            )),
+        ),
+        prop_type::PropKind::Str => (
+            quote! {
+                let mut len: u32 = 0;
+                unsafe {
+                    ::rusteal_runtime::runtime::ffi_dispatch::property_get_string(
+                        #container, prop, std::ptr::null_mut(), 0, &mut len,
+                    );
+                }
+                let mut buf = vec![0u8; len as usize];
+                unsafe {
+                    ::rusteal_runtime::runtime::ffi_dispatch::property_get_string(
+                        #container, prop, buf.as_mut_ptr(), len, &mut len,
+                    );
+                }
+                buf.truncate(len as usize);
+                String::from_utf8(buf).unwrap_or_default()
+            },
+            Some((
+                quote! { &str },
+                quote! {
+                    unsafe {
+                        ::rusteal_runtime::runtime::ffi_dispatch::property_set_string(
+                            #container, prop, val.as_ptr(), val.len() as u32,
+                        );
+                    }
+                },
+            )),
+        ),
+        prop_type::PropKind::Enum { ty } => (
+            quote! {
+                let mut raw: i64 = 0;
+                unsafe { ::rusteal_runtime::runtime::ffi_dispatch::property_get_enum(#container, prop, &mut raw); }
+                <#ty as ::rusteal_runtime::runtime::UeEnum>::from_i64(raw)
+                    .unwrap_or_else(|| panic!("{} holds {}, not a {}", #ue_name, raw, stringify!(#ty)))
+            },
+            Some((
+                quote! { #rust_ty },
+                quote! {
+                    unsafe {
+                        ::rusteal_runtime::runtime::ffi_dispatch::property_set_enum(
+                            #container, prop, ::rusteal_runtime::runtime::UeEnum::to_i64(val),
+                        );
+                    }
+                },
+            )),
+        ),
+        prop_type::PropKind::RawScalar { zero_expr } => (
+            quote! {
+                let mut val: #rust_ty = #zero_expr;
+                unsafe {
+                    ::rusteal_runtime::runtime::ffi_dispatch::property_get_property_at(
+                        #container, prop, 0, &mut val as *mut #rust_ty as *mut u8,
+                        std::mem::size_of::<#rust_ty>() as u32,
+                    );
+                }
+                val
+            },
+            Some((
+                quote! { #rust_ty },
+                quote! {
+                    unsafe {
+                        ::rusteal_runtime::runtime::ffi_dispatch::property_set_property_at(
+                            #container, prop, 0, &val as *const #rust_ty as *const u8,
+                            std::mem::size_of::<#rust_ty>() as u32,
+                        );
+                    }
+                },
+            )),
+        ),
+        prop_type::PropKind::Text => (
+            quote! {
+                let mut raw: *mut u8 = std::ptr::null_mut();
+                ::rusteal_runtime::runtime::ffi_infallible_ctx(unsafe {
+                    ::rusteal_runtime::runtime::ffi_dispatch::property_get_text(#container, prop, &mut raw)
+                }, #ue_name);
+                unsafe { ::rusteal_runtime::runtime::Text::from_raw(raw) }
+            },
+            Some((
+                quote! { impl Into<::rusteal_runtime::runtime::Text> },
+                quote! {
+                    let val: ::rusteal_runtime::runtime::Text = val.into();
+                    ::rusteal_runtime::runtime::ffi_infallible_ctx(unsafe {
+                        ::rusteal_runtime::runtime::ffi_dispatch::property_set_text(#container, prop, val.as_raw())
+                    }, #ue_name);
+                },
+            )),
+        ),
+        prop_type::PropKind::Weak { .. } => (
+            quote! {
+                let mut h = ::rusteal_runtime::ffi::UObjectHandle::null();
+                unsafe { ::rusteal_runtime::runtime::ffi_dispatch::property_get_object(#container, prop, &mut h); }
+                unsafe { <#rust_ty as ::rusteal_runtime::runtime::ObjectPointer>::from_object_handle(h) }
+            },
+            Some((
+                quote! { #rust_ty },
+                quote! {
+                    let h = ::rusteal_runtime::runtime::ObjectPointer::object_handle(&val);
+                    unsafe { ::rusteal_runtime::runtime::ffi_dispatch::property_set_object(#container, prop, h); }
+                },
+            )),
+        ),
+        prop_type::PropKind::SoftClass { .. } => (
+            quote! {
+                let mut len: u32 = 0;
+                unsafe {
+                    ::rusteal_runtime::runtime::ffi_dispatch::property_get_soft_object_path(
+                        #container, prop, std::ptr::null_mut(), 0, &mut len,
+                    );
+                }
+                let mut buf = vec![0u8; len as usize];
+                unsafe {
+                    ::rusteal_runtime::runtime::ffi_dispatch::property_get_soft_object_path(
+                        #container, prop, buf.as_mut_ptr(), len, &mut len,
+                    );
+                }
+                buf.truncate(len as usize);
+                <#rust_ty>::new(String::from_utf8(buf).unwrap_or_default())
+            },
+            Some((
+                quote! { &#rust_ty },
+                quote! {
+                    let path = val.path();
+                    unsafe {
+                        ::rusteal_runtime::runtime::ffi_dispatch::property_set_soft_object_path(
+                            #container, prop, path.as_ptr(), path.len() as u32,
+                        );
+                    }
+                },
+            )),
+        ),
+        prop_type::PropKind::Interface { .. } => (
+            quote! {
+                let mut h = ::rusteal_runtime::ffi::UObjectHandle::null();
+                unsafe { ::rusteal_runtime::runtime::ffi_dispatch::property_get_object(#container, prop, &mut h); }
+                <#rust_ty>::new(h).ok()
+            },
+            Some((
+                quote! { Option<#rust_ty> },
+                quote! {
+                    let h = val.map_or(::rusteal_runtime::ffi::UObjectHandle::null(), |v| v.raw());
+                    unsafe { ::rusteal_runtime::runtime::ffi_dispatch::property_set_object(#container, prop, h); }
+                },
+            )),
+        ),
+        prop_type::PropKind::Map { .. } | prop_type::PropKind::Set { .. } => {
+            (quote! { <#rust_ty>::new(#container, prop) }, None)
+        }
+        prop_type::PropKind::Vec { element } => {
+            let elem = &element.rust_type;
+
+            (
+                quote! {
+                    ::rusteal_runtime::runtime::UeArray::<#elem>::new(#container, prop)
+                        .to_vec()
+                        .unwrap_or_default()
+                },
+                Some((
+                    quote! { #rust_ty },
+                    quote! {
+                        let _ = ::rusteal_runtime::runtime::UeArray::<#elem>::new(#container, prop).set_all(&val);
+                    },
+                )),
+            )
+        }
+        prop_type::PropKind::HashSet { element } => {
+            let elem = &element.rust_type;
+
+            (
+                quote! {
+                    ::rusteal_runtime::runtime::UeSet::<#elem>::new(#container, prop)
+                        .to_hash_set()
+                        .unwrap_or_default()
+                },
+                Some((
+                    quote! { #rust_ty },
+                    quote! {
+                        let set = ::rusteal_runtime::runtime::UeSet::<#elem>::new(#container, prop);
+                        let _ = set.clear();
+
+                        for item in &val {
+                            let _ = set.add(item);
+                        }
+                    },
+                )),
+            )
+        }
+        prop_type::PropKind::HashMap { key, value } => {
+            let key_ty = &key.rust_type;
+            let value_ty = &value.rust_type;
+
+            (
+                quote! {
+                    ::rusteal_runtime::runtime::UeMap::<#key_ty, #value_ty>::new(#container, prop)
+                        .to_hash_map()
+                        .unwrap_or_default()
+                },
+                Some((
+                    quote! { #rust_ty },
+                    quote! {
+                        let map = ::rusteal_runtime::runtime::UeMap::<#key_ty, #value_ty>::new(#container, prop);
+                        let _ = map.clear();
+
+                        for (key, value) in &val {
+                            let _ = map.add(key, value);
+                        }
+                    },
+                )),
+            )
+        }
+        prop_type::PropKind::Struct { .. } => {
+            unreachable!("rejected when the field was parsed")
+        }
+    }
+}
+
 pub(crate) fn property_accessors(
     uprops: &[UPropertyField],
     container: &TokenStream,
@@ -1197,274 +1535,7 @@ pub(crate) fn property_accessors(
             });
         };
 
-        let (getter_body, setter_body) = match &info.kind {
-            prop_type::PropKind::Scalar {
-                getter_fn,
-                setter_fn,
-                zero_expr,
-            } => {
-                let getter_dispatch = format_ident!("property_{}", getter_fn);
-                let setter_dispatch = format_ident!("property_{}", setter_fn);
-
-                (
-                    quote! {
-                        let mut val: #rust_ty = #zero_expr;
-                        unsafe { ::rusteal_runtime::runtime::ffi_dispatch::#getter_dispatch(#container, prop, &mut val); }
-                        val
-                    },
-                    Some((
-                        quote! { #rust_ty },
-                        quote! {
-                            unsafe { ::rusteal_runtime::runtime::ffi_dispatch::#setter_dispatch(#container, prop, val); }
-                        },
-                    )),
-                )
-            }
-            prop_type::PropKind::Object { .. } => (
-                quote! {
-                    let mut h = ::rusteal_runtime::ffi::UObjectHandle::null();
-                    unsafe { ::rusteal_runtime::runtime::ffi_dispatch::property_get_object(#container, prop, &mut h); }
-                    unsafe { <#rust_ty>::from_raw(h) }
-                },
-                Some((
-                    quote! { #rust_ty },
-                    quote! {
-                        unsafe { ::rusteal_runtime::runtime::ffi_dispatch::property_set_object(#container, prop, val.raw()); }
-                    },
-                )),
-            ),
-            prop_type::PropKind::Class { .. } => (
-                quote! {
-                    let mut h = ::rusteal_runtime::ffi::UObjectHandle::null();
-                    unsafe { ::rusteal_runtime::runtime::ffi_dispatch::property_get_object(#container, prop, &mut h); }
-                    unsafe { <#rust_ty>::from_raw(::rusteal_runtime::ffi::UClassHandle(h.0)) }
-                },
-                Some((
-                    quote! { #rust_ty },
-                    quote! {
-                        unsafe {
-                            ::rusteal_runtime::runtime::ffi_dispatch::property_set_object(
-                                #container, prop, ::rusteal_runtime::ffi::UObjectHandle(val.raw().0),
-                            );
-                        }
-                    },
-                )),
-            ),
-            prop_type::PropKind::Array { .. } => {
-                (quote! { <#rust_ty>::new(#container, prop) }, None)
-            }
-            prop_type::PropKind::OwnedStruct { .. } => (
-                quote! {
-                    let size = unsafe { ::rusteal_runtime::runtime::ffi_dispatch::reflection_get_property_size(prop) } as usize;
-                    let mut buf = vec![0u8; size];
-                    ::rusteal_runtime::runtime::ffi_infallible_ctx(unsafe {
-                        ::rusteal_runtime::runtime::ffi_dispatch::property_get_struct(#container, prop, buf.as_mut_ptr(), size as u32)
-                    }, #ue_name);
-                    unsafe { ::rusteal_runtime::runtime::OwnedStruct::from_constructed(buf) }
-                },
-                Some((
-                    quote! { &#rust_ty },
-                    quote! {
-                        let bytes = val.to_bytes();
-                        ::rusteal_runtime::runtime::ffi_infallible_ctx(unsafe {
-                            ::rusteal_runtime::runtime::ffi_dispatch::property_set_struct(#container, prop, bytes.as_ptr(), bytes.len() as u32)
-                        }, #ue_name);
-                    },
-                )),
-            ),
-            prop_type::PropKind::SoftObject { .. } => (
-                quote! {
-                    let mut len: u32 = 0;
-                    unsafe {
-                        ::rusteal_runtime::runtime::ffi_dispatch::property_get_soft_object_path(
-                            #container, prop, std::ptr::null_mut(), 0, &mut len,
-                        );
-                    }
-                    let mut buf = vec![0u8; len as usize];
-                    unsafe {
-                        ::rusteal_runtime::runtime::ffi_dispatch::property_get_soft_object_path(
-                            #container, prop, buf.as_mut_ptr(), len, &mut len,
-                        );
-                    }
-                    buf.truncate(len as usize);
-                    ::rusteal_runtime::runtime::SoftObjectRef::new(String::from_utf8(buf).unwrap_or_default())
-                },
-                Some((
-                    quote! { &#rust_ty },
-                    quote! {
-                        let path = val.path();
-                        unsafe {
-                            ::rusteal_runtime::runtime::ffi_dispatch::property_set_soft_object_path(
-                                #container, prop, path.as_ptr(), path.len() as u32,
-                            );
-                        }
-                    },
-                )),
-            ),
-            prop_type::PropKind::Name => (
-                quote! {
-                    let mut h = ::rusteal_runtime::runtime::FName::NONE.handle();
-                    unsafe { ::rusteal_runtime::runtime::ffi_dispatch::property_get_fname(#container, prop, &mut h); }
-                    ::rusteal_runtime::runtime::FName(h)
-                },
-                Some((
-                    quote! { #rust_ty },
-                    quote! {
-                        unsafe { ::rusteal_runtime::runtime::ffi_dispatch::property_set_fname(#container, prop, val.handle()); }
-                    },
-                )),
-            ),
-            prop_type::PropKind::Str => (
-                quote! {
-                    let mut len: u32 = 0;
-                    unsafe {
-                        ::rusteal_runtime::runtime::ffi_dispatch::property_get_string(
-                            #container, prop, std::ptr::null_mut(), 0, &mut len,
-                        );
-                    }
-                    let mut buf = vec![0u8; len as usize];
-                    unsafe {
-                        ::rusteal_runtime::runtime::ffi_dispatch::property_get_string(
-                            #container, prop, buf.as_mut_ptr(), len, &mut len,
-                        );
-                    }
-                    buf.truncate(len as usize);
-                    String::from_utf8(buf).unwrap_or_default()
-                },
-                Some((
-                    quote! { &str },
-                    quote! {
-                        unsafe {
-                            ::rusteal_runtime::runtime::ffi_dispatch::property_set_string(
-                                #container, prop, val.as_ptr(), val.len() as u32,
-                            );
-                        }
-                    },
-                )),
-            ),
-            prop_type::PropKind::Enum { ty } => (
-                quote! {
-                    let mut raw: i64 = 0;
-                    unsafe { ::rusteal_runtime::runtime::ffi_dispatch::property_get_enum(#container, prop, &mut raw); }
-                    <#ty as ::rusteal_runtime::runtime::UeEnum>::from_i64(raw)
-                        .unwrap_or_else(|| panic!("{} holds {}, not a {}", #ue_name, raw, stringify!(#ty)))
-                },
-                Some((
-                    quote! { #rust_ty },
-                    quote! {
-                        unsafe {
-                            ::rusteal_runtime::runtime::ffi_dispatch::property_set_enum(
-                                #container, prop, ::rusteal_runtime::runtime::UeEnum::to_i64(val),
-                            );
-                        }
-                    },
-                )),
-            ),
-            prop_type::PropKind::RawScalar { zero_expr } => (
-                quote! {
-                    let mut val: #rust_ty = #zero_expr;
-                    unsafe {
-                        ::rusteal_runtime::runtime::ffi_dispatch::property_get_property_at(
-                            #container, prop, 0, &mut val as *mut #rust_ty as *mut u8,
-                            std::mem::size_of::<#rust_ty>() as u32,
-                        );
-                    }
-                    val
-                },
-                Some((
-                    quote! { #rust_ty },
-                    quote! {
-                        unsafe {
-                            ::rusteal_runtime::runtime::ffi_dispatch::property_set_property_at(
-                                #container, prop, 0, &val as *const #rust_ty as *const u8,
-                                std::mem::size_of::<#rust_ty>() as u32,
-                            );
-                        }
-                    },
-                )),
-            ),
-            prop_type::PropKind::Text => (
-                quote! {
-                    let mut raw: *mut u8 = std::ptr::null_mut();
-                    ::rusteal_runtime::runtime::ffi_infallible_ctx(unsafe {
-                        ::rusteal_runtime::runtime::ffi_dispatch::property_get_text(#container, prop, &mut raw)
-                    }, #ue_name);
-                    unsafe { ::rusteal_runtime::runtime::Text::from_raw(raw) }
-                },
-                Some((
-                    quote! { impl Into<::rusteal_runtime::runtime::Text> },
-                    quote! {
-                        let val: ::rusteal_runtime::runtime::Text = val.into();
-                        ::rusteal_runtime::runtime::ffi_infallible_ctx(unsafe {
-                            ::rusteal_runtime::runtime::ffi_dispatch::property_set_text(#container, prop, val.as_raw())
-                        }, #ue_name);
-                    },
-                )),
-            ),
-            prop_type::PropKind::Weak { .. } => (
-                quote! {
-                    let mut h = ::rusteal_runtime::ffi::UObjectHandle::null();
-                    unsafe { ::rusteal_runtime::runtime::ffi_dispatch::property_get_object(#container, prop, &mut h); }
-                    unsafe { <#rust_ty as ::rusteal_runtime::runtime::ObjectPointer>::from_object_handle(h) }
-                },
-                Some((
-                    quote! { #rust_ty },
-                    quote! {
-                        let h = ::rusteal_runtime::runtime::ObjectPointer::object_handle(&val);
-                        unsafe { ::rusteal_runtime::runtime::ffi_dispatch::property_set_object(#container, prop, h); }
-                    },
-                )),
-            ),
-            prop_type::PropKind::SoftClass { .. } => (
-                quote! {
-                    let mut len: u32 = 0;
-                    unsafe {
-                        ::rusteal_runtime::runtime::ffi_dispatch::property_get_soft_object_path(
-                            #container, prop, std::ptr::null_mut(), 0, &mut len,
-                        );
-                    }
-                    let mut buf = vec![0u8; len as usize];
-                    unsafe {
-                        ::rusteal_runtime::runtime::ffi_dispatch::property_get_soft_object_path(
-                            #container, prop, buf.as_mut_ptr(), len, &mut len,
-                        );
-                    }
-                    buf.truncate(len as usize);
-                    <#rust_ty>::new(String::from_utf8(buf).unwrap_or_default())
-                },
-                Some((
-                    quote! { &#rust_ty },
-                    quote! {
-                        let path = val.path();
-                        unsafe {
-                            ::rusteal_runtime::runtime::ffi_dispatch::property_set_soft_object_path(
-                                #container, prop, path.as_ptr(), path.len() as u32,
-                            );
-                        }
-                    },
-                )),
-            ),
-            prop_type::PropKind::Interface { .. } => (
-                quote! {
-                    let mut h = ::rusteal_runtime::ffi::UObjectHandle::null();
-                    unsafe { ::rusteal_runtime::runtime::ffi_dispatch::property_get_object(#container, prop, &mut h); }
-                    <#rust_ty>::new(h).ok()
-                },
-                Some((
-                    quote! { Option<#rust_ty> },
-                    quote! {
-                        let h = val.map_or(::rusteal_runtime::ffi::UObjectHandle::null(), |v| v.raw());
-                        unsafe { ::rusteal_runtime::runtime::ffi_dispatch::property_set_object(#container, prop, h); }
-                    },
-                )),
-            ),
-            prop_type::PropKind::Map { .. } | prop_type::PropKind::Set { .. } => {
-                (quote! { <#rust_ty>::new(#container, prop) }, None)
-            }
-            prop_type::PropKind::Struct { .. } => {
-                unreachable!("rejected when the field was parsed")
-            }
-        };
+        let (getter_body, setter_body) = accessor_parts(&info.kind, rust_ty, container, &ue_name);
 
         let getter_ret = if matches!(info.kind, prop_type::PropKind::Interface { .. }) {
             quote! { Option<#rust_ty> }

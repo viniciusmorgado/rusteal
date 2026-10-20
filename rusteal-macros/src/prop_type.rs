@@ -57,6 +57,16 @@ pub enum PropKind {
     Set {
         element: Box<PropTypeInfo>,
     },
+    Vec {
+        element: Box<PropTypeInfo>,
+    },
+    HashMap {
+        key: Box<PropTypeInfo>,
+        value: Box<PropTypeInfo>,
+    },
+    HashSet {
+        element: Box<PropTypeInfo>,
+    },
 }
 
 impl PropKind {
@@ -116,7 +126,9 @@ impl PropTypeInfo {
             PropKind::SoftClass { meta_class } => Some(quote! {
                 meta_class_handle: <#meta_class as ::rusteal_runtime::runtime::UeClass>::static_class(),
             }),
-            PropKind::Set { element } => {
+            PropKind::Set { element }
+            | PropKind::Vec { element }
+            | PropKind::HashSet { element } => {
                 let inner_type = &element.prop_type_expr;
                 let inner_fields = element.extra_fields().unwrap_or_default();
 
@@ -125,7 +137,7 @@ impl PropTypeInfo {
                     inner_prop_type: #inner_type as u32,
                 })
             }
-            PropKind::Map { key, value } => {
+            PropKind::Map { key, value } | PropKind::HashMap { key, value } => {
                 let key_type = &key.prop_type_expr;
                 let key_fields = key.extra_fields().unwrap_or_default();
                 let value_type = &value.prop_type_expr;
@@ -196,6 +208,61 @@ fn single_type_arg(seg: &syn::PathSegment) -> Option<Type> {
 
     let ty = types.next()?;
     types.next().is_none().then_some(ty)
+}
+
+pub fn map_fn_type(ty: &Type) -> Option<PropTypeInfo> {
+    let seg = match ty {
+        Type::Path(tp) => tp.path.segments.last()?,
+        _ => return map_type(ty),
+    };
+
+    let element = |ty: Type| {
+        let info = map_type(&ty)?;
+        info.kind.container_element().then_some(info)
+    };
+
+    let hashable = |ty: Type| {
+        let info = map_type(&ty)?;
+        info.kind.hashable().then_some(info)
+    };
+
+    let (prop_type_expr, kind) = match seg.ident.to_string().as_str() {
+        "Vec" => (
+            quote! { ::rusteal_runtime::ffi::RustealReifyPropType::Array },
+            PropKind::Vec {
+                element: Box::new(element(single_type_arg(seg)?)?),
+            },
+        ),
+        "HashSet" => (
+            quote! { ::rusteal_runtime::ffi::RustealReifyPropType::Set },
+            PropKind::HashSet {
+                element: Box::new(hashable(single_type_arg(seg)?)?),
+            },
+        ),
+        "HashMap" => {
+            let (key, value) = two_type_args(seg)?;
+
+            (
+                quote! { ::rusteal_runtime::ffi::RustealReifyPropType::Map },
+                PropKind::HashMap {
+                    key: Box::new(hashable(key)?),
+                    value: Box::new(element(value)?),
+                },
+            )
+        }
+        "Option" => {
+            let inner = map_type(&single_type_arg(seg)?)?;
+
+            return matches!(inner.kind, PropKind::Interface { .. }).then_some(inner);
+        }
+        _ => return map_type(ty),
+    };
+
+    Some(PropTypeInfo {
+        prop_type_expr,
+        rust_type: quote! { #ty },
+        kind,
+    })
 }
 
 pub fn map_type(ty: &Type) -> Option<PropTypeInfo> {
@@ -503,6 +570,9 @@ mod tests {
             PropKind::Interface { .. } => "interface",
             PropKind::Map { .. } => "map",
             PropKind::Set { .. } => "set",
+            PropKind::Vec { .. } => "vec",
+            PropKind::HashMap { .. } => "hash map",
+            PropKind::HashSet { .. } => "hash set",
         })
     }
 
