@@ -36,6 +36,11 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "Engine arrays, maps and sets of soft references hold SoftObjectRef<T>, with their paths; \
          they held the loaded objects, as UObjectRef<T>.",
     ),
+    (
+        "0.10.0",
+        "#[uclass], #[component], #[uclass_impl] and #[class_defaults] refuse arguments they do \
+         not take, which they ignored: remove the ones the compiler points at, they did nothing.",
+    ),
 ];
 
 pub fn migration_notes(from: Version, to: Version) -> Vec<(Version, &'static str)> {
@@ -237,7 +242,7 @@ glam = "0.33.8"
         assert!(migration_notes(v("0.10.0"), v("0.12.0")).is_empty());
 
         let notes = migration_notes(v("0.9.0"), v("0.10.0"));
-        assert_eq!(notes.len(), 5);
+        assert_eq!(notes.len(), 6);
         assert_eq!(notes[0].0, v("0.10.0"));
     }
 
