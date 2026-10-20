@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use bindings::core_ue::{
     FARFilter, FARFilterExt, FGuid, FInstancedStruct, FIntPoint, FIntPointExt,
@@ -9,8 +10,8 @@ use bindings::engine::{
     ActorComponent, BlendableInterface, CameraComponent, CameraComponentExt, CurveFloat,
     CurveFloatExt, ECollisionChannel, FMinimalViewInfoExt, FPerQualityLevelInt,
     FPerQualityLevelIntExt, FPostProcessSettingsExt, FRichCurveExt, FRichCurveKey,
-    FRichCurveKeyExt, FWeightedBlendableExt, FWeightedBlendablesExt, InputSettings,
-    InputSettingsExt, KismetGuidLibrary, KismetMathLibrary, KismetStringLibrary,
+    FRichCurveKeyExt, FWeightedBlendableExt, FWeightedBlendablesExt, GameplayStatics,
+    InputSettings, InputSettingsExt, KismetGuidLibrary, KismetMathLibrary, KismetStringLibrary,
     KismetSystemLibrary, KismetTextLibrary, Material, PlayerInput, PostProcessVolume,
     PostProcessVolumeExt, ProjectileMovementComponent, ProjectileMovementComponentExt,
     StaticMeshActor, TextRenderComponent, TextRenderComponentExt, TimelineComponent,
@@ -23,7 +24,7 @@ use bindings::slate_core::{
 };
 use rusteal_runtime::runtime::{
     DynamicCall, FName, Inherits, OwnedStruct, SoftClassRef, SoftObjectRef, SubclassOf,
-    TWeakObjectPtr, Text, Transform, UObjectRef, UeClass, UeStruct, task,
+    TWeakObjectPtr, Text, Transform, UObjectRef, UeClass, UeStruct, task, timer,
 };
 
 use crate::fixtures::{
@@ -175,6 +176,14 @@ pub const ALL: &[(&str, Check)] = &[
     (
         "async_task_runs_over_frames_and_stops_with_its_owner",
         async_task_runs_over_frames_and_stops_with_its_owner,
+    ),
+    (
+        "timers_fire_clear_and_free_their_closures",
+        timers_fire_clear_and_free_their_closures,
+    ),
+    (
+        "sleep_follows_world_time_and_pause",
+        sleep_follows_world_time_and_pause,
     ),
 ];
 
@@ -548,6 +557,206 @@ fn async_task_runs_over_frames_and_stops_with_its_owner(context: &Context) -> Ou
                     )
                 }),
         )
+    }))
+}
+
+fn timers_fire_clear_and_free_their_closures(context: &Context) -> Outcome {
+    let baseline = timer::live_timer_callbacks();
+
+    let started = (|| {
+        let actor = spawn(context)?;
+        let e = |e| format!("{e:?}");
+        let looping_count = Arc::new(AtomicUsize::new(0));
+        let once_count = Arc::new(AtomicUsize::new(0));
+        let event_count = Arc::new(AtomicUsize::new(0));
+
+        let counter = looping_count.clone();
+        let looping = timer::set_timer(&actor, Duration::from_millis(20), true, move || {
+            counter.fetch_add(1, Ordering::SeqCst);
+        })
+        .map_err(e)?;
+
+        let counter = once_count.clone();
+        timer::set_timer(&actor, Duration::from_millis(20), false, move || {
+            counter.fetch_add(1, Ordering::SeqCst);
+        })
+        .map_err(e)?;
+
+        for _ in 0..50 {
+            let counter = event_count.clone();
+            KismetSystemLibrary::k2_set_timer_delegate(
+                move || {
+                    counter.fetch_add(1, Ordering::SeqCst);
+                },
+                0.01,
+                false,
+                None,
+                None,
+                None,
+            );
+        }
+
+        Ok::<_, String>((looping, looping_count, once_count, event_count))
+    })();
+
+    let (looping, looping_count, once_count, event_count) = match started {
+        Ok(started) => started,
+        Err(e) => return done(Err(e)),
+    };
+
+    let mut frames = 0;
+    let mut cleared_at: Option<(usize, usize)> = None;
+
+    Outcome::Pending(Box::new(move || {
+        frames += 1;
+
+        let loops = looping_count.load(Ordering::SeqCst);
+        let events = event_count.load(Ordering::SeqCst);
+
+        match cleared_at {
+            None => {
+                if (loops < 3 || events < 50) && frames < 600 {
+                    return None;
+                }
+
+                looping.clear();
+                cleared_at = Some((loops, frames));
+                None
+            }
+            Some((loops_then, frame_then)) => {
+                if frames < frame_then + 20 {
+                    return None;
+                }
+
+                let once = once_count.load(Ordering::SeqCst);
+                let live = timer::live_timer_callbacks();
+
+                Some(
+                    ensure(
+                        loops_then >= 3,
+                        format!("the looping timer fired {loops_then} times"),
+                    )
+                    .and_then(|_| ensure(once == 1, format!("the one-shot fired {once} times")))
+                    .and_then(|_| {
+                        ensure(
+                            events == 50,
+                            format!("{events} of 50 timer delegates fired"),
+                        )
+                    })
+                    .and_then(|_| {
+                        ensure(loops == loops_then, "the looping timer fired after clear")
+                    })
+                    .and_then(|_| ensure(!looping.is_active(), "a cleared timer is active"))
+                    .and_then(|_| {
+                        ensure(
+                            live == baseline,
+                            format!("{live} timer closures alive, {baseline} before"),
+                        )
+                    }),
+                )
+            }
+        }
+    }))
+}
+
+fn sleep_follows_world_time_and_pause(context: &Context) -> Outcome {
+    let started = (|| {
+        let actor = spawn(context)?;
+        let world_slept = Arc::new(Mutex::new(None));
+        let paused_woke = Arc::new(AtomicBool::new(false));
+        let real_woke = Arc::new(AtomicBool::new(false));
+        let world: UObjectRef<bindings::core_ue::Object> = actor.upcast_to();
+
+        let sink = world_slept.clone();
+        let _measured = task::spawn_local(&actor, async move {
+            let before = GameplayStatics::get_time_seconds(world);
+            timer::sleep(&actor, Duration::from_millis(100)).await;
+            *sink.lock().unwrap() = Some(GameplayStatics::get_time_seconds(world) - before);
+        });
+
+        Ok::<_, String>((actor, world, world_slept, paused_woke, real_woke))
+    })();
+
+    let (actor, world, world_slept, paused_woke, real_woke) = match started {
+        Ok(started) => started,
+        Err(e) => return done(Err(e)),
+    };
+
+    let mut frames = 0;
+    let mut paused_at: Option<usize> = None;
+    let mut unpaused_at: Option<usize> = None;
+
+    Outcome::Pending(Box::new(move || {
+        frames += 1;
+        let slept = *world_slept.lock().unwrap();
+
+        let Some(slept) = slept else {
+            return (frames > 600).then(|| Err("the world sleep never woke".to_string()));
+        };
+
+        match (paused_at, unpaused_at) {
+            (None, _) => {
+                if !GameplayStatics::set_game_paused(world, true) {
+                    return Some(Err("the game could not be paused".to_string()));
+                }
+
+                let sink = paused_woke.clone();
+                let _paused = task::spawn_local(&actor, async move {
+                    timer::sleep(&actor, Duration::from_millis(50)).await;
+                    sink.store(true, Ordering::SeqCst);
+                });
+
+                let sink = real_woke.clone();
+                let _real = task::spawn_local(&actor, async move {
+                    timer::sleep_real(Duration::from_millis(50)).await;
+                    sink.store(true, Ordering::SeqCst);
+                });
+
+                paused_at = Some(frames);
+                None
+            }
+            (Some(at), None) => {
+                if !real_woke.load(Ordering::SeqCst) && frames < at + 600 {
+                    return None;
+                }
+
+                if frames < at + 30 {
+                    return None;
+                }
+
+                let woke_while_paused = paused_woke.load(Ordering::SeqCst);
+                GameplayStatics::set_game_paused(world, false);
+
+                if woke_while_paused {
+                    return Some(Err(
+                        "a world sleep woke while the game was paused".to_string()
+                    ));
+                }
+
+                if !real_woke.load(Ordering::SeqCst) {
+                    return Some(Err("sleep_real did not wake while paused".to_string()));
+                }
+
+                unpaused_at = Some(frames);
+                None
+            }
+            (Some(_), Some(at)) => {
+                if !paused_woke.load(Ordering::SeqCst) && frames < at + 600 {
+                    return None;
+                }
+
+                Some(
+                    ensure(slept >= 0.099, format!("the world sleep lasted {slept} s")).and_then(
+                        |_| {
+                            ensure(
+                                paused_woke.load(Ordering::SeqCst),
+                                "the world sleep did not wake after unpausing",
+                            )
+                        },
+                    ),
+                )
+            }
+        }
     }))
 }
 
