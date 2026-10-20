@@ -73,8 +73,8 @@ pub(crate) fn parse_signature(sig: &Signature) -> syn::Result<InterfaceSignature
         if !supported_param(&ty) {
             return Err(syn::Error::new_spanned(
                 &ty,
-                "unsupported interface parameter type: supported are bool/i32/i64/u8/f32/f64, \
-                 UObjectRef<T>, SubclassOf<T>, UStructRef<T> and UE enums",
+                "unsupported interface parameter type: supported are what a #[ufunction] \
+                 takes, but out parameters",
             ));
         }
 
@@ -82,6 +82,7 @@ pub(crate) fn parse_signature(sig: &Signature) -> syn::Result<InterfaceSignature
             rust_name: pat.ident.clone(),
             ue_name: prop_type::to_ue_name(&pat.ident.unraw().to_string()),
             rust_ty: ty,
+            out: false,
         });
     }
 
@@ -92,8 +93,8 @@ pub(crate) fn parse_signature(sig: &Signature) -> syn::Result<InterfaceSignature
             if !supported_return(ty) {
                 return Err(syn::Error::new_spanned(
                     ty,
-                    "unsupported interface return type: supported are bool/i32/i64/u8/f32/f64, \
-                     UObjectRef<T>, SubclassOf<T> and UE enums",
+                    "unsupported interface return type: supported are what a #[ufunction] \
+                     returns",
                 ));
             }
 
@@ -101,6 +102,7 @@ pub(crate) fn parse_signature(sig: &Signature) -> syn::Result<InterfaceSignature
                 rust_name: Ident::new("ReturnValue", proc_macro2::Span::call_site()),
                 ue_name: "ReturnValue".to_string(),
                 rust_ty: (**ty).clone(),
+                out: false,
             })
         }
     };

@@ -16,6 +16,7 @@ pub(crate) struct ParamInfo {
     pub rust_name: Ident,
     pub ue_name: String,
     pub rust_ty: Type,
+    pub out: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -256,6 +257,8 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
 
         let mut param_reads: Vec<TokenStream> = Vec::new();
         let mut param_idents: Vec<&Ident> = Vec::new();
+        let mut param_args: Vec<TokenStream> = Vec::new();
+        let mut out_writes: Vec<TokenStream> = Vec::new();
 
         for (i, param) in uf.params.iter().enumerate() {
             let rust_name = &param.rust_name;
@@ -327,9 +330,20 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
                 },
             };
 
-            param_reads.push(quote! {
-                let #rust_name: #rust_ty = unsafe { #read };
-            });
+            if param.out {
+                param_reads.push(quote! {
+                    let mut #rust_name: #rust_ty = unsafe { #read };
+                });
+
+                param_args.push(quote! { &mut #rust_name });
+                out_writes.push(out_write(param, i, fn_info.as_ref()));
+            } else {
+                param_reads.push(quote! {
+                    let #rust_name: #rust_ty = unsafe { #read };
+                });
+
+                param_args.push(quote! { #rust_name });
+            }
 
             param_idents.push(rust_name);
         }
@@ -431,12 +445,14 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
             }
         };
 
+        let _ = &param_idents;
+
         let call = match &interface {
             Some(trait_path) if uf.is_mut => {
-                quote! { #trait_path::#method_ident(&mut __this, #(#param_idents),*) }
+                quote! { #trait_path::#method_ident(&mut __this, #(#param_args),*) }
             }
-            Some(trait_path) => quote! { #trait_path::#method_ident(&__this, #(#param_idents),*) },
-            None => quote! { __this.#method_ident(#(#param_idents),*) },
+            Some(trait_path) => quote! { #trait_path::#method_ident(&__this, #(#param_args),*) },
+            None => quote! { __this.#method_ident(#(#param_args),*) },
         };
 
         let struct_label = struct_name.to_string();
@@ -501,6 +517,7 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
                         #return_zero_init
                         #this_binding
                         #call_expr
+                        #(#out_writes)*
                         #return_write
                     }
                 );
@@ -528,6 +545,12 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
                 let prop_type_expr = &info.prop_type_expr;
                 let extra_expr = extra_expr(&info);
 
+                let param_flags = if param.out {
+                    quote! { ::rusteal_runtime::ffi::CPF_PARM | ::rusteal_runtime::ffi::CPF_OUT_PARM }
+                } else {
+                    quote! { ::rusteal_runtime::ffi::CPF_PARM }
+                };
+
                 register_stmts.push(quote! {
                     unsafe {
                         ::rusteal_runtime::runtime::ffi_dispatch::reify_add_function_param(
@@ -535,7 +558,7 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
                             #param_name.as_ptr(),
                             #param_name.len() as u32,
                             #prop_type_expr as u32,
-                            ::rusteal_runtime::ffi::CPF_PARM,
+                            #param_flags,
                             #extra_expr,
                         );
                     }
@@ -764,7 +787,21 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
                     }
                 };
 
-                let ty = (*pat_type.ty).clone();
+                let (ty, out) = match &*pat_type.ty {
+                    Type::Reference(reference) if reference.mutability.is_some() => {
+                        if matches!(kind, FnKind::ImplementableEvent | FnKind::Override) {
+                            return Err(syn::Error::new_spanned(
+                                &pat_type.ty,
+                                "an out parameter (&mut T) belongs to a function Rust implements: \
+                                 a BlueprintImplementableEvent has none, and an Override takes \
+                                 the engine's as OutRef<T>",
+                            ));
+                        }
+
+                        ((*reference.elem).clone(), true)
+                    }
+                    other => (other.clone(), false),
+                };
 
                 let event_struct =
                     kind == FnKind::ImplementableEvent && event_struct_param(&ty).is_some();
@@ -789,6 +826,7 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
                     rust_name: name,
                     ue_name,
                     rust_ty: ty,
+                    out,
                 });
             }
         }
@@ -838,6 +876,7 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
                     rust_name: Ident::new("ReturnValue", proc_macro2::Span::call_site()),
                     ue_name: "ReturnValue".to_string(),
                     rust_ty: ty.clone(),
+                    out: false,
                 })
             }
         }
@@ -931,6 +970,46 @@ fn result_value(ty: &Type) -> Option<Type> {
     };
 
     is_result.then_some(value)
+}
+
+fn out_write(param: &ParamInfo, idx: usize, info: Option<&prop_type::PropTypeInfo>) -> TokenStream {
+    let rust_name = &param.rust_name;
+    let idx = syn::Index::from(idx);
+    let info = info.expect("an out parameter has a supported type");
+
+    if crossed_as_property(&info.kind) {
+        let (_, setter) = crate::uclass::accessor_parts(
+            &info.kind,
+            &info.rust_type,
+            &quote! { ::rusteal_runtime::ffi::UObjectHandle(params as *mut std::ffi::c_void) },
+            &param.ue_name,
+        );
+        let (_, write) = setter.expect("an out parameter's type has a setter");
+
+        return quote! {
+            {
+                let prop = offsets[#idx].1;
+                let val = #rust_name;
+                #write
+            }
+        };
+    }
+
+    let value = match &info.kind {
+        prop_type::PropKind::Object { .. } => quote! { #rust_name.raw() },
+        prop_type::PropKind::Class { .. } => {
+            quote! { ::rusteal_runtime::ffi::UObjectHandle(#rust_name.raw().0) }
+        }
+        _ => quote! { #rust_name },
+    };
+
+    quote! {
+        unsafe {
+            ::rusteal_runtime::runtime::ffi_dispatch::native_mem_write(
+                params, offsets[#idx].0 as usize, #value,
+            );
+        }
+    }
 }
 
 pub(crate) fn supported_param(ty: &Type) -> bool {
