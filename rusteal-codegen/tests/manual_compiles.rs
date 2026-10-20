@@ -38,6 +38,9 @@ const CLASSES: &[&str] = &[
     "UserWidget",
     "DataTable",
     "KismetSystemLibrary",
+    "Info",
+    "GameModeBase",
+    "Level",
 ];
 
 const ENUMS: &[&str] = &[

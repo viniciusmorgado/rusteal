@@ -3,6 +3,7 @@
 pub mod api;
 pub mod error;
 pub mod event;
+pub mod events;
 pub mod traits;
 
 #[allow(unused_imports, unused_unsafe, unsafe_op_in_unsafe_fn, clippy::all)]
@@ -17,6 +18,7 @@ pub mod dynamic_value;
 mod executor;
 pub mod ffi_guard;
 pub mod fname;
+pub mod http;
 pub mod input;
 pub mod latent;
 pub mod loading;

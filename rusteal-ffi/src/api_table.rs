@@ -742,6 +742,32 @@ pub struct RustealInputApi {
     pub should_display_touch_interface: unsafe extern "C" fn() -> bool,
 }
 
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RustealNativeEvent {
+    PreExit = 0,
+    WillEnterBackground = 1,
+    HasEnteredForeground = 2,
+    WillDeactivate = 3,
+    HasReactivated = 4,
+    WorldInitialized = 10,
+    WorldCleanup = 11,
+    LevelAdded = 12,
+    LevelRemoved = 13,
+    PostLogin = 20,
+    Logout = 21,
+    MoveRequestFinished = 30,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct RustealNativeEventArgs {
+    pub first: UObjectHandle,
+    pub second: UObjectHandle,
+    pub a: u32,
+    pub b: u32,
+}
+
 #[repr(C)]
 pub struct RustealConsoleArgs {
     pub args: *const u8,
@@ -894,4 +920,37 @@ pub struct RustealWorldApi {
 
     pub load_cancel: unsafe extern "C" fn(callback_id: u64) -> RustealErrorCode,
     pub loads_in_progress: unsafe extern "C" fn() -> u32,
+
+    pub bind_native_event: unsafe extern "C" fn(
+        kind: u32,
+        target: UObjectHandle,
+        callback_id: u64,
+    ) -> RustealErrorCode,
+    pub unbind_native_event: unsafe extern "C" fn(callback_id: u64) -> RustealErrorCode,
+
+    pub http_send: unsafe extern "C" fn(
+        verb: *const u8,
+        verb_len: u32,
+        url: *const u8,
+        url_len: u32,
+        headers: *const u8,
+        headers_len: u32,
+        body: *const u8,
+        body_len: u32,
+        timeout_seconds: f32,
+        callback_id: u64,
+    ) -> RustealErrorCode,
+    pub http_finish: unsafe extern "C" fn(
+        callback_id: u64,
+        out_status: *mut i32,
+        headers: *mut u8,
+        headers_capacity: u32,
+        out_headers_len: *mut u32,
+        body: *mut u8,
+        body_capacity: u32,
+        out_body_len: *mut u32,
+        out_succeeded: *mut bool,
+    ) -> RustealErrorCode,
+    pub http_cancel: unsafe extern "C" fn(callback_id: u64) -> RustealErrorCode,
+    pub http_in_progress: unsafe extern "C" fn() -> u32,
 }
