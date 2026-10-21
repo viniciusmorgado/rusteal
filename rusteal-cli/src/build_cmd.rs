@@ -23,6 +23,13 @@ pub fn canonical_no_prefix(path: &Path) -> PathBuf {
 
 pub const RUST_STEP: u8 = 4;
 
+fn steps_build_cpp(step: Option<u8>, from: u8) -> bool {
+    match step {
+        Some(s) => s == 1 || s == 3,
+        None => from <= 3,
+    }
+}
+
 pub fn run_build(
     project_root: &Path,
     engine_path: &Path,
@@ -54,6 +61,8 @@ pub fn run_build(
     });
 
     let ctx = BuildContext::new(&config, project_root, engine_path, release, plugin);
+
+    ctx.project_shims(&config, steps_build_cpp(step, from));
 
     let steps: Vec<u8> = if let Some(s) = step {
         vec![s]
@@ -495,6 +504,32 @@ impl BuildContext {
             }
 
             crate::migrate::bindings_dependency(&library.rust_workspace, &library.crate_name);
+        }
+    }
+
+    fn project_shims(&self, config: &ProjectConfig, writes: bool) {
+        let generated = self.layout.cpp_generated();
+        let shims = &config.codegen.shims;
+
+        if writes {
+            match rusteal_codegen::cpp_gen::shims::write_project_shims(&generated, shims) {
+                Ok(true) => eprintln!(
+                    "  Engine virtual bases of rusteal.toml written to {}",
+                    generated
+                        .join(rusteal_codegen::cpp_gen::shims::PROJECT_SHIMS_DIR)
+                        .display()
+                ),
+                Ok(false) => {}
+                Err(e) => {
+                    eprintln!("Error: [[codegen.shims]] in rusteal.toml: {e}");
+                    std::process::exit(1);
+                }
+            }
+        } else if !rusteal_codegen::cpp_gen::shims::project_shims_up_to_date(&generated, shims) {
+            eprintln!(
+                "Warning: [[codegen.shims]] in rusteal.toml changed: run `rusteal build --all` \
+                 to build its C++ bases before the Rust that uses them."
+            );
         }
     }
 
