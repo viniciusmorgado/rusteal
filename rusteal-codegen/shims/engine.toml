@@ -1,0 +1,8 @@
+[[shim]]
+class = "RustealActor"
+parent = "AActor"
+include = ["GameFramework/Actor.h"]
+virtuals = [
+    "void PreInitializeComponents()",
+    "void PostInitializeComponents()",
+]
