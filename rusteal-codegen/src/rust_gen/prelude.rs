@@ -59,7 +59,7 @@ const ENTRIES: &[(&str, &str)] = &[
     ("input", "crate::manual::fkey::FKeyExt"),
     (
         "enhanced-input",
-        "crate::manual::input_ext::{ActionBinding, InputActionValueExt, bind_action, bind_action_by_name, enhanced_input_subsystem}",
+        "crate::manual::input_ext::{ActionBinding, ActionInstance, InputActionValueExt, bind_action, bind_action_by_name, bind_action_instance, enhanced_input_subsystem}",
     ),
 ];
 

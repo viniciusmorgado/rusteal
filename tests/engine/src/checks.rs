@@ -29,7 +29,7 @@ use bindings::enhanced_input::{
     EnhancedInputLocalPlayerSubsystemExt, InputAction,
 };
 use bindings::manual::events::world_events;
-use bindings::manual::input_ext::{bind_action, enhanced_input_subsystem};
+use bindings::manual::input_ext::{bind_action, bind_action_instance, enhanced_input_subsystem};
 use bindings::prelude::*;
 use bindings::slate_core::{
     EVerticalAlignment, FSlateBrush, FToolBarStyle, FToolBarStyleExt, FWrapButtonStyle,
@@ -1579,6 +1579,23 @@ fn input_and_delegates_reach_closures_and_methods(context: &Context) -> Outcome 
         )
         .map_err(e)?;
 
+        let instances = Arc::new(Mutex::new(Vec::new()));
+        let seen = instances.clone();
+
+        let _kept = bind_action_instance(
+            &controller,
+            action,
+            ETriggerEvent::Triggered,
+            move |instance| {
+                seen.lock().unwrap().push((
+                    instance.value.get_bool(),
+                    instance.action.raw() == action.raw(),
+                    instance.elapsed_seconds,
+                ));
+            },
+        )
+        .map_err(e)?;
+
         let subsystem = enhanced_input_subsystem(controller).map_err(e)?;
 
         Ok::<_, String>((
@@ -1589,13 +1606,15 @@ fn input_and_delegates_reach_closures_and_methods(context: &Context) -> Outcome 
             closure,
             presses,
             pinged,
+            instances,
         ))
     })();
 
-    let (actor, action, pinned_action, subsystem, closure, presses, pinged) = match started {
-        Ok(started) => started,
-        Err(e) => return done(Err(e)),
-    };
+    let (actor, action, pinned_action, subsystem, closure, presses, pinged, instances) =
+        match started {
+            Ok(started) => started,
+            Err(e) => return done(Err(e)),
+        };
 
     let mut frames = 0;
     let mut closure = Some(closure);
@@ -1656,6 +1675,19 @@ fn input_and_delegates_reach_closures_and_methods(context: &Context) -> Outcome 
                 ensure(
                     jumps as usize > presses_when_unbound,
                     format!("the method bound to the action ran {jumps} times"),
+                )
+            })
+            .and_then(|_| {
+                let instances = instances.lock().unwrap();
+                ensure(
+                    !instances.is_empty()
+                        && instances
+                            .iter()
+                            .all(|(pressed, same, elapsed)| *pressed && *same && *elapsed >= 0.0),
+                    format!(
+                        "bind_action_instance saw {:?}",
+                        &instances[..instances.len().min(3)]
+                    ),
                 )
             }),
         )

@@ -76,6 +76,44 @@ pub fn bind_action(
     Ok(ActionBinding { actor, handle })
 }
 
+/// What [`bind_action_instance`] gives its callback: the action's value, how long it has been
+/// evaluated and triggered, and the action itself.
+#[derive(Debug)]
+pub struct ActionInstance {
+    pub value: UStructRef<FInputActionValue>,
+    pub elapsed_seconds: f32,
+    pub triggered_seconds: f32,
+    pub action: UObjectRef<InputAction>,
+}
+
+/// [`bind_action`] with the action's times and the action itself, as an [`ActionInstance`].
+#[track_caller]
+pub fn bind_action_instance(
+    actor: &UObjectRef<impl UeClass>,
+    action: UObjectRef<InputAction>,
+    trigger_event: ETriggerEvent,
+    mut callback: impl FnMut(ActionInstance) + Send + 'static,
+) -> RustealResult<ActionBinding> {
+    let actor = actor.checked()?.raw();
+    let action = action.checked()?.raw();
+
+    let handle = rusteal_core::input::bind_action_closure_raw(
+        actor,
+        action,
+        trigger_event as u8,
+        move |args| {
+            callback(ActionInstance {
+                value: unsafe { rusteal_core::struct_ref_from_param(args.value as *mut u8, 0) },
+                elapsed_seconds: args.elapsed_seconds,
+                triggered_seconds: args.triggered_seconds,
+                action: unsafe { UObjectRef::from_raw(args.action) },
+            });
+        },
+    )?;
+
+    Ok(ActionBinding { actor, handle })
+}
+
 /// Binds the UFunction named `function` of `actor`, as Blueprint's input events do: for a
 /// function a Blueprint defines. Rust code binds a closure or a method with [`bind_action`].
 #[track_caller]
