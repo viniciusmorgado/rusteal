@@ -18,6 +18,7 @@ public class Rusteal : ModuleRules
             "Slate",
             "UMG",
             "EnhancedInput",
+            "GameplayTags",
         ]);
 
         PrivateDependencyModuleNames.Add("Projects");

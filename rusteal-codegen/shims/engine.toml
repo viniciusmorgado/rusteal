@@ -112,3 +112,14 @@ parent = "UCommandlet"
 include = ["Commandlets/Commandlet.h"]
 virtuals = ["int32 Main(const FString &Params)"]
 
+[[shim]]
+class = "RustealTaggedActor"
+parent = "AActor"
+include = ["GameFramework/Actor.h"]
+category = "Rusteal|GameplayTags"
+sets = ["actor"]
+
+[[shim.interfaces]]
+name = "IGameplayTagAssetInterface"
+include = ["GameplayTagAssetInterface.h"]
+virtuals = ["void GetOwnedGameplayTags(FGameplayTagContainer &TagContainer) const"]
