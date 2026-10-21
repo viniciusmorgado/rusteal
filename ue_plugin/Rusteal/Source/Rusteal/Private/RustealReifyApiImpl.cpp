@@ -795,6 +795,17 @@ static ERustealErrorCode AddDefaultSubobjectImpl(
   if (!CompUClass)
     return RustealFail(ERustealErrorCode::PropertyNotFound);
 
+  if ((Flags & 4) != 0) {
+    const FName SubobjectName(ReifyUtf8ToFString(Name, NameLen));
+    RC->SubobjectOverrides.Add(SubobjectName, CompUClass);
+
+    UE_LOG(LogRusteal, Display,
+           TEXT("[Rusteal] %s creates its inherited subobject '%s' as a %s"),
+           *RC->GetName(), *SubobjectName.ToString(), *CompUClass->GetName());
+
+    return ERustealErrorCode::Ok;
+  }
+
   FRustealComponentDef Def;
   Def.SubobjectName = FName(ReifyUtf8ToFString(Name, NameLen));
   Def.ComponentClass = CompUClass;

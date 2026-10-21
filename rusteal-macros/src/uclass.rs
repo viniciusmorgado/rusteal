@@ -13,6 +13,7 @@ struct UClassArgs {
     implements: Vec<String>,
     rust_interfaces: Vec<syn::Path>,
     config: Option<String>,
+    subobject_classes: Vec<(String, syn::Path)>,
 }
 
 fn parse_uclass_args(attr: TokenStream) -> syn::Result<UClassArgs> {
@@ -23,8 +24,42 @@ fn parse_uclass_args(attr: TokenStream) -> syn::Result<UClassArgs> {
     let mut implements = Vec::new();
     let mut rust_interfaces = Vec::new();
     let mut config = None;
+    let mut subobject_classes = Vec::new();
 
     for meta in &metas {
+        if let Meta::List(list) = meta
+            && list.path.is_ident("subobject_class")
+        {
+            let pairs = list
+                .parse_args_with(Punctuated::<syn::MetaNameValue, Token![,]>::parse_terminated)?;
+
+            for pair in pairs {
+                let name = pair
+                    .path
+                    .get_ident()
+                    .map(|ident| ident.unraw().to_string())
+                    .ok_or_else(|| {
+                        syn::Error::new_spanned(
+                            &pair.path,
+                            "subobject_class names an inherited subobject: \
+                             subobject_class(CharMoveComp = HeroMovement)",
+                        )
+                    })?;
+
+                let Expr::Path(class) = &pair.value else {
+                    return Err(syn::Error::new_spanned(
+                        &pair.value,
+                        "the class of a subobject is a type path: \
+                         subobject_class(CharMoveComp = HeroMovement)",
+                    ));
+                };
+
+                subobject_classes.push((name, class.path.clone()));
+            }
+
+            continue;
+        }
+
         if let Meta::NameValue(nv) = meta
             && nv.path.is_ident("config")
         {
@@ -82,8 +117,8 @@ fn parse_uclass_args(attr: TokenStream) -> syn::Result<UClassArgs> {
 
         return Err(syn::Error::new_spanned(
             meta,
-            "unknown #[uclass] argument: expected parent = ..., implements = [...] or \
-             config = \"...\"",
+            "unknown #[uclass] argument: expected parent = ..., implements = [...], \
+             config = \"...\" or subobject_class(...)",
         ));
     }
 
@@ -111,6 +146,7 @@ fn parse_uclass_args(attr: TokenStream) -> syn::Result<UClassArgs> {
         implements,
         rust_interfaces,
         config,
+        subobject_classes,
     })
 }
 
@@ -567,6 +603,9 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
             let ty = &c.component_type;
             quote! { <#ty as ::rusteal_runtime::runtime::UeClass>::RUST_TYPE_ID }
         })
+        .chain(args.subobject_classes.iter().map(|(_, ty)| {
+            quote! { <#ty as ::rusteal_runtime::runtime::UeClass>::RUST_TYPE_ID }
+        }))
         .collect();
 
     let shape_value = shape::hash(
@@ -897,6 +936,29 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
                         #flags,
                         #attach_ptr, #attach_len,
                         #socket_ptr, #socket_len,
+                    );
+                }
+            }
+        });
+    }
+
+    for (name, ty) in &args.subobject_classes {
+        let name_bytes = name.as_bytes();
+        let name_len = name.len() as u32;
+
+        add_comp_stmts.push(quote! {
+            {
+                let comp_class = <#ty as ::rusteal_runtime::runtime::UeClass>::static_class();
+
+                unsafe {
+                    ::rusteal_runtime::runtime::ffi_dispatch::reify_add_default_subobject(
+                        class,
+                        [#(#name_bytes),*].as_ptr(), #name_len,
+                        std::ptr::null(), 0u32,
+                        comp_class,
+                        4u32,
+                        std::ptr::null(), 0u32,
+                        std::ptr::null(), 0u32,
                     );
                 }
             }
@@ -1955,6 +2017,20 @@ mod tests {
 
         let attr: syn::Attribute = parse_quote!(#[component(root, name = "Body")]);
         assert!(parse_component_args(&attr).unwrap().is_root);
+    }
+
+    #[test]
+    fn subobject_classes_replace_inherited_subobjects() {
+        let args = parse_uclass_args(
+            quote! { parent = RustealCharacter, subobject_class(CharMoveComp = HeroMovement) },
+        )
+        .unwrap();
+
+        assert_eq!(args.subobject_classes.len(), 1);
+        assert_eq!(args.subobject_classes[0].0, "CharMoveComp");
+
+        assert!(parse_uclass_args(quote! { parent = Actor, subobject_class(Mesh = "X") }).is_err());
+        assert!(parse_uclass_args(quote! { parent = Actor, subobject_class(a::b = X) }).is_err());
     }
 
     #[test]
