@@ -186,3 +186,58 @@ void URustealSceneComponent::TickComponent(float DeltaTime, ELevelTick TickType,
   Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
   ReceiveTickComponent(DeltaTime);
 }
+
+void URustealUserWidget::NativeOnInitialized() {
+  Super::NativeOnInitialized();
+  ReceiveOnInitialized();
+}
+
+void URustealUserWidget::NativePreConstruct() {
+  Super::NativePreConstruct();
+  ReceivePreConstruct();
+}
+
+void URustealUserWidget::NativeConstruct() {
+  Super::NativeConstruct();
+  ReceiveConstruct();
+}
+
+void URustealUserWidget::NativeDestruct() {
+  ReceiveDestruct();
+  Super::NativeDestruct();
+}
+
+void URustealUserWidget::NativeTick(const FGeometry &MyGeometry, float InDeltaTime) {
+  Super::NativeTick(MyGeometry, InDeltaTime);
+  ReceiveTick(MyGeometry, InDeltaTime);
+}
+
+void URustealAnimInstance::NativeInitializeAnimation() {
+  Super::NativeInitializeAnimation();
+  ReceiveInitializeAnimation();
+}
+
+void URustealAnimInstance::NativeBeginPlay() {
+  Super::NativeBeginPlay();
+  ReceiveBeginPlay();
+}
+
+void URustealAnimInstance::NativeUpdateAnimation(float DeltaSeconds) {
+  Super::NativeUpdateAnimation(DeltaSeconds);
+  ReceiveUpdateAnimation(DeltaSeconds);
+}
+
+void URustealAnimInstance::NativeThreadSafeUpdateAnimation(float DeltaSeconds) {
+  Super::NativeThreadSafeUpdateAnimation(DeltaSeconds);
+  ReceiveThreadSafeUpdateAnimation(DeltaSeconds);
+}
+
+void URustealAnimInstance::NativePostEvaluateAnimation() {
+  Super::NativePostEvaluateAnimation();
+  ReceivePostEvaluateAnimation();
+}
+
+void URustealAnimInstance::NativeUninitializeAnimation() {
+  ReceiveUninitializeAnimation();
+  Super::NativeUninitializeAnimation();
+}

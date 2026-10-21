@@ -8,6 +8,8 @@
 #include "GameFramework/GameModeBase.h"
 #include "Components/ActorComponent.h"
 #include "Components/SceneComponent.h"
+#include "Blueprint/UserWidget.h"
+#include "Animation/AnimInstance.h"
 #include "RustealShims.generated.h"
 
 UCLASS(Abstract, Blueprintable)
@@ -201,4 +203,62 @@ public:
 
   UFUNCTION(BlueprintImplementableEvent, Category = "Rusteal|SceneComponent")
   void ReceiveTickComponent(float DeltaTime);
+};
+
+UCLASS(Abstract, Blueprintable)
+class RUSTEAL_API URustealUserWidget : public UUserWidget {
+  GENERATED_BODY()
+
+public:
+  virtual void NativeOnInitialized() override;
+  virtual void NativePreConstruct() override;
+  virtual void NativeConstruct() override;
+  virtual void NativeDestruct() override;
+  virtual void NativeTick(const FGeometry &MyGeometry, float InDeltaTime) override;
+
+  UFUNCTION(BlueprintImplementableEvent, Category = "Rusteal|UserWidget")
+  void ReceiveOnInitialized();
+
+  UFUNCTION(BlueprintImplementableEvent, Category = "Rusteal|UserWidget")
+  void ReceivePreConstruct();
+
+  UFUNCTION(BlueprintImplementableEvent, Category = "Rusteal|UserWidget")
+  void ReceiveConstruct();
+
+  UFUNCTION(BlueprintImplementableEvent, Category = "Rusteal|UserWidget")
+  void ReceiveDestruct();
+
+  UFUNCTION(BlueprintImplementableEvent, Category = "Rusteal|UserWidget")
+  void ReceiveTick(const FGeometry &MyGeometry, float InDeltaTime);
+};
+
+UCLASS(Abstract, Blueprintable)
+class RUSTEAL_API URustealAnimInstance : public UAnimInstance {
+  GENERATED_BODY()
+
+public:
+  virtual void NativeInitializeAnimation() override;
+  virtual void NativeBeginPlay() override;
+  virtual void NativeUpdateAnimation(float DeltaSeconds) override;
+  virtual void NativeThreadSafeUpdateAnimation(float DeltaSeconds) override;
+  virtual void NativePostEvaluateAnimation() override;
+  virtual void NativeUninitializeAnimation() override;
+
+  UFUNCTION(BlueprintImplementableEvent, Category = "Rusteal|AnimInstance")
+  void ReceiveInitializeAnimation();
+
+  UFUNCTION(BlueprintImplementableEvent, Category = "Rusteal|AnimInstance")
+  void ReceiveBeginPlay();
+
+  UFUNCTION(BlueprintImplementableEvent, Category = "Rusteal|AnimInstance")
+  void ReceiveUpdateAnimation(float DeltaSeconds);
+
+  UFUNCTION(BlueprintImplementableEvent, Category = "Rusteal|AnimInstance", meta = (BlueprintThreadSafe))
+  void ReceiveThreadSafeUpdateAnimation(float DeltaSeconds);
+
+  UFUNCTION(BlueprintImplementableEvent, Category = "Rusteal|AnimInstance")
+  void ReceivePostEvaluateAnimation();
+
+  UFUNCTION(BlueprintImplementableEvent, Category = "Rusteal|AnimInstance")
+  void ReceiveUninitializeAnimation();
 };
