@@ -98,18 +98,18 @@ refers to the next section.
 | Timers with closures (`FTimerManager`), not by function name | done | M2 |
 | Native (non-dynamic) engine delegates: `FCoreDelegates`, `FWorldDelegates`, `OnRequestFinished` | done (a curated list) | M2 |
 | Input actions and delegates bound to a method or a closure, checked at compile time, not by name | done | M2 |
-| `FTickFunction`: tick groups and prerequisites | missing | M3 |
+| `FTickFunction`: tick groups and prerequisites | done (`add_tick_function`) | M3 |
 
 ### Native extension points (tier 3)
 
 | Gap | Status | Milestone |
 |---|---|---|
-| A general shim generator: C++ bases that re-expose chosen virtuals as events, generated from a list, as the subsystem bases are written by hand today | missing | M3 |
-| Actor and component virtuals without a Blueprint event: `PostInitializeComponents`, `TickComponent`, `PostLoad`, `IsNetRelevantFor`... | missing | M3 |
-| UMG `NativeConstruct`/`NativeTick`/`NativeOn*`, `NativeUpdateAnimation`, `NativeThreadSafeUpdateAnimation` | missing | M3 |
-| C++-only interfaces (`CannotImplementInterfaceInBlueprint`) | missing | M3 |
-| Character movement custom modes, `FSavedMove_Character` prediction | missing | M3 (modes), after 1.0 (saved moves) |
-| Commandlets | missing | M3 |
+| A general shim generator: C++ bases that re-expose chosen virtuals as events, generated from a list, as the subsystem bases are written by hand today | done (curated list and `[[codegen.shims]]`) | M3 |
+| Actor and component virtuals without a Blueprint event: `PostInitializeComponents`, `TickComponent`, `PostLoad`, `IsNetRelevantFor`... | done for the lifecycle (`PostLoad` left out: it can run while loading; `IsNetRelevantFor` is M7) | M3 |
+| UMG `NativeConstruct`/`NativeTick`/`NativeOn*`, `NativeUpdateAnimation`, `NativeThreadSafeUpdateAnimation` | done (`NativeOn*` input handlers through `[[codegen.shims]]`; thread-safe update on a worker, with `ThreadSafe`) | M3 |
+| C++-only interfaces (`CannotImplementInterfaceInBlueprint`) | done (`IGameplayTagAssetInterface` curated, others through `[[codegen.shims]]`) | M3 |
+| Character movement custom modes, `FSavedMove_Character` prediction | modes done (`PhysCustom`, `subobject_class`) | M3 (modes), after 1.0 (saved moves) |
+| Commandlets | done | M3 |
 
 ### Gameplay frameworks
 
@@ -303,6 +303,18 @@ Where Rust can be better than C++ and Blueprint, not only equal.
 in a template; nothing in the templates binds by a function's name.
 
 ### M3 — Native extension points (≈0.13, L)
+
+**Status (2026-10-21):** done, on Linux. `cargo xtask engine-test` runs 66
+checks, among them every curated virtual overridden from Rust (actors, pawns,
+characters, controllers, game modes, components, widgets, animation
+instances, character movement), a base declared in the harness's
+`rusteal.toml`, tick functions ordered by prerequisites, the animation's
+thread-safe update on a worker thread (and an override without `ThreadSafe`
+refused there), a custom movement mode on a movement component chosen with
+`subobject_class`, `IGameplayTagAssetInterface` implemented in Rust, and a
+Rust commandlet run by a second editor. Left: a widget's `NativeTick` (not
+checked by the harness), engine calls from a `ThreadSafe` function
+(not checked), Windows and macOS.
 
 - A shim generator: a list of virtuals in `rusteal.toml` (or a curated
   default) becomes C++ bases that call Rust, as the subsystem bases do.
