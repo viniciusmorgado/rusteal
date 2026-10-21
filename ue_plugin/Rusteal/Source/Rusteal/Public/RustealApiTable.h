@@ -641,6 +641,18 @@ struct FRustealWorldApi {
                                    bool *out_succeeded);
   ERustealErrorCode (*http_cancel)(uint64 callback_id);
   uint32 (*http_in_progress)();
+
+  ERustealErrorCode (*add_tick_function)(RustealUObjectHandle target,
+                                         uint8 group, uint64 callback_id);
+  void (*remove_tick_function)(uint64 callback_id);
+  ERustealErrorCode (*tick_function_set_enabled)(uint64 callback_id,
+                                                 bool enabled);
+  ERustealErrorCode (*tick_function_set_interval)(uint64 callback_id,
+                                                  float seconds);
+  ERustealErrorCode (*tick_function_add_prerequisite)(
+      uint64 callback_id, RustealUObjectHandle object,
+      uint64 other_callback_id);
+  uint32 (*live_tick_functions)();
 };
 
 struct FRustealPlatformApi {

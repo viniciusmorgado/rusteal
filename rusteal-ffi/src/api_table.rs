@@ -971,4 +971,21 @@ pub struct RustealWorldApi {
     ) -> RustealErrorCode,
     pub http_cancel: unsafe extern "C" fn(callback_id: u64) -> RustealErrorCode,
     pub http_in_progress: unsafe extern "C" fn() -> u32,
+
+    pub add_tick_function: unsafe extern "C" fn(
+        target: UObjectHandle,
+        group: u8,
+        callback_id: u64,
+    ) -> RustealErrorCode,
+    pub remove_tick_function: unsafe extern "C" fn(callback_id: u64),
+    pub tick_function_set_enabled:
+        unsafe extern "C" fn(callback_id: u64, enabled: bool) -> RustealErrorCode,
+    pub tick_function_set_interval:
+        unsafe extern "C" fn(callback_id: u64, seconds: f32) -> RustealErrorCode,
+    pub tick_function_add_prerequisite: unsafe extern "C" fn(
+        callback_id: u64,
+        object: UObjectHandle,
+        other_callback_id: u64,
+    ) -> RustealErrorCode,
+    pub live_tick_functions: unsafe extern "C" fn() -> u32,
 }
