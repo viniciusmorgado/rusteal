@@ -53,6 +53,13 @@ const MIGRATIONS: &[(&str, &str)] = &[
          checked by the compiler; the binding by function name is bind_action_by_name, for a \
          function a Blueprint defines.",
     ),
+    (
+        "0.10.0",
+        "A Rust function the engine calls on a worker thread no longer runs there: an override \
+         of blueprint_thread_safe_update_animation, or of another thread-safe event, takes \
+         #[ufunction(Override, ThreadSafe)] and the class's <Class>ThreadSafe view instead of \
+         &self or &mut self.",
+    ),
 ];
 
 pub fn migration_notes(from: Version, to: Version) -> Vec<(Version, &'static str)> {
@@ -254,7 +261,7 @@ glam = "0.33.8"
         assert!(migration_notes(v("0.10.0"), v("0.12.0")).is_empty());
 
         let notes = migration_notes(v("0.9.0"), v("0.10.0"));
-        assert_eq!(notes.len(), 8);
+        assert_eq!(notes.len(), 9);
         assert_eq!(notes[0].0, v("0.10.0"));
     }
 
