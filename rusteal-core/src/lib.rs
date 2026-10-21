@@ -39,6 +39,7 @@ pub mod subclass_of;
 mod sync;
 pub mod task;
 pub mod text;
+pub mod tick;
 pub mod time;
 pub mod timer;
 pub mod ue_math;

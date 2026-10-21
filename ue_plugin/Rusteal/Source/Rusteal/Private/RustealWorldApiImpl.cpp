@@ -260,6 +260,15 @@ ERustealErrorCode RustealHttp_Finish(uint64 CallbackId, int32 *OutStatus,
                                      bool *OutSucceeded);
 ERustealErrorCode RustealHttp_Cancel(uint64 CallbackId);
 uint32 RustealHttp_InProgress();
+ERustealErrorCode RustealTick_Add(RustealUObjectHandle Target, uint8 Group,
+                                  uint64 CallbackId);
+void RustealTick_Remove(uint64 CallbackId);
+ERustealErrorCode RustealTick_SetEnabled(uint64 CallbackId, bool bEnabled);
+ERustealErrorCode RustealTick_SetInterval(uint64 CallbackId, float Seconds);
+ERustealErrorCode RustealTick_AddPrerequisite(uint64 CallbackId,
+                                              RustealUObjectHandle Object,
+                                              uint64 OtherCallbackId);
+uint32 RustealTick_LiveFunctions();
 
 FRustealWorldApi GWorldApi = {
     &SpawnActorImpl,
@@ -289,4 +298,10 @@ FRustealWorldApi GWorldApi = {
     &RustealHttp_Finish,
     &RustealHttp_Cancel,
     &RustealHttp_InProgress,
+    &RustealTick_Add,
+    &RustealTick_Remove,
+    &RustealTick_SetEnabled,
+    &RustealTick_SetInterval,
+    &RustealTick_AddPrerequisite,
+    &RustealTick_LiveFunctions,
 };
