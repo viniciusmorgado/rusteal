@@ -26,6 +26,18 @@ impl<T: UeStruct> UStructRef<T> {
     pub fn to_owned(&self) -> crate::containers::OwnedStruct<T> {
         crate::containers::OwnedStruct::copy_from(self)
     }
+
+    /// Replaces the struct this refers to with a copy of `value`, as an assignment does in C++:
+    /// what an out parameter of an engine event gives back.
+    pub fn assign(&self, value: &crate::containers::OwnedStruct<T>) {
+        crate::error::ffi_infallible(unsafe {
+            crate::ffi_dispatch::reflection_copy_struct(
+                T::static_struct(),
+                self.ptr,
+                value.as_bytes().as_ptr(),
+            )
+        });
+    }
 }
 
 #[inline(always)]
