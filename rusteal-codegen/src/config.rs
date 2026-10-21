@@ -120,6 +120,8 @@ pub struct CodegenConfig {
     pub modules: HashMap<String, ModuleMapping>,
     #[serde(default)]
     pub blocklist: Blocklist,
+    #[serde(default)]
+    pub shims: Vec<crate::cpp_gen::shims::ShimSpec>,
 }
 
 #[derive(Deserialize, Clone)]

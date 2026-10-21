@@ -65,6 +65,14 @@ pub fn run_generate_plugin_library(
         );
     }
 
+    if !library.codegen.shims.is_empty() {
+        eprintln!(
+            "  Warning: [[codegen.shims]] in {}'s rusteal.toml is ignored: engine virtual bases \
+             are declared in the project's rusteal.toml",
+            plugin.name
+        );
+    }
+
     generate_library(
         &layout.uht_json(),
         &library.codegen,
