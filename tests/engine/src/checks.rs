@@ -255,6 +255,10 @@ pub const ALL: &[(&str, Check)] = &[
         "custom_movement_reaches_rust",
         crate::movement_commandlet::custom_movement_reaches_rust,
     ),
+    (
+        "cpp_only_interface_reaches_rust",
+        crate::interfaces::cpp_only_interface_reaches_rust,
+    ),
 ];
 
 fn ensure(condition: bool, what: impl Into<String>) -> Result<(), String> {

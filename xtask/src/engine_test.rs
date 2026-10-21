@@ -121,7 +121,12 @@ fn declare_project_shims(project: &Path) {
         .unwrap_or_else(|e| fail(&format!("cannot read {}: {e}", config.display())));
 
     let base = text.split("\n[[codegen.shims]]").next().unwrap_or(&text);
+    let base = base.replace(
+        "features = [\"core\", \"engine\", \"input\", \"slate\", \"umg\", \"enhanced-input\"]",
+        "features = [\"core\", \"engine\", \"input\", \"slate\", \"umg\", \"enhanced-input\", \"gameplay-tags\"]",
+    );
     let wanted = format!("{}\n{}", base.trim_end(), PROJECT_SHIMS);
+
     if wanted != text {
         std::fs::write(&config, wanted)
             .unwrap_or_else(|e| fail(&format!("cannot write {}: {e}", config.display())));
