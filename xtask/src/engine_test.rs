@@ -67,6 +67,31 @@ fn wait(child: &mut Child) -> bool {
     false
 }
 
+const PROJECT_SHIMS: &str = r#"
+[[codegen.shims]]
+class = "RustealProbeActor"
+parent = "AActor"
+include = ["GameFramework/Actor.h"]
+virtuals = [
+    "FVector GetVelocity() const",
+    "void GetActorEyesViewPoint(FVector &OutLocation, FRotator &OutRotation) const",
+]
+"#;
+
+fn declare_project_shims(project: &Path) {
+    let config = project.join("rusteal.toml");
+    let text = std::fs::read_to_string(&config)
+        .unwrap_or_else(|e| fail(&format!("cannot read {}: {e}", config.display())));
+
+    let base = text.split("\n[[codegen.shims]]").next().unwrap_or(&text);
+    let wanted = format!("{}\n{}", base.trim_end(), PROJECT_SHIMS);
+
+    if wanted != text {
+        std::fs::write(&config, wanted)
+            .unwrap_or_else(|e| fail(&format!("cannot write {}: {e}", config.display())));
+    }
+}
+
 pub fn engine_test() {
     let repo = repo_root();
     let env = DevEnv::load(&repo);
@@ -118,6 +143,8 @@ pub fn engine_test() {
             &logs.join("new.log"),
         );
     }
+
+    declare_project_shims(&project);
 
     copy_sources(
         &repo.join("tests/engine/src"),
