@@ -146,8 +146,8 @@ ERustealErrorCode RustealTick_Add(RustealUObjectHandle Target, uint8 Group,
                        TEXT("add_tick_function: no such tick group"));
   }
 
-  UWorld *World =
-      GEngine->GetWorldFromContextObject(Object, EGetWorldErrorMode::ReturnNull);
+  UWorld *World = GEngine->GetWorldFromContextObject(
+      Object, EGetWorldErrorMode::ReturnNull);
 
   if (!World || !World->PersistentLevel) {
     return RustealFail(ERustealErrorCode::ObjectDestroyed,
