@@ -52,11 +52,15 @@ fn copy_sources(from: &Path, to: &Path) {
 }
 
 fn wait(child: &mut Child) -> bool {
+    wait_status(child).is_some()
+}
+
+fn wait_status(child: &mut Child) -> Option<std::process::ExitStatus> {
     let started = Instant::now();
 
     while started.elapsed() < TIMEOUT {
-        if let Ok(Some(_)) = child.try_wait() {
-            return true;
+        if let Ok(Some(status)) = child.try_wait() {
+            return Some(status);
         }
 
         std::thread::sleep(Duration::from_millis(500));
@@ -64,7 +68,40 @@ fn wait(child: &mut Child) -> bool {
 
     let _ = child.kill();
     let _ = child.wait();
-    false
+    None
+}
+
+const COMMANDLET: &str = "VirtualsCommandlet";
+const COMMANDLET_EXIT: i32 = 3;
+
+fn run_commandlet(engine: &Path, project: &Path, logs: &Path) -> String {
+    let mut child = Command::new(editor(engine))
+        .arg(project.join(format!("{PROJECT}.uproject")))
+        .args([
+            &format!("-run={COMMANDLET}"),
+            "rusteal-probe",
+            "-nullrhi",
+            "-unattended",
+            "-nosplash",
+            "-nosound",
+        ])
+        .stdout(std::fs::File::create(logs.join("commandlet.log")).expect("a log file"))
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap_or_else(|e| fail(&format!("cannot start the commandlet: {e}")));
+
+    match wait_status(&mut child).map(|status| status.code()) {
+        Some(Some(COMMANDLET_EXIT)) => format!("PASS rust_commandlet_runs ({COMMANDLET})"),
+        Some(code) => format!(
+            "FAIL rust_commandlet_runs: {COMMANDLET} exited with {code:?}, not \
+             {COMMANDLET_EXIT}; its log is in {}",
+            logs.join("commandlet.log").display()
+        ),
+        None => format!(
+            "FAIL rust_commandlet_runs: {COMMANDLET} did not finish in {} seconds",
+            TIMEOUT.as_secs()
+        ),
+    }
 }
 
 const PROJECT_SHIMS: &str = r#"
@@ -85,7 +122,6 @@ fn declare_project_shims(project: &Path) {
 
     let base = text.split("\n[[codegen.shims]]").next().unwrap_or(&text);
     let wanted = format!("{}\n{}", base.trim_end(), PROJECT_SHIMS);
-
     if wanted != text {
         std::fs::write(&config, wanted)
             .unwrap_or_else(|e| fail(&format!("cannot write {}: {e}", config.display())));
@@ -213,10 +249,19 @@ pub fn engine_test() {
         ));
     }
 
-    let failed = text.lines().filter(|line| line.starts_with("FAIL")).count();
-    let passed = text.lines().filter(|line| line.starts_with("PASS")).count();
+    eprintln!("engine-test: running a Rust commandlet");
+    let commandlet = run_commandlet(&env.engine_root, &project, &logs);
 
-    for line in text.lines().filter(|line| *line != "DONE") {
+    let lines: Vec<&str> = text
+        .lines()
+        .filter(|line| *line != "DONE")
+        .chain(std::iter::once(commandlet.as_str()))
+        .collect();
+
+    let failed = lines.iter().filter(|line| line.starts_with("FAIL")).count();
+    let passed = lines.iter().filter(|line| line.starts_with("PASS")).count();
+
+    for line in &lines {
         eprintln!("  {line}");
     }
 
