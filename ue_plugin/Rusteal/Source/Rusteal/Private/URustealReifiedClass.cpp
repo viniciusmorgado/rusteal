@@ -55,6 +55,16 @@ void URustealReifiedClass::RustealClassConstructor(
 
   UClass *NativeSuper = ReifiedClass->NativeSuperClass;
 
+  TMap<FName, UClass *> Overrides;
+
+  for (URustealReifiedClass *DefClass : Chain) {
+    Overrides.Append(DefClass->SubobjectOverrides);
+  }
+
+  for (const TPair<FName, UClass *> &Override : Overrides) {
+    ObjectInitializer.SetDefaultSubobjectClass(Override.Key, Override.Value);
+  }
+
   if (NativeSuper && NativeSuper->ClassConstructor) {
     NativeSuper->ClassConstructor(ObjectInitializer);
   }
