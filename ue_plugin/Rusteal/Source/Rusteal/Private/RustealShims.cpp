@@ -275,3 +275,35 @@ int32 URustealCommandlet::Main(const FString &Params) {
 int32 URustealCommandlet::ReceiveMain_Implementation(const FString &Params) {
   return Super::Main(Params);
 }
+
+void ARustealTaggedActor::PreInitializeComponents() {
+  Super::PreInitializeComponents();
+  ReceivePreInitializeComponents();
+}
+
+void ARustealTaggedActor::PostInitializeComponents() {
+  Super::PostInitializeComponents();
+  ReceivePostInitializeComponents();
+}
+
+void ARustealTaggedActor::PostActorCreated() {
+  Super::PostActorCreated();
+  ReceivePostActorCreated();
+}
+
+void ARustealTaggedActor::PostRegisterAllComponents() {
+  Super::PostRegisterAllComponents();
+  ReceivePostRegisterAllComponents();
+}
+
+void ARustealTaggedActor::OnConstruction(const FTransform &Transform) {
+  Super::OnConstruction(Transform);
+  ReceiveOnConstruction(Transform);
+}
+
+void ARustealTaggedActor::GetOwnedGameplayTags(FGameplayTagContainer &TagContainer) const {
+  ReceiveGetOwnedGameplayTags(TagContainer);
+}
+
+void ARustealTaggedActor::ReceiveGetOwnedGameplayTags_Implementation(FGameplayTagContainer &TagContainer) const {
+}

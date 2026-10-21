@@ -12,6 +12,7 @@
 #include "Animation/AnimInstance.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Commandlets/Commandlet.h"
+#include "GameplayTagAssetInterface.h"
 #include "RustealShims.generated.h"
 
 UCLASS(Abstract, Blueprintable)
@@ -300,4 +301,36 @@ public:
   UFUNCTION(BlueprintNativeEvent, Category = "Rusteal|Commandlet")
   int32 ReceiveMain(const FString &Params);
   virtual int32 ReceiveMain_Implementation(const FString &Params);
+};
+
+UCLASS(Abstract, Blueprintable)
+class RUSTEAL_API ARustealTaggedActor : public AActor, public IGameplayTagAssetInterface {
+  GENERATED_BODY()
+
+public:
+  virtual void PreInitializeComponents() override;
+  virtual void PostInitializeComponents() override;
+  virtual void PostActorCreated() override;
+  virtual void PostRegisterAllComponents() override;
+  virtual void OnConstruction(const FTransform &Transform) override;
+  virtual void GetOwnedGameplayTags(FGameplayTagContainer &TagContainer) const override;
+
+  UFUNCTION(BlueprintImplementableEvent, Category = "Rusteal|GameplayTags")
+  void ReceivePreInitializeComponents();
+
+  UFUNCTION(BlueprintImplementableEvent, Category = "Rusteal|GameplayTags")
+  void ReceivePostInitializeComponents();
+
+  UFUNCTION(BlueprintImplementableEvent, Category = "Rusteal|GameplayTags")
+  void ReceivePostActorCreated();
+
+  UFUNCTION(BlueprintImplementableEvent, Category = "Rusteal|GameplayTags")
+  void ReceivePostRegisterAllComponents();
+
+  UFUNCTION(BlueprintImplementableEvent, Category = "Rusteal|GameplayTags")
+  void ReceiveOnConstruction(const FTransform &Transform);
+
+  UFUNCTION(BlueprintNativeEvent, Category = "Rusteal|GameplayTags")
+  void ReceiveGetOwnedGameplayTags(FGameplayTagContainer &TagContainer) const;
+  virtual void ReceiveGetOwnedGameplayTags_Implementation(FGameplayTagContainer &TagContainer) const;
 };
