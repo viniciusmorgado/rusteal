@@ -31,6 +31,9 @@ pub mod world_ext;
 pub mod timer_ext;
 
 #[cfg(feature = "engine")]
+pub mod tick_ext;
+
+#[cfg(feature = "engine")]
 pub mod events;
 
 #[cfg(feature = "engine")]
