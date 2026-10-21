@@ -772,6 +772,40 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
         }
     };
 
+    let thread_safe_ident = format_ident!("{}ThreadSafe", struct_name);
+    let class_owner =
+        quote! { <#struct_name as ::rusteal_runtime::runtime::UeClass>::static_class() };
+    let thread_safe_accessors: Vec<TokenStream> = property_accessors(
+        &uprops,
+        &container,
+        &format_ident!("reflection_find_property"),
+        &class_owner,
+    )
+    .into_iter()
+    .map(|accessor| {
+        let signature = accessor.signature();
+        let body = &accessor.body;
+        quote! { pub #signature { #body } }
+    })
+    .collect();
+    let thread_safe_doc = format!(
+        "What a `#[ufunction(ThreadSafe)]` of [`{struct_name}`] reaches while the engine runs it on \
+         a worker thread: the `#[uproperty]` fields, never the Rust-only ones."
+    );
+
+    let thread_safe_view = quote! {
+        #[doc = #thread_safe_doc]
+        #[derive(Clone, Copy, Debug)]
+        #struct_vis struct #thread_safe_ident {
+            #[doc(hidden)]
+            pub __obj: ::rusteal_runtime::ffi::UObjectHandle,
+        }
+
+        impl #thread_safe_ident {
+            #(#thread_safe_accessors)*
+        }
+    };
+
     let parent_path = &args.parent_path;
     let parent_name = args.parent_name.as_str();
     let parent_name_bytes = parent_name.as_bytes();
@@ -1133,6 +1167,7 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
         #parent_check
         #deref_impl
         #accessors_impl
+        #thread_safe_view
         #register_fn
         #finalize_fn
         #after_defaults_fn
