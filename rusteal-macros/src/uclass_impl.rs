@@ -326,12 +326,12 @@ pub fn expand_uclass_impl(attr: TokenStream, item: TokenStream) -> syn::Result<T
         }
 
         let mut param_reads: Vec<TokenStream> = Vec::new();
-        let mut param_idents: Vec<&Ident> = Vec::new();
+        let mut param_idents: Vec<Ident> = Vec::new();
         let mut param_args: Vec<TokenStream> = Vec::new();
         let mut out_writes: Vec<TokenStream> = Vec::new();
 
         for (i, param) in uf.params.iter().enumerate() {
-            let rust_name = &param.rust_name;
+            let rust_name = &thunk_local(param);
             let rust_ty = &param.rust_ty;
             let idx = syn::Index::from(i);
 
@@ -415,7 +415,7 @@ pub fn expand_uclass_impl(attr: TokenStream, item: TokenStream) -> syn::Result<T
                 param_args.push(quote! { #rust_name });
             }
 
-            param_idents.push(rust_name);
+            param_idents.push(rust_name.clone());
         }
 
         let (return_zero_init, return_write) = if let Some(ref ret) = uf.return_type {
@@ -1202,8 +1202,12 @@ fn native_implementation_ident(method: &Ident) -> Ident {
     format_ident!("{}_implementation", method.unraw())
 }
 
+fn thunk_local(param: &ParamInfo) -> Ident {
+    format_ident!("__rusteal_arg_{}", param.rust_name.unraw())
+}
+
 fn out_write(param: &ParamInfo, idx: usize, info: Option<&prop_type::PropTypeInfo>) -> TokenStream {
-    let rust_name = &param.rust_name;
+    let rust_name = &thunk_local(param);
     let idx = syn::Index::from(idx);
     let info = info.expect("an out parameter has a supported type");
 
@@ -1499,7 +1503,7 @@ mod tests {
         assert!(
             out.contains("< dyn Interactable > :: __rusteal_signature_interact () . 1 [0usize]")
         );
-        assert!(out.contains("Interactable :: interact (& mut __this , instigator)"));
+        assert!(out.contains("Interactable :: interact (& mut __this , __rusteal_arg_instigator)"));
         assert!(out.contains("FUNC_EVENT"));
         assert!(out.contains("__rusteal_register_door_interactable_functions"));
     }
