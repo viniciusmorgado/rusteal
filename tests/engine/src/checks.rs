@@ -231,6 +231,14 @@ pub const ALL: &[(&str, Check)] = &[
         "input_and_delegates_reach_closures_and_methods",
         input_and_delegates_reach_closures_and_methods,
     ),
+    (
+        "actor_virtuals_reach_rust",
+        crate::virtuals::actor_virtuals_reach_rust,
+    ),
+    (
+        "project_virtuals_reach_rust",
+        crate::virtuals::project_virtuals_reach_rust,
+    ),
 ];
 
 fn ensure(condition: bool, what: impl Into<String>) -> Result<(), String> {
