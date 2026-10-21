@@ -251,6 +251,10 @@ pub const ALL: &[(&str, Check)] = &[
         "anim_instance_updates_off_the_game_thread",
         crate::widgets_anim::anim_instance_updates_off_the_game_thread,
     ),
+    (
+        "custom_movement_reaches_rust",
+        crate::movement_commandlet::custom_movement_reaches_rust,
+    ),
 ];
 
 fn ensure(condition: bool, what: impl Into<String>) -> Result<(), String> {
