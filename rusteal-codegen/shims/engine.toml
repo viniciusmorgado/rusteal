@@ -1,8 +1,69 @@
+[[set]]
+name = "actor"
+virtuals = [
+    "void PreInitializeComponents()",
+    "void PostInitializeComponents()",
+    "void PostActorCreated()",
+    "void PostRegisterAllComponents()",
+    "void OnConstruction(const FTransform &Transform)",
+]
+
+[[set]]
+name = "component"
+virtuals = [
+    "void OnRegister()",
+    { signature = "void OnUnregister()", order = "before" },
+    "void InitializeComponent()",
+    { signature = "void UninitializeComponent()", order = "before" },
+    { signature = "void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction *ThisTickFunction)", drop = ["TickType", "ThisTickFunction"] },
+]
+
 [[shim]]
 class = "RustealActor"
 parent = "AActor"
 include = ["GameFramework/Actor.h"]
-virtuals = [
-    "void PreInitializeComponents()",
-    "void PostInitializeComponents()",
+sets = ["actor"]
+
+[[shim]]
+class = "RustealPawn"
+parent = "APawn"
+include = ["GameFramework/Pawn.h"]
+sets = ["actor"]
+
+[[shim]]
+class = "RustealCharacter"
+parent = "ACharacter"
+include = ["GameFramework/Character.h"]
+sets = ["actor"]
+
+[[shim]]
+class = "RustealPlayerController"
+parent = "APlayerController"
+include = ["GameFramework/PlayerController.h"]
+sets = ["actor"]
+
+[[shim]]
+class = "RustealGameModeBase"
+parent = "AGameModeBase"
+include = ["GameFramework/GameModeBase.h"]
+sets = ["actor"]
+
+[[shim]]
+class = "RustealActorComponent"
+parent = "UActorComponent"
+include = ["Components/ActorComponent.h"]
+sets = ["component"]
+constructor = [
+    "bWantsInitializeComponent = true;",
+    "PrimaryComponentTick.bCanEverTick = GetClass()->IsFunctionImplementedInScript(FName(TEXT(\"ReceiveTickComponent\")));",
+]
+
+[[shim]]
+class = "RustealSceneComponent"
+parent = "USceneComponent"
+include = ["Components/SceneComponent.h"]
+sets = ["component"]
+constructor = [
+    "bWantsInitializeComponent = true;",
+    "PrimaryComponentTick.bCanEverTick = GetClass()->IsFunctionImplementedInScript(FName(TEXT(\"ReceiveTickComponent\")));",
 ]
