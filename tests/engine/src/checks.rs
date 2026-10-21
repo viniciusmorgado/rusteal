@@ -239,6 +239,10 @@ pub const ALL: &[(&str, Check)] = &[
         "project_virtuals_reach_rust",
         crate::virtuals::project_virtuals_reach_rust,
     ),
+    (
+        "every_curated_virtual_reaches_rust",
+        crate::virtuals::every_curated_virtual_reaches_rust,
+    ),
 ];
 
 fn ensure(condition: bool, what: impl Into<String>) -> Result<(), String> {
