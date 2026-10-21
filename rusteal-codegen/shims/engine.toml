@@ -67,3 +67,30 @@ constructor = [
     "bWantsInitializeComponent = true;",
     "PrimaryComponentTick.bCanEverTick = GetClass()->IsFunctionImplementedInScript(FName(TEXT(\"ReceiveTickComponent\")));",
 ]
+
+[[shim]]
+class = "RustealUserWidget"
+parent = "UUserWidget"
+include = ["Blueprint/UserWidget.h"]
+category = "Rusteal|UserWidget"
+virtuals = [
+    "void NativeOnInitialized()",
+    "void NativePreConstruct()",
+    "void NativeConstruct()",
+    { signature = "void NativeDestruct()", order = "before" },
+    "void NativeTick(const FGeometry &MyGeometry, float InDeltaTime)",
+]
+
+[[shim]]
+class = "RustealAnimInstance"
+parent = "UAnimInstance"
+include = ["Animation/AnimInstance.h"]
+virtuals = [
+    "void NativeInitializeAnimation()",
+    "void NativeBeginPlay()",
+    "void NativeUpdateAnimation(float DeltaSeconds)",
+    { signature = "void NativeThreadSafeUpdateAnimation(float DeltaSeconds)", meta = ["BlueprintThreadSafe"] },
+    "void NativePostEvaluateAnimation()",
+    { signature = "void NativeUninitializeAnimation()", order = "before" },
+]
+
