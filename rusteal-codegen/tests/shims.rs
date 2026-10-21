@@ -10,8 +10,10 @@ fn generated() -> (String, String) {
     let text = std::fs::read_to_string(repo().join("rusteal-codegen/shims/engine.toml")).unwrap();
     let file: ShimFile = toml::from_str(&text).unwrap();
 
-    let header = shims::generate_header(&file.shim, "RustealShims", "RUSTEAL_API").unwrap();
-    let source = shims::generate_source(&file.shim, "RustealShims").unwrap();
+    let specs = file.expanded().unwrap();
+
+    let header = shims::generate_header(&specs, "RustealShims", "RUSTEAL_API").unwrap();
+    let source = shims::generate_source(&specs, "RustealShims").unwrap();
 
     (header, source)
 }

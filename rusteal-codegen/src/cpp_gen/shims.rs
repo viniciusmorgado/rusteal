@@ -6,7 +6,42 @@ use serde::Deserialize;
 #[derive(Deserialize, Default)]
 pub struct ShimFile {
     #[serde(default)]
+    pub set: Vec<SetSpec>,
+    #[serde(default)]
     pub shim: Vec<ShimSpec>,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct SetSpec {
+    pub name: String,
+    pub virtuals: Vec<VirtualSpec>,
+}
+
+impl ShimFile {
+    pub fn expanded(&self) -> Result<Vec<ShimSpec>, String> {
+        self.shim
+            .iter()
+            .map(|shim| {
+                let mut shim = shim.clone();
+                let mut virtuals = Vec::new();
+
+                for name in std::mem::take(&mut shim.sets) {
+                    let set = self
+                        .set
+                        .iter()
+                        .find(|set| set.name == name)
+                        .ok_or_else(|| format!("{}: no set named {name}", shim.class))?;
+
+                    virtuals.extend(set.virtuals.iter().cloned());
+                }
+
+                virtuals.append(&mut shim.virtuals);
+                shim.virtuals = virtuals;
+                Ok(shim)
+            })
+            .collect()
+    }
 }
 
 #[derive(Deserialize, Clone, Debug)]
@@ -20,6 +55,8 @@ pub struct ShimSpec {
     pub modules: Vec<String>,
     #[serde(default)]
     pub category: Option<String>,
+    #[serde(default)]
+    pub sets: Vec<String>,
     #[serde(default)]
     pub virtuals: Vec<VirtualSpec>,
     #[serde(default)]
@@ -280,6 +317,13 @@ fn prefix_of(parent: &str) -> Result<char, String> {
 
 fn resolve(spec: &ShimSpec) -> Result<Shim<'_>, String> {
     let prefix = prefix_of(&spec.parent)?;
+
+    if !spec.sets.is_empty() {
+        return Err(format!(
+            "{}: `sets` names virtuals of the curated list only",
+            spec.class
+        ));
+    }
 
     if spec.class.is_empty() || !spec.class.chars().all(|c| c.is_alphanumeric() || c == '_') {
         return Err(format!("`{}` is not a class name", spec.class));
