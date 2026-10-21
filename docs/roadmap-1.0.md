@@ -91,13 +91,13 @@ refers to the next section.
 
 | Gap | Status | Milestone |
 |---|---|---|
-| Rust `async` on the game thread: an executor driven by the engine's tick, `async fn` as a Blueprint latent node | missing | M2 |
-| Calling engine latent functions (`Delay`, `LoadAsset`...) from Rust | untested | M2 |
-| Async Blueprint actions (`UBlueprintAsyncActionBase`) written in Rust | missing | M2 |
-| Async asset loading: `FStreamableManager`, Asset Manager primary assets, soft class loading | missing (sync only) | M2 |
-| Timers with closures (`FTimerManager`), not by function name | partial | M2 |
-| Native (non-dynamic) engine delegates: `FCoreDelegates`, `FWorldDelegates`, `OnRequestFinished` | missing | M2 |
-| Input actions and delegates bound to a method or a closure, checked at compile time, not by name | partial | M2 |
+| Rust `async` on the game thread: an executor driven by the engine's tick, `async fn` as a Blueprint latent node | done | M2 |
+| Calling engine latent functions (`Delay`, `LoadAsset`...) from Rust | done (awaited; those taking a container left out) | M2 |
+| Async Blueprint actions (`UBlueprintAsyncActionBase`) written in Rust | partial (the engine's are awaited; a Rust subclass is untested) | M2 |
+| Async asset loading: `FStreamableManager`, Asset Manager primary assets, soft class loading | done | M2 |
+| Timers with closures (`FTimerManager`), not by function name | done | M2 |
+| Native (non-dynamic) engine delegates: `FCoreDelegates`, `FWorldDelegates`, `OnRequestFinished` | done (a curated list) | M2 |
+| Input actions and delegates bound to a method or a closure, checked at compile time, not by name | done | M2 |
 | `FTickFunction`: tick groups and prerequisites | missing | M3 |
 
 ### Native extension points (tier 3)
