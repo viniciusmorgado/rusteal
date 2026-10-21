@@ -94,6 +94,8 @@ pub struct VirtualDetails {
     pub order: Order,
     #[serde(default)]
     pub drop: Vec<String>,
+    #[serde(default)]
+    pub meta: Vec<String>,
 }
 
 #[derive(Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -112,6 +114,7 @@ impl VirtualSpec {
                 event: None,
                 order: Order::After,
                 drop: Vec::new(),
+                meta: Vec::new(),
             },
             VirtualSpec::Detailed(details) => details.clone(),
         }
@@ -294,6 +297,7 @@ pub fn check_param_type(param: &Param) -> Result<(), String> {
 struct Virtual {
     sig: Signature,
     event: String,
+    meta: Vec<String>,
     order: Order,
     kept: Vec<Param>,
     pure_interface: bool,
@@ -378,10 +382,12 @@ fn resolve(spec: &ShimSpec) -> Result<Shim<'_>, String> {
             .map_err(|e| format!("{}::{}: {e}", spec.class, sig.name))?;
         }
 
-        let event = details
-            .event
-            .clone()
-            .unwrap_or_else(|| format!("Receive{}", sig.name));
+        let event = details.event.clone().unwrap_or_else(|| {
+            format!(
+                "Receive{}",
+                sig.name.strip_prefix("Native").unwrap_or(&sig.name)
+            )
+        });
 
         if virtuals.iter().any(|v: &Virtual| v.event == event) {
             return Err(format!(
@@ -393,6 +399,7 @@ fn resolve(spec: &ShimSpec) -> Result<Shim<'_>, String> {
         virtuals.push(Virtual {
             sig,
             event,
+            meta: details.meta.clone(),
             order: details.order,
             kept,
             pure_interface,
@@ -530,9 +537,15 @@ pub fn generate_header(specs: &[ShimSpec], file_stem: &str, api: &str) -> Result
             let ret = &v.sig.ret;
             let constness = if v.sig.is_const { " const" } else { "" };
 
+            let meta = if v.meta.is_empty() {
+                String::new()
+            } else {
+                format!(", meta = ({})", v.meta.join(", "))
+            };
+
             write!(
                 out,
-                "\n  UFUNCTION({kind}, Category = \"{}\")\n  {ret} {}({}){constness};\n",
+                "\n  UFUNCTION({kind}, Category = \"{}\"{meta})\n  {ret} {}({}){constness};\n",
                 shim.category,
                 v.event,
                 param_list(&v.kept)
@@ -900,6 +913,27 @@ mod tests {
             "#,
         );
         assert!(validate(&shims).is_err());
+    }
+
+    #[test]
+    fn native_prefix_and_metadata() {
+        let shims = spec(
+            r#"
+            [[shim]]
+            class = "RustealAnimInstance"
+            parent = "UAnimInstance"
+            virtuals = [
+                "void NativeInitializeAnimation()",
+                { signature = "void NativeThreadSafeUpdateAnimation(float DeltaSeconds)", meta = ["BlueprintThreadSafe"] },
+            ]
+            "#,
+        );
+
+        let header = generate_header(&shims, "S", "RUSTEAL_API").unwrap();
+        assert!(header.contains("  void ReceiveInitializeAnimation();"));
+        assert!(header.contains(
+            "UFUNCTION(BlueprintImplementableEvent, Category = \"Rusteal|AnimInstance\", meta = (BlueprintThreadSafe))\n  void ReceiveThreadSafeUpdateAnimation(float DeltaSeconds);"
+        ));
     }
 
     #[test]
