@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use crate::sync::{Mutex, OnceLock, RwLock};
@@ -482,6 +482,35 @@ pub fn drop_instance(obj: UObjectHandle, _type_id: u64) {
     for entry in dropped {
         drop_data(entry.type_id, entry.data);
     }
+}
+
+/// Whether a Rust function was called on a thread other than the game thread, where only a
+/// `#[ufunction(ThreadSafe)]` runs; the first call of each is logged as an error.
+#[doc(hidden)]
+pub fn refused_off_game_thread(class: &str, function: &str) -> bool {
+    if crate::task::is_game_thread() {
+        return false;
+    }
+
+    static REPORTED: Mutex<Option<HashSet<String>>> = Mutex::new(None);
+
+    let name = format!("{class}::{function}");
+    let first = lock_or_recover(&REPORTED)
+        .get_or_insert_with(HashSet::new)
+        .insert(name.clone());
+
+    if first {
+        log(
+            crate::LOG_ERROR,
+            &format!(
+                "[Rusteal] {name} was called on a worker thread and did not run: a function the \
+                 engine calls off the game thread is a #[ufunction(ThreadSafe)] taking the class's \
+                 ThreadSafe view"
+            ),
+        );
+    }
+
+    true
 }
 
 pub fn invoke_function(callback_id: u64, obj: UObjectHandle, params: NativePtr) {

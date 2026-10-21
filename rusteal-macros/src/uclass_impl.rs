@@ -43,6 +43,7 @@ struct UFunctionInfo {
     param_name_exprs: Vec<TokenStream>,
     fallible: bool,
     is_async: bool,
+    thread_safe: bool,
 }
 
 pub fn expand_uclass_impl(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream> {
@@ -499,8 +500,15 @@ pub fn expand_uclass_impl(attr: TokenStream, item: TokenStream) -> syn::Result<T
             (quote! {}, quote! {})
         };
 
+        let thread_safe_ident = format_ident!("{}ThreadSafe", struct_name);
+
         let this_binding = if uf.is_static {
             quote! { let _ = (obj, rust_data); }
+        } else if uf.thread_safe {
+            quote! {
+                let _ = rust_data;
+                let __this = #thread_safe_ident { __obj: obj };
+            }
         } else if uf.is_mut {
             quote! {
                 let mut __this = #struct_name {
@@ -528,6 +536,9 @@ pub fn expand_uclass_impl(attr: TokenStream, item: TokenStream) -> syn::Result<T
 
         let call = match &interface {
             None if uf.is_static => quote! { #struct_name::#method_ident(#(#param_args),*) },
+            None if uf.thread_safe => {
+                quote! { #struct_name::#method_ident(__this, #(#param_args),*) }
+            }
             Some(trait_path) if uf.is_mut => {
                 quote! { #trait_path::#method_ident(&mut __this, #(#param_args),*) }
             }
@@ -540,6 +551,19 @@ pub fn expand_uclass_impl(attr: TokenStream, item: TokenStream) -> syn::Result<T
 
         let raise = quote! {
             __error.__raise(&format!("{}::{}", #struct_label, #ue_name));
+        };
+
+        let game_thread_guard = if uf.thread_safe {
+            quote! {}
+        } else {
+            quote! {
+                if ::rusteal_runtime::runtime::reify_registry::refused_off_game_thread(
+                    #struct_label,
+                    #ue_name,
+                ) {
+                    return;
+                }
+            }
         };
 
         let latent_idx = syn::Index::from(uf.params.len());
@@ -610,6 +634,8 @@ pub fn expand_uclass_impl(attr: TokenStream, item: TokenStream) -> syn::Result<T
                 let callback_id = ::rusteal_runtime::runtime::reify_registry::register_function(
                     #struct_name::__RUSTEAL_TYPE_ID,
                     move |obj: ::rusteal_runtime::ffi::UObjectHandle, rust_data: *mut u8, params: ::rusteal_runtime::runtime::ffi_dispatch::NativePtr| {
+                        #game_thread_guard
+
                         static OFFSETS: std::sync::OnceLock<[(u32, ::rusteal_runtime::ffi::FPropertyHandle); #total_offsets]> = std::sync::OnceLock::new();
 
                         let offsets = OFFSETS.get_or_init(|| unsafe {
@@ -858,6 +884,7 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
         "BlueprintNativeEvent",
         "CallInEditor",
         "Exec",
+        "ThreadSafe",
     ];
 
     if let Some(unknown) = specifiers.iter().find(|s| !KNOWN.contains(&s.as_str())) {
@@ -866,7 +893,7 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
             format!(
                 "unknown #[ufunction] argument `{unknown}`: expected BlueprintCallable, \
                  BlueprintPure, Override, BlueprintImplementableEvent, BlueprintNativeEvent, \
-                 CallInEditor, Exec, name = \"...\", category = \"...\" or meta(...)"
+                 CallInEditor, Exec, ThreadSafe, name = \"...\", category = \"...\" or meta(...)"
             ),
         ));
     }
@@ -877,7 +904,47 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
         metadata.push(("CallInEditor".to_string(), "true".to_string()));
     }
 
-    let is_static = !matches!(method.sig.inputs.first(), Some(FnArg::Receiver(_)));
+    let thread_safe = has("ThreadSafe");
+
+    if thread_safe {
+        let takes_view = match method.sig.inputs.first() {
+            Some(FnArg::Typed(pat_type)) => match &*pat_type.ty {
+                Type::Path(path) => path
+                    .path
+                    .segments
+                    .last()
+                    .is_some_and(|segment| segment.ident.to_string().ends_with("ThreadSafe")),
+                _ => false,
+            },
+            _ => false,
+        };
+
+        if !takes_view {
+            return Err(syn::Error::new_spanned(
+                &method.sig,
+                "a #[ufunction(ThreadSafe)] runs on a worker thread while the game thread may use \
+                 the object: it takes the class's view, `this: <Class>ThreadSafe`, which reaches \
+                 its #[uproperty] fields only, instead of &self or &mut self",
+            ));
+        }
+
+        if has("Exec")
+            || has("CallInEditor")
+            || has("BlueprintImplementableEvent")
+            || has("BlueprintNativeEvent")
+            || method.sig.asyncness.is_some()
+        {
+            return Err(syn::Error::new_spanned(
+                &method.sig,
+                "ThreadSafe goes with a BlueprintCallable, BlueprintPure or Override function, \
+                 not with an event, Exec, CallInEditor or async",
+            ));
+        }
+
+        metadata.push(("BlueprintThreadSafe".to_string(), "true".to_string()));
+    }
+
+    let is_static = !thread_safe && !matches!(method.sig.inputs.first(), Some(FnArg::Receiver(_)));
 
     let kind = match (
         has("Override"),
@@ -982,7 +1049,7 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
 
     let mut params = Vec::new();
 
-    for arg in &method.sig.inputs {
+    for arg in method.sig.inputs.iter().skip(usize::from(thread_safe)) {
         match arg {
             FnArg::Receiver(_) => continue,
             FnArg::Typed(pat_type) => {
@@ -1126,6 +1193,7 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
         param_name_exprs,
         fallible,
         is_async,
+        thread_safe,
     })
 }
 
@@ -1166,6 +1234,7 @@ fn parse_interface_fn(method: &ImplItemFn, trait_path: &syn::Path) -> syn::Resul
         param_name_exprs,
         fallible: false,
         is_async: false,
+        thread_safe: false,
     })
 }
 
@@ -1530,6 +1599,36 @@ mod tests {
             syn::parse_quote! { #[ufunction] async fn d(self) -> i32 { 1 } },
             syn::parse_quote! { #[ufunction] async fn e(self, out: &mut i32) {} },
             syn::parse_quote! { #[ufunction] async fn f() {} },
+        ];
+
+        for method in &bad {
+            assert!(parse_ufunction(method).is_err(), "{}", method.sig.ident);
+        }
+    }
+
+    #[test]
+    fn thread_safe_ufunctions_take_the_class_view() {
+        let method: ImplItemFn = syn::parse_quote! {
+            #[ufunction(Override, ThreadSafe)]
+            fn blueprint_thread_safe_update_animation(this: HeroAnimThreadSafe, delta_time: f32) {}
+        };
+
+        let info = parse_ufunction(&method).unwrap();
+        assert!(info.thread_safe);
+        assert!(!info.is_static);
+        assert_eq!(info.params.len(), 1);
+        assert!(
+            info.metadata
+                .iter()
+                .any(|(key, _)| key == "BlueprintThreadSafe")
+        );
+
+        let bad: Vec<ImplItemFn> = vec![
+            syn::parse_quote! { #[ufunction(Override, ThreadSafe)] fn a(&self, dt: f32) {} },
+            syn::parse_quote! { #[ufunction(Override, ThreadSafe)] fn b(&mut self) {} },
+            syn::parse_quote! { #[ufunction(Override, ThreadSafe)] fn c(dt: f32) {} },
+            syn::parse_quote! { #[ufunction(ThreadSafe, Exec)] fn d(this: AThreadSafe) {} },
+            syn::parse_quote! { #[ufunction(ThreadSafe)] async fn e(this: AThreadSafe) {} },
         ];
 
         for method in &bad {
