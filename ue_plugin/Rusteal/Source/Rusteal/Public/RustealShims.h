@@ -10,6 +10,8 @@
 #include "Components/SceneComponent.h"
 #include "Blueprint/UserWidget.h"
 #include "Animation/AnimInstance.h"
+#include "GameFramework/CharacterMovementComponent.h"
+#include "Commandlets/Commandlet.h"
 #include "RustealShims.generated.h"
 
 UCLASS(Abstract, Blueprintable)
@@ -261,4 +263,41 @@ public:
 
   UFUNCTION(BlueprintImplementableEvent, Category = "Rusteal|AnimInstance")
   void ReceiveUninitializeAnimation();
+};
+
+UCLASS(Abstract, Blueprintable)
+class RUSTEAL_API URustealCharacterMovementComponent : public UCharacterMovementComponent {
+  GENERATED_BODY()
+
+public:
+  virtual void PhysCustom(float DeltaTime, int32 Iterations) override;
+  virtual float GetMaxSpeed() const override;
+  virtual float GetMaxAcceleration() const override;
+  virtual void OnMovementModeChanged(EMovementMode PreviousMovementMode, uint8 PreviousCustomMode) override;
+
+  UFUNCTION(BlueprintImplementableEvent, Category = "Rusteal|CharacterMovement")
+  void ReceivePhysCustom(float DeltaTime, int32 Iterations);
+
+  UFUNCTION(BlueprintNativeEvent, Category = "Rusteal|CharacterMovement")
+  float ReceiveGetMaxSpeed() const;
+  virtual float ReceiveGetMaxSpeed_Implementation() const;
+
+  UFUNCTION(BlueprintNativeEvent, Category = "Rusteal|CharacterMovement")
+  float ReceiveGetMaxAcceleration() const;
+  virtual float ReceiveGetMaxAcceleration_Implementation() const;
+
+  UFUNCTION(BlueprintImplementableEvent, Category = "Rusteal|CharacterMovement")
+  void ReceiveOnMovementModeChanged(EMovementMode PreviousMovementMode, uint8 PreviousCustomMode);
+};
+
+UCLASS(Abstract, Blueprintable)
+class RUSTEAL_API URustealCommandlet : public UCommandlet {
+  GENERATED_BODY()
+
+public:
+  virtual int32 Main(const FString &Params) override;
+
+  UFUNCTION(BlueprintNativeEvent, Category = "Rusteal|Commandlet")
+  int32 ReceiveMain(const FString &Params);
+  virtual int32 ReceiveMain_Implementation(const FString &Params);
 };

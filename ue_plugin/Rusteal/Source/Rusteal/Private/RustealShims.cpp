@@ -241,3 +241,37 @@ void URustealAnimInstance::NativeUninitializeAnimation() {
   ReceiveUninitializeAnimation();
   Super::NativeUninitializeAnimation();
 }
+
+void URustealCharacterMovementComponent::PhysCustom(float DeltaTime, int32 Iterations) {
+  Super::PhysCustom(DeltaTime, Iterations);
+  ReceivePhysCustom(DeltaTime, Iterations);
+}
+
+float URustealCharacterMovementComponent::GetMaxSpeed() const {
+  return ReceiveGetMaxSpeed();
+}
+
+float URustealCharacterMovementComponent::ReceiveGetMaxSpeed_Implementation() const {
+  return Super::GetMaxSpeed();
+}
+
+float URustealCharacterMovementComponent::GetMaxAcceleration() const {
+  return ReceiveGetMaxAcceleration();
+}
+
+float URustealCharacterMovementComponent::ReceiveGetMaxAcceleration_Implementation() const {
+  return Super::GetMaxAcceleration();
+}
+
+void URustealCharacterMovementComponent::OnMovementModeChanged(EMovementMode PreviousMovementMode, uint8 PreviousCustomMode) {
+  Super::OnMovementModeChanged(PreviousMovementMode, PreviousCustomMode);
+  ReceiveOnMovementModeChanged(PreviousMovementMode, PreviousCustomMode);
+}
+
+int32 URustealCommandlet::Main(const FString &Params) {
+  return ReceiveMain(Params);
+}
+
+int32 URustealCommandlet::ReceiveMain_Implementation(const FString &Params) {
+  return Super::Main(Params);
+}

@@ -94,3 +94,21 @@ virtuals = [
     { signature = "void NativeUninitializeAnimation()", order = "before" },
 ]
 
+[[shim]]
+class = "RustealCharacterMovementComponent"
+parent = "UCharacterMovementComponent"
+include = ["GameFramework/CharacterMovementComponent.h"]
+category = "Rusteal|CharacterMovement"
+virtuals = [
+    "void PhysCustom(float DeltaTime, int32 Iterations)",
+    "float GetMaxSpeed() const",
+    "float GetMaxAcceleration() const",
+    "void OnMovementModeChanged(EMovementMode PreviousMovementMode, uint8 PreviousCustomMode)",
+]
+
+[[shim]]
+class = "RustealCommandlet"
+parent = "UCommandlet"
+include = ["Commandlets/Commandlet.h"]
+virtuals = ["int32 Main(const FString &Params)"]
+
