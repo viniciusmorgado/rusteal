@@ -135,7 +135,7 @@ static void FillApiTable() {
 }
 
 static TArray<TUniquePtr<FRustealLibrary>> GLibraries;
-static FRustealLibrary *GCurrentLibrary = nullptr;
+static thread_local FRustealLibrary *GCurrentLibrary = nullptr;
 
 static FTSTicker::FDelegateHandle GTickerHandle;
 
