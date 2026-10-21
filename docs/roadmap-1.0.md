@@ -278,6 +278,17 @@ a module the project does not bind, wildcard functions (`KismetArrayLibrary`,
 
 ### M2 — Async and events (≈0.12, M)
 
+**Status (2026-10-21):** done, on Linux. `cargo xtask engine-test` runs 58
+checks, among them tasks cancelled with their owner, timers freeing their
+closures, `sleep` across a pause, awaited engine latent functions, background
+loads, awaited delegates and a save game async action, an `async #[ufunction]`
+as a latent node, a native world event, HTTP requests to a local server, and
+input bound to closures and methods. The intro template welcomes the player
+from one `async fn` (a load, a delay and an HTTP request, which replaced the
+RPC of the done-when); no template binds by a function's name. Left: an async
+Blueprint action written in Rust (untested), the core and game mode native
+events (compiled, not fired in the harness), Windows and macOS.
+
 Where Rust can be better than C++ and Blueprint, not only equal.
 
 - A game-thread executor driven by the engine's tick; `async fn` exported as a
