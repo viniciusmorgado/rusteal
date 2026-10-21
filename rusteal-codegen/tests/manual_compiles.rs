@@ -568,6 +568,9 @@ impl Probe {
             let _ = value.get_bool();
         })?
         .unbind();
+        bind_action_instance(&me, self.jump_action(), ETriggerEvent::Triggered, |instance| {
+            let _ = (instance.value.get_bool(), instance.elapsed_seconds, instance.action);
+        })?;
         bind_action_by_name(&me, self.jump_action(), ETriggerEvent::Completed, "StopJumping")
     }
 }
