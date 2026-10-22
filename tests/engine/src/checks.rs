@@ -260,6 +260,10 @@ pub const ALL: &[(&str, Check)] = &[
         crate::interfaces::cpp_only_interface_reaches_rust,
     ),
     (
+        "call_overhead_is_measured",
+        crate::perf::call_overhead_is_measured,
+    ),
+    (
         "profiling_scopes_run",
         crate::profiling::profiling_scopes_run,
     ),
