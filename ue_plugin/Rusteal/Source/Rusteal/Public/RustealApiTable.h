@@ -475,6 +475,11 @@ struct FRustealReifyApi {
                                              const uint8 *key, uint32 key_len,
                                              const uint8 *value,
                                              uint32 value_len);
+
+  ERustealErrorCode (*set_property_replication)(RustealFPropertyHandle prop,
+                                                uint8 condition,
+                                                const uint8 *rep_notify,
+                                                uint32 rep_notify_len);
 };
 struct RustealSlateProps {
   const uint8 *text;

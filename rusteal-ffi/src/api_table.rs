@@ -709,6 +709,13 @@ pub struct RustealReifyApi {
         value: *const u8,
         value_len: u32,
     ) -> RustealErrorCode,
+
+    pub set_property_replication: unsafe extern "C" fn(
+        prop: FPropertyHandle,
+        condition: u8,
+        rep_notify: *const u8,
+        rep_notify_len: u32,
+    ) -> RustealErrorCode,
 }
 
 pub const RUSTEAL_COMP_ROOT: u32 = 1;
