@@ -142,14 +142,14 @@ refers to the next section.
 
 | Gap | Status | Milestone |
 |---|---|---|
-| Slate from Rust (windows, tabs, panels): a builder API over hand-written bindings | missing | M4 |
-| Details customizations | missing | M4 |
-| Editor Utility Widgets with a Rust parent, scripted asset and actor actions | missing | M4 |
-| New asset types: factories, asset definitions, thumbnails | missing | M4 |
+| Slate from Rust (windows, tabs, panels): a builder API over hand-written bindings | partial (tabs, text, buttons, check boxes, text and spin boxes, panels) | M4 |
+| Details customizations | partial (class customizations, details views) | M4 |
+| Editor Utility Widgets with a Rust parent, scripted asset and actor actions | partial (bound; utility objects tested, widgets and actions not) | M4 |
+| New asset types: factories, asset definitions, thumbnails | partial (factories that create and import) | M4 |
 | Interchange pipelines and translators (parsers from crates.io are a Rust strength) | untested | M4 |
 | Editor modes, Scriptable Tools | untested | M4 |
 | Custom K2 nodes, asset and graph editors | missing | after 1.0 |
-| Editor Python sees UE names for Rust properties | sharp edge | M4 |
+| Editor Python sees UE names for Rust properties | done (either name for properties, UE names for functions, checked) | M4 |
 
 ### Platforms
 
@@ -328,6 +328,15 @@ checked by the harness), engine calls from a `ThreadSafe` function
 harness, and the animation update runs off the game thread safely.
 
 ### M4 — Editor extensibility (≈0.14, L)
+
+**Status (2026-10-22):** in progress. Done on Linux, in an editor without a
+window: tabs and widgets built from Rust (`slate`), class customizations of
+the details panel and details views, `RustealFactory` (new assets and file
+imports), Blutility bound with utility objects run from Rust, and editor
+Python's access to Rust classes checked. Left: the done-when (the
+maintainer's Fab plugin), the rest of Slate, property type customizations,
+asset editors, asset definitions, editor modes, Scriptable Tools, Interchange,
+and Editor Utility Widgets and scripted actions tested with a Rust parent.
 
 - Slate from Rust: a builder API over hand-written bindings for the common
   widgets, attributes and delegates.
