@@ -264,6 +264,10 @@ pub const ALL: &[(&str, Check)] = &[
         crate::profiling::profiling_scopes_run,
     ),
     (
+        "localized_text_keeps_its_source",
+        crate::profiling::localized_text_keeps_its_source,
+    ),
+    (
         "declared_tag_matches_its_parent",
         crate::tags::declared_tag_matches_its_parent,
     ),

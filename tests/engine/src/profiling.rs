@@ -25,3 +25,17 @@ pub fn profiling_scopes_run(_context: &Context) -> Outcome {
         Err("the work inside the scopes did not run".to_string())
     })
 }
+
+pub fn localized_text_keeps_its_source(_context: &Context) -> Outcome {
+    let greeting = rusteal_runtime::runtime::loctext!(
+        "RustealTests",
+        "Greeting",
+        "Hello from a Rust loctext"
+    );
+
+    Outcome::Done(if greeting.to_string() == "Hello from a Rust loctext" {
+        Ok(())
+    } else {
+        Err(format!("the text is {:?}", greeting.to_string()))
+    })
+}
