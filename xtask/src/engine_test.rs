@@ -751,6 +751,7 @@ pub fn engine_test() {
             "-trace=cpu",
         ])
         .arg(format!("-tracefile={}", trace.display()))
+        .env("RUSTEAL_PERF_RESULTS", work.join("perf.txt"))
         .env("RUSTEAL_TEST_RESULTS", &results)
         .stdout(std::fs::File::create(logs.join("editor.log")).expect("a log file"))
         .stderr(std::process::Stdio::null())
@@ -817,6 +818,14 @@ pub fn engine_test() {
 
     for line in &lines {
         eprintln!("  {line}");
+    }
+
+    if let Ok(perf) = std::fs::read_to_string(work.join("perf.txt")) {
+        eprintln!("engine-test: call costs, in a development build");
+
+        for line in perf.lines() {
+            eprintln!("  {line}");
+        }
     }
 
     eprintln!("engine-test: {passed} passed, {failed} failed");
