@@ -30,6 +30,7 @@ pub mod pinned;
 pub mod reflected;
 pub mod reify_registry;
 pub mod script_interface;
+pub mod slate;
 pub mod soft_class_ref;
 pub mod soft_ref;
 mod std_fallback;
