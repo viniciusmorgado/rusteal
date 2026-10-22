@@ -2,9 +2,11 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use bindings::engine::{Actor, ActorExt, GameplayStatics, SceneComponent};
+use bindings::engine::{Actor, ActorComponent, ActorComponentExt, ActorExt, GameplayStatics, SceneComponent};
+use bindings::manual::world_ext::new_object;
 use bindings::prelude::*;
-use rusteal_runtime::runtime::{RustealResult, SubclassOf, Transform, UeArray};
+use bindings::rusteal::RustealReplicatedObject;
+use rusteal_runtime::runtime::{RustealResult, SubclassOf, Transform, UObjectRef, UeArray, net};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use super::{NetWorld, Role, all_players_connected};
@@ -13,14 +15,43 @@ const COUNT: i32 = 7;
 const LABEL: &str = "replicated";
 const VALUES: [i32; 3] = [1, 2, 3];
 const SECRET: i32 = 42;
+const LEVEL: i32 = 9;
+const KILLS: i32 = 3;
 
 static SPAWNED: AtomicBool = AtomicBool::new(false);
 static COUNT_NOTIFIES: Mutex<Option<HashMap<usize, (i32, i32)>>> = Mutex::new(None);
+
+#[uclass(parent = RustealReplicatedObject)]
+pub struct NetStats {
+    #[uproperty(Replicated)]
+    kills: i32,
+}
+
+#[uclass(parent = ActorComponent)]
+pub struct NetGauge {
+    #[uproperty(Replicated)]
+    level: i32,
+}
+
+#[uclass_impl]
+impl NetGauge {
+    #[class_defaults]
+    fn class_defaults(&mut self) -> RustealResult<()> {
+        self.as_ref().checked()?.set_is_replicated(true);
+        Ok(())
+    }
+}
 
 #[uclass(parent = Actor)]
 pub struct NetProbe {
     #[component(root)]
     root: SceneComponent,
+
+    #[component]
+    gauge: NetGauge,
+
+    #[uproperty(Replicated)]
+    stats: UObjectRef<NetStats>,
 
     #[uproperty(ReplicatedUsing = on_rep_count)]
     count: i32,
@@ -77,6 +108,15 @@ fn spawn_probe(net: &NetWorld) -> Result<(), String> {
         probe.values().push(&value).map_err(e)?;
     }
 
+    NetGauge::from_obj(probe.gauge().map_err(e)?)
+        .map_err(e)?
+        .set_level(LEVEL);
+
+    let stats = new_object::<NetStats>(&spawned).map_err(e)?;
+    NetStats::from_obj(stats).map_err(e)?.set_kills(KILLS);
+    probe.set_stats(stats);
+    net::add_replicated_subobject(&spawned, &stats, 0).map_err(e)?;
+
     Ok(())
 }
 
@@ -107,6 +147,18 @@ fn seen_by_client(net: &NetWorld) -> Option<Result<(), String>> {
         Err(error) => return Some(Err(e(error))),
     };
     let expected_secret = if owned { SECRET } else { 0 };
+    let level = probe
+        .gauge()
+        .and_then(NetGauge::from_obj)
+        .map(|gauge| gauge.level())
+        .ok();
+    let kills = NetStats::from_obj(probe.stats())
+        .map(|stats| stats.kills())
+        .ok();
+
+    if level.is_none() || kills.is_none() {
+        return None;
+    }
 
     let problems: Vec<String> = [
         (probe.label() != LABEL).then(|| format!("label {:?}", probe.label())),
@@ -119,6 +171,8 @@ fn seen_by_client(net: &NetWorld) -> Option<Result<(), String>> {
             )
         }),
         (notified != Some((0, COUNT))).then(|| format!("on_rep_count saw {notified:?}")),
+        (level != Some(LEVEL)).then(|| format!("the component's level is {level:?}")),
+        (kills != Some(KILLS)).then(|| format!("the subobject's kills are {kills:?}")),
     ]
     .into_iter()
     .flatten()

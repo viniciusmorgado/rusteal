@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{Duration, Instant};
 
 use bindings::core_ue::Object;
 use bindings::engine::{Actor, ActorExt, GameplayStatics, SceneComponent};
@@ -13,13 +14,14 @@ use super::{CLIENTS, NetWorld, Role, all_players_connected};
 const ADDED: i32 = 5;
 const NOTE: i32 = 11;
 const PING: i32 = 13;
+const REFUSED_SETTLES: Duration = Duration::from_secs(1);
 
 #[derive(Default)]
 struct Calls {
     seen: HashSet<usize>,
     notes: HashMap<usize, i32>,
     pings: HashMap<usize, i32>,
-    refused_sent: bool,
+    refused_sent: Option<Instant>,
 }
 
 static SPAWNED: AtomicBool = AtomicBool::new(false);
@@ -188,9 +190,11 @@ pub fn validation_refuses_a_bad_call(net: &NetWorld) -> Option<Result<(), String
     match net.role {
         Role::Server => {
             let probe = probe(net)?;
-            let sent = with_calls(|calls| calls.refused_sent)?;
+            let sent = with_calls(|calls| calls.refused_sent)??;
+            let disconnected =
+                GameplayStatics::get_num_player_controllers(net.context) < CLIENTS as i32;
 
-            if !sent || GameplayStatics::get_num_player_controllers(net.context) == CLIENTS as i32 {
+            if !disconnected && sent.elapsed() < REFUSED_SETTLES {
                 return None;
             }
 
@@ -217,7 +221,7 @@ pub fn validation_refuses_a_bad_call(net: &NetWorld) -> Option<Result<(), String
             }
 
             probe.server_add(-1);
-            with_calls(|calls| calls.refused_sent = true);
+            with_calls(|calls| calls.refused_sent = Some(Instant::now()));
             Some(Ok(()))
         }
     }
