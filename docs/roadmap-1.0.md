@@ -168,11 +168,11 @@ refers to the next section.
 | Gap | Status | Milestone |
 |---|---|---|
 | An automated headless engine test harness in the repository (it exists only as a documented method and outside fixtures) | missing | M1 (first), grows every milestone |
-| Rust tests registered as UE Automation tests, functional tests, Gauntlet | missing | M8 |
-| Debugging: launch and attach recipes (CodeLLDB, Visual Studio, Xcode), mixed C++/Rust stacks, symbols in packaged builds | missing | M8 |
-| Unreal Insights trace scopes, stats and LLM tags from Rust | missing | M8 |
-| Localization: gatherable text from Rust (a `loctext!` the gather step reads, or string tables) | missing | M8 |
-| Measured call overhead against Blueprint and C++, zero-copy array views | missing | M8 |
+| Rust tests registered as UE Automation tests, functional tests, Gauntlet | automation tests done (M8); Gauntlet left | M8 |
+| Debugging: launch and attach recipes (CodeLLDB, Visual Studio, Xcode), mixed C++/Rust stacks, symbols in packaged builds | recipes and the `vscode` feature (M8); not checked on every desktop | M8 |
+| Unreal Insights trace scopes, stats and LLM tags from Rust | done (M8) | M8 |
+| Localization: gatherable text from Rust (a `loctext!` the gather step reads, or string tables) | done (M8) | M8 |
+| Measured call overhead against Blueprint and C++, zero-copy array views | measured (M8); no zero-copy views in safe code (decision D60) | M8 |
 
 ### Stability
 
@@ -428,6 +428,16 @@ replicated state and RPCs in the harness; the template and the Lyra slice
 (M5) play over a network.
 
 ### M8 — Platforms and production tooling (≈0.18, L)
+
+**Status (2026-10-22):** in progress. Done on Linux, in the harness: Rust
+CPU scopes read back from Unreal Insights, cycle stats and memory tags;
+Rust automation tests run headless and read from the automation report;
+`loctext!` texts found by the localization gather; a `vscode` feature with
+tasks and attach configurations; the call costs measured and published.
+Left: the Windows CI job (it needs its own permission), `--static` and hot
+reload on Windows and macOS, Linux ARM64 on hardware, Android and iOS, a
+breakpoint checked on each desktop (no debugger is installed on the Linux
+machine), Gauntlet, and a faster Rust side of bulk array copies.
 
 - Windows CI job (needs its own permission), `--static` and hot reload
   validated on Windows and macOS, Linux ARM64 run on hardware.
