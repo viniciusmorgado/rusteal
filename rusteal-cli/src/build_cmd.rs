@@ -509,26 +509,37 @@ impl BuildContext {
 
     fn project_shims(&self, config: &ProjectConfig, writes: bool) {
         let generated = self.layout.cpp_generated();
-        let shims = &config.codegen.shims;
+        let shims = match rusteal_codegen::cpp_gen::shims::project_shim_specs(
+            &config.codegen.features,
+            &config.codegen.shims,
+        ) {
+            Ok(shims) => shims,
+            Err(e) => {
+                eprintln!("Error: {e}");
+                std::process::exit(1);
+            }
+        };
+        let shims = &shims;
 
         if writes {
             match rusteal_codegen::cpp_gen::shims::write_project_shims(&generated, shims) {
                 Ok(true) => eprintln!(
-                    "  Engine virtual bases of rusteal.toml written to {}",
+                    "  Engine virtual bases written to {}",
                     generated
                         .join(rusteal_codegen::cpp_gen::shims::PROJECT_SHIMS_DIR)
                         .display()
                 ),
                 Ok(false) => {}
                 Err(e) => {
-                    eprintln!("Error: [[codegen.shims]] in rusteal.toml: {e}");
+                    eprintln!("Error: the engine virtual bases: {e}");
                     std::process::exit(1);
                 }
             }
         } else if !rusteal_codegen::cpp_gen::shims::project_shims_up_to_date(&generated, shims) {
             eprintln!(
-                "Warning: [[codegen.shims]] in rusteal.toml changed: run `rusteal build --all` \
-                 to build its C++ bases before the Rust that uses them."
+                "Warning: the engine virtual bases ([[codegen.shims]] in rusteal.toml, or a \
+                 feature's) changed: run `rusteal build --all` to build them before the Rust that \
+                 uses them."
             );
         }
     }
