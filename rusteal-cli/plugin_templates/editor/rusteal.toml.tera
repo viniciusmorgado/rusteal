@@ -56,6 +56,7 @@ AssetTools = { module = "asset_tools", feature = "editor" }
 AssetRegistry = { module = "asset_registry", feature = "editor" }
 DataValidation = { module = "data_validation", feature = "editor", plugin = "DataValidation" }
 EditorScriptingUtilities = { module = "editor_scripting_utilities", feature = "editor", plugin = "EditorScriptingUtilities", classes = ["EditorDialogLibrary"] }
+Blutility = { module = "blutility", feature = "editor", classes = ["EditorUtilityObject", "AssetActionUtility", "ActorActionUtility", "EditorUtilityWidget", "EditorUtilitySubsystem", "EditorUtilityLibrary"] }
 
 [codegen.blocklist]
 # Reflected types and functions the generated code cannot handle yet.
