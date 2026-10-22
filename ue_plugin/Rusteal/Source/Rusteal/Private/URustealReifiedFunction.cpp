@@ -76,7 +76,7 @@ DEFINE_FUNCTION(URustealReifiedFunction::execCallRustFunction) {
 
     for (FOutParmRec *Out = Stack.OutParms; Out; Out = Out->NextOutParm) {
       if (Out->Property &&
-          !Out->Property->HasAnyPropertyFlags(CPF_ReturnParm)) {
+          !Out->Property->HasAnyPropertyFlags(CPF_ReturnParm | CPF_ConstParm)) {
         OutDestinations.Emplace(Out->Property, Out->PropAddr);
       }
     }
@@ -144,15 +144,28 @@ DEFINE_FUNCTION(URustealReifiedFunction::execCallRustFunction) {
   for (const TPair<FProperty *, uint8 *> &Out : OutDestinations) {
     uint8 *Value = ParamsPtr + Out.Key->GetOffset_ForUFunction();
 
-    if (Out.Value && Out.Value != Value) {
+    if (!Out.Value || Out.Value == Value) {
+      continue;
+    }
+
+    if (bFromProcessEvent) {
+      FMemory::Memcpy(Out.Value, Value, Out.Key->GetSize());
+    } else {
       Out.Key->CopyCompleteValue(Out.Value, Value);
     }
   }
 
   if (RESULT_PARAM && ParamsPtr) {
     if (FProperty *RetProp = ReifiedFunc->GetReturnProperty()) {
-      RetProp->CopyCompleteValue(RESULT_PARAM,
-                                 ParamsPtr + RetProp->GetOffset_ForUFunction());
+      uint8 *Value = ParamsPtr + RetProp->GetOffset_ForUFunction();
+
+      if (bFromProcessEvent) {
+        if (RESULT_PARAM != Value) {
+          FMemory::Memcpy(RESULT_PARAM, Value, RetProp->GetSize());
+        }
+      } else {
+        RetProp->CopyCompleteValue(RESULT_PARAM, Value);
+      }
     }
   }
 
