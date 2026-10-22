@@ -143,6 +143,21 @@ fn add_probe_plugin(cli: &Path, project: &Path, repo: &Path, logs: &Path) {
         &repo.join("tests/engine/plugin/editor/src"),
         &plugin.join("Rust").join(PLUGIN_EDITOR_CRATE).join("src"),
     );
+
+    let config = plugin.join("rusteal.toml");
+    let text = std::fs::read_to_string(&config)
+        .unwrap_or_else(|e| fail(&format!("cannot read {}: {e}", config.display())));
+
+    if !text.contains("\nBlutility = ") {
+        let line = "Blutility = { module = \"blutility\", feature = \"editor\", classes = [\"EditorUtilityObject\", \"AssetActionUtility\", \"ActorActionUtility\", \"EditorUtilityWidget\", \"EditorUtilitySubsystem\", \"EditorUtilityLibrary\"] }";
+        let updated = text.replacen(
+            "\n[editor.codegen.blocklist]",
+            &format!("{line}\n\n[editor.codegen.blocklist]"),
+            1,
+        );
+        std::fs::write(&config, updated)
+            .unwrap_or_else(|e| fail(&format!("cannot write {}: {e}", config.display())));
+    }
 }
 
 fn library_file(stem: &str) -> String {
@@ -234,7 +249,10 @@ fn run_editor(
             "-unattended",
             "-nosplash",
             "-nosound",
-            "-ExecCmds=rusteal_tests.reload_prepare,Rusteal.Reload RustealProbe,rusteal_tests.reload_verify,rusteal_editor_tests.run,QUIT_EDITOR",
+            &format!(
+                "-ExecCmds=rusteal_tests.reload_prepare,Rusteal.Reload RustealProbe,rusteal_tests.reload_verify,rusteal_editor_tests.run,py {},QUIT_EDITOR",
+                repo.join("tests/engine/plugin/editor/python_names.py").display()
+            ),
         ])
         .env("RUSTEAL_TEST_RESULTS", &results)
         .env("RUSTEAL_RELOAD_VARIANT", &variant)
