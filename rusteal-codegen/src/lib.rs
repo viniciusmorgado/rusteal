@@ -214,7 +214,12 @@ pub fn generate_library(
 
     eprintln!("rusteal-codegen: filtering...");
     let blocklist = with_unlisted_classes(&ctx, codegen);
-    filter::apply_filters(&mut ctx, &blocklist, output.kind == LibraryKind::Editor);
+    filter::apply_filters(
+        &mut ctx,
+        &blocklist,
+        output.kind == LibraryKind::Editor,
+        output.host_module == "Rusteal",
+    );
 
     eprintln!("rusteal-codegen: building function table...");
     build_func_table(&mut ctx);

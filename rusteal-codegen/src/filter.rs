@@ -5,7 +5,21 @@ use crate::context::CodegenContext;
 use crate::schema::*;
 use crate::type_map;
 
-pub fn apply_filters(ctx: &mut CodegenContext, blocklist: &Blocklist, editor: bool) {
+/// Where the bases of a project's `[[codegen.shims]]` are, relative to the Rusteal module.
+const PROJECT_SHIMS_HEADER: &str = "Generated/Shims/RustealProjectShims.h";
+
+/// `in_rusteal_module`: the library's wrappers are built in the Rusteal module, next to the
+/// project's bases, so they reach their header; a plugin's library is built in its own.
+pub fn apply_filters(
+    ctx: &mut CodegenContext,
+    blocklist: &Blocklist,
+    editor: bool,
+    in_rusteal_module: bool,
+) {
+    if in_rusteal_module {
+        reach_project_shims(ctx);
+    }
+
     let blocked_classes: HashSet<&str> = blocklist.classes.iter().map(|s| s.as_str()).collect();
     let blocked_structs: HashSet<&str> = blocklist.structs.iter().map(|s| s.as_str()).collect();
     let blocked_functions: Vec<(String, String)> = blocklist.function_tuples();
@@ -76,6 +90,25 @@ pub fn apply_filters(ctx: &mut CodegenContext, blocklist: &Blocklist, editor: bo
                 &blocked_functions,
                 editor,
             );
+        }
+    }
+}
+
+fn reach_project_shims(ctx: &mut CodegenContext) {
+    let reachable = PROJECT_SHIMS_HEADER
+        .strip_prefix("Generated/")
+        .expect("the bases are under Generated");
+
+    let classes = ctx
+        .module_classes
+        .values_mut()
+        .flat_map(|classes| classes.iter_mut())
+        .chain(ctx.classes.values_mut());
+
+    for class in classes {
+        if class.package == "Rusteal" && class.header == PROJECT_SHIMS_HEADER {
+            class.header = reachable.to_string();
+            class.header_public = true;
         }
     }
 }
