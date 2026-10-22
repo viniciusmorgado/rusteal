@@ -717,6 +717,13 @@ struct FRustealWorldApi {
   bool (*gameplay_tag_is_registered)(const uint8 *name, uint32 name_len);
 
   void (*rpc_validate_failed)(const uint8 *reason, uint32 reason_len);
+  void (*mark_property_dirty)(RustealUObjectHandle object,
+                              RustealFPropertyHandle prop);
+  ERustealErrorCode (*add_replicated_subobject)(RustealUObjectHandle actor,
+                                                RustealUObjectHandle object,
+                                                uint8 condition);
+  ERustealErrorCode (*remove_replicated_subobject)(RustealUObjectHandle actor,
+                                                   RustealUObjectHandle object);
 };
 
 struct FRustealPlatformApi {

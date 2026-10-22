@@ -27,6 +27,7 @@ pub mod loading;
 pub mod logging;
 pub mod method;
 pub mod module;
+pub mod net;
 pub mod object_ref;
 pub mod pinned;
 pub mod reflected;

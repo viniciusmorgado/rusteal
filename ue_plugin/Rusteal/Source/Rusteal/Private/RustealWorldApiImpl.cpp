@@ -274,6 +274,14 @@ ERustealErrorCode RustealTags_AddNative(const uint8 *Name, uint32 NameLen,
                                         uint32 CommentLen);
 bool RustealTags_IsRegistered(const uint8 *Name, uint32 NameLen);
 void RustealNet_RpcValidateFailed(const uint8 *Reason, uint32 ReasonLen);
+void RustealNet_MarkPropertyDirty(RustealUObjectHandle Object,
+                                  RustealFPropertyHandle Prop);
+ERustealErrorCode RustealNet_AddReplicatedSubobject(RustealUObjectHandle Actor,
+                                                    RustealUObjectHandle Object,
+                                                    uint8 Condition);
+ERustealErrorCode
+RustealNet_RemoveReplicatedSubobject(RustealUObjectHandle Actor,
+                                     RustealUObjectHandle Object);
 
 FRustealWorldApi GWorldApi = {
     &SpawnActorImpl,
@@ -312,4 +320,7 @@ FRustealWorldApi GWorldApi = {
     &RustealTags_AddNative,
     &RustealTags_IsRegistered,
     &RustealNet_RpcValidateFailed,
+    &RustealNet_MarkPropertyDirty,
+    &RustealNet_AddReplicatedSubobject,
+    &RustealNet_RemoveReplicatedSubobject,
 };
