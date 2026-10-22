@@ -239,7 +239,7 @@ fn read_trace(engine: &Path, trace: &Path, work: &Path, logs: &Path) -> String {
     let insights = engine.join("Engine/Binaries").join(if cfg!(windows) {
         "Win64/UnrealInsights.exe"
     } else if cfg!(target_os = "macos") {
-        "Mac/UnrealInsights"
+        "Mac/UnrealInsights.app/Contents/MacOS/UnrealInsights"
     } else {
         "Linux/UnrealInsights"
     });
