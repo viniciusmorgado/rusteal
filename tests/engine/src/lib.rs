@@ -7,8 +7,10 @@ mod fixtures;
 mod interfaces;
 mod libraries;
 mod movement_commandlet;
+mod reload;
 mod runner;
 mod virtuals;
 mod widgets_anim;
 
 rusteal_runtime::on_load!(runner::register);
+rusteal_runtime::on_load!(reload::register);

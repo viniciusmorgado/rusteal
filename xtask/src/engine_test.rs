@@ -128,6 +128,132 @@ fn add_probe_plugin(cli: &Path, project: &Path, repo: &Path, logs: &Path) {
     );
 }
 
+fn library_file(stem: &str) -> String {
+    if cfg!(target_os = "windows") {
+        format!("{stem}.dll")
+    } else if cfg!(target_os = "macos") {
+        format!("lib{stem}.dylib")
+    } else {
+        format!("lib{stem}.so")
+    }
+}
+
+fn run_chained_reload(
+    cargo: &str,
+    engine: &Path,
+    project: &Path,
+    repo: &Path,
+    work: &Path,
+    logs: &Path,
+) -> Vec<String> {
+    let plugin = project.join("Plugins").join(PLUGIN);
+    let source = plugin
+        .join("Rust")
+        .join(PLUGIN_CRATE)
+        .join("src")
+        .join("probe.rs");
+    let deployed = plugin
+        .join("Binaries")
+        .join(if cfg!(target_os = "windows") {
+            "Win64"
+        } else if cfg!(target_os = "macos") {
+            "Mac"
+        } else {
+            "Linux"
+        })
+        .join(library_file(&format!("rusteal_{PLUGIN}")));
+
+    let reload = work.join("reload");
+    std::fs::create_dir_all(&reload)
+        .unwrap_or_else(|e| fail(&format!("cannot create {}: {e}", reload.display())));
+    let variant = reload.join(library_file("rusteal_probe_variant"));
+    let original = reload.join(library_file("rusteal_probe_original"));
+
+    std::fs::copy(repo.join("tests/engine/plugin/reload/probe.rs"), &source)
+        .unwrap_or_else(|e| fail(&format!("cannot write the reload variant: {e}")));
+
+    let target_dir = work.join("reload-target");
+    let manifest = plugin.join("Rust").join("Cargo.toml");
+    let built = Command::new(cargo)
+        .args(["rustc", "--manifest-path"])
+        .arg(&manifest)
+        .args([
+            "-p",
+            PLUGIN_CRATE,
+            "--lib",
+            "--crate-type",
+            "cdylib",
+            "--target-dir",
+        ])
+        .arg(&target_dir)
+        .stdout(std::fs::File::create(logs.join("reload-build.log")).expect("a log file"))
+        .stderr(std::fs::File::create(logs.join("reload-build.err.log")).expect("a log file"))
+        .status();
+
+    std::fs::copy(repo.join("tests/engine/plugin/src/probe.rs"), &source)
+        .unwrap_or_else(|e| fail(&format!("cannot restore the plugin's source: {e}")));
+
+    if !built.is_ok_and(|status| status.success()) {
+        return vec![format!(
+            "FAIL chained_reload_rebuilds_the_derived_game_class: the plugin's variant did not \
+             build; see {}",
+            logs.join("reload-build.err.log").display()
+        )];
+    }
+
+    let _ = std::fs::copy(
+        target_dir.join("debug").join(library_file("rusteal_probe")),
+        &variant,
+    );
+    let _ = std::fs::copy(&deployed, &original);
+
+    let results = work.join("reload_results.txt");
+    let _ = std::fs::remove_file(&results);
+
+    let mut child = Command::new(editor(engine))
+        .arg(project.join(format!("{PROJECT}.uproject")))
+        .args([
+            "-nullrhi",
+            "-unattended",
+            "-nosplash",
+            "-nosound",
+            "-ExecCmds=rusteal_tests.reload_prepare,Rusteal.Reload RustealProbe,rusteal_tests.reload_verify,QUIT_EDITOR",
+        ])
+        .env("RUSTEAL_TEST_RESULTS", &results)
+        .env("RUSTEAL_RELOAD_VARIANT", &variant)
+        .env("RUSTEAL_RELOAD_TARGET", &deployed)
+        .stdout(std::fs::File::create(logs.join("reload-editor.log")).expect("a log file"))
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap_or_else(|e| fail(&format!("cannot start the editor: {e}")));
+
+    let finished = wait(&mut child);
+    let staged = deployed.with_extension("restore");
+    let _ = std::fs::copy(&original, &staged);
+    let _ = std::fs::rename(&staged, &deployed);
+
+    let text = std::fs::read_to_string(&results).unwrap_or_default();
+    let lines: Vec<String> = text
+        .lines()
+        .filter(|line| *line != "DONE")
+        .map(str::to_string)
+        .collect();
+
+    if lines.is_empty() {
+        vec![format!(
+            "FAIL chained_reload_rebuilds_the_derived_game_class: the editor {}; its log is in {}",
+            if finished {
+                "wrote no results"
+            } else {
+                "did not finish"
+            },
+            project.join(format!("Saved/Logs/{PROJECT}.log")).display()
+        )]
+    } else {
+        lines
+    }
+}
+
 const PROJECT_SHIMS: &str = r#"
 [[codegen.shims]]
 class = "RustealProbeActor"
@@ -282,10 +408,14 @@ pub fn engine_test() {
     eprintln!("engine-test: running a Rust commandlet");
     let commandlet = run_commandlet(&env.engine_root, &project, &logs);
 
+    eprintln!("engine-test: reloading the plugin in an editor, without a window");
+    let reload = run_chained_reload(&cargo, &env.engine_root, &project, &repo, &work, &logs);
+
     let lines: Vec<&str> = text
         .lines()
         .filter(|line| *line != "DONE")
         .chain(std::iter::once(commandlet.as_str()))
+        .chain(reload.iter().map(String::as_str))
         .collect();
 
     let failed = lines.iter().filter(|line| line.starts_with("FAIL")).count();
