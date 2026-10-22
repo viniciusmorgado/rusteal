@@ -260,6 +260,10 @@ pub const ALL: &[(&str, Check)] = &[
         crate::interfaces::cpp_only_interface_reaches_rust,
     ),
     (
+        "declared_tag_matches_its_parent",
+        crate::tags::declared_tag_matches_its_parent,
+    ),
+    (
         "plugin_class_is_reached_by_reflection",
         crate::libraries::plugin_class_is_reached_by_reflection,
     ),
