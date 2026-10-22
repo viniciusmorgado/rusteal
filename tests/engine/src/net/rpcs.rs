@@ -212,7 +212,7 @@ pub fn validation_refuses_a_bad_call(net: &NetWorld) -> Option<Result<(), String
                 calls.notes.contains_key(&viewer) && calls.pings.contains_key(&viewer)
             })?;
 
-            if !ready {
+            if !ready || !super::engine_rpcs::renamed(net) {
                 return None;
             }
 
