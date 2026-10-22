@@ -264,6 +264,14 @@ pub const ALL: &[(&str, Check)] = &[
         crate::tags::declared_tag_matches_its_parent,
     ),
     (
+        "gameplay_effect_changes_a_rust_attribute",
+        crate::gas::gameplay_effect_changes_a_rust_attribute,
+    ),
+    (
+        "rust_gameplay_ability_activates_and_ends",
+        crate::gas::rust_gameplay_ability_activates_and_ends,
+    ),
+    (
         "plugin_class_is_reached_by_reflection",
         crate::libraries::plugin_class_is_reached_by_reflection,
     ),

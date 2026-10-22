@@ -301,16 +301,25 @@ virtuals = [
 ]
 "#;
 
+const PROJECT_FEATURES: &str = "features = [\"core\", \"engine\", \"input\", \"slate\", \"umg\", \"enhanced-input\", \"gameplay-tags\", \"gameplay-abilities\"]";
+
 fn declare_project_shims(project: &Path) {
     let config = project.join("rusteal.toml");
     let text = std::fs::read_to_string(&config)
         .unwrap_or_else(|e| fail(&format!("cannot read {}: {e}", config.display())));
 
     let base = text.split("\n[[codegen.shims]]").next().unwrap_or(&text);
-    let base = base.replace(
-        "features = [\"core\", \"engine\", \"input\", \"slate\", \"umg\", \"enhanced-input\"]",
-        "features = [\"core\", \"engine\", \"input\", \"slate\", \"umg\", \"enhanced-input\", \"gameplay-tags\"]",
-    );
+    let base = base
+        .lines()
+        .map(|line| {
+            if line.starts_with("features = [") {
+                PROJECT_FEATURES
+            } else {
+                line
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
     let wanted = format!("{}\n{}", base.trim_end(), PROJECT_SHIMS);
 
     if wanted != text {

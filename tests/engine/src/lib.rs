@@ -4,6 +4,7 @@ rusteal_runtime::entry!();
 
 mod checks;
 mod fixtures;
+mod gas;
 mod interfaces;
 mod libraries;
 mod movement_commandlet;

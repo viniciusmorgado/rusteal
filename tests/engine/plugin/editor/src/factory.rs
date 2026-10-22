@@ -26,7 +26,7 @@ impl ProbeNoteFactory {
 
     #[ufunction(Override)]
     fn receive_created_new(&mut self, new_object: UObjectRef<Object>, _context: UObjectRef<Object>) {
-        if let Ok(mut note) = ProbeNote::from_obj(new_object) {
+        if let Ok(note) = ProbeNote::from_obj(new_object) {
             note.set_text("made by Rust");
         }
     }
@@ -60,7 +60,7 @@ impl ProbeNoteImporter {
         };
 
         match ProbeNote::from_obj(new_object) {
-            Ok(mut note) => {
+            Ok(note) => {
                 note.set_text(contents.trim());
                 true
             }
