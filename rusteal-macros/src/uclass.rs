@@ -606,6 +606,11 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
         .chain(args.subobject_classes.iter().map(|(_, ty)| {
             quote! { <#ty as ::rusteal_runtime::runtime::UeClass>::RUST_TYPE_ID }
         }))
+        .chain(uprops.iter().filter_map(|prop| {
+            let info = prop_type::map_type(&prop.ty)?;
+            let class = property_class(&info.kind)?.clone();
+            Some(quote! { <#class as ::rusteal_runtime::runtime::UeClass>::RUST_TYPE_ID })
+        }))
         .collect();
 
     let shape_value = shape::hash(
@@ -1270,6 +1275,18 @@ pub(crate) fn to_snake_case(s: &str) -> String {
 
 pub(crate) fn to_screaming_snake(s: &str) -> String {
     to_snake_case(s).to_uppercase()
+}
+
+fn property_class(kind: &prop_type::PropKind) -> Option<&syn::Type> {
+    match kind {
+        prop_type::PropKind::Object { class }
+        | prop_type::PropKind::SoftObject { class }
+        | prop_type::PropKind::Weak { class } => Some(class),
+        prop_type::PropKind::Class { meta_class }
+        | prop_type::PropKind::SoftClass { meta_class } => Some(meta_class),
+        prop_type::PropKind::Array { element } => property_class(&element.kind),
+        _ => None,
+    }
 }
 
 pub(crate) struct Accessor {
