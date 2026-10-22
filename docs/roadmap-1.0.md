@@ -79,12 +79,12 @@ refers to the next section.
 
 | Gap | Status | Milestone |
 |---|---|---|
-| `Replicated`, `ReplicatedUsing`, lifetime conditions on Rust properties | missing | M7 |
-| `Server`/`Client`/`NetMulticast` RPCs, `Reliable`, `WithValidation`, `BlueprintAuthorityOnly` | missing | M7 |
-| The exporter drops the engine's own `Server` functions | missing | M7 |
-| Dedicated server builds (`rusteal package --server`), client-only stripping | missing | M7 |
-| Push model, replicated subobjects | missing | M7 |
-| Iris (production-ready in 5.8 for licensees): registration, compatibility of Rust classes | missing | M7 |
+| `Replicated`, `ReplicatedUsing`, lifetime conditions on Rust properties | done (M7) | M7 |
+| `Server`/`Client`/`NetMulticast` RPCs, `Reliable`, `WithValidation`, `BlueprintAuthorityOnly` | done (M7) | M7 |
+| The exporter drops the engine's own `Server` functions | done (M7) | M7 |
+| Dedicated server builds (`rusteal package --server`), client-only stripping | `--server` written, not validated; no stripping | M7 |
+| Push model, replicated subobjects | done (M7) | M7 |
+| Iris (production-ready in 5.8 for licensees): registration, compatibility of Rust classes | checked in the harness (M7) | M7 |
 | `FFastArraySerializer`, custom `NetSerialize` | missing | after 1.0 (C++ escape hatch) |
 
 ### Async, the game loop and events
@@ -397,6 +397,18 @@ Windows and macOS.
 dynamic and static builds, across a hot reload of either library.
 
 ### M7 — Multiplayer (≈0.17, L)
+
+**Status (2026-10-22):** in progress. Done on Linux, in a network harness (a
+dedicated server and two clients in Play In Editor, in one editor without a
+window, by default, with push model and with Iris): `Replicated`,
+`ReplicatedUsing` with the previous value and every lifetime condition;
+`Server`, `Client` and `NetMulticast` functions, `Reliable`/`Unreliable`,
+`WithValidation`, `BlueprintAuthorityOnly`; the engine's `Server` functions
+bound; replicated components and `RustealReplicatedObject` subobjects; push
+model dirty marks; `rusteal package --server`. Left: `--server` validated
+with an engine built from source, a multiplayer template (it needs content
+authored in the editor and a playtest), the Lyra slice over the network, and
+code stripped from clients or servers.
 
 What Blueprint can do over the network, from Rust. Angelscript and UnrealSharp
 define their networking at this level; so does Rusteal 1.0.
