@@ -707,6 +707,24 @@ static ERustealErrorCode FinalizeClassImpl(RustealUClassHandle Cls) {
   Class->Bind();
   Class->StaticLink(true);
 
+  Class->NumReplicatedProperties = 0;
+
+  for (TFieldIterator<FProperty> It(Class, EFieldIteratorFlags::ExcludeSuper);
+       It; ++It) {
+    if (It->HasAnyPropertyFlags(CPF_Net)) {
+      Class->NumReplicatedProperties++;
+
+      if (It->HasAnyPropertyFlags(CPF_RepNotify) &&
+          !Class->FindFunctionByName(It->RepNotifyFunc)) {
+        UE_LOG(LogRusteal, Error,
+               TEXT("[Rusteal] %s::%s replicates with %s, which is not a "
+                    "#[ufunction] of the class"),
+               *Class->GetName(), *It->GetName(),
+               *It->RepNotifyFunc.ToString());
+      }
+    }
+  }
+
   Class->AssembleReferenceTokenStream(true);
 
   NotifyRegistrationEvent(Class->GetOutermost()->GetFName(), Class->GetFName(),
@@ -899,6 +917,37 @@ SetPropertyMetadataImpl(RustealFPropertyHandle Prop, const uint8 *Key,
                         ReifyUtf8ToFString(Value, ValueLen));
 
 #endif
+  return ERustealErrorCode::Ok;
+}
+
+static ERustealErrorCode
+SetPropertyReplicationImpl(RustealFPropertyHandle Prop, uint8 Condition,
+                           const uint8 *RepNotify, uint32 RepNotifyLen) {
+  FProperty *Property = static_cast<FProperty *>(Prop.ptr);
+
+  if (!Property) {
+    return RustealFail(ERustealErrorCode::NullArgument);
+  }
+
+  if (Condition >= COND_Max) {
+    return RustealFail(
+        ERustealErrorCode::InvalidOperation,
+        FString::Printf(TEXT("%s: %d is not a replication condition"),
+                        *Property->GetName(), Condition));
+  }
+
+  Property->PropertyFlags |= CPF_Net;
+  Property->SetBlueprintReplicationCondition(
+      static_cast<ELifetimeCondition>(Condition));
+
+  if (RepNotifyLen > 0) {
+    Property->PropertyFlags |= CPF_RepNotify;
+    Property->RepNotifyFunc = ReifyUtf8ToFName(RepNotify, RepNotifyLen);
+  } else {
+    Property->PropertyFlags &= ~CPF_RepNotify;
+    Property->RepNotifyFunc = NAME_None;
+  }
+
   return ERustealErrorCode::Ok;
 }
 
@@ -1535,5 +1584,5 @@ FRustealReifyApi GReifyApi = {
     &AddInterfaceImpl,        &SetClassConfigImpl,
     &CreateEnumImpl,          &CreateInterfaceImpl,
     &FinalizeInterfaceImpl,   &AddInterfaceClassImpl,
-    &SetFunctionMetadataImpl,
+    &SetFunctionMetadataImpl, &SetPropertyReplicationImpl,
 };
