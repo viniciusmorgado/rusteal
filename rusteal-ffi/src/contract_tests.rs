@@ -42,3 +42,8 @@ const _: () = assert!(size_of::<crate::callbacks::RustealModuleExports>() == 32)
 const _: () = assert!(offset_of!(crate::callbacks::RustealModuleExports, init) == 8);
 const _: () = assert!(size_of::<crate::callbacks::RustealStaticModule>() == 24);
 const _: () = assert!(offset_of!(crate::callbacks::RustealStaticModule, exports) == 16);
+
+const _: () = assert!(size_of::<crate::api_table::RustealSlateProps>() == 96);
+const _: () = assert!(offset_of!(crate::api_table::RustealSlateProps, checked) == 76);
+const _: () = assert!(size_of::<crate::api_table::RustealSlateSlot>() == 24);
+const _: () = assert!(offset_of!(crate::api_table::RustealSlateSlot, fill) == 20);

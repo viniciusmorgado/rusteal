@@ -92,3 +92,12 @@ static_assert(offsetof(FRustealStaticModule, exports) == 16,
               "FRustealStaticModule::exports at offset 16");
 static_assert(offsetof(FRustealApiTable, platform) == 128,
               "FRustealApiTable::platform at offset 128");
+
+static_assert(sizeof(RustealSlateProps) == 96,
+              "RustealSlateProps must match rusteal-ffi");
+static_assert(offsetof(RustealSlateProps, checked) == 76,
+              "RustealSlateProps must match rusteal-ffi");
+static_assert(sizeof(RustealSlateSlot) == 24,
+              "RustealSlateSlot must match rusteal-ffi");
+static_assert(offsetof(RustealSlateSlot, fill) == 20,
+              "RustealSlateSlot must match rusteal-ffi");

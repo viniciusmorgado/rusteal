@@ -727,6 +727,60 @@ pub struct RustealWidgetApi {
     ) -> RustealErrorCode,
 
     pub get_widget_tree: unsafe extern "C" fn(user_widget: UObjectHandle) -> UObjectHandle,
+
+    pub slate_new: unsafe extern "C" fn(kind: u32, props: *const RustealSlateProps) -> u64,
+    pub slate_add_child: unsafe extern "C" fn(
+        parent: u64,
+        child: u64,
+        slot: *const RustealSlateSlot,
+    ) -> RustealErrorCode,
+    pub slate_release: unsafe extern "C" fn(id: u64),
+    pub slate_write_text: unsafe extern "C" fn(out: *mut u8, utf8: *const u8, len: u32),
+    pub slate_simulate_click: unsafe extern "C" fn(id: u64) -> bool,
+    pub slate_get_text: unsafe extern "C" fn(
+        id: u64,
+        buffer: *mut u8,
+        capacity: u32,
+        out_len: *mut u32,
+    ) -> RustealErrorCode,
+    pub slate_register_tab: unsafe extern "C" fn(
+        name: *const u8,
+        name_len: u32,
+        label: *const u8,
+        label_len: u32,
+        callback_id: u64,
+    ) -> RustealErrorCode,
+    pub slate_invoke_tab: unsafe extern "C" fn(name: *const u8, name_len: u32) -> bool,
+    pub slate_unregister_tab: unsafe extern "C" fn(name: *const u8, name_len: u32),
+    pub slate_live_widgets: unsafe extern "C" fn() -> u32,
+    pub slate_live_callbacks: unsafe extern "C" fn() -> u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct RustealSlateProps {
+    pub text: *const u8,
+    pub text_len: u32,
+    pub text_callback: u64,
+    pub hint: *const u8,
+    pub hint_len: u32,
+    pub enabled_callback: u64,
+    pub on_event: u64,
+    pub on_commit: u64,
+    pub value: f32,
+    pub min: f32,
+    pub max: f32,
+    pub checked: bool,
+    pub padding: [f32; 4],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct RustealSlateSlot {
+    pub padding: [f32; 4],
+    pub h_align: u8,
+    pub v_align: u8,
+    pub fill: f32,
 }
 
 #[repr(C)]
