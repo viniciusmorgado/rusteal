@@ -290,6 +290,57 @@ fn run_editor(
     }
 }
 
+fn run_net_editor(
+    engine: &Path,
+    project: &Path,
+    repo: &Path,
+    work: &Path,
+    logs: &Path,
+) -> Vec<String> {
+    let results = work.join("net_results.txt");
+    let _ = std::fs::remove_file(&results);
+
+    let mut child = Command::new(editor(engine))
+        .arg(project.join(format!("{PROJECT}.uproject")))
+        .args([
+            "-nullrhi",
+            "-unattended",
+            "-nosplash",
+            "-nosound",
+            &format!(
+                "-ExecCmds=rusteal_tests.net_configure_pie,py {}",
+                repo.join("tests/engine/net/start_pie.py").display()
+            ),
+        ])
+        .env("RUSTEAL_NET_TEST_RESULTS", &results)
+        .stdout(std::fs::File::create(logs.join("net-editor.log")).expect("a log file"))
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap_or_else(|e| fail(&format!("cannot start the editor: {e}")));
+
+    let finished = wait(&mut child);
+    let text = std::fs::read_to_string(&results).unwrap_or_default();
+    let lines: Vec<String> = text
+        .lines()
+        .filter(|line| *line != "DONE")
+        .map(str::to_string)
+        .collect();
+
+    if lines.is_empty() {
+        vec![format!(
+            "FAIL net_checks: the editor {}; its log is in {}",
+            if finished {
+                "wrote no results"
+            } else {
+                "did not finish"
+            },
+            project.join(format!("Saved/Logs/{PROJECT}.log")).display()
+        )]
+    } else {
+        lines
+    }
+}
+
 const PROJECT_SHIMS: &str = r#"
 [[codegen.shims]]
 class = "RustealProbeActor"
@@ -458,11 +509,17 @@ pub fn engine_test() {
     );
     let reload = run_editor(&cargo, &env.engine_root, &project, &repo, &work, &logs);
 
+    eprintln!(
+        "engine-test: running a dedicated server and two clients in Play In Editor, without a window"
+    );
+    let net = run_net_editor(&env.engine_root, &project, &repo, &work, &logs);
+
     let lines: Vec<&str> = text
         .lines()
         .filter(|line| *line != "DONE")
         .chain(std::iter::once(commandlet.as_str()))
         .chain(reload.iter().map(String::as_str))
+        .chain(net.iter().map(String::as_str))
         .collect();
 
     let failed = lines.iter().filter(|line| line.starts_with("FAIL")).count();
