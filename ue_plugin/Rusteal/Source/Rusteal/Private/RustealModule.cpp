@@ -13,12 +13,12 @@
 #include "RustealApiTable.h"
 #include "RustealLibraries.h"
 #include "RustealLibrary.h"
+#include "RustealStrings.h"
 #include "URustealReifiedClass.h"
 
 #if WITH_EDITOR && PLATFORM_LINUX
 #include <sys/stat.h>
 #include <unistd.h>
-#include "RustealStrings.h"
 #endif
 
 #ifndef RUSTEAL_STATIC
