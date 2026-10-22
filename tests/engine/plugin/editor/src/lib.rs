@@ -3,6 +3,7 @@
 rusteal_runtime::entry!();
 
 mod checks;
+mod factory;
 mod subsystem;
 mod utility;
 

@@ -250,8 +250,9 @@ fn run_editor(
             "-nosplash",
             "-nosound",
             &format!(
-                "-ExecCmds=rusteal_tests.reload_prepare,Rusteal.Reload RustealProbe,rusteal_tests.reload_verify,rusteal_editor_tests.run,py {},QUIT_EDITOR",
-                repo.join("tests/engine/plugin/editor/python_names.py").display()
+                "-ExecCmds=rusteal_tests.reload_prepare,Rusteal.Reload RustealProbe,rusteal_tests.reload_verify,rusteal_editor_tests.run,py {},py {},QUIT_EDITOR",
+                repo.join("tests/engine/plugin/editor/python_names.py").display(),
+                repo.join("tests/engine/plugin/editor/factories.py").display()
             ),
         ])
         .env("RUSTEAL_TEST_RESULTS", &results)
