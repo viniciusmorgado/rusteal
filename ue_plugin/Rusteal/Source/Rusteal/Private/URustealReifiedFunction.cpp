@@ -116,6 +116,13 @@ DEFINE_FUNCTION(URustealReifiedFunction::execCallRustFunction) {
 
   UObject *Self = P_THIS;
 
+  if (!ReifiedFunc->Library || !ReifiedFunc->Library->IsLoaded()) {
+    UE_LOG(LogRusteal, Warning,
+           TEXT("[Rusteal] %s was called on %s, but the Rust library it came "
+                "from is no longer loaded: it does nothing."),
+           *ReifiedFunc->GetPathName(), *GetNameSafe(Self));
+  }
+
   RustealTakePendingScriptError();
 
   RustealCallLibrary(
