@@ -295,13 +295,74 @@ fn run_editor(
     }
 }
 
+/// The network checks run once with the engine's defaults and once per variant: a name, the
+/// console command that turns it on before Play In Editor starts, and arguments for the editor.
+const NET_VARIANTS: &[(&str, &str, &[&str])] = &[
+    ("", "", &[]),
+    ("push model", "Net.IsPushModelEnabled 1", &[]),
+    (
+        "Iris",
+        "",
+        &[
+            "-UseIrisReplication=1",
+            "-ini:Engine:[SystemSettings]:net.SubObjects.DefaultUseSubObjectReplicationList=1",
+        ],
+    ),
+];
+
+fn enable_engine_plugin(project: &Path, name: &str) {
+    let path = project.join(format!("{PROJECT}.uproject"));
+    let text = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| fail(&format!("cannot read {}: {e}", path.display())));
+    let mut descriptor: serde_json::Value = serde_json::from_str(&text)
+        .unwrap_or_else(|e| fail(&format!("cannot parse {}: {e}", path.display())));
+
+    let Some(plugins) = descriptor["Plugins"].as_array_mut() else {
+        fail(&format!("{} has no plugin list", path.display()));
+    };
+
+    if plugins.iter().any(|plugin| plugin["Name"] == name) {
+        return;
+    }
+
+    plugins.push(serde_json::json!({ "Name": name, "Enabled": true }));
+
+    let text = serde_json::to_string_pretty(&descriptor).expect("a descriptor");
+    std::fs::write(&path, text + "\n")
+        .unwrap_or_else(|e| fail(&format!("cannot write {}: {e}", path.display())));
+}
+
 fn run_net_editor(
     engine: &Path,
     project: &Path,
     repo: &Path,
     work: &Path,
     logs: &Path,
+    (variant, command, arguments): (&str, &str, &[&str]),
 ) -> Vec<String> {
+    let label = |line: &str| {
+        if variant.is_empty() {
+            line.to_string()
+        } else {
+            match line.split_once(':') {
+                Some((head, tail)) => format!("{head} ({variant}):{tail}"),
+                None => format!("{line} ({variant})"),
+            }
+        }
+    };
+    let setup = if command.is_empty() {
+        String::new()
+    } else {
+        format!("{command},")
+    };
+    let log_name = if variant.is_empty() {
+        "net-editor.log".to_string()
+    } else {
+        format!(
+            "net-editor-{}.log",
+            variant.replace(' ', "-").to_lowercase()
+        )
+    };
     let results = work.join("net_results.txt");
     let _ = std::fs::remove_file(&results);
 
@@ -313,12 +374,13 @@ fn run_net_editor(
             "-nosplash",
             "-nosound",
             &format!(
-                "-ExecCmds=rusteal_tests.net_configure_pie,py {}",
+                "-ExecCmds={setup}rusteal_tests.net_configure_pie,py {}",
                 repo.join("tests/engine/net/start_pie.py").display()
             ),
         ])
+        .args(arguments)
         .env("RUSTEAL_NET_TEST_RESULTS", &results)
-        .stdout(std::fs::File::create(logs.join("net-editor.log")).expect("a log file"))
+        .stdout(std::fs::File::create(logs.join(log_name)).expect("a log file"))
         .stderr(std::process::Stdio::null())
         .spawn()
         .unwrap_or_else(|e| fail(&format!("cannot start the editor: {e}")));
@@ -328,11 +390,11 @@ fn run_net_editor(
     let lines: Vec<String> = text
         .lines()
         .filter(|line| *line != "DONE")
-        .map(str::to_string)
+        .map(label)
         .collect();
 
     if lines.is_empty() {
-        vec![format!(
+        vec![label(&format!(
             "FAIL net_checks: the editor {}; its log is in {}",
             if finished {
                 "wrote no results"
@@ -340,7 +402,7 @@ fn run_net_editor(
                 "did not finish"
             },
             project.join(format!("Saved/Logs/{PROJECT}.log")).display()
-        )]
+        ))]
     } else {
         lines
     }
@@ -437,6 +499,7 @@ pub fn engine_test() {
     }
 
     declare_project_shims(&project);
+    enable_engine_plugin(&project, "Iris");
     add_probe_plugin(&cli, &project, &repo, &logs);
 
     copy_sources(
@@ -517,7 +580,12 @@ pub fn engine_test() {
     eprintln!(
         "engine-test: running a dedicated server and two clients in Play In Editor, without a window"
     );
-    let net = run_net_editor(&env.engine_root, &project, &repo, &work, &logs);
+    let net: Vec<String> = NET_VARIANTS
+        .iter()
+        .flat_map(|&variant| {
+            run_net_editor(&env.engine_root, &project, &repo, &work, &logs, variant)
+        })
+        .collect();
 
     let lines: Vec<&str> = text
         .lines()
