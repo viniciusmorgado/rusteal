@@ -5,6 +5,7 @@ rusteal_runtime::entry!();
 mod checks;
 mod fixtures;
 mod interfaces;
+mod libraries;
 mod movement_commandlet;
 mod runner;
 mod virtuals;
