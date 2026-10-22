@@ -21,6 +21,14 @@ const CHECKS: &[(&str, Check)] = &[
         "editor_utility_object_runs_from_the_subsystem",
         editor_utility_object_runs_from_the_subsystem,
     ),
+    (
+        "slate_widgets_call_their_closures",
+        crate::slate_checks::widgets_call_their_closures,
+    ),
+    (
+        "slate_tab_opens_with_rust_content",
+        crate::slate_checks::tab_opens_with_rust_content,
+    ),
 ];
 
 fn ensure(condition: bool, what: impl Into<String>) -> Result<(), String> {
