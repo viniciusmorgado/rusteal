@@ -92,6 +92,14 @@ pub mod callbacks {
         });
     }
 
+    pub fn retry_deferred_classes(module: &'static Module, last_try: bool) {
+        let _scope = module.enter();
+
+        runtime::ffi_boundary((), || {
+            runtime::reify_registry::retry_deferred(module, last_try);
+        });
+    }
+
     pub fn on_shutdown(module: &'static Module) {
         crate::shutdown(module);
     }
@@ -329,6 +337,10 @@ macro_rules! entry {
                 $crate::callbacks::release_delegate_callback(&__RUSTEAL_MODULE, callback_id)
             }
 
+            extern "C" fn retry_deferred_classes(last_try: bool) {
+                $crate::callbacks::retry_deferred_classes(&__RUSTEAL_MODULE, last_try)
+            }
+
             static CALLBACKS: $crate::ffi::RustealRustCallbacks =
                 $crate::ffi::RustealRustCallbacks {
                     drop_rust_instance,
@@ -339,6 +351,7 @@ macro_rules! entry {
                     notify_pinned_destroyed,
                     on_tick,
                     release_delegate_callback,
+                    retry_deferred_classes,
                 };
 
             extern "C" fn init(
