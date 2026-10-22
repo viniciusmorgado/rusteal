@@ -59,6 +59,7 @@ extern void RustealTimersForgetLibrary(FRustealLibrary *Library);
 extern void RustealTickFunctionsForgetLibrary(FRustealLibrary *Library);
 extern void RustealSlateForgetLibrary(FRustealLibrary *Library);
 extern void RustealDetailsForgetLibrary(FRustealLibrary *Library);
+extern void RustealAutomationForgetLibrary(FRustealLibrary *Library);
 extern void RustealLatentProxiesForgetLibrary(FRustealLibrary *Library);
 extern void RustealLoadingForgetLibrary(FRustealLibrary *Library);
 extern void RustealLatentFunctionsForgetLibrary(FRustealLibrary *Library);
@@ -477,6 +478,7 @@ static void UnloadLibrary(FRustealLibrary &Library) {
   RustealTimersForgetLibrary(&Library);
   RustealTickFunctionsForgetLibrary(&Library);
   RustealDetailsForgetLibrary(&Library);
+  RustealAutomationForgetLibrary(&Library);
   RustealSlateForgetLibrary(&Library);
   RustealLatentProxiesForgetLibrary(&Library);
   RustealLoadingForgetLibrary(&Library);
