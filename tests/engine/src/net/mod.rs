@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
+mod engine_rpcs;
 mod properties;
 mod rpcs;
 
@@ -102,6 +103,10 @@ fn checks() -> &'static [NetCheck] {
         NetCheck {
             name: "multicast_runs_everywhere",
             check: rpcs::multicast_runs_everywhere,
+        },
+        NetCheck {
+            name: "engine_server_function_runs_on_the_server",
+            check: engine_rpcs::engine_server_function_runs_on_the_server,
         },
         NetCheck {
             name: "validation_refuses_a_bad_call",
