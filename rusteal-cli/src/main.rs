@@ -107,6 +107,8 @@ enum Commands {
         platform: Option<String>,
         #[arg(long, value_parser = optimizations::Switch::parse, default_value = "on")]
         optimizations: optimizations::Switch,
+        #[arg(long)]
+        server: bool,
     },
     Upgrade {
         project: Option<PathBuf>,
@@ -276,6 +278,7 @@ fn main() {
             link_statically,
             platform,
             optimizations,
+            server,
         } => {
             let root = project_root(project.as_deref());
             check_version(&root, Scope::PinsAndPlugins);
@@ -292,6 +295,7 @@ fn main() {
                 optimizations,
                 link_statically,
                 &target,
+                server,
             );
         }
         Commands::Platform {

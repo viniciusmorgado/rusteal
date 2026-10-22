@@ -22,8 +22,18 @@ pub fn run_package(
     switch: Switch,
     link_statically: bool,
     target: &Platform,
+    server: bool,
 ) {
     let host = HostPlatform::CURRENT.ubt_platform;
+
+    if server && engine.join(INSTALLED_BUILD).is_file() {
+        fail(&format!(
+            "a dedicated server is built with an engine built from source: {} is an installed \
+             build ({INSTALLED_BUILD}), which has no server target. Package the game without \
+             --server, or point rusteal at a source build of the engine.",
+            engine.display()
+        ));
+    }
 
     if !link_statically && (!target.is_host(host) || target.dynamic_library.is_none()) {
         fail(&format!(
@@ -40,6 +50,18 @@ pub fn run_package(
         find_uproject(root).unwrap_or_else(|| fail(&format!("no .uproject in {}", root.display())));
 
     let uproject = build_cmd::canonical_no_prefix(&uproject);
+
+    if server {
+        match ensure_server_target(root, &uproject) {
+            Ok(Some(written)) => eprintln!(
+                "rusteal package: wrote the dedicated server's target, {}",
+                written.display()
+            ),
+            Ok(None) => {}
+            Err(e) => fail(&e),
+        }
+    }
+
     let platform = &HostPlatform::CURRENT;
     let uat = engine.join(platform.uat_script);
 
@@ -119,6 +141,10 @@ pub fn run_package(
         "-utf8output".to_string(),
     ];
 
+    if server {
+        uat_args.extend(server_uat_args(&target.name, configuration));
+    }
+
     uat_args.extend(target.uat_args.iter().cloned());
     let uat_args: Vec<&str> = uat_args.iter().map(String::as_str).collect();
     let code = build_cmd::run_cmd_code_env(&uat_args, &env);
@@ -147,9 +173,60 @@ pub fn run_package(
     }
 
     eprintln!(
-        "\nrusteal package: done, the game is in {}",
+        "\nrusteal package: done, the {} is in {}",
+        if server { "dedicated server" } else { "game" },
         output.display()
     );
+}
+
+const INSTALLED_BUILD: &str = "Engine/Build/InstalledBuild.txt";
+
+pub fn server_target_text(project: &str) -> String {
+    let target = format!("{project}Server");
+
+    format!(
+        "using UnrealBuildTool;\n\npublic class {target}Target : TargetRules\n{{\n\
+         \tpublic {target}Target(TargetInfo Target) : base(Target)\n\t{{\n\
+         \t\tType = TargetType.Server;\n\
+         \t\tDefaultBuildSettings = BuildSettingsVersion.Latest;\n\
+         \t\tIncludeOrderVersion = EngineIncludeOrderVersion.Latest;\n\
+         \t\tExtraModuleNames.Add(\"{project}\");\n\t}}\n}}\n"
+    )
+}
+
+fn ensure_server_target(root: &Path, uproject: &Path) -> Result<Option<PathBuf>, String> {
+    let project = uproject
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .ok_or_else(|| format!("{} has no project name", uproject.display()))?;
+    let source = root.join("Source");
+
+    if !source.join(format!("{project}.Target.cs")).is_file() {
+        return Err(format!(
+            "a dedicated server needs the project's C++ targets, and {} has no {project}.Target.cs",
+            source.display()
+        ));
+    }
+
+    let path = source.join(format!("{project}Server.Target.cs"));
+
+    if path.is_file() {
+        return Ok(None);
+    }
+
+    fs::write(&path, server_target_text(project))
+        .map_err(|e| format!("cannot write {}: {e}", path.display()))?;
+
+    Ok(Some(path))
+}
+
+pub fn server_uat_args(platform: &str, configuration: &str) -> Vec<String> {
+    vec![
+        "-server".to_string(),
+        "-noclient".to_string(),
+        format!("-serverplatform={platform}"),
+        format!("-serverconfig={configuration}"),
+    ]
 }
 
 const PLUGIN_FILTER: &[&str] = &[
@@ -536,6 +613,43 @@ mod tests {
         );
 
         fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn a_dedicated_server_gets_a_server_target() {
+        let dir =
+            std::env::temp_dir().join(format!("rusteal-server-target-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join("Source")).unwrap();
+        let uproject = dir.join("Arena.uproject");
+
+        assert!(
+            ensure_server_target(&dir, &uproject)
+                .unwrap_err()
+                .contains("Arena.Target.cs")
+        );
+
+        fs::write(dir.join("Source/Arena.Target.cs"), "").unwrap();
+        let written = ensure_server_target(&dir, &uproject).unwrap().unwrap();
+        let text = fs::read_to_string(&written).unwrap();
+
+        assert!(written.ends_with("Source/ArenaServer.Target.cs"));
+        assert!(text.contains("public class ArenaServerTarget : TargetRules"));
+        assert!(text.contains("Type = TargetType.Server;"));
+        assert!(text.contains("ExtraModuleNames.Add(\"Arena\");"));
+        assert!(ensure_server_target(&dir, &uproject).unwrap().is_none());
+
+        assert_eq!(
+            server_uat_args("Linux", "Shipping"),
+            [
+                "-server",
+                "-noclient",
+                "-serverplatform=Linux",
+                "-serverconfig=Shipping"
+            ]
+        );
+
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
