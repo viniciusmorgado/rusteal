@@ -165,6 +165,67 @@ pub(crate) struct UPropertyArgs {
     category: Option<String>,
     bind_widget: Option<&'static str>,
     meta: Vec<(String, String)>,
+    replicated: bool,
+    rep_notify: Option<String>,
+    replication: Option<u8>,
+}
+
+const REPLICATION_CONDITIONS: &[(&str, u8)] = &[
+    ("None", 0),
+    ("InitialOnly", 1),
+    ("OwnerOnly", 2),
+    ("SkipOwner", 3),
+    ("SimulatedOnly", 4),
+    ("AutonomousOnly", 5),
+    ("SimulatedOrPhysics", 6),
+    ("InitialOrOwner", 7),
+    ("Custom", 8),
+    ("ReplayOrOwner", 9),
+    ("ReplayOnly", 10),
+    ("SimulatedOnlyNoReplay", 11),
+    ("SimulatedOrPhysicsNoReplay", 12),
+    ("SkipReplay", 13),
+    ("Dynamic", 14),
+    ("Never", 15),
+];
+
+fn replication_condition(value: &Expr) -> syn::Result<u8> {
+    let name = str_value(value, "replication")?;
+
+    REPLICATION_CONDITIONS
+        .iter()
+        .find(|(condition, _)| *condition == name)
+        .map(|(_, value)| *value)
+        .ok_or_else(|| {
+            syn::Error::new_spanned(
+                value,
+                format!(
+                    "unknown replication condition `{name}`: expected one of {}",
+                    REPLICATION_CONDITIONS
+                        .iter()
+                        .map(|(condition, _)| *condition)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+            )
+        })
+}
+
+fn rep_notify_name(value: &Expr) -> syn::Result<String> {
+    match value {
+        Expr::Path(path) if path.path.get_ident().is_some() => Ok(prop_type::to_pascal_case(
+            &path.path.get_ident().unwrap().unraw().to_string(),
+        )),
+        Expr::Lit(syn::ExprLit {
+            lit: syn::Lit::Str(s),
+            ..
+        }) => Ok(s.value()),
+        other => Err(syn::Error::new_spanned(
+            other,
+            "ReplicatedUsing names a #[ufunction] of the class: ReplicatedUsing = on_rep_health, \
+             or its Unreal name as a string",
+        )),
+    }
 }
 
 fn meta_value(value: &Expr) -> syn::Result<String> {
@@ -315,13 +376,16 @@ pub(crate) fn parse_uproperty_args(attr: &syn::Attribute) -> syn::Result<UProper
                 } else if p.is_ident("BindWidgetAnimOptional") {
                     args.bind_widget = Some("BindWidgetAnimOptional");
                     args.transient = true;
+                } else if p.is_ident("Replicated") {
+                    args.replicated = true;
                 } else {
                     return Err(syn::Error::new_spanned(
                         p,
                         "unknown #[uproperty] argument: expected BlueprintReadWrite, \
                          BlueprintReadOnly, EditAnywhere, EditDefaultsOnly, VisibleAnywhere, \
                          SaveGame, Config, Transient, BindWidget, BindWidgetOptional, \
-                         BindWidgetAnim, BindWidgetAnimOptional, default = ..., \
+                         BindWidgetAnim, BindWidgetAnimOptional, Replicated, \
+                         ReplicatedUsing = ..., replication = \"...\", default = ..., \
                          name = \"...\", category = \"...\" or meta(...)",
                     ));
                 }
@@ -338,6 +402,13 @@ pub(crate) fn parse_uproperty_args(attr: &syn::Attribute) -> syn::Result<UProper
             Meta::List(list) if list.path.is_ident("meta") => {
                 args.meta.extend(parse_meta_list(list)?);
             }
+            Meta::NameValue(nv) if nv.path.is_ident("ReplicatedUsing") => {
+                args.replicated = true;
+                args.rep_notify = Some(rep_notify_name(&nv.value)?);
+            }
+            Meta::NameValue(nv) if nv.path.is_ident("replication") => {
+                args.replication = Some(replication_condition(&nv.value)?);
+            }
             other => {
                 return Err(syn::Error::new_spanned(
                     other,
@@ -345,6 +416,14 @@ pub(crate) fn parse_uproperty_args(attr: &syn::Attribute) -> syn::Result<UProper
                 ));
             }
         }
+    }
+
+    if args.replication.is_some() && !args.replicated {
+        return Err(syn::Error::new_spanned(
+            attr,
+            "`replication` is the condition of a replicated property: add Replicated or \
+             ReplicatedUsing = ...",
+        ));
     }
 
     Ok(args)
@@ -1803,6 +1882,21 @@ pub(crate) fn add_property_statements(uprops: &[UPropertyField]) -> Vec<TokenStr
             })
             .collect();
 
+        let replication_stmt = prop.args.replicated.then(|| {
+            let condition = prop.args.replication.unwrap_or(0);
+            let notify = prop.args.rep_notify.clone().unwrap_or_default();
+            let notify_bytes = notify.as_bytes();
+            let notify_len = notify.len() as u32;
+
+            quote! {
+                ::rusteal_runtime::runtime::ffi_infallible_ctx(unsafe {
+                    ::rusteal_runtime::runtime::ffi_dispatch::reify_set_property_replication(
+                        #prop_var, #condition, [#(#notify_bytes),*].as_ptr(), #notify_len,
+                    )
+                }, #ue_name);
+            }
+        });
+
         add_prop_stmts.push(quote! {
             let #prop_var = unsafe {
                 ::rusteal_runtime::runtime::ffi_dispatch::reify_add_property(
@@ -1816,6 +1910,7 @@ pub(crate) fn add_property_statements(uprops: &[UPropertyField]) -> Vec<TokenStr
             };
             if !#prop_var.is_null() {
                 #(#meta_stmts)*
+                #replication_stmt
             }
         });
     }
@@ -2051,8 +2146,35 @@ mod tests {
     }
 
     #[test]
+    fn replication_arguments() {
+        let attr: syn::Attribute = parse_quote!(#[uproperty(Replicated)]);
+        let args = parse_uproperty_args(&attr).unwrap();
+        assert!(args.replicated && args.rep_notify.is_none() && args.replication.is_none());
+
+        let attr: syn::Attribute =
+            parse_quote!(#[uproperty(ReplicatedUsing = on_rep_health, replication = "OwnerOnly")]);
+        let args = parse_uproperty_args(&attr).unwrap();
+        assert!(args.replicated);
+        assert_eq!(args.rep_notify.as_deref(), Some("OnRepHealth"));
+        assert_eq!(args.replication, Some(2));
+
+        let attr: syn::Attribute = parse_quote!(#[uproperty(ReplicatedUsing = "OnRep_Health")]);
+        assert_eq!(
+            parse_uproperty_args(&attr).unwrap().rep_notify.as_deref(),
+            Some("OnRep_Health")
+        );
+
+        let attr: syn::Attribute = parse_quote!(#[uproperty(replication = "OwnerOnly")]);
+        assert!(parse_uproperty_args(&attr).is_err());
+
+        let attr: syn::Attribute = parse_quote!(#[uproperty(Replicated, replication = "Owner")]);
+        let err = parse_uproperty_args(&attr).err().unwrap().to_string();
+        assert!(err.contains("unknown replication condition") && err.contains("SkipOwner"));
+    }
+
+    #[test]
     fn unknown_uproperty_arguments_are_errors() {
-        let attr: syn::Attribute = parse_quote!(#[uproperty(EditAnywhere, Replicated)]);
+        let attr: syn::Attribute = parse_quote!(#[uproperty(EditAnywhere, Replicate)]);
         let err = parse_uproperty_args(&attr).err().unwrap();
         assert!(err.to_string().contains("unknown #[uproperty] argument"));
         let attr: syn::Attribute = parse_quote!(#[uproperty(meta = "x")]);
