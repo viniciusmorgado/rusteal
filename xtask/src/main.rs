@@ -12,6 +12,7 @@ use dev_env::{DevEnv, expand_home};
 
 const USAGE: &str = "usage: cargo xtask dev-setup [--project <path> | --new <path>]
        cargo xtask engine-test
+       cargo xtask static-test
        cargo xtask templates-check [<template>:<variant> | plugin:<template>]...
 
 Reads RUSTEAL_DEV_ENGINE_ROOT from .env at the repository root (see .env.example)
@@ -54,6 +55,7 @@ fn main() {
     match args.first().map(String::as_str) {
         Some("dev-setup") => dev_setup(&args[1..]),
         Some("engine-test") => engine_test::engine_test(),
+        Some("static-test") => engine_test::static_test(),
         Some("templates-check") => templates_check::templates_check(&args[1..]),
         _ => usage(),
     }
