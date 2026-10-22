@@ -13,6 +13,7 @@ pub mod ffi_dispatch {
 pub mod console;
 pub mod containers;
 pub mod delegate_registry;
+pub mod details;
 pub mod dynamic_call;
 pub mod dynamic_value;
 mod executor;

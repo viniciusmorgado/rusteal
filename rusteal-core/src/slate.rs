@@ -49,7 +49,11 @@ impl Widget {
         unsafe { ffi_dispatch::widget_slate_simulate_click(self.id) }
     }
 
-    fn into_id(self) -> u64 {
+    pub(crate) fn from_id(id: u64) -> Option<Self> {
+        (id != 0).then_some(Widget { id })
+    }
+
+    pub(crate) fn into_id(self) -> u64 {
         let id = self.id;
         std::mem::forget(self);
         id
