@@ -92,6 +92,18 @@ bool RustealSlate_InvokeTab(const uint8 *Name, uint32 NameLen);
 void RustealSlate_UnregisterTab(const uint8 *Name, uint32 NameLen);
 uint32 RustealSlate_LiveWidgets();
 uint32 RustealSlate_LiveCallbacks();
+ERustealErrorCode RustealDetails_CustomizeClass(RustealUClassHandle Class,
+                                                uint64 CallbackId);
+void RustealDetails_UnregisterClass(RustealUClassHandle Class);
+ERustealErrorCode RustealDetails_AddRow(uint64 Layout, const uint8 *Category,
+                                        uint32 CategoryLen, uint64 NameWidget,
+                                        uint64 ValueWidget);
+ERustealErrorCode RustealDetails_HideProperty(uint64 Layout,
+                                              const uint8 *Property,
+                                              uint32 PropertyLen);
+uint32 RustealDetails_Objects(uint64 Layout, RustealUObjectHandle *Out,
+                              uint32 Capacity);
+uint64 RustealDetails_View(RustealUObjectHandle Object);
 
 FRustealWidgetApi GWidgetApi = {
     &CreateWidgetImpl,
@@ -108,4 +120,10 @@ FRustealWidgetApi GWidgetApi = {
     &RustealSlate_UnregisterTab,
     &RustealSlate_LiveWidgets,
     &RustealSlate_LiveCallbacks,
+    &RustealDetails_CustomizeClass,
+    &RustealDetails_UnregisterClass,
+    &RustealDetails_AddRow,
+    &RustealDetails_HideProperty,
+    &RustealDetails_Objects,
+    &RustealDetails_View,
 };
