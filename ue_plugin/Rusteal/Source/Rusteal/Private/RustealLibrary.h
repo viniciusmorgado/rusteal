@@ -12,6 +12,9 @@ struct FRustealLibrary {
   FString LoadedPath;
   int32 ReloadCount = 0;
 
+  uint64 LoadedDevice = 0;
+  uint64 LoadedInode = 0;
+
   void *Handle = nullptr;
   const FRustealModuleExports *Exports = nullptr;
   const FRustealRustCallbacks *Callbacks = nullptr;
