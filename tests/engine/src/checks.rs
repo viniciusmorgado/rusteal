@@ -259,6 +259,10 @@ pub const ALL: &[(&str, Check)] = &[
         "cpp_only_interface_reaches_rust",
         crate::interfaces::cpp_only_interface_reaches_rust,
     ),
+    (
+        "plugin_class_is_reached_by_reflection",
+        crate::libraries::plugin_class_is_reached_by_reflection,
+    ),
 ];
 
 fn ensure(condition: bool, what: impl Into<String>) -> Result<(), String> {
