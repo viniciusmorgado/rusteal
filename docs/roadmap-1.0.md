@@ -115,8 +115,8 @@ refers to the next section.
 
 | Gap | Status | Milestone |
 |---|---|---|
-| Gameplay Ability System: attribute sets (`FGameplayAttributeData`, `PreAttributeChange`, `PostGameplayEffectExecute`), ability tasks, effect contexts, execution calculations | bindings only | M5 |
-| Gameplay tags declared in Rust (the `UE_DEFINE_GAMEPLAY_TAG` registration), `IGameplayTagAssetInterface`, helpers | bindings only | M5 |
+| Gameplay Ability System: attribute sets (`FGameplayAttributeData`, `PreAttributeChange`, `PostGameplayEffectExecute`), ability tasks, effect contexts, execution calculations | attribute sets, effects and abilities in Rust (M5); ability tasks, executions left | M5 |
+| Gameplay tags declared in Rust (the `UE_DEFINE_GAMEPLAY_TAG` registration), `IGameplayTagAssetInterface`, helpers | done (M3, M5) | M5 |
 | CommonUI (activatable widgets, stacks, input routing) | not listed | M5 |
 | UMG ViewModel (MVVM): `FieldNotify` on Rust properties | missing | M5 |
 | Game Features and modular gameplay: `UGameFeatureAction`, component manager extension handlers | not listed | M5 |
@@ -349,6 +349,18 @@ and Editor Utility Widgets and scripted actions tested with a Rust parent.
 its UI.
 
 ### M5 — Gameplay frameworks (≈0.15, L)
+
+**Status (2026-10-22):** in progress. Done on Linux, in the harness: gameplay
+tags declared in Rust as native tags (`declare_gameplay_tag`,
+`gameplay_tag`); bases per binding feature, with event parameters mapped from
+a C++ struct, default bodies and static functions; with `gameplay-abilities`,
+`RustealAttributeSet`, so an attribute set in Rust clamps its attributes and
+sees executed effects, next to a Rust gameplay effect and a Rust gameplay
+ability given, activated and ended. Left: the done-when (a Lyra slice, which
+needs the maintainer's copy of Lyra), ability tasks and execution
+calculations in Rust, GAS over the network (M7), CommonUI, MVVM
+`FieldNotify`, Game Features, Smart Objects, World Partition and Data Layers,
+PCG, MetaSound and the EOS sample.
 
 Each a feature in `rusteal.toml`, with a page in the gamedev handbook and a
 sample.
