@@ -63,6 +63,7 @@ pub fn run_build(
     let ctx = BuildContext::new(&config, project_root, engine_path, release, plugin);
 
     ctx.project_shims(&config, steps_build_cpp(step, from));
+    ctx.loc_text(&config);
 
     let steps: Vec<u8> = if let Some(s) = step {
         vec![s]
@@ -504,6 +505,52 @@ impl BuildContext {
             }
 
             crate::migrate::bindings_dependency(&library.rust_workspace, &library.crate_name);
+        }
+    }
+
+    fn loc_text(&self, config: &ProjectConfig) {
+        let root = &self.layout.root;
+        let Some(project) = rusteal_codegen::config::find_uproject(root).and_then(|uproject| {
+            uproject
+                .file_stem()
+                .map(|s| s.to_string_lossy().into_owned())
+        }) else {
+            return;
+        };
+
+        let module = root.join("Source").join(&project);
+        let header = if module.is_dir() {
+            module.join(rusteal_codegen::loc_text::HEADER)
+        } else {
+            root.join("Source").join(rusteal_codegen::loc_text::HEADER)
+        };
+
+        let dirs: Vec<PathBuf> = std::iter::once(
+            self.layout
+                .rust_workspace()
+                .join(&config.project.crate_name)
+                .join("src"),
+        )
+        .chain(
+            rusteal_codegen::plugin_sources(root)
+                .into_iter()
+                .map(|source| source.src_dir),
+        )
+        .collect();
+
+        let texts = rusteal_codegen::loc_text::texts_in_dirs(&dirs);
+
+        match rusteal_codegen::loc_text::write_header(&header, &texts) {
+            Ok(true) if texts.is_empty() => {
+                eprintln!("  No loctext! left: removed {}", header.display())
+            }
+            Ok(true) => eprintln!(
+                "  {} loctext! texts written to {} for the localization gather",
+                texts.len(),
+                header.display()
+            ),
+            Ok(false) => {}
+            Err(e) => eprintln!("Warning: cannot write {}: {e}", header.display()),
         }
     }
 
