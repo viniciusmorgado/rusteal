@@ -314,6 +314,10 @@ pub(crate) fn doc_tooltip(attrs: &[syn::Attribute]) -> Option<String> {
 }
 
 impl UPropertyArgs {
+    pub(crate) fn is_replicated(&self) -> bool {
+        self.replicated
+    }
+
     pub(crate) fn add_doc_tooltip(&mut self, attrs: &[syn::Attribute]) {
         if self.meta.iter().any(|(key, _)| key == "ToolTip") {
             return;
@@ -777,6 +781,7 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
         &container,
         &format_ident!("reflection_find_property"),
         &owner,
+        true,
     ) {
         let signature = accessor.signature();
         let body = &accessor.body;
@@ -903,6 +908,7 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
         &container,
         &format_ident!("reflection_find_property"),
         &class_owner,
+        false,
     )
     .into_iter()
     .map(|accessor| {
@@ -1722,11 +1728,14 @@ pub(crate) fn accessor_parts(
     }
 }
 
+/// `mark_dirty`: the container is the object, and writes to a replicated property tell push
+/// model replication it changed.
 pub(crate) fn property_accessors(
     uprops: &[UPropertyField],
     container: &TokenStream,
     find_fn: &Ident,
     owner: &TokenStream,
+    mark_dirty: bool,
 ) -> Vec<Accessor> {
     let mut accessors = Vec::new();
 
@@ -1751,6 +1760,22 @@ pub(crate) fn property_accessors(
 
         let (getter_body, setter_body) = accessor_parts(&info.kind, rust_ty, container, &ue_name);
 
+        let dirty = (mark_dirty && prop.args.replicated).then(|| {
+            quote! {
+                unsafe {
+                    ::rusteal_runtime::runtime::ffi_dispatch::world_mark_property_dirty(#container, prop);
+                }
+            }
+        });
+
+        let getter_writes = matches!(
+            info.kind,
+            prop_type::PropKind::Array { .. }
+                | prop_type::PropKind::Map { .. }
+                | prop_type::PropKind::Set { .. }
+        );
+        let getter_dirty = if getter_writes { dirty.clone() } else { None };
+
         let getter_ret = if matches!(info.kind, prop_type::PropKind::Interface { .. }) {
             quote! { Option<#rust_ty> }
         } else {
@@ -1763,6 +1788,7 @@ pub(crate) fn property_accessors(
             ret: Some(getter_ret),
             body: quote! {
                 #find_prop
+                #getter_dirty
                 #getter_body
             },
         });
@@ -1775,6 +1801,7 @@ pub(crate) fn property_accessors(
                 body: quote! {
                     #find_prop
                     #setter_body
+                    #dirty
                 },
             });
         }
