@@ -135,7 +135,7 @@ refers to the next section.
 | Precompiled plugin packages (`BuildPlugin`), several platforms in one package | done | M0 |
 | Engine-wide installs of Rusteal plugins | missing | M0 |
 | A plugin with both a runtime and an editor library | done | M0 |
-| The game using a plugin's Rust types; a Rust parent class in another library | missing | M6 |
+| The game using a plugin's Rust types; a Rust parent class in another library | done (classes, properties, functions and events; not a plugin's structs, enums or delegates, nor plugin to plugin) | M6 |
 | A library built against another Rusteal patch version | missing (exact match) | M9 |
 
 ### Editor extensibility
@@ -358,6 +358,15 @@ menus, in single player (M7 takes it over the network). Lyra exercises almost
 every framework above; it is the objective gate for this milestone.
 
 ### M6 — Libraries that see each other (≈0.16, M)
+
+**Status (2026-10-22):** done, on Linux. The harness has a Rust plugin: the
+game uses its classes through bindings read from the plugin's sources, derives
+from one (the game's class waits until the plugin's library registers), an
+editor without a window reloads the plugin with a changed parent and the
+game's library is reloaded with it, and `cargo xtask static-test` packages the
+project with `--static` and runs the same checks in the packaged game. Left:
+a plugin's structs, enums and delegates; one plugin using another's classes;
+Windows and macOS.
 
 - Generated Rust bindings for another library's Rust classes, from their
   reflection, so the game uses a plugin's types directly.
