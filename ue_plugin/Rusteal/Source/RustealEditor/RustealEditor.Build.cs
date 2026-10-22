@@ -12,12 +12,12 @@ public class RustealEditor : ModuleRules
             "CoreUObject",
             "Engine",
             "EditorSubsystem",
+            "UnrealEd",
         ]);
 
         PrivateDependencyModuleNames.AddRange(
         [
             "Rusteal",
-            "UnrealEd",
             "BlueprintGraph",
             "DirectoryWatcher",
             "MessageLog",
