@@ -150,3 +150,31 @@ pub const CLASS_INHERIT: u32 = CLASS_TRANSIENT
     | CLASS_PROJECT_USER_CONFIG
     | CLASS_PER_PLATFORM_CONFIG
     | CLASS_NEEDS_DEFERRED_DEPENDENCY_LOADING;
+
+/// The Unreal name of a Rust identifier: `move_speed` is `MoveSpeed`.
+pub fn to_pascal_case(s: &str) -> String {
+    s.split('_')
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            let mut chars = part.chars();
+
+            match chars.next() {
+                Some(c) => {
+                    let upper: String = c.to_uppercase().collect();
+
+                    upper + chars.as_str()
+                }
+                None => String::new(),
+            }
+        })
+        .collect()
+}
+
+/// The Unreal name of a property or a parameter: [`to_pascal_case`], with `b_` kept as the bool
+/// prefix (`b_can_dash` is `bCanDash`).
+pub fn to_ue_name(s: &str) -> String {
+    match s.strip_prefix("b_") {
+        Some(rest) if !rest.is_empty() => format!("b{}", to_pascal_case(rest)),
+        _ => to_pascal_case(s),
+    }
+}
