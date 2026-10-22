@@ -273,6 +273,7 @@ ERustealErrorCode RustealTags_AddNative(const uint8 *Name, uint32 NameLen,
                                         const uint8 *Comment,
                                         uint32 CommentLen);
 bool RustealTags_IsRegistered(const uint8 *Name, uint32 NameLen);
+void RustealNet_RpcValidateFailed(const uint8 *Reason, uint32 ReasonLen);
 
 FRustealWorldApi GWorldApi = {
     &SpawnActorImpl,
@@ -310,4 +311,5 @@ FRustealWorldApi GWorldApi = {
     &RustealTick_LiveFunctions,
     &RustealTags_AddNative,
     &RustealTags_IsRegistered,
+    &RustealNet_RpcValidateFailed,
 };
