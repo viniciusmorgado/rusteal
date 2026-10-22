@@ -26,6 +26,7 @@ enum class ERustealSlateKind : uint32 {
   ScrollBox = 8,
   Border = 9,
   Spacer = 10,
+  Adopted = 100,
 };
 
 struct FRustealSlateCallback {
@@ -209,6 +210,9 @@ static TSharedRef<SWidget> MakeWidget(ERustealSlateKind Kind,
 
   case ERustealSlateKind::Spacer:
     return SNew(SSpacer).Size(FVector2D(Props->min, Props->max));
+
+  case ERustealSlateKind::Adopted:
+    break;
   }
 
   return SNullWidget::NullWidget;
@@ -529,3 +533,20 @@ void RustealSlate_UnregisterTab(const uint8 *Name, uint32 NameLen) {
 uint32 RustealSlate_LiveWidgets() { return SlateLiveWidgetsImpl(); }
 
 uint32 RustealSlate_LiveCallbacks() { return SlateLiveCallbacksImpl(); }
+
+uint64 RustealSlateAdopt(const TSharedRef<SWidget> &Widget) {
+  const uint64 Id = GNextWidgetId++;
+  GSlateWidgets.Add(Id, FRustealSlateWidget{Widget, ERustealSlateKind::Adopted,
+                                            RustealCurrentLibrary()});
+  return Id;
+}
+
+TSharedPtr<SWidget> RustealSlateTake(uint64 Id) {
+  if (const FRustealSlateWidget *Entry = GSlateWidgets.Find(Id)) {
+    TSharedRef<SWidget> Widget = Entry->Widget;
+    GSlateWidgets.Remove(Id);
+    return Widget;
+  }
+
+  return nullptr;
+}

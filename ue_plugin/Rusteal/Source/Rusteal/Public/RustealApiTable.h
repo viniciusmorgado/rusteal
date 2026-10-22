@@ -523,6 +523,19 @@ struct FRustealWidgetApi {
   void (*slate_unregister_tab)(const uint8 *name, uint32 name_len);
   uint32 (*slate_live_widgets)();
   uint32 (*slate_live_callbacks)();
+
+  ERustealErrorCode (*details_customize_class)(RustealUClassHandle cls,
+                                               uint64 callback_id);
+  void (*details_unregister_class)(RustealUClassHandle cls);
+  ERustealErrorCode (*details_add_row)(uint64 layout, const uint8 *category,
+                                       uint32 category_len, uint64 name_widget,
+                                       uint64 value_widget);
+  ERustealErrorCode (*details_hide_property)(uint64 layout,
+                                             const uint8 *property,
+                                             uint32 property_len);
+  uint32 (*details_objects)(uint64 layout, RustealUObjectHandle *out,
+                            uint32 capacity);
+  uint64 (*details_view)(RustealUObjectHandle object);
 };
 
 struct FRustealInputApi {

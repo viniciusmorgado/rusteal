@@ -24,6 +24,11 @@ public class Rusteal : ModuleRules
         PrivateDependencyModuleNames.Add("Projects");
         PrivateDependencyModuleNames.AddRange(["HTTP", "AIModule"]);
 
+        if (Target.bBuildEditor)
+        {
+            PrivateDependencyModuleNames.Add("PropertyEditor");
+        }
+
         string StaticSwitch = StaticSwitchFile(Target);
 
         if (File.Exists(StaticSwitch))

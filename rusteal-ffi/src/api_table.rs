@@ -754,6 +754,25 @@ pub struct RustealWidgetApi {
     pub slate_unregister_tab: unsafe extern "C" fn(name: *const u8, name_len: u32),
     pub slate_live_widgets: unsafe extern "C" fn() -> u32,
     pub slate_live_callbacks: unsafe extern "C" fn() -> u32,
+
+    pub details_customize_class:
+        unsafe extern "C" fn(class: UClassHandle, callback_id: u64) -> RustealErrorCode,
+    pub details_unregister_class: unsafe extern "C" fn(class: UClassHandle),
+    pub details_add_row: unsafe extern "C" fn(
+        layout: u64,
+        category: *const u8,
+        category_len: u32,
+        name_widget: u64,
+        value_widget: u64,
+    ) -> RustealErrorCode,
+    pub details_hide_property: unsafe extern "C" fn(
+        layout: u64,
+        property: *const u8,
+        property_len: u32,
+    ) -> RustealErrorCode,
+    pub details_objects:
+        unsafe extern "C" fn(layout: u64, out: *mut UObjectHandle, capacity: u32) -> u32,
+    pub details_view: unsafe extern "C" fn(object: UObjectHandle) -> u64,
 }
 
 #[repr(C)]
