@@ -10,6 +10,7 @@ pub mod traits;
 pub mod ffi_dispatch {
     include!(concat!(env!("OUT_DIR"), "/ffi_dispatch.rs"));
 }
+pub mod automation;
 pub mod console;
 pub mod containers;
 pub mod delegate_registry;

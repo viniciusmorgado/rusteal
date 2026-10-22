@@ -733,6 +733,13 @@ struct FRustealWorldApi {
   void (*stat_end)(uint64 counter);
   uint64 (*memory_scope_begin)(const uint8 *tag, uint32 tag_len);
   void (*memory_scope_end)(uint64 scope);
+
+  ERustealErrorCode (*automation_register_test)(const uint8 *name,
+                                                uint32 name_len,
+                                                uint32 contexts,
+                                                uint64 callback_id);
+  void (*automation_add_message)(uint32 kind, const uint8 *text,
+                                 uint32 text_len);
 };
 
 struct FRustealPlatformApi {

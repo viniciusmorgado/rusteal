@@ -290,6 +290,12 @@ uint64 RustealProfiling_StatBegin(uint64 Stat);
 void RustealProfiling_StatEnd(uint64 Counter);
 uint64 RustealProfiling_MemoryScopeBegin(const uint8 *Tag, uint32 TagLen);
 void RustealProfiling_MemoryScopeEnd(uint64 Scope);
+ERustealErrorCode RustealAutomation_RegisterTest(const uint8 *Name,
+                                                 uint32 NameLen,
+                                                 uint32 Contexts,
+                                                 uint64 CallbackId);
+void RustealAutomation_AddMessage(uint32 Kind, const uint8 *Text,
+                                  uint32 TextLen);
 
 FRustealWorldApi GWorldApi = {
     &SpawnActorImpl,
@@ -339,4 +345,6 @@ FRustealWorldApi GWorldApi = {
     &RustealProfiling_StatEnd,
     &RustealProfiling_MemoryScopeBegin,
     &RustealProfiling_MemoryScopeEnd,
+    &RustealAutomation_RegisterTest,
+    &RustealAutomation_AddMessage,
 };

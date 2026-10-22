@@ -1095,4 +1095,12 @@ pub struct RustealWorldApi {
     pub stat_end: unsafe extern "C" fn(counter: u64),
     pub memory_scope_begin: unsafe extern "C" fn(tag: *const u8, tag_len: u32) -> u64,
     pub memory_scope_end: unsafe extern "C" fn(scope: u64),
+
+    pub automation_register_test: unsafe extern "C" fn(
+        name: *const u8,
+        name_len: u32,
+        contexts: u32,
+        callback_id: u64,
+    ) -> RustealErrorCode,
+    pub automation_add_message: unsafe extern "C" fn(kind: u32, text: *const u8, text_len: u32),
 }
