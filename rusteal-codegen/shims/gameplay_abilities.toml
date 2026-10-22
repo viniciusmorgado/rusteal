@@ -1,0 +1,36 @@
+[[shim]]
+class = "RustealAttributeSet"
+parent = "UAttributeSet"
+include = ["AttributeSet.h", "GameplayEffectExtension.h", "AbilitySystemComponent.h"]
+modules = ["GameplayAbilities", "GameplayTags", "GameplayTasks"]
+category = "Rusteal|AttributeSet"
+virtuals = [
+    "void PreAttributeChange(const FGameplayAttribute &Attribute, float &NewValue)",
+    "void PostAttributeChange(const FGameplayAttribute &Attribute, float OldValue, float NewValue)",
+    "void PreAttributeBaseChange(const FGameplayAttribute &Attribute, float &NewValue) const",
+    "void PostAttributeBaseChange(const FGameplayAttribute &Attribute, float OldValue, float NewValue) const",
+    { signature = "bool PreGameplayEffectExecute(FGameplayEffectModCallbackData &Data)", event_params = [
+        "const FGameplayEffectSpec &EffectSpec",
+        "FGameplayModifierEvaluatedData &EvaluatedData",
+        "UAbilitySystemComponent *Target",
+    ], event_args = [
+        "Data.EffectSpec",
+        "Data.EvaluatedData",
+        "&Data.Target",
+    ], default = "return true;" },
+    { signature = "void PostGameplayEffectExecute(const FGameplayEffectModCallbackData &Data)", event_params = [
+        "const FGameplayEffectSpec &EffectSpec",
+        "const FGameplayModifierEvaluatedData &EvaluatedData",
+        "UAbilitySystemComponent *Target",
+    ], event_args = [
+        "Data.EffectSpec",
+        "Data.EvaluatedData",
+        "&Data.Target",
+    ] },
+]
+functions = [
+    { signature = "FGameplayAttribute AttributeOf(TSubclassOf<UAttributeSet> Set, FName Property)", specifiers = ["BlueprintPure"], body = [
+        "FProperty *Found = Set ? FindFProperty<FProperty>(Set.Get(), Property) : nullptr;",
+        "return FGameplayAttribute::IsSupportedProperty(Found) ? FGameplayAttribute(Found) : FGameplayAttribute();",
+    ] },
+]
