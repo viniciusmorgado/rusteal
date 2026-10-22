@@ -282,6 +282,14 @@ ERustealErrorCode RustealNet_AddReplicatedSubobject(RustealUObjectHandle Actor,
 ERustealErrorCode
 RustealNet_RemoveReplicatedSubobject(RustealUObjectHandle Actor,
                                      RustealUObjectHandle Object);
+uint32 RustealProfiling_TraceEventType(const uint8 *Name, uint32 NameLen);
+void RustealProfiling_TraceBeginEvent(uint32 EventType);
+void RustealProfiling_TraceEndEvent();
+uint64 RustealProfiling_StatCreate(const uint8 *Name, uint32 NameLen);
+uint64 RustealProfiling_StatBegin(uint64 Stat);
+void RustealProfiling_StatEnd(uint64 Counter);
+uint64 RustealProfiling_MemoryScopeBegin(const uint8 *Tag, uint32 TagLen);
+void RustealProfiling_MemoryScopeEnd(uint64 Scope);
 
 FRustealWorldApi GWorldApi = {
     &SpawnActorImpl,
@@ -323,4 +331,12 @@ FRustealWorldApi GWorldApi = {
     &RustealNet_MarkPropertyDirty,
     &RustealNet_AddReplicatedSubobject,
     &RustealNet_RemoveReplicatedSubobject,
+    &RustealProfiling_TraceEventType,
+    &RustealProfiling_TraceBeginEvent,
+    &RustealProfiling_TraceEndEvent,
+    &RustealProfiling_StatCreate,
+    &RustealProfiling_StatBegin,
+    &RustealProfiling_StatEnd,
+    &RustealProfiling_MemoryScopeBegin,
+    &RustealProfiling_MemoryScopeEnd,
 };
