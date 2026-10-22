@@ -29,6 +29,10 @@ const CHECKS: &[(&str, Check)] = &[
         "slate_tab_opens_with_rust_content",
         crate::slate_checks::tab_opens_with_rust_content,
     ),
+    (
+        "details_panel_runs_a_rust_customization",
+        crate::slate_checks::details_panel_runs_a_rust_customization,
+    ),
 ];
 
 fn ensure(condition: bool, what: impl Into<String>) -> Result<(), String> {
