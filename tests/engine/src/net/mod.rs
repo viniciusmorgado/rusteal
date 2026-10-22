@@ -3,6 +3,7 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 mod properties;
+mod rpcs;
 
 use bindings::core_ue::Object;
 use bindings::engine::{ControllerExt, GameplayStatics, KismetSystemLibrary, World};
@@ -12,7 +13,7 @@ use rusteal_runtime::runtime::{RustealResult, UObjectRef, console};
 use rusteal_runtime::{uclass, uclass_impl};
 
 const RESULTS: &str = "RUSTEAL_NET_TEST_RESULTS";
-const CLIENTS: usize = 2;
+pub const CLIENTS: usize = 2;
 const TIMEOUT: Duration = Duration::from_secs(60);
 
 const PIE_CLIENT: u8 = 2;
@@ -89,6 +90,22 @@ fn checks() -> &'static [NetCheck] {
         NetCheck {
             name: "replicated_properties_reach_the_clients",
             check: properties::replicated_properties_reach_the_clients,
+        },
+        NetCheck {
+            name: "server_function_runs_on_the_server",
+            check: rpcs::server_function_runs_on_the_server,
+        },
+        NetCheck {
+            name: "client_function_runs_on_its_owner_only",
+            check: rpcs::client_function_runs_on_its_owner_only,
+        },
+        NetCheck {
+            name: "multicast_runs_everywhere",
+            check: rpcs::multicast_runs_everywhere,
+        },
+        NetCheck {
+            name: "validation_refuses_a_bad_call",
+            check: rpcs::validation_refuses_a_bad_call,
         },
     ]
 }
@@ -187,6 +204,10 @@ impl NetTestDirector {
         let run = guard.get_or_insert_with(NetRun::default);
 
         if KismetSystemLibrary::is_standalone(world) {
+            if run.started.is_some() || run.finished {
+                return;
+            }
+
             run.outcomes.insert(
                 ("net_play_in_editor", Role::Server),
                 Err("Play In Editor started without a server".to_string()),
