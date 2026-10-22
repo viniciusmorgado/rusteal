@@ -73,6 +73,7 @@ pub fn generate_lib_rs(ctx: &CodegenContext) -> String {
     }
 
     out.push_str("pub mod manual;\n\n");
+    out.push_str("pub mod plugins;\n\n");
     out.push_str("pub mod prelude;\n\n");
 
     out

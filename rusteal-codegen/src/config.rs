@@ -287,6 +287,12 @@ impl ProjectLayout {
         self.root.join("Intermediate/Rusteal/uht")
     }
 
+    pub fn bindings_index(&self) -> PathBuf {
+        self.root
+            .join("Intermediate/Rusteal")
+            .join(crate::plugin_bindings::INDEX_FILE)
+    }
+
     pub fn config_file(&self) -> PathBuf {
         self.root.join(FILE_NAME)
     }

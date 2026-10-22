@@ -118,7 +118,11 @@ fn remove_disabled_modules(ctx: &CodegenContext, out_dir: &Path) {
         let path = entry.path();
         let name = entry.file_name().to_string_lossy().into_owned();
 
-        if !path.is_dir() || name == "manual" || ctx.enabled_modules.contains(&name) {
+        if !path.is_dir()
+            || name == "manual"
+            || name == crate::plugin_bindings::PLUGINS_DIR
+            || ctx.enabled_modules.contains(&name)
+        {
             continue;
         }
 
