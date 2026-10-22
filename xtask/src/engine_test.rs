@@ -104,6 +104,30 @@ fn run_commandlet(engine: &Path, project: &Path, logs: &Path) -> String {
     }
 }
 
+const PLUGIN: &str = "RustealProbe";
+const PLUGIN_CRATE: &str = "rusteal-probe";
+
+fn add_probe_plugin(cli: &Path, project: &Path, repo: &Path, logs: &Path) {
+    let plugin = project.join("Plugins").join(PLUGIN);
+
+    if !plugin.join("rusteal.toml").is_file() {
+        eprintln!("engine-test: adding the {PLUGIN} plugin");
+        run(
+            Command::new(cli)
+                .args(["plugin", "new", PLUGIN, "--no-build", "--project"])
+                .arg(project)
+                .stdin(std::process::Stdio::null()),
+            "rusteal plugin new",
+            &logs.join("plugin.log"),
+        );
+    }
+
+    copy_sources(
+        &repo.join("tests/engine/plugin/src"),
+        &plugin.join("Rust").join(PLUGIN_CRATE).join("src"),
+    );
+}
+
 const PROJECT_SHIMS: &str = r#"
 [[codegen.shims]]
 class = "RustealProbeActor"
@@ -186,6 +210,7 @@ pub fn engine_test() {
     }
 
     declare_project_shims(&project);
+    add_probe_plugin(&cli, &project, &repo, &logs);
 
     copy_sources(
         &repo.join("tests/engine/src"),
