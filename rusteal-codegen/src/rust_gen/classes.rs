@@ -807,6 +807,9 @@ fn generate_scalar_function(
                     ConversionKind::EnumCast => {
                         out.push_str(&format!("{pname} as {}, ", mapped.rust_ffi_type));
                     }
+                    ConversionKind::IntCast if *dir == ParamDirection::In => {
+                        out.push_str(&format!("{pname} as {}, ", mapped.rust_ffi_type));
+                    }
                     ConversionKind::StructOpaque
                         if *dir == ParamDirection::In
                             && is_struct_owned(param.struct_name.as_deref(), ctx) =>
