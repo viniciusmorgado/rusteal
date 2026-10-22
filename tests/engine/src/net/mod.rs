@@ -2,8 +2,10 @@ use std::collections::BTreeMap;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
+mod properties;
+
 use bindings::core_ue::Object;
-use bindings::engine::{ControllerExt, GameplayStatics, KismetSystemLibrary};
+use bindings::engine::{ControllerExt, GameplayStatics, KismetSystemLibrary, World};
 use bindings::rusteal::{RustealWorldSubsystem, RustealWorldSubsystemExt};
 use rusteal_runtime::runtime::reflected::{self, PropertySlot};
 use rusteal_runtime::runtime::{RustealResult, UObjectRef, console};
@@ -57,9 +59,15 @@ impl std::fmt::Display for Role {
     }
 }
 
+pub struct NetWorld {
+    pub role: Role,
+    pub world: UObjectRef<World>,
+    pub context: UObjectRef<Object>,
+}
+
 pub struct NetCheck {
     pub name: &'static str,
-    pub check: fn(Role, &UObjectRef<Object>) -> Option<Result<(), String>>,
+    pub check: fn(&NetWorld) -> Option<Result<(), String>>,
 }
 
 #[derive(Default)]
@@ -73,19 +81,29 @@ struct NetRun {
 static RUN: Mutex<Option<NetRun>> = Mutex::new(None);
 
 fn checks() -> &'static [NetCheck] {
-    &[NetCheck {
-        name: "dedicated_server_sees_two_clients",
-        check: players_are_connected,
-    }]
+    &[
+        NetCheck {
+            name: "dedicated_server_sees_two_clients",
+            check: players_are_connected,
+        },
+        NetCheck {
+            name: "replicated_properties_reach_the_clients",
+            check: properties::replicated_properties_reach_the_clients,
+        },
+    ]
 }
 
-fn players_are_connected(role: Role, world: &UObjectRef<Object>) -> Option<Result<(), String>> {
-    let players = GameplayStatics::get_num_player_controllers(*world);
+pub fn all_players_connected(net: &NetWorld) -> bool {
+    GameplayStatics::get_num_player_controllers(net.context) == CLIENTS as i32
+}
 
-    match role {
+fn players_are_connected(net: &NetWorld) -> Option<Result<(), String>> {
+    let players = GameplayStatics::get_num_player_controllers(net.context);
+
+    match net.role {
         Role::Server if players == CLIENTS as i32 => Some(Ok(())),
         Role::Client(_) if players == 1 => {
-            let local = GameplayStatics::get_player_controller(*world, 0)
+            let local = GameplayStatics::get_player_controller(net.context, 0)
                 .checked()
                 .is_ok_and(|controller| controller.is_local_controller());
 
@@ -192,7 +210,15 @@ impl NetTestDirector {
         let Some(role) = self.role() else {
             return;
         };
-        let world = self.as_ref().upcast_to::<Object>();
+        let context = self.as_ref().upcast_to::<Object>();
+        let Ok(world) = self.as_ref().outer::<World>() else {
+            return;
+        };
+        let net = NetWorld {
+            role,
+            world,
+            context,
+        };
 
         let Ok(mut guard) = RUN.lock() else {
             return;
@@ -210,7 +236,7 @@ impl NetTestDirector {
                 continue;
             }
 
-            if let Some(outcome) = (check.check)(role, &world) {
+            if let Some(outcome) = (check.check)(&net) {
                 run.outcomes.insert((check.name, role), outcome);
             }
         }
