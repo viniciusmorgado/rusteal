@@ -2,6 +2,7 @@ use bindings::engine::ActorExt;
 use bindings::plugins::rusteal_probe::{ProbeTarget, ProbeTargetExt};
 use bindings::prelude::*;
 use rusteal_runtime::runtime::{DynamicCall, Transform, UObjectRef};
+use rusteal_runtime::{uclass, uclass_impl};
 
 use crate::runner::{Context, Outcome};
 
@@ -92,6 +93,65 @@ pub fn game_uses_a_plugin_class_through_its_bindings(context: &Context) -> Outco
             format!(
                 "AddCharge gave {total}, Charge {charge}, TimesCharged {times}, Describe \
                  {description:?}, Label {label:?}, the type id matched: {is_rust}"
+            ),
+        )
+    })())
+}
+
+#[uclass(parent = ProbeTarget)]
+pub struct GameProbe {
+    #[uproperty]
+    seen_total: i32,
+
+    calls: i32,
+}
+
+#[uclass_impl]
+impl GameProbe {
+    #[ufunction(Override)]
+    fn describe(&self) -> String {
+        format!("game probe at {}", self.seen_total())
+    }
+
+    #[ufunction(Override)]
+    fn on_charged(&mut self, total: i32) {
+        self.set_seen_total(total);
+        *self.calls_mut() += 1;
+    }
+}
+
+pub fn game_class_derives_from_a_plugin_class(context: &Context) -> Outcome {
+    Outcome::Done((|| {
+        let e = |e| format!("{e:?}");
+        let transform = FTransform::from_transform(Transform::IDENTITY);
+        let actor = context
+            .world
+            .spawn_actor::<GameProbe>(&transform)
+            .map_err(|e| format!("the game's class of a plugin parent did not spawn: {e:?}"))?;
+        let probe = actor.checked().map_err(e)?;
+
+        probe.set_charge(1);
+        let total = probe.add_charge(4).map_err(e)?;
+        let times = probe.times_charged().map_err(e)?;
+        let description = probe.describe().map_err(e)?;
+
+        let game = GameProbe::from_obj(actor).map_err(e)?;
+        let seen = game.seen_total();
+        let calls = game.calls();
+        let is_a_probe = actor.cast::<ProbeTarget>().is_ok();
+
+        probe.k2_destroy_actor();
+
+        ensure(
+            total == 5
+                && times == 1
+                && seen == 5
+                && calls == 1
+                && description == "game probe at 5"
+                && is_a_probe,
+            format!(
+                "AddCharge gave {total}, the plugin counted {times}, the game saw {seen} in \
+                 {calls} calls, Describe {description:?}, a ProbeTarget: {is_a_probe}"
             ),
         )
     })())
