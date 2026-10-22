@@ -18,10 +18,10 @@ Each entry says what is missing, what it takes, and what to do meanwhile.
 
 | Feature | What it takes | Meanwhile |
 |---|---|---|
-| **Slate** (custom windows, tabs, panels, any non-UMG editor UI) | Slate widgets are not UObjects: the Unreal Header Tool never sees them, so no binding is generated. Needs hand-written bindings for `SNew`/`SAssignNew`, slots, attributes and delegates, which is a project of its own. | UMG widgets, which are reflected, and editor menus (`ToolMenus`). |
-| **Details panel customization** (`IDetailCustomization`, `IPropertyTypeCustomization`) | Slate, and the PropertyEditor module's C++ interfaces. | Property metadata (`EditAnywhere`, categories, `EditCondition`) on Rust properties. |
-| **Editor Utility Widgets with a Rust parent** | The editor spawns them from a `UEditorUtilityWidgetBlueprint` asset or a `UWidgetBlueprintGeneratedClass`; a Rust class is neither and has no widget tree to show. Needs a native base class that builds its tree, or an asset made with the designer. | An Editor Utility Widget Blueprint whose graph calls Rust functions. |
-| **Scripted asset and actor actions** (`UAssetActionUtility`, `UActorActionUtility`) | The editor finds them only as Blueprint assets on disk, through the asset registry; there is no registration call. Needs a native shim that registers Rust classes. | A `ToolMenus` entry in the content browser's or the level's context menu (`ContentBrowser.AssetContextMenu`, `LevelEditor.ActorContextMenu`). |
+| **Slate** (custom windows, tabs, panels, any non-UMG editor UI) | Done for tabs of text, buttons, check boxes, text and spin boxes and panels (`slate`, M4). Lists, trees, combo boxes, images, styles and windows outside tabs need more cases in `RustealSlateApiImpl.cpp`. | An Editor Utility Widget for those. |
+| **Details panel customization** (`IDetailCustomization`, `IPropertyTypeCustomization`) | Class customizations done (`details::customize_class`, rows and hidden properties, M4); property type customizations and editing the panel's own property rows are not. | Property metadata (`EditAnywhere`, categories, `EditCondition`) on Rust properties. |
+| **Editor Utility Widgets with a Rust parent** | Blutility is bound in editor libraries (M4): a Rust `EditorUtilityWidget` can be the parent of an Editor Utility Widget Blueprint that draws the layout; not tested. The editor spawns only Blueprints. | A `slate` tab, or an Editor Utility Widget Blueprint whose graph calls Rust functions. |
+| **Scripted asset and actor actions** (`UAssetActionUtility`, `UActorActionUtility`) | Bound (M4): a Rust class can be the parent of the Blueprint asset the editor finds; not tested. An `EditorUtilityObject` with a Rust parent runs (`EditorUtilitySubsystem::try_run_class`), tested. | A `ToolMenus` entry in the content browser's or the level's context menu (`ContentBrowser.AssetContextMenu`, `LevelEditor.ActorContextMenu`). |
 | **Custom asset editors and graph editors** | Slate and the asset editor toolkit, C++ only. | A data asset edited in the default details view. |
 | **Editor modes and interactive tools** (`UEdMode`, gizmos) | C++ virtuals of the tools framework. The Scriptable Tools Framework (`UScriptableInteractiveTool`, Beta in 5.8, disabled by default) is Blueprintable and should work with Rust classes; not tested yet. | — |
 
@@ -29,9 +29,9 @@ Each entry says what is missing, what it takes, and what to do meanwhile.
 
 | Feature | What it takes | Meanwhile |
 |---|---|---|
-| **New asset types** (`UFactory`, asset type actions, thumbnails) | Factories and asset definitions are C++ virtuals. Needs native shims with events. | A Rust `PrimaryDataAsset` subclass: the editor creates it from *Miscellaneous > Data Asset*. |
+| **New asset types** (`UFactory`, asset type actions, thumbnails) | Factories done (`RustealFactory`, creating and importing, M4). Asset definitions (colors, categories, thumbnails) are C++ virtuals with types the bases cannot pass yet. | A Rust factory, and the default asset definition. |
 | **Import pipelines and translators** (Interchange) | `UInterchangePipelineBase` is Blueprintable with native events (`ScriptedExecutePipeline`...) and should take a Rust class; the Interchange modules are not in the default bindings and nothing was tested. Translators (parsing a new file format) are C++ virtuals. A Rust strength (parsers from crates.io), worth a milestone of its own. | Parse the file in Rust and create the assets with the editor scripting API. |
-| **Commandlets** (`UCommandlet::Main`) | A C++ virtual: needs a native shim. | A console command, run headless with `-ExecCmds`, or editor Python. |
+| **Commandlets** (`UCommandlet::Main`) | Done (`RustealCommandlet`, M3). | — |
 
 ## Blueprint integration
 
@@ -57,7 +57,7 @@ Each entry says what is missing, what it takes, and what to do meanwhile.
 
 | Feature | What it takes | Meanwhile |
 |---|---|---|
-| **Python names for Rust properties** | Editor Python does not generate wrapper types for Blueprint-generated classes, which Rust classes are to the engine, so `get_editor_property` takes the UE name (`"MaxStack"`), not the snake case it takes for C++ classes (`"max_stack"`). | The UE name. Functions are reached by `call_method("UEName", (args,))`. |
+| **Python names for Rust properties** | Editor Python generates no wrapper types for Blueprint-generated classes, which Rust classes are to the engine. `get_editor_property` and `set_editor_property` take either name (`"MaxStack"` or `"max_stack"`); functions go through `call_method` with the UE name only; there are no attributes or methods. Checked by the harness (M4). | `call_method("UEName", (args,))` for functions. |
 
 ## Runtime
 
