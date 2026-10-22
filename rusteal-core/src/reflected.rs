@@ -10,7 +10,8 @@ use crate::sync::Mutex;
 /// replaces its classes, so a cached handle could name a class that is gone.
 #[doc(hidden)]
 pub fn class_at(path: &str) -> UClassHandle {
-    let class_class = unsafe { ffi_dispatch::reflection_get_static_class(b"Class\0".as_ptr(), 5) };
+    let class_class =
+        unsafe { ffi_dispatch::reflection_get_static_class(c"Class".as_ptr().cast(), 5) };
     let handle =
         unsafe { ffi_dispatch::world_find_object(class_class, path.as_ptr(), path.len() as u32) };
 
