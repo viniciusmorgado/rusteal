@@ -48,7 +48,18 @@ fn run(context: Context) {
     let mut lines = Vec::new();
     let mut pending = Vec::new();
 
+    let only: Option<Vec<String>> = std::env::var("RUSTEAL_TEST_FILTER")
+        .ok()
+        .map(|filter| filter.split(',').map(str::to_string).collect());
+
     for (name, check) in crate::checks::ALL {
+        if only
+            .as_ref()
+            .is_some_and(|only| !only.iter().any(|wanted| wanted == name))
+        {
+            continue;
+        }
+
         match outcome(*check, &context) {
             Outcome::Done(result) => lines.push(line(name, &result)),
             Outcome::Pending(poll) => pending.push((*name, poll)),

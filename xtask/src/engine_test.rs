@@ -431,3 +431,147 @@ pub fn engine_test() {
         std::process::exit(1);
     }
 }
+
+const STATIC_CHECKS: &[&str] = &[
+    "rust_class_is_registered",
+    "spawn_rust_actor",
+    "plugin_class_is_reached_by_reflection",
+    "game_uses_a_plugin_class_through_its_bindings",
+    "game_class_derives_from_a_plugin_class",
+];
+
+fn packaged_game(package: &Path) -> Option<PathBuf> {
+    let name = if cfg!(target_os = "windows") {
+        format!("{PROJECT}.exe")
+    } else if cfg!(target_os = "macos") {
+        format!("{PROJECT}.app/Contents/MacOS/{PROJECT}")
+    } else {
+        format!("{PROJECT}.sh")
+    };
+
+    let direct = package.join(&name);
+
+    if direct.exists() {
+        return Some(direct);
+    }
+
+    std::fs::read_dir(package)
+        .ok()?
+        .flatten()
+        .map(|entry| entry.path().join(&name))
+        .find(|path| path.exists())
+}
+
+pub fn static_test() {
+    let repo = repo_root();
+    let work = repo.join("target/engine-test");
+    let project = work.join(PROJECT);
+    let logs = work.join("logs");
+    let package = work.join("static-package");
+
+    if !project.join(format!("{PROJECT}.uproject")).is_file() {
+        fail("run `cargo xtask engine-test` first: it creates and builds the test project");
+    }
+
+    let cli = repo.join("target/debug").join(if cfg!(windows) {
+        "rusteal.exe"
+    } else {
+        "rusteal"
+    });
+
+    let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
+
+    eprintln!("static-test: building the CLI and updating {PROJECT}'s plugins");
+    run(
+        Command::new(&cargo)
+            .args(["build", "-p", "rusteal"])
+            .current_dir(&repo),
+        "cargo build -p rusteal",
+        &logs.join("cli.log"),
+    );
+    run(
+        Command::new(&cli)
+            .arg("setup")
+            .arg(&project)
+            .stdin(std::process::Stdio::null()),
+        "rusteal setup",
+        &logs.join("setup.log"),
+    );
+
+    copy_sources(
+        &repo.join("tests/engine/src"),
+        &project.join("Rust").join(CRATE).join("src"),
+    );
+    copy_sources(
+        &repo.join("tests/engine/plugin/src"),
+        &project
+            .join("Plugins")
+            .join(PLUGIN)
+            .join("Rust")
+            .join(PLUGIN_CRATE)
+            .join("src"),
+    );
+
+    eprintln!("static-test: packaging {PROJECT} with every Rust library linked into the game");
+    let _ = std::fs::remove_dir_all(&package);
+    run(
+        Command::new(&cli)
+            .args(["package", "--static", "--output"])
+            .arg(&package)
+            .arg(&project)
+            .stdin(std::process::Stdio::null()),
+        "rusteal package --static",
+        &logs.join("static-package.log"),
+    );
+
+    let game = packaged_game(&package)
+        .unwrap_or_else(|| fail(&format!("no packaged game in {}", package.display())));
+
+    let results = work.join("static_results.txt");
+    let _ = std::fs::remove_file(&results);
+
+    eprintln!("static-test: running the packaged game, without a window");
+    let mut child = Command::new(&game)
+        .args([
+            "-nullrhi",
+            "-unattended",
+            "-nosound",
+            "-ExecCmds=rusteal_tests.run",
+        ])
+        .env("RUSTEAL_TEST_RESULTS", &results)
+        .env("RUSTEAL_TEST_FILTER", STATIC_CHECKS.join(","))
+        .stdout(std::fs::File::create(logs.join("static-game.log")).expect("a log file"))
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap_or_else(|e| fail(&format!("cannot start {}: {e}", game.display())));
+
+    if !wait(&mut child) {
+        fail(&format!(
+            "the packaged game did not finish in {} seconds; its output is in {}",
+            TIMEOUT.as_secs(),
+            logs.join("static-game.log").display()
+        ));
+    }
+
+    let text = std::fs::read_to_string(&results).unwrap_or_default();
+
+    if !text.lines().any(|line| line == "DONE") {
+        fail(&format!(
+            "the packaged game wrote no results; its output is in {}",
+            logs.join("static-game.log").display()
+        ));
+    }
+
+    let failed = text.lines().filter(|line| line.starts_with("FAIL")).count();
+    let passed = text.lines().filter(|line| line.starts_with("PASS")).count();
+
+    for line in text.lines().filter(|line| *line != "DONE") {
+        eprintln!("  {line}");
+    }
+
+    eprintln!("static-test: {passed} passed, {failed} failed");
+
+    if failed > 0 || passed != STATIC_CHECKS.len() {
+        std::process::exit(1);
+    }
+}
