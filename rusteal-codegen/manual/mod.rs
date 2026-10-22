@@ -50,3 +50,6 @@ pub mod widget_ext;
 
 #[cfg(feature = "enhanced-input")]
 pub mod input_ext;
+
+#[cfg(feature = "gameplay-tags")]
+pub mod gameplay_tags_ext;

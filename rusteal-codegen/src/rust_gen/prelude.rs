@@ -47,6 +47,10 @@ const ENTRIES: &[(&str, &str)] = &[
     ),
     ("ai", "crate::manual::events::PathFollowingEventsExt"),
     ("engine", "crate::manual::tick_ext::add_tick_function"),
+    (
+        "gameplay-tags",
+        "crate::manual::gameplay_tags_ext::{declare_gameplay_tag, gameplay_tag}",
+    ),
     ("engine", "crate::manual::collision::object_type_query"),
     (
         "engine",
