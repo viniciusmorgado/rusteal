@@ -23,7 +23,6 @@ public static class RustealExport
         EPropertyFlags.NativeAccessSpecifierProtected;
 
     private const EFunctionFlags NoExportFuncFlags =
-        EFunctionFlags.NetServer |
         EFunctionFlags.NetRequest |
         EFunctionFlags.NetResponse |
         EFunctionFlags.Private |
@@ -656,12 +655,22 @@ public static class RustealExport
             }
         }
 
+        private static bool IsLinkable(UhtFunction func)
+        {
+            return func.FunctionFlags.HasAnyFlags(EFunctionFlags.RequiredAPI)
+                || (func.Outer is UhtClass owner
+                    && owner.ClassFlags.HasAnyFlags(EClassFlags.RequiredAPI));
+        }
+
         private static bool ShouldExportFunction(UhtFunction func)
         {
             if (func.FunctionType != UhtFunctionType.Function)
                 return false;
 
             if (func.FunctionFlags.HasAnyFlags(NoExportFuncFlags))
+                return false;
+
+            if (func.FunctionFlags.HasAnyFlags(EFunctionFlags.Net) && !IsLinkable(func))
                 return false;
 
             if (func.FunctionFlags.HasAnyFlags(EFunctionFlags.Protected)
