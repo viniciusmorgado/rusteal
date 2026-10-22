@@ -91,18 +91,17 @@ pub fn register_module(module: &'static Module) {
         (ireg.create)();
     }
 
-    let mut pending: Vec<&'static ClassRegistration> = inventory::iter::<ClassRegistration>
+    let all: Vec<&'static ClassRegistration> = inventory::iter::<ClassRegistration>
         .into_iter()
         .filter(|r| owned(r.krate))
         .collect();
 
-    let class_count = pending.len() as u32;
-    let local_ids: Vec<u64> = pending.iter().map(|reg| reg.type_id).collect();
+    let class_count = all.len() as u32;
+    let local_ids: Vec<u64> = all.iter().map(|reg| reg.type_id).collect();
+    let (waiting, mut pending) = split_waiting(all, &local_ids);
     let ordered = create_classes(&mut pending);
 
-    let (deferred, missing) = split_waiting(pending, &local_ids);
-
-    for reg in missing {
+    for reg in pending {
         (reg.create)(true, class_shape(reg));
     }
 
@@ -129,6 +128,7 @@ pub fn register_module(module: &'static Module) {
     }
 
     let blocks = complete_classes(&ordered, &owned);
+    let deferred = create_waiting(module, waiting);
 
     if !deferred.is_empty() {
         let names: Vec<&str> = deferred.iter().map(|reg| reg.name).collect();
@@ -216,7 +216,9 @@ fn split_waiting(pending: Vec<&'static ClassRegistration>, local_ids: &[u64]) ->
         let before = waiting.len();
 
         for reg in &pending {
-            if !waiting.contains(&reg.type_id) && waiting.contains(&parent(reg)) {
+            if !waiting.contains(&reg.type_id)
+                && reg.depends_on.iter().any(|id| waiting.contains(id))
+            {
                 waiting.push(reg.type_id);
             }
         }
@@ -278,7 +280,7 @@ fn complete_classes(
 /// more library has registered; with `last_try`, the ones still waiting are reported as errors.
 /// Returns how many still wait.
 pub fn retry_deferred(module: &'static Module, last_try: bool) -> usize {
-    let mut pending: Vec<&'static ClassRegistration> = {
+    let pending: Vec<&'static ClassRegistration> = {
         let mut deferred = lock_or_recover(&DEFERRED);
         let (mine, others): (Vec<_>, Vec<_>) =
             deferred.drain(..).partition(|(id, _)| *id == module.id());
@@ -290,34 +292,66 @@ pub fn retry_deferred(module: &'static Module, last_try: bool) -> usize {
         return 0;
     }
 
-    let created = create_classes(&mut pending);
-    let owned = |krate: &str| module.owns(krate);
-
-    if !created.is_empty() {
-        complete_classes(&created, &owned);
-
-        let names: Vec<&str> = created.iter().map(|reg| reg.name).collect();
-        log(
-            0,
-            &format!(
-                "[Rusteal] {}: created {} after the library of its parent registered",
-                module.krate(),
-                names.join(", ")
-            ),
-        );
-    }
+    let left = create_waiting(module, pending);
 
     if last_try {
-        for reg in &pending {
+        for reg in &left {
             (reg.create)(true, class_shape(reg));
         }
 
         return 0;
     }
 
-    let left = pending.len();
-    lock_or_recover(&DEFERRED).extend(pending.into_iter().map(|reg| (module.id(), reg)));
-    left
+    let count = left.len();
+    lock_or_recover(&DEFERRED).extend(left.into_iter().map(|reg| (module.id(), reg)));
+    count
+}
+
+fn create_waiting(
+    module: &'static Module,
+    mut waiting: Vec<&'static ClassRegistration>,
+) -> Vec<&'static ClassRegistration> {
+    let mut created: Vec<&'static ClassRegistration> = Vec::new();
+
+    loop {
+        let before = waiting.len();
+        let waiting_ids: Vec<u64> = waiting.iter().map(|reg| reg.type_id).collect();
+
+        waiting.retain(|reg| {
+            let blocked = reg
+                .depends_on
+                .iter()
+                .any(|id| waiting_ids.contains(id) && *id != reg.type_id);
+
+            if !blocked && (reg.create)(false, class_shape(reg)) {
+                created.push(*reg);
+                false
+            } else {
+                true
+            }
+        });
+
+        if waiting.is_empty() || waiting.len() == before {
+            break;
+        }
+    }
+
+    if !created.is_empty() {
+        let owned = |krate: &str| module.owns(krate);
+        complete_classes(&created, &owned);
+
+        let names: Vec<&str> = created.iter().map(|reg| reg.name).collect();
+        log(
+            0,
+            &format!(
+                "[Rusteal] {}: created {}, whose parent is in another library",
+                module.krate(),
+                names.join(", ")
+            ),
+        );
+    }
+
+    waiting
 }
 
 pub fn manifest(owned: impl Fn(&str) -> bool) -> Vec<String> {
