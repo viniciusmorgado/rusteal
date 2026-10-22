@@ -46,6 +46,14 @@ pub fn expand_ustruct(attr: TokenStream, item: TokenStream) -> syn::Result<Token
         let mut args = parse_uproperty_args(attr)?;
         args.add_doc_tooltip(&field.attrs);
 
+        if args.is_replicated() {
+            return Err(syn::Error::new_spanned(
+                attr,
+                "a #[ustruct]'s fields replicate with the property that holds the struct: \
+                 Replicated goes on that #[uclass] property",
+            ));
+        }
+
         let Some(info) = prop_type::map_type(&field.ty) else {
             return Err(syn::Error::new_spanned(
                 &field.ty,
@@ -106,6 +114,7 @@ pub fn expand_ustruct(attr: TokenStream, item: TokenStream) -> syn::Result<Token
         &quote! { self.as_ptr() },
         &format_ident!("reflection_find_struct_property"),
         &quote! { <#name as ::rusteal_runtime::runtime::UeStruct>::static_struct() },
+        false,
     );
 
     let docs_of = |accessor: &str| {
