@@ -46,6 +46,11 @@ fn copy_sources(from: &Path, to: &Path) {
         .unwrap_or_else(|e| fail(&format!("cannot read {}: {e}", from.display())))
         .flatten()
     {
+        if entry.path().is_dir() {
+            copy_sources(&entry.path(), &to.join(entry.file_name()));
+            continue;
+        }
+
         std::fs::copy(entry.path(), to.join(entry.file_name()))
             .unwrap_or_else(|e| fail(&format!("cannot copy {}: {e}", entry.path().display())));
     }
