@@ -222,6 +222,16 @@ fn render_manifest_main(modules: &[StaticModule]) -> String {
     )
 }
 
+const RUSTEAL_CRATES: &[&str] = &[
+    "rusteal-ue-flags",
+    "rusteal-ffi",
+    "rusteal-core",
+    "rusteal-macros",
+    "rusteal-runtime",
+    "rusteal-codegen",
+    "rusteal",
+];
+
 pub fn ownership(
     metadata: &serde_json::Value,
     modules: &[StaticModule],
@@ -277,7 +287,7 @@ pub fn ownership(
         })
         .collect();
 
-    let ignored = |name: &str| name.starts_with("rusteal-") || name.ends_with("-bindings");
+    let ignored = |name: &str| RUSTEAL_CRATES.contains(&name) || name.ends_with("-bindings");
     let mut owner_of: BTreeMap<String, &str> = BTreeMap::new();
     let mut owners: BTreeMap<String, Vec<String>> = BTreeMap::new();
 
@@ -785,6 +795,18 @@ mod tests {
             ["class:my_game:Item", "class:game_helpers:Door"]
         );
         assert_eq!(expected["Alpha"], ["class:alpha:Item", "hook:alpha"]);
+    }
+
+    #[test]
+    fn a_crate_named_like_rusteal_is_still_owned() {
+        let mut metadata = metadata();
+        metadata["packages"][0]["name"] = serde_json::json!("rusteal-game");
+        metadata["packages"][0]["targets"][0]["name"] = serde_json::json!("rusteal-game");
+
+        let modules = [module("MyGame", "rusteal-game"), module("Alpha", "alpha")];
+        let owners = ownership(&metadata, &modules).unwrap();
+
+        assert_eq!(owners["MyGame"], ["game_helpers", "rusteal_game"]);
     }
 
     #[test]
