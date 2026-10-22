@@ -1078,4 +1078,12 @@ pub struct RustealWorldApi {
     pub gameplay_tag_is_registered: unsafe extern "C" fn(name: *const u8, name_len: u32) -> bool,
 
     pub rpc_validate_failed: unsafe extern "C" fn(reason: *const u8, reason_len: u32),
+    pub mark_property_dirty: unsafe extern "C" fn(object: UObjectHandle, prop: FPropertyHandle),
+    pub add_replicated_subobject: unsafe extern "C" fn(
+        actor: UObjectHandle,
+        object: UObjectHandle,
+        condition: u8,
+    ) -> RustealErrorCode,
+    pub remove_replicated_subobject:
+        unsafe extern "C" fn(actor: UObjectHandle, object: UObjectHandle) -> RustealErrorCode,
 }
