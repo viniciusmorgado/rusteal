@@ -263,6 +263,10 @@ pub const ALL: &[(&str, Check)] = &[
         "plugin_class_is_reached_by_reflection",
         crate::libraries::plugin_class_is_reached_by_reflection,
     ),
+    (
+        "game_uses_a_plugin_class_through_its_bindings",
+        crate::libraries::game_uses_a_plugin_class_through_its_bindings,
+    ),
 ];
 
 fn ensure(condition: bool, what: impl Into<String>) -> Result<(), String> {
