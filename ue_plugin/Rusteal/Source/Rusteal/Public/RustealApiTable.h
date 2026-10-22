@@ -724,6 +724,15 @@ struct FRustealWorldApi {
                                                 uint8 condition);
   ERustealErrorCode (*remove_replicated_subobject)(RustealUObjectHandle actor,
                                                    RustealUObjectHandle object);
+
+  uint32 (*trace_event_type)(const uint8 *name, uint32 name_len);
+  void (*trace_begin_event)(uint32 event_type);
+  void (*trace_end_event)();
+  uint64 (*stat_create)(const uint8 *name, uint32 name_len);
+  uint64 (*stat_begin)(uint64 stat);
+  void (*stat_end)(uint64 counter);
+  uint64 (*memory_scope_begin)(const uint8 *tag, uint32 tag_len);
+  void (*memory_scope_end)(uint64 scope);
 };
 
 struct FRustealPlatformApi {

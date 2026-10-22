@@ -1086,4 +1086,13 @@ pub struct RustealWorldApi {
     ) -> RustealErrorCode,
     pub remove_replicated_subobject:
         unsafe extern "C" fn(actor: UObjectHandle, object: UObjectHandle) -> RustealErrorCode,
+
+    pub trace_event_type: unsafe extern "C" fn(name: *const u8, name_len: u32) -> u32,
+    pub trace_begin_event: unsafe extern "C" fn(event_type: u32),
+    pub trace_end_event: unsafe extern "C" fn(),
+    pub stat_create: unsafe extern "C" fn(name: *const u8, name_len: u32) -> u64,
+    pub stat_begin: unsafe extern "C" fn(stat: u64) -> u64,
+    pub stat_end: unsafe extern "C" fn(counter: u64),
+    pub memory_scope_begin: unsafe extern "C" fn(tag: *const u8, tag_len: u32) -> u64,
+    pub memory_scope_end: unsafe extern "C" fn(scope: u64),
 }

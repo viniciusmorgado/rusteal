@@ -30,6 +30,7 @@ pub mod module;
 pub mod net;
 pub mod object_ref;
 pub mod pinned;
+pub mod profiling;
 pub mod reflected;
 pub mod reify_registry;
 pub mod script_interface;
