@@ -491,30 +491,7 @@ pub fn map_type(ty: &Type) -> Option<PropTypeInfo> {
     Some(info)
 }
 
-pub fn to_ue_name(s: &str) -> String {
-    match s.strip_prefix("b_") {
-        Some(rest) if !rest.is_empty() => format!("b{}", to_pascal_case(rest)),
-        _ => to_pascal_case(s),
-    }
-}
-
-pub fn to_pascal_case(s: &str) -> String {
-    s.split('_')
-        .filter(|part| !part.is_empty())
-        .map(|part| {
-            let mut chars = part.chars();
-
-            match chars.next() {
-                Some(c) => {
-                    let upper: String = c.to_uppercase().collect();
-
-                    upper + chars.as_str()
-                }
-                None => String::new(),
-            }
-        })
-        .collect()
-}
+pub use rusteal_ue_flags::{to_pascal_case, to_ue_name};
 
 pub fn fnv1a_hash(s: &str) -> u64 {
     const FNV_OFFSET: u64 = 0xcbf29ce484222325;
