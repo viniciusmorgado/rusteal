@@ -1076,4 +1076,6 @@ pub struct RustealWorldApi {
         comment_len: u32,
     ) -> RustealErrorCode,
     pub gameplay_tag_is_registered: unsafe extern "C" fn(name: *const u8, name_len: u32) -> bool,
+
+    pub rpc_validate_failed: unsafe extern "C" fn(reason: *const u8, reason_len: u32),
 }

@@ -715,6 +715,8 @@ struct FRustealWorldApi {
                                         const uint8 *comment,
                                         uint32 comment_len);
   bool (*gameplay_tag_is_registered)(const uint8 *name, uint32 name_len);
+
+  void (*rpc_validate_failed)(const uint8 *reason, uint32 reason_len);
 };
 
 struct FRustealPlatformApi {
