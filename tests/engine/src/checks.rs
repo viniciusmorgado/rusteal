@@ -267,6 +267,10 @@ pub const ALL: &[(&str, Check)] = &[
         "game_uses_a_plugin_class_through_its_bindings",
         crate::libraries::game_uses_a_plugin_class_through_its_bindings,
     ),
+    (
+        "game_class_derives_from_a_plugin_class",
+        crate::libraries::game_class_derives_from_a_plugin_class,
+    ),
 ];
 
 fn ensure(condition: bool, what: impl Into<String>) -> Result<(), String> {
