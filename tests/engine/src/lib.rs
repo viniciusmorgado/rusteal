@@ -2,6 +2,7 @@
 
 rusteal_runtime::entry!();
 
+mod automation;
 mod checks;
 mod fixtures;
 mod gas;
@@ -20,3 +21,4 @@ rusteal_runtime::on_load!(runner::register);
 rusteal_runtime::on_load!(reload::register);
 rusteal_runtime::on_load!(tags::register);
 rusteal_runtime::on_load!(net::register);
+rusteal_runtime::on_load!(automation::register);

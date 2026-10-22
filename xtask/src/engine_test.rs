@@ -76,6 +76,77 @@ fn wait_status(child: &mut Child) -> Option<std::process::ExitStatus> {
     None
 }
 
+const AUTOMATION_FAILURE: &str = "the failure this test reports on purpose";
+
+fn run_automation(engine: &Path, project: &Path, work: &Path, logs: &Path) -> Vec<String> {
+    let report = work.join("automation");
+    let _ = std::fs::remove_dir_all(&report);
+
+    let mut child = Command::new(editor(engine))
+        .arg(project.join(format!("{PROJECT}.uproject")))
+        .args([
+            "-nullrhi",
+            "-unattended",
+            "-nosplash",
+            "-nosound",
+            "-ExecCmds=Automation RunTests Rusteal.Tests",
+            "-testexit=Automation Test Queue Empty",
+        ])
+        .arg(format!("-ReportExportPath={}", report.display()))
+        .stdout(std::fs::File::create(logs.join("automation-editor.log")).expect("a log file"))
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap_or_else(|e| fail(&format!("cannot start the editor: {e}")));
+
+    let finished = wait(&mut child);
+    let index = std::fs::read_to_string(report.join("index.json")).unwrap_or_default();
+    let index: serde_json::Value = serde_json::from_str(index.trim_start_matches('\u{feff}'))
+        .unwrap_or(serde_json::Value::Null);
+
+    let Some(tests) = index["tests"].as_array() else {
+        return vec![format!(
+            "FAIL automation_tests_from_rust: the editor {} and wrote no report in {}",
+            if finished {
+                "finished"
+            } else {
+                "did not finish"
+            },
+            report.display()
+        )];
+    };
+
+    let find = |name: &str| {
+        tests
+            .iter()
+            .find(|test| test["fullTestPath"].as_str() == Some(name))
+    };
+
+    let passes = match find("Rusteal.Tests.Passes") {
+        Some(test) if test["state"] == "Success" => {
+            "PASS automation_test_from_rust_passes".to_string()
+        }
+        Some(test) => format!(
+            "FAIL automation_test_from_rust_passes: its state is {}",
+            test["state"]
+        ),
+        None => "FAIL automation_test_from_rust_passes: not in the report".to_string(),
+    };
+
+    let reports_failure = match find("Rusteal.Tests.FailsOnPurpose") {
+        Some(test) if test["state"] == "Fail" && test.to_string().contains(AUTOMATION_FAILURE) => {
+            "PASS automation_test_from_rust_reports_its_failure".to_string()
+        }
+        Some(test) => format!(
+            "FAIL automation_test_from_rust_reports_its_failure: its state is {} without the \
+             message",
+            test["state"]
+        ),
+        None => "FAIL automation_test_from_rust_reports_its_failure: not in the report".to_string(),
+    };
+
+    vec![passes, reports_failure]
+}
+
 const TRACE_SCOPE: &str = "RustealTraceProbe";
 
 fn read_trace(engine: &Path, trace: &Path, work: &Path, logs: &Path) -> String {
@@ -631,6 +702,9 @@ pub fn engine_test() {
     eprintln!("engine-test: reading the game's trace with Unreal Insights, without a window");
     let insights = read_trace(&env.engine_root, &trace, &work, &logs);
 
+    eprintln!("engine-test: running Rust automation tests in an editor, without a window");
+    let automation = run_automation(&env.engine_root, &project, &work, &logs);
+
     eprintln!("engine-test: running a Rust commandlet");
     let commandlet = run_commandlet(&env.engine_root, &project, &logs);
 
@@ -653,6 +727,7 @@ pub fn engine_test() {
         .lines()
         .filter(|line| *line != "DONE")
         .chain(std::iter::once(insights.as_str()))
+        .chain(automation.iter().map(String::as_str))
         .chain(std::iter::once(commandlet.as_str()))
         .chain(reload.iter().map(String::as_str))
         .chain(net.iter().map(String::as_str))
