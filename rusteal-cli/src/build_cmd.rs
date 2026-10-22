@@ -538,6 +538,8 @@ impl BuildContext {
     }
 
     fn step4_cargo_build(&self) {
+        rusteal_codegen::refresh_plugin_bindings(&self.layout.root);
+
         for library in &self.libraries {
             if !library.bindings_crate.join("src/func_ids.rs").is_file() {
                 eprintln!(
