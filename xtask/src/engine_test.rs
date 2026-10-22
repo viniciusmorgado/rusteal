@@ -147,6 +147,81 @@ fn run_automation(engine: &Path, project: &Path, work: &Path, logs: &Path) -> Ve
     vec![passes, reports_failure]
 }
 
+const GATHER_CONFIG: &str = "[CommonSettings]
+SourcePath=%LOCPROJECTROOT%Content/Localization/RustealGather
+DestinationPath=%LOCPROJECTROOT%Content/Localization/RustealGather
+ManifestName=RustealGather.manifest
+ArchiveName=RustealGather.archive
+NativeCulture=en
+CulturesToGenerate=en
+
+[GatherTextStep0]
+CommandletClass=GatherTextFromSource
+SearchDirectoryPaths=%LOCPROJECTROOT%Source
+FileNameFilters=*.h
+FileNameFilters=*.cpp
+ShouldGatherFromEditorOnlyData=false
+
+[GatherTextStep1]
+CommandletClass=GenerateGatherManifest
+";
+
+fn gather_text(engine: &Path, project: &Path, logs: &Path) -> String {
+    const CHECK: &str = "loctext_reaches_the_localization_gather";
+
+    let config = project.join("Config/Localization/RustealGather.ini");
+    let manifest = project.join("Content/Localization/RustealGather/RustealGather.manifest");
+    let _ = std::fs::remove_file(&manifest);
+
+    if let Some(parent) = config.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+
+    std::fs::write(&config, GATHER_CONFIG)
+        .unwrap_or_else(|e| fail(&format!("cannot write {}: {e}", config.display())));
+
+    let mut child = Command::new(editor(engine))
+        .arg(project.join(format!("{PROJECT}.uproject")))
+        .args([
+            "-run=GatherText",
+            "-unattended",
+            "-nullrhi",
+            "-nosplash",
+            "-nosound",
+        ])
+        .arg(format!("-config={}", config.display()))
+        .stdout(std::fs::File::create(logs.join("gather.log")).expect("a log file"))
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap_or_else(|e| fail(&format!("cannot start the editor: {e}")));
+
+    let finished = wait(&mut child);
+    let bytes = std::fs::read(&manifest).unwrap_or_default();
+    let text = match bytes.strip_prefix(&[0xFF, 0xFE]) {
+        Some(utf16) => String::from_utf16_lossy(
+            &utf16
+                .chunks_exact(2)
+                .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
+                .collect::<Vec<_>>(),
+        ),
+        None => String::from_utf8_lossy(&bytes).into_owned(),
+    };
+
+    if text.contains("Hello from a Rust loctext") && text.contains("Greeting") {
+        format!("PASS {CHECK}")
+    } else {
+        format!(
+            "FAIL {CHECK}: the gather {} and its manifest has no Rust text; its log is in {}",
+            if finished {
+                "finished"
+            } else {
+                "did not finish"
+            },
+            logs.join("gather.log").display()
+        )
+    }
+}
+
 const TRACE_SCOPE: &str = "RustealTraceProbe";
 
 fn read_trace(engine: &Path, trace: &Path, work: &Path, logs: &Path) -> String {
@@ -705,6 +780,9 @@ pub fn engine_test() {
     eprintln!("engine-test: running Rust automation tests in an editor, without a window");
     let automation = run_automation(&env.engine_root, &project, &work, &logs);
 
+    eprintln!("engine-test: gathering the project's localizable text");
+    let gather = gather_text(&env.engine_root, &project, &logs);
+
     eprintln!("engine-test: running a Rust commandlet");
     let commandlet = run_commandlet(&env.engine_root, &project, &logs);
 
@@ -727,6 +805,7 @@ pub fn engine_test() {
         .lines()
         .filter(|line| *line != "DONE")
         .chain(std::iter::once(insights.as_str()))
+        .chain(std::iter::once(gather.as_str()))
         .chain(automation.iter().map(String::as_str))
         .chain(std::iter::once(commandlet.as_str()))
         .chain(reload.iter().map(String::as_str))
