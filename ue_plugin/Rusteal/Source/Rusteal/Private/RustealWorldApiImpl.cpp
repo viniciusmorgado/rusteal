@@ -269,6 +269,10 @@ ERustealErrorCode RustealTick_AddPrerequisite(uint64 CallbackId,
                                               RustealUObjectHandle Object,
                                               uint64 OtherCallbackId);
 uint32 RustealTick_LiveFunctions();
+ERustealErrorCode RustealTags_AddNative(const uint8 *Name, uint32 NameLen,
+                                        const uint8 *Comment,
+                                        uint32 CommentLen);
+bool RustealTags_IsRegistered(const uint8 *Name, uint32 NameLen);
 
 FRustealWorldApi GWorldApi = {
     &SpawnActorImpl,
@@ -304,4 +308,6 @@ FRustealWorldApi GWorldApi = {
     &RustealTick_SetInterval,
     &RustealTick_AddPrerequisite,
     &RustealTick_LiveFunctions,
+    &RustealTags_AddNative,
+    &RustealTags_IsRegistered,
 };

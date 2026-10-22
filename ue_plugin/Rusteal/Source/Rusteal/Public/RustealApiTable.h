@@ -705,6 +705,11 @@ struct FRustealWorldApi {
       uint64 callback_id, RustealUObjectHandle object,
       uint64 other_callback_id);
   uint32 (*live_tick_functions)();
+
+  ERustealErrorCode (*add_gameplay_tag)(const uint8 *name, uint32 name_len,
+                                        const uint8 *comment,
+                                        uint32 comment_len);
+  bool (*gameplay_tag_is_registered)(const uint8 *name, uint32 name_len);
 };
 
 struct FRustealPlatformApi {

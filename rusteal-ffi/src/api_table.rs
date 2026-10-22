@@ -1061,4 +1061,12 @@ pub struct RustealWorldApi {
         other_callback_id: u64,
     ) -> RustealErrorCode,
     pub live_tick_functions: unsafe extern "C" fn() -> u32,
+
+    pub add_gameplay_tag: unsafe extern "C" fn(
+        name: *const u8,
+        name_len: u32,
+        comment: *const u8,
+        comment_len: u32,
+    ) -> RustealErrorCode,
+    pub gameplay_tag_is_registered: unsafe extern "C" fn(name: *const u8, name_len: u32) -> bool,
 }

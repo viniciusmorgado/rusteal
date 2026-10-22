@@ -19,6 +19,7 @@ pub mod dynamic_value;
 mod executor;
 pub mod ffi_guard;
 pub mod fname;
+pub mod gameplay_tags;
 pub mod http;
 pub mod input;
 pub mod latent;
