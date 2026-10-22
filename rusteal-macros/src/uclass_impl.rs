@@ -1272,7 +1272,14 @@ fn native_implementation_ident(method: &Ident) -> Ident {
 }
 
 fn thunk_local(param: &ParamInfo) -> Ident {
-    format_ident!("__rusteal_arg_{}", param.rust_name.unraw())
+    let name = param.rust_name.unraw().to_string();
+    let trimmed = name.trim_start_matches('_');
+
+    if trimmed.len() == name.len() {
+        format_ident!("__rusteal_arg_{}", name)
+    } else {
+        format_ident!("__rusteal_arg_{}_{}", trimmed, name.len() - trimmed.len())
+    }
 }
 
 fn out_write(param: &ParamInfo, idx: usize, info: Option<&prop_type::PropTypeInfo>) -> TokenStream {
@@ -1776,5 +1783,22 @@ mod tests {
             ))
             .is_some()
         );
+    }
+
+    #[test]
+    fn thunk_locals_are_snake_case_for_unused_parameters() {
+        let local = |name: &str| {
+            thunk_local(&ParamInfo {
+                rust_name: format_ident!("{}", name),
+                ue_name: String::new(),
+                rust_ty: syn::parse_quote!(i32),
+                out: false,
+            })
+            .to_string()
+        };
+
+        assert_eq!(local("target"), "__rusteal_arg_target");
+        assert_eq!(local("_target"), "__rusteal_arg_target_1");
+        assert_eq!(local("r#type"), "__rusteal_arg_type");
     }
 }
