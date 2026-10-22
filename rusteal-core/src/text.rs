@@ -163,3 +163,13 @@ unsafe impl ContainerElement for Text {
         std::mem::size_of::<*mut u8>() as u32
     }
 }
+
+/// A localizable [`Text`]: `loctext!("Menu", "Title", "Main menu")`. The namespace and key
+/// find its translation, and `rusteal build` hands the three literals to Unreal's localization
+/// gather, as C++'s `NSLOCTEXT` is.
+#[macro_export]
+macro_rules! loctext {
+    ($namespace:literal, $key:literal, $source:literal $(,)?) => {
+        $crate::Text::localized($namespace, $key, $source)
+    };
+}
