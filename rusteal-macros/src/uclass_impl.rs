@@ -19,6 +19,19 @@ pub(crate) struct ParamInfo {
     pub out: bool,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum RpcTarget {
+    Server,
+    Client,
+    NetMulticast,
+}
+
+struct Rpc {
+    target: RpcTarget,
+    reliable: bool,
+    validate: Option<Ident>,
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum FnKind {
     Callable,
@@ -44,6 +57,8 @@ struct UFunctionInfo {
     fallible: bool,
     is_async: bool,
     thread_safe: bool,
+    rpc: Option<Rpc>,
+    authority_only: bool,
 }
 
 pub fn expand_uclass_impl(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream> {
@@ -188,7 +203,7 @@ pub fn expand_uclass_impl(attr: TokenStream, item: TokenStream) -> syn::Result<T
             if let Some(uf) = ufunctions
                 .iter()
                 .find(|uf| uf.method_ident == method.sig.ident)
-                && uf.kind == FnKind::NativeEvent
+                && (uf.kind == FnKind::NativeEvent || uf.rpc.is_some())
             {
                 let mut dispatcher = method.clone();
                 dispatcher.block = implementable_event_body(uf);
@@ -200,6 +215,13 @@ pub fn expand_uclass_impl(attr: TokenStream, item: TokenStream) -> syn::Result<T
                     None => ReturnType::Default,
                 };
                 dispatcher.attrs.retain(|a| !a.path().is_ident("ufunction"));
+
+                if uf.rpc.is_some()
+                    && let Some(receiver) = dispatcher.sig.inputs.first_mut()
+                {
+                    *receiver = syn::parse_quote! { &self };
+                }
+
                 dispatchers.push(ImplItem::Fn(dispatcher));
 
                 method.sig.ident = native_implementation_ident(&method.sig.ident);
@@ -265,6 +287,41 @@ pub fn expand_uclass_impl(attr: TokenStream, item: TokenStream) -> syn::Result<T
                     | ::rusteal_runtime::ffi::FUNC_BLUEPRINT_EVENT | ::rusteal_runtime::ffi::FUNC_BLUEPRINT_CALLABLE
                     | ::rusteal_runtime::ffi::FUNC_PUBLIC
             },
+        };
+
+        let flags_expr = match &uf.rpc {
+            None => flags_expr,
+            Some(rpc) => {
+                let target = match rpc.target {
+                    RpcTarget::Server => quote! { ::rusteal_runtime::ffi::FUNC_NET_SERVER },
+                    RpcTarget::Client => quote! { ::rusteal_runtime::ffi::FUNC_NET_CLIENT },
+                    RpcTarget::NetMulticast => {
+                        quote! { ::rusteal_runtime::ffi::FUNC_NET_MULTICAST }
+                    }
+                };
+                let reliable = if rpc.reliable {
+                    quote! { | ::rusteal_runtime::ffi::FUNC_NET_RELIABLE }
+                } else {
+                    quote! {}
+                };
+                let validate = if rpc.validate.is_some() {
+                    quote! { | ::rusteal_runtime::ffi::FUNC_NET_VALIDATE }
+                } else {
+                    quote! {}
+                };
+
+                quote! {
+                    ::rusteal_runtime::ffi::FUNC_NATIVE | ::rusteal_runtime::ffi::FUNC_EVENT
+                        | ::rusteal_runtime::ffi::FUNC_NET | ::rusteal_runtime::ffi::FUNC_BLUEPRINT_CALLABLE
+                        | ::rusteal_runtime::ffi::FUNC_PUBLIC | #target #reliable #validate
+                }
+            }
+        };
+
+        let flags_expr = if uf.authority_only {
+            quote! { #flags_expr | ::rusteal_runtime::ffi::FUNC_BLUEPRINT_AUTHORITY_ONLY }
+        } else {
+            flags_expr
         };
 
         let flags_expr = if uf.exec {
@@ -527,7 +584,7 @@ pub fn expand_uclass_impl(attr: TokenStream, item: TokenStream) -> syn::Result<T
 
         let _ = &param_idents;
 
-        let impl_ident = if uf.kind == FnKind::NativeEvent {
+        let impl_ident = if uf.kind == FnKind::NativeEvent || uf.rpc.is_some() {
             native_implementation_ident(method_ident)
         } else {
             method_ident.clone()
@@ -567,6 +624,25 @@ pub fn expand_uclass_impl(attr: TokenStream, item: TokenStream) -> syn::Result<T
         };
 
         let latent_idx = syn::Index::from(uf.params.len());
+
+        let validation = match uf.rpc.as_ref().and_then(|rpc| rpc.validate.as_ref()) {
+            None => quote! {},
+            Some(validate) => {
+                let failed = format!("{}_Validate", uf.ue_name);
+
+                quote! {
+                    if !__this.#validate(#(::core::clone::Clone::clone(&#param_args)),*) {
+                        unsafe {
+                            ::rusteal_runtime::runtime::ffi_dispatch::world_rpc_validate_failed(
+                                #failed.as_ptr(),
+                                #failed.len() as u32,
+                            );
+                        }
+                        return;
+                    }
+                }
+            }
+        };
 
         let call_expr = if uf.is_async {
             let run = if uf.fallible {
@@ -651,6 +727,7 @@ pub fn expand_uclass_impl(attr: TokenStream, item: TokenStream) -> syn::Result<T
                         #(#param_reads)*
                         #return_zero_init
                         #this_binding
+                        #validation
                         #call_expr
                         #(#out_writes)*
                         #return_write
@@ -885,6 +962,12 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
         "CallInEditor",
         "Exec",
         "ThreadSafe",
+        "Server",
+        "Client",
+        "NetMulticast",
+        "Reliable",
+        "Unreliable",
+        "BlueprintAuthorityOnly",
     ];
 
     if let Some(unknown) = specifiers.iter().find(|s| !KNOWN.contains(&s.as_str())) {
@@ -893,7 +976,9 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
             format!(
                 "unknown #[ufunction] argument `{unknown}`: expected BlueprintCallable, \
                  BlueprintPure, Override, BlueprintImplementableEvent, BlueprintNativeEvent, \
-                 CallInEditor, Exec, ThreadSafe, name = \"...\", category = \"...\" or meta(...)"
+                 CallInEditor, Exec, ThreadSafe, Server, Client, NetMulticast, Reliable, \
+                 Unreliable, BlueprintAuthorityOnly, WithValidation = ..., name = \"...\", \
+                 category = \"...\" or meta(...)"
             ),
         ));
     }
@@ -1179,6 +1264,15 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
         ));
     }
 
+    let rpc = parse_rpc(
+        method,
+        &specifiers,
+        spec.validate,
+        &params,
+        &return_type,
+        kind,
+    )?;
+
     Ok(UFunctionInfo {
         metadata,
         is_static,
@@ -1194,7 +1288,88 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
         fallible,
         is_async,
         thread_safe,
+        rpc,
+        authority_only: has("BlueprintAuthorityOnly"),
     })
+}
+
+fn parse_rpc(
+    method: &ImplItemFn,
+    specifiers: &[String],
+    validate: Option<Ident>,
+    params: &[ParamInfo],
+    return_type: &Option<ParamInfo>,
+    kind: FnKind,
+) -> syn::Result<Option<Rpc>> {
+    let has = |name: &str| specifiers.iter().any(|s| s == name);
+    let targets: Vec<RpcTarget> = [
+        ("Server", RpcTarget::Server),
+        ("Client", RpcTarget::Client),
+        ("NetMulticast", RpcTarget::NetMulticast),
+    ]
+    .into_iter()
+    .filter(|(name, _)| has(name))
+    .map(|(_, target)| target)
+    .collect();
+
+    let error = |message: &str| Err(syn::Error::new_spanned(&method.sig, message));
+
+    let Some(&target) = targets.first() else {
+        if has("Reliable") || has("Unreliable") || validate.is_some() {
+            return error(
+                "Reliable, Unreliable and WithValidation go with a remote function: Server, \
+                 Client or NetMulticast",
+            );
+        }
+
+        return Ok(None);
+    };
+
+    if targets.len() > 1 {
+        return error("a remote function is one of Server, Client and NetMulticast");
+    }
+
+    if has("Reliable") == has("Unreliable") {
+        return error(
+            "a remote function is Reliable (it arrives, in order) or Unreliable (it may be \
+             dropped): say which",
+        );
+    }
+
+    if validate.is_some() && target != RpcTarget::Server {
+        return error("WithValidation checks what a client sends: it goes with Server");
+    }
+
+    let first = method.sig.inputs.first();
+    let by_reference =
+        matches!(first, Some(FnArg::Receiver(r)) if matches!(r.kind, ReceiverKind::Reference(..)));
+
+    if kind != FnKind::Callable
+        || !by_reference
+        || method.sig.asyncness.is_some()
+        || specifiers
+            .iter()
+            .any(|s| matches!(s.as_str(), "Exec" | "ThreadSafe" | "CallInEditor"))
+    {
+        return error(
+            "a remote function is a method (&self or &mut self) of an actor or a component, \
+             not an event, an Override, BlueprintPure, Exec, ThreadSafe, CallInEditor, static \
+             or async",
+        );
+    }
+
+    if return_type.is_some() || params.iter().any(|p| p.out) {
+        return error(
+            "a remote function returns nothing and has no out parameters: it runs on another \
+             machine, later",
+        );
+    }
+
+    Ok(Some(Rpc {
+        target,
+        reliable: has("Reliable"),
+        validate,
+    }))
 }
 
 fn parse_interface_fn(method: &ImplItemFn, trait_path: &syn::Path) -> syn::Result<UFunctionInfo> {
@@ -1235,6 +1410,8 @@ fn parse_interface_fn(method: &ImplItemFn, trait_path: &syn::Path) -> syn::Resul
         fallible: false,
         is_async: false,
         thread_safe: false,
+        rpc: None,
+        authority_only: false,
     })
 }
 
@@ -1394,6 +1571,7 @@ struct UFunctionSpec {
     specifiers: Vec<String>,
     name: Option<String>,
     metadata: Vec<(String, String)>,
+    validate: Option<Ident>,
 }
 
 fn parse_ufunction_specifiers(attr: &syn::Attribute) -> syn::Result<UFunctionSpec> {
@@ -1424,6 +1602,18 @@ fn parse_ufunction_specifiers(attr: &syn::Attribute) -> syn::Result<UFunctionSpe
                     return Err(syn::Error::new_spanned(
                         other,
                         "`category` is a string: category = \"Combat\"",
+                    ));
+                }
+            },
+            Meta::NameValue(nv) if nv.path.is_ident("WithValidation") => match &nv.value {
+                syn::Expr::Path(path) if path.path.get_ident().is_some() => {
+                    spec.validate = path.path.get_ident().cloned();
+                }
+                other => {
+                    return Err(syn::Error::new_spanned(
+                        other,
+                        "WithValidation names a method of the class that takes the function's \
+                         parameters and returns bool: WithValidation = validate_fire",
                     ));
                 }
             },
@@ -1800,5 +1990,69 @@ mod tests {
         assert_eq!(local("target"), "__rusteal_arg_target");
         assert_eq!(local("_target"), "__rusteal_arg_target_1");
         assert_eq!(local("r#type"), "__rusteal_arg_type");
+    }
+
+    #[test]
+    fn a_remote_function_calls_through_the_engine_and_runs_its_body_where_it_lands() {
+        let out = expand(quote! {
+            impl Turret {
+                #[ufunction(Server, Reliable, WithValidation = valid_aim)]
+                fn server_aim(&mut self, yaw: f32) {
+                    self.set_yaw(yaw);
+                }
+
+                fn valid_aim(&self, yaw: f32) -> bool {
+                    yaw.is_finite()
+                }
+            }
+        })
+        .unwrap();
+
+        assert!(out.contains("fn server_aim_implementation (& mut self , yaw : f32)"));
+        assert!(out.contains("DynamicCall :: new (& self . as_ref () , \"ServerAim\")"));
+        assert!(out.contains("FUNC_NET_SERVER"));
+        assert!(out.contains("FUNC_NET_RELIABLE"));
+        assert!(out.contains("FUNC_NET_VALIDATE"));
+        assert!(out.contains(
+            "__this . valid_aim (:: core :: clone :: Clone :: clone (& __rusteal_arg_yaw))"
+        ));
+        assert!(out.contains("world_rpc_validate_failed"));
+        assert!(out.contains("__this . server_aim_implementation (__rusteal_arg_yaw)"));
+    }
+
+    #[test]
+    fn remote_functions_are_checked() {
+        let refused = |method: ImplItemFn| parse_ufunction(&method).err().unwrap().to_string();
+
+        assert!(
+            refused(syn::parse_quote! { #[ufunction(Server)] fn fire(&mut self) {} })
+                .contains("Reliable")
+        );
+        assert!(
+            refused(syn::parse_quote! { #[ufunction(Client, Reliable, WithValidation = ok)] fn note(&self) {} })
+                .contains("goes with Server")
+        );
+        assert!(
+            refused(syn::parse_quote! { #[ufunction(Server, Client, Reliable)] fn both(&self) {} })
+                .contains("one of Server, Client and NetMulticast")
+        );
+        assert!(
+            refused(syn::parse_quote! { #[ufunction(NetMulticast, Unreliable)] fn ping(&self) -> i32 { 0 } })
+                .contains("returns nothing")
+        );
+        assert!(
+            refused(syn::parse_quote! { #[ufunction(Server, Reliable)] fn spawn() {} })
+                .contains("a method")
+        );
+        assert!(
+            refused(syn::parse_quote! { #[ufunction(Reliable)] fn fire(&self) {} })
+                .contains("remote function")
+        );
+
+        let method: ImplItemFn = syn::parse_quote! { #[ufunction(NetMulticast, Unreliable, BlueprintAuthorityOnly)] fn ping(&self, at: f32) {} };
+        let info = parse_ufunction(&method).unwrap();
+        let rpc = info.rpc.unwrap();
+        assert_eq!(rpc.target, RpcTarget::NetMulticast);
+        assert!(!rpc.reliable && rpc.validate.is_none() && info.authority_only);
     }
 }
