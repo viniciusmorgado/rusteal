@@ -701,6 +701,7 @@ struct FRustealRustCallbacks {
   void (*notify_pinned_destroyed)(RustealUObjectHandle handle);
   void (*on_tick)(float delta_seconds);
   void (*release_delegate_callback)(uint64 callback_id);
+  void (*retry_deferred_classes)(bool last_try);
 };
 
 struct FRustealModuleExports {

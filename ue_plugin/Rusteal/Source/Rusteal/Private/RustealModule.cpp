@@ -7,6 +7,7 @@
 #include "Misc/App.h"
 #include "Misc/Paths.h"
 #include "Containers/Ticker.h"
+#include "Misc/CoreDelegates.h"
 #include "Modules/ModuleManager.h"
 #include "RustealApiTable.h"
 #include "RustealLibraries.h"
@@ -578,6 +579,22 @@ static bool ReloadLibrary(FRustealLibrary &Library) {
 #endif
 }
 
+static void RetryDeferredClasses(const FRustealLibrary *Registered,
+                                 bool bLastTry) {
+  for (const TUniquePtr<FRustealLibrary> &Other : GLibraries) {
+    if (Other.Get() == Registered || !Other->IsLoaded()) {
+      continue;
+    }
+
+    RustealCallLibrary(Other.Get(),
+                       [bLastTry](const FRustealRustCallbacks &Cb) {
+                         Cb.retry_deferred_classes(bLastTry);
+                       });
+  }
+}
+
+static FDelegateHandle GPostEngineInitHandle;
+
 static bool RegisterLibrary(FName Name, const FString &PackagePath,
                             const FString &LibraryPath, void *const *FuncTable,
                             uint32 FuncCount, uint64 FuncFingerprint) {
@@ -607,6 +624,11 @@ static bool RegisterLibrary(FName Name, const FString &PackagePath,
   Library->Table.func_count = FuncCount;
   Library->Table.func_fingerprint = FuncFingerprint;
   const bool bLoaded = LoadLibrary(*Library);
+
+  if (bLoaded) {
+    RetryDeferredClasses(Library, false);
+  }
+
   RustealOnLibraryRegistered().Broadcast(Name, LibraryPath);
   return bLoaded;
 }
@@ -734,6 +756,11 @@ void FRustealModule::StartupModule() {
   GTickerHandle = FTSTicker::GetCoreTicker().AddTicker(
       FTickerDelegate::CreateStatic(&TickLibraries));
 
+  GPostEngineInitHandle =
+      FCoreDelegates::OnPostEngineInit.AddStatic([]() {
+        RetryDeferredClasses(nullptr, true);
+      });
+
 #if RUSTEAL_HOSTS_GAME_LIBRARY
   RustealFillFuncTable();
 
@@ -750,6 +777,7 @@ void FRustealModule::StartupModule() {
 
 void FRustealModule::ShutdownModule() {
   FTSTicker::GetCoreTicker().RemoveTicker(GTickerHandle);
+  FCoreDelegates::OnPostEngineInit.Remove(GPostEngineInitHandle);
   RustealUnregisterComponentListResync();
 
   for (const TUniquePtr<FRustealLibrary> &Library : GLibraries) {
