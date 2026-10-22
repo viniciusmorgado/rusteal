@@ -77,8 +77,35 @@ GetWidgetTreeImpl(RustealUObjectHandle UserWidgetHandle) {
   return RustealUObjectHandle{UserWidget->WidgetTree};
 }
 
+uint64 RustealSlate_New(uint32 Kind, const RustealSlateProps *Props);
+ERustealErrorCode RustealSlate_AddChild(uint64 Parent, uint64 Child,
+                                        const RustealSlateSlot *Slot);
+void RustealSlate_Release(uint64 Id);
+void RustealSlate_WriteText(uint8 *Out, const uint8 *Utf8, uint32 Len);
+bool RustealSlate_SimulateClick(uint64 Id);
+ERustealErrorCode RustealSlate_GetText(uint64 Id, uint8 *Buffer,
+                                       uint32 Capacity, uint32 *OutLen);
+ERustealErrorCode RustealSlate_RegisterTab(const uint8 *Name, uint32 NameLen,
+                                           const uint8 *Label, uint32 LabelLen,
+                                           uint64 CallbackId);
+bool RustealSlate_InvokeTab(const uint8 *Name, uint32 NameLen);
+void RustealSlate_UnregisterTab(const uint8 *Name, uint32 NameLen);
+uint32 RustealSlate_LiveWidgets();
+uint32 RustealSlate_LiveCallbacks();
+
 FRustealWidgetApi GWidgetApi = {
     &CreateWidgetImpl,
     &SetRootWidgetImpl,
     &GetWidgetTreeImpl,
+    &RustealSlate_New,
+    &RustealSlate_AddChild,
+    &RustealSlate_Release,
+    &RustealSlate_WriteText,
+    &RustealSlate_SimulateClick,
+    &RustealSlate_GetText,
+    &RustealSlate_RegisterTab,
+    &RustealSlate_InvokeTab,
+    &RustealSlate_UnregisterTab,
+    &RustealSlate_LiveWidgets,
+    &RustealSlate_LiveCallbacks,
 };

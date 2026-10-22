@@ -476,6 +476,29 @@ struct FRustealReifyApi {
                                              const uint8 *value,
                                              uint32 value_len);
 };
+struct RustealSlateProps {
+  const uint8 *text;
+  uint32 text_len;
+  uint64 text_callback;
+  const uint8 *hint;
+  uint32 hint_len;
+  uint64 enabled_callback;
+  uint64 on_event;
+  uint64 on_commit;
+  float value;
+  float min;
+  float max;
+  bool checked;
+  float padding[4];
+};
+
+struct RustealSlateSlot {
+  float padding[4];
+  uint8 h_align;
+  uint8 v_align;
+  float fill;
+};
+
 struct FRustealWidgetApi {
   RustealUObjectHandle (*create_widget)(RustealUObjectHandle owning_object,
                                         RustealUClassHandle widget_class);
@@ -484,6 +507,22 @@ struct FRustealWidgetApi {
                                        RustealUObjectHandle root_widget);
 
   RustealUObjectHandle (*get_widget_tree)(RustealUObjectHandle user_widget);
+
+  uint64 (*slate_new)(uint32 kind, const RustealSlateProps *props);
+  ERustealErrorCode (*slate_add_child)(uint64 parent, uint64 child,
+                                       const RustealSlateSlot *slot);
+  void (*slate_release)(uint64 id);
+  void (*slate_write_text)(uint8 *out, const uint8 *utf8, uint32 len);
+  bool (*slate_simulate_click)(uint64 id);
+  ERustealErrorCode (*slate_get_text)(uint64 id, uint8 *buffer,
+                                      uint32 capacity, uint32 *out_len);
+  ERustealErrorCode (*slate_register_tab)(const uint8 *name, uint32 name_len,
+                                          const uint8 *label, uint32 label_len,
+                                          uint64 callback_id);
+  bool (*slate_invoke_tab)(const uint8 *name, uint32 name_len);
+  void (*slate_unregister_tab)(const uint8 *name, uint32 name_len);
+  uint32 (*slate_live_widgets)();
+  uint32 (*slate_live_callbacks)();
 };
 
 struct FRustealInputApi {
