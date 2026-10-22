@@ -9,6 +9,7 @@ mod interfaces;
 mod libraries;
 mod movement_commandlet;
 mod net;
+mod profiling;
 mod reload;
 mod runner;
 mod tags;

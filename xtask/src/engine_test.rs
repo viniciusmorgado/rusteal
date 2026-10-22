@@ -76,6 +76,61 @@ fn wait_status(child: &mut Child) -> Option<std::process::ExitStatus> {
     None
 }
 
+const TRACE_SCOPE: &str = "RustealTraceProbe";
+
+fn read_trace(engine: &Path, trace: &Path, work: &Path, logs: &Path) -> String {
+    const CHECK: &str = "cpu_trace_scope_reaches_insights";
+
+    if !trace.is_file() {
+        return format!(
+            "FAIL {CHECK}: the game wrote no trace at {}",
+            trace.display()
+        );
+    }
+
+    let events = work.join("trace_events.csv");
+    let _ = std::fs::remove_file(&events);
+    let insights = engine.join("Engine/Binaries").join(if cfg!(windows) {
+        "Win64/UnrealInsights.exe"
+    } else if cfg!(target_os = "macos") {
+        "Mac/UnrealInsights"
+    } else {
+        "Linux/UnrealInsights"
+    });
+
+    let mut child = Command::new(insights)
+        .arg(format!("-OpenTraceFile={}", trace.display()))
+        .arg(format!("-ABSLOG={}", logs.join("insights.log").display()))
+        .args(["-AutoQuit", "-NoUI", "-log"])
+        .arg(format!(
+            "-ExecOnAnalysisCompleteCmd=TimingInsights.ExportTimingEvents {} -columns=ThreadName,TimerName,Duration -threads=GameThread -timers={TRACE_SCOPE}",
+            events.display()
+        ))
+        .stdout(std::fs::File::create(logs.join("insights.out.log")).expect("a log file"))
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap_or_else(|e| fail(&format!("cannot start Unreal Insights: {e}")));
+
+    if !wait(&mut child) {
+        return format!(
+            "FAIL {CHECK}: Unreal Insights did not finish; its log is in {}",
+            logs.join("insights.log").display()
+        );
+    }
+
+    let text = std::fs::read_to_string(&events).unwrap_or_default();
+
+    if text.lines().skip(1).any(|line| line.contains(TRACE_SCOPE)) {
+        format!("PASS {CHECK}")
+    } else {
+        format!(
+            "FAIL {CHECK}: no {TRACE_SCOPE} event in {}; the log is in {}",
+            events.display(),
+            logs.join("insights.log").display()
+        )
+    }
+}
+
 const COMMANDLET: &str = "VirtualsCommandlet";
 const COMMANDLET_EXIT: i32 = 3;
 
@@ -534,6 +589,8 @@ pub fn engine_test() {
 
     let results = work.join("results.txt");
     let _ = std::fs::remove_file(&results);
+    let trace = work.join("game.utrace");
+    let _ = std::fs::remove_file(&trace);
 
     eprintln!("engine-test: running the tests in a game, without a window");
     let mut child = Command::new(editor(&env.engine_root))
@@ -545,7 +602,9 @@ pub fn engine_test() {
             "-nosplash",
             "-nosound",
             "-ExecCmds=rusteal_tests.run",
+            "-trace=cpu",
         ])
+        .arg(format!("-tracefile={}", trace.display()))
         .env("RUSTEAL_TEST_RESULTS", &results)
         .stdout(std::fs::File::create(logs.join("editor.log")).expect("a log file"))
         .stderr(std::process::Stdio::null())
@@ -569,6 +628,9 @@ pub fn engine_test() {
         ));
     }
 
+    eprintln!("engine-test: reading the game's trace with Unreal Insights, without a window");
+    let insights = read_trace(&env.engine_root, &trace, &work, &logs);
+
     eprintln!("engine-test: running a Rust commandlet");
     let commandlet = run_commandlet(&env.engine_root, &project, &logs);
 
@@ -590,6 +652,7 @@ pub fn engine_test() {
     let lines: Vec<&str> = text
         .lines()
         .filter(|line| *line != "DONE")
+        .chain(std::iter::once(insights.as_str()))
         .chain(std::iter::once(commandlet.as_str()))
         .chain(reload.iter().map(String::as_str))
         .chain(net.iter().map(String::as_str))
