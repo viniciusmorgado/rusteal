@@ -260,6 +260,10 @@ pub const ALL: &[(&str, Check)] = &[
         crate::interfaces::cpp_only_interface_reaches_rust,
     ),
     (
+        "profiling_scopes_run",
+        crate::profiling::profiling_scopes_run,
+    ),
+    (
         "declared_tag_matches_its_parent",
         crate::tags::declared_tag_matches_its_parent,
     ),
