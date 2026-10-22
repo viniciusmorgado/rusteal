@@ -65,6 +65,21 @@ pub struct ShimSpec {
     pub constructor: Vec<String>,
     #[serde(default)]
     pub post_init_properties: Vec<String>,
+    #[serde(default)]
+    pub functions: Vec<FunctionSpec>,
+}
+
+/// A static function of the base, for what C++ reaches and Blueprint or Rust cannot: a
+/// `UFUNCTION` with `specifiers` (`BlueprintCallable` when there are none), whose body is `body`.
+#[derive(Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct FunctionSpec {
+    pub signature: String,
+    #[serde(default)]
+    pub specifiers: Vec<String>,
+    #[serde(default)]
+    pub meta: Vec<String>,
+    pub body: Vec<String>,
 }
 
 #[derive(Deserialize, Clone, Debug)]
@@ -96,6 +111,12 @@ pub struct VirtualDetails {
     pub drop: Vec<String>,
     #[serde(default)]
     pub meta: Vec<String>,
+    #[serde(default)]
+    pub event_params: Option<Vec<String>>,
+    #[serde(default)]
+    pub event_args: Vec<String>,
+    #[serde(default)]
+    pub default: Option<String>,
 }
 
 #[derive(Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -115,6 +136,9 @@ impl VirtualSpec {
                 order: Order::After,
                 drop: Vec::new(),
                 meta: Vec::new(),
+                event_params: None,
+                event_args: Vec::new(),
+                default: None,
             },
             VirtualSpec::Detailed(details) => details.clone(),
         }
@@ -300,7 +324,14 @@ struct Virtual {
     meta: Vec<String>,
     order: Order,
     kept: Vec<Param>,
+    args: Vec<String>,
+    default: Option<String>,
     pure_interface: bool,
+}
+
+struct Function<'a> {
+    sig: Signature,
+    spec: &'a FunctionSpec,
 }
 
 struct Shim<'a> {
@@ -308,6 +339,7 @@ struct Shim<'a> {
     cpp_name: String,
     category: String,
     virtuals: Vec<Virtual>,
+    functions: Vec<Function<'a>>,
 }
 
 fn prefix_of(parent: &str) -> Result<char, String> {
@@ -363,12 +395,54 @@ fn resolve(spec: &ShimSpec) -> Result<Shim<'_>, String> {
             }
         }
 
-        let kept: Vec<Param> = sig
-            .params
-            .iter()
-            .filter(|p| !details.drop.contains(&p.name))
-            .cloned()
-            .collect();
+        let (kept, args) = match &details.event_params {
+            Some(declared) => {
+                if !details.drop.is_empty() {
+                    return Err(format!(
+                        "{}::{}: `event_params` declares the event's parameters, so `drop` is \
+                         not needed",
+                        spec.class, sig.name
+                    ));
+                }
+
+                if declared.len() != details.event_args.len() {
+                    return Err(format!(
+                        "{}::{}: `event_params` has {} parameters and `event_args` {} \
+                         expressions; each parameter needs the expression that fills it",
+                        spec.class,
+                        sig.name,
+                        declared.len(),
+                        details.event_args.len()
+                    ));
+                }
+
+                let params = declared
+                    .iter()
+                    .map(|text| parse_param(text.trim()))
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|e| format!("{}::{}: {e}", spec.class, sig.name))?;
+
+                (params, details.event_args.clone())
+            }
+            None => {
+                if !details.event_args.is_empty() {
+                    return Err(format!(
+                        "{}::{}: `event_args` goes with `event_params`",
+                        spec.class, sig.name
+                    ));
+                }
+
+                let params: Vec<Param> = sig
+                    .params
+                    .iter()
+                    .filter(|p| !details.drop.contains(&p.name))
+                    .cloned()
+                    .collect();
+                let args = params.iter().map(|p| p.name.clone()).collect();
+
+                (params, args)
+            }
+        };
 
         for param in &kept {
             check_param_type(param).map_err(|e| format!("{}::{}: {e}", spec.class, sig.name))?;
@@ -396,13 +470,70 @@ fn resolve(spec: &ShimSpec) -> Result<Shim<'_>, String> {
             ));
         }
 
+        let has_default = details.default.is_some();
+
         virtuals.push(Virtual {
             sig,
             event,
             meta: details.meta.clone(),
             order: details.order,
             kept,
+            args,
+            default: details.default.clone(),
             pure_interface,
+        });
+
+        let added = virtuals.last().unwrap();
+
+        if has_default && !native_event(added) {
+            return Err(format!(
+                "{}::{}: `default` is the body of a BlueprintNativeEvent's implementation; a \
+                 void virtual without out parameters raises a BlueprintImplementableEvent, \
+                 which has none",
+                spec.class, added.sig.name
+            ));
+        }
+    }
+
+    let mut functions = Vec::new();
+
+    for function in &spec.functions {
+        let sig =
+            parse_signature(&function.signature).map_err(|e| format!("{}: {e}", spec.class))?;
+
+        if sig.is_const {
+            return Err(format!(
+                "{}::{}: a base's functions are static, so not const",
+                spec.class, sig.name
+            ));
+        }
+
+        for param in &sig.params {
+            check_param_type(param).map_err(|e| format!("{}::{}: {e}", spec.class, sig.name))?;
+        }
+
+        if sig.ret != "void" {
+            check_param_type(&Param {
+                ty: sig.ret.clone(),
+                name: "return value".to_string(),
+            })
+            .map_err(|e| format!("{}::{}: {e}", spec.class, sig.name))?;
+        }
+
+        if functions.iter().any(|f: &Function| f.sig.name == sig.name)
+            || virtuals
+                .iter()
+                .any(|v| v.event == sig.name || v.sig.name == sig.name)
+        {
+            return Err(format!(
+                "{}: two functions are named {}",
+                spec.class, sig.name
+            ));
+        }
+
+        functions.push(Function {
+            sig,
+            spec: function,
         });
     }
 
@@ -411,6 +542,7 @@ fn resolve(spec: &ShimSpec) -> Result<Shim<'_>, String> {
         cpp_name,
         category,
         virtuals,
+        functions,
     })
 }
 
@@ -563,6 +695,30 @@ pub fn generate_header(specs: &[ShimSpec], file_stem: &str, api: &str) -> Result
             }
         }
 
+        for function in &shim.functions {
+            let specifiers = if function.spec.specifiers.is_empty() {
+                "BlueprintCallable".to_string()
+            } else {
+                function.spec.specifiers.join(", ")
+            };
+
+            let meta = if function.spec.meta.is_empty() {
+                String::new()
+            } else {
+                format!(", meta = ({})", function.spec.meta.join(", "))
+            };
+
+            write!(
+                out,
+                "\n  UFUNCTION({specifiers}, Category = \"{}\"{meta})\n  static {} {}({});\n",
+                shim.category,
+                function.sig.ret,
+                function.sig.name,
+                param_list(&function.sig.params)
+            )
+            .unwrap();
+        }
+
         out.push_str("};\n");
     }
 
@@ -609,7 +765,7 @@ pub fn generate_source(specs: &[ShimSpec], file_stem: &str) -> Result<String, St
         for v in &shim.virtuals {
             let constness = if v.sig.is_const { " const" } else { "" };
             let super_call = format!("Super::{}({})", v.sig.name, arg_list(&v.sig.params));
-            let event_call = format!("{}({})", v.event, arg_list(&v.kept));
+            let event_call = format!("{}({})", v.event, v.args.join(", "));
 
             write!(
                 out,
@@ -644,14 +800,18 @@ pub fn generate_source(specs: &[ShimSpec], file_stem: &str) -> Result<String, St
                 )
                 .unwrap();
 
-                if v.pure_interface {
+                if let Some(default) = &v.default {
+                    for line in default.lines().filter(|line| !line.trim().is_empty()) {
+                        writeln!(out, "  {}", line.trim_end()).unwrap();
+                    }
+                } else if v.pure_interface {
                     if v.sig.ret != "void" {
                         writeln!(out, "  return {{}};").unwrap();
                     }
-                } else if v.kept.len() != v.sig.params.len() {
+                } else if v.kept != v.sig.params {
                     return Err(format!(
-                        "{}::{}: a virtual whose event has a default implementation cannot drop \
-                         parameters, since that default calls the parent's with them",
+                        "{}::{}: the event's default calls the parent's virtual with the event's \
+                         parameters, which are not the virtual's: give it a `default`",
                         shim.spec.class, v.sig.name
                     ));
                 } else if v.sig.ret == "void" {
@@ -663,9 +823,54 @@ pub fn generate_source(specs: &[ShimSpec], file_stem: &str) -> Result<String, St
                 out.push_str("}\n");
             }
         }
+
+        for function in &shim.functions {
+            write!(
+                out,
+                "\n{} {class}::{}({}) {{\n",
+                function.sig.ret,
+                function.sig.name,
+                param_list(&function.sig.params)
+            )
+            .unwrap();
+
+            for line in &function.spec.body {
+                writeln!(out, "  {line}").unwrap();
+            }
+
+            out.push_str("}\n");
+        }
     }
 
     Ok(out)
+}
+
+/// The curated bases of the binding features whose engine plugin is optional: they go to the
+/// project's bases when the project binds the feature.
+pub const FEATURE_SHIMS: &[(&str, &str)] = &[(
+    "gameplay-abilities",
+    include_str!("../../shims/gameplay_abilities.toml"),
+)];
+
+pub fn feature_shims(features: &[String]) -> Result<Vec<ShimSpec>, String> {
+    let mut specs = Vec::new();
+
+    for (feature, text) in FEATURE_SHIMS {
+        if features.iter().any(|f| f == feature) {
+            let file: ShimFile = toml::from_str(text)
+                .map_err(|e| format!("the bases of the `{feature}` feature: {e}"))?;
+            specs.extend(file.shim);
+        }
+    }
+
+    Ok(specs)
+}
+
+/// The bases a project builds: its features' curated ones, then its own `[[codegen.shims]]`.
+pub fn project_shim_specs(features: &[String], own: &[ShimSpec]) -> Result<Vec<ShimSpec>, String> {
+    let mut specs = feature_shims(features)?;
+    specs.extend(own.iter().cloned());
+    Ok(specs)
 }
 
 pub const PROJECT_SHIMS_STEM: &str = "RustealProjectShims";
@@ -953,5 +1158,111 @@ mod tests {
             "URustealActorComponent::URustealActorComponent(const FObjectInitializer &ObjectInitializer)\n    : Super(ObjectInitializer) {\n  bWantsInitializeComponent = true;\n}"
         ));
         assert!(source.contains("  Super::PostInitProperties();\n  Touch();\n"));
+    }
+
+    #[test]
+    fn event_parameters_are_filled_from_the_virtuals() {
+        let shims = spec(
+            r#"
+            [[shim]]
+            class = "RustealSet"
+            parent = "UAttributeSet"
+            virtuals = [
+                { signature = "bool PreExecute(FCallbackData &Data)", event_params = ["const FSpec &Spec", "FEvaluated &Evaluated", "UAbilitySystemComponent *Target"], event_args = ["Data.Spec", "Data.Evaluated", "&Data.Target"], default = "return true;" },
+                { signature = "void PostExecute(const FCallbackData &Data)", event_params = ["const FSpec &Spec"], event_args = ["Data.Spec"] },
+            ]
+            "#,
+        );
+
+        let header = generate_header(&shims, "S", "API").unwrap();
+        assert!(header.contains(
+            "  bool ReceivePreExecute(const FSpec &Spec, FEvaluated &Evaluated, UAbilitySystemComponent *Target);"
+        ));
+        assert!(header.contains("  void ReceivePostExecute(const FSpec &Spec);"));
+        assert!(header.contains("BlueprintImplementableEvent"));
+
+        let source = generate_source(&shims, "S").unwrap();
+        assert!(source.contains(
+            "bool URustealSet::PreExecute(FCallbackData &Data) {\n  return ReceivePreExecute(Data.Spec, Data.Evaluated, &Data.Target);\n}"
+        ));
+        assert!(source.contains(
+            "bool URustealSet::ReceivePreExecute_Implementation(const FSpec &Spec, FEvaluated &Evaluated, UAbilitySystemComponent *Target) {\n  return true;\n}"
+        ));
+        assert!(source.contains("  Super::PostExecute(Data);\n  ReceivePostExecute(Data.Spec);\n"));
+    }
+
+    #[test]
+    fn mapped_parameters_are_checked() {
+        let refused = |virtual_spec: &str| {
+            let text = format!(
+                "[[shim]]\nclass = \"RustealSet\"\nparent = \"UAttributeSet\"\nvirtuals = [{virtual_spec}]\n"
+            );
+            generate_source(&spec(&text), "S").unwrap_err()
+        };
+
+        assert!(
+            refused(r#"{ signature = "void F(const FData &Data)", event_params = ["int32 A"], event_args = [] }"#)
+                .contains("each parameter needs the expression")
+        );
+        assert!(
+            refused(r#"{ signature = "void F(const FData &Data)", event_params = ["FData *A"], event_args = ["&Data"] }"#)
+                .contains("not an object pointer")
+        );
+        assert!(
+            refused(r#"{ signature = "bool F(const FData &Data)", event_params = ["int32 A"], event_args = ["Data.A"] }"#)
+                .contains("give it a `default`")
+        );
+        assert!(
+            refused(r#"{ signature = "void F(int32 A)", default = "Touch();" }"#)
+                .contains("BlueprintImplementableEvent")
+        );
+        assert!(
+            refused(r#"{ signature = "void F(int32 A)", event_args = ["A"] }"#)
+                .contains("goes with `event_params`")
+        );
+    }
+
+    #[test]
+    fn a_default_replaces_the_parent_call() {
+        let shims = spec(
+            r#"
+            [[shim]]
+            class = "RustealThing"
+            parent = "AActor"
+            virtuals = [{ signature = "float Score(float Base, UObject *Context)", drop = ["Context"], default = "return Base;" }]
+            "#,
+        );
+
+        let source = generate_source(&shims, "S").unwrap();
+        assert!(source.contains(
+            "float ARustealThing::ReceiveScore_Implementation(float Base) {\n  return Base;\n}"
+        ));
+    }
+
+    #[test]
+    fn feature_bases_come_with_their_feature() {
+        let own = spec("[[shim]]\nclass = \"RustealMine\"\nparent = \"AActor\"\n");
+
+        assert_eq!(project_shim_specs(&[], &own).unwrap().len(), 1);
+
+        let features = ["gameplay-abilities".to_string()];
+        let all = project_shim_specs(&features, &own).unwrap();
+        assert_eq!(all[0].class, "RustealAttributeSet");
+        assert_eq!(all.last().unwrap().class, "RustealMine");
+
+        let header = generate_header(&all, PROJECT_SHIMS_STEM, "RUSTEAL_API").unwrap();
+        assert!(header.contains(
+            "  UFUNCTION(BlueprintPure, Category = \"Rusteal|AttributeSet\")\n  static FGameplayAttribute AttributeOf(TSubclassOf<UAttributeSet> Set, FName Property);"
+        ));
+        let source = generate_source(&all, PROJECT_SHIMS_STEM).unwrap();
+        assert!(source.contains(
+            "FGameplayAttribute URustealAttributeSet::AttributeOf(TSubclassOf<UAttributeSet> Set, FName Property) {\n  FProperty *Found"
+        ));
+
+        for (feature, _) in FEATURE_SHIMS {
+            let specs = feature_shims(&[feature.to_string()]).unwrap();
+            generate_header(&specs, PROJECT_SHIMS_STEM, "RUSTEAL_API").unwrap();
+            generate_source(&specs, PROJECT_SHIMS_STEM).unwrap();
+        }
     }
 }
