@@ -1,0 +1,6 @@
+# `rusteal new <Name> --template <template> --feature vscode`: files added to
+# the project, rendered with Tera in the template's context.
+description = "VS Code tasks and debugger configurations, stored as project files: Rusteal Watch and Rusteal Build tasks, and attaching CodeLLDB to the running editor or game."
+
+# Printed when the project is ready (Tera, same context as the files).
+next_step = "open {{ project }}/Rust in VS Code: run the Rusteal Watch task, then Run and Debug > Attach to Unreal (Rust)"

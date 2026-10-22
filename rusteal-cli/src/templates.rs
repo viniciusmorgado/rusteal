@@ -619,6 +619,54 @@ mod tests {
     }
 
     #[test]
+    fn the_vscode_feature_writes_tasks_and_debugger_configurations() {
+        assert!(matches!(
+            select_feature("VSCode").unwrap().kind,
+            FeatureKind::ProjectFiles(_)
+        ));
+
+        let root = std::env::temp_dir().join(format!("rusteal-vscode-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let mut context = tera::Context::new();
+        context.insert("project", "MyGame");
+        context.insert("crate_name", "my-game");
+
+        assert_eq!(write_project_feature_files("vscode", &root, &context), 3);
+
+        let read = |name: &str| -> serde_json::Value {
+            serde_json::from_str(
+                &std::fs::read_to_string(root.join("Rust/.vscode").join(name)).unwrap(),
+            )
+            .unwrap()
+        };
+        let launch = read("launch.json");
+        let tasks = read("tasks.json");
+        let extensions = read("extensions.json");
+        std::fs::remove_dir_all(&root).unwrap();
+
+        let attach = &launch["configurations"][0];
+        assert_eq!(attach["type"], "lldb");
+        assert_eq!(attach["request"], "attach");
+        assert_eq!(attach["pid"], "${command:pickMyProcess}");
+
+        let commands: Vec<&str> = tasks["tasks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|task| task["command"].as_str())
+            .collect();
+        assert_eq!(
+            commands,
+            [
+                "cargo rusteal watch",
+                "cargo rusteal build",
+                "cargo test -p my-game"
+            ]
+        );
+        assert!(extensions.to_string().contains("vadimcn.vscode-lldb"));
+    }
+
+    #[test]
     fn selects_templates_and_variants_by_loose_names() {
         let base = select("third-person", None).unwrap();
 
