@@ -3,6 +3,7 @@ pub mod context;
 pub mod cpp_gen;
 pub mod defaults;
 pub mod filter;
+pub mod loc_text;
 pub mod naming;
 pub mod plugin_bindings;
 pub mod rust_gen;
