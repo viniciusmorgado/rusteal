@@ -106,6 +106,7 @@ fn run_commandlet(engine: &Path, project: &Path, logs: &Path) -> String {
 
 const PLUGIN: &str = "RustealProbe";
 const PLUGIN_CRATE: &str = "rusteal-probe";
+const PLUGIN_EDITOR_CRATE: &str = "rusteal-probe-editor";
 
 fn add_probe_plugin(cli: &Path, project: &Path, repo: &Path, logs: &Path) {
     let plugin = project.join("Plugins").join(PLUGIN);
@@ -122,9 +123,25 @@ fn add_probe_plugin(cli: &Path, project: &Path, repo: &Path, logs: &Path) {
         );
     }
 
+    if !plugin.join("Rust").join(PLUGIN_EDITOR_CRATE).is_dir() {
+        eprintln!("engine-test: adding {PLUGIN}'s editor library");
+        run(
+            Command::new(cli)
+                .args(["plugin", "editor", PLUGIN, "--no-build", "--project"])
+                .arg(project)
+                .stdin(std::process::Stdio::null()),
+            "rusteal plugin editor",
+            &logs.join("plugin-editor.log"),
+        );
+    }
+
     copy_sources(
         &repo.join("tests/engine/plugin/src"),
         &plugin.join("Rust").join(PLUGIN_CRATE).join("src"),
+    );
+    copy_sources(
+        &repo.join("tests/engine/plugin/editor/src"),
+        &plugin.join("Rust").join(PLUGIN_EDITOR_CRATE).join("src"),
     );
 }
 
@@ -138,7 +155,7 @@ fn library_file(stem: &str) -> String {
     }
 }
 
-fn run_chained_reload(
+fn run_editor(
     cargo: &str,
     engine: &Path,
     project: &Path,
@@ -217,7 +234,7 @@ fn run_chained_reload(
             "-unattended",
             "-nosplash",
             "-nosound",
-            "-ExecCmds=rusteal_tests.reload_prepare,Rusteal.Reload RustealProbe,rusteal_tests.reload_verify,QUIT_EDITOR",
+            "-ExecCmds=rusteal_tests.reload_prepare,Rusteal.Reload RustealProbe,rusteal_tests.reload_verify,rusteal_editor_tests.run,QUIT_EDITOR",
         ])
         .env("RUSTEAL_TEST_RESULTS", &results)
         .env("RUSTEAL_RELOAD_VARIANT", &variant)
@@ -408,8 +425,10 @@ pub fn engine_test() {
     eprintln!("engine-test: running a Rust commandlet");
     let commandlet = run_commandlet(&env.engine_root, &project, &logs);
 
-    eprintln!("engine-test: reloading the plugin in an editor, without a window");
-    let reload = run_chained_reload(&cargo, &env.engine_root, &project, &repo, &work, &logs);
+    eprintln!(
+        "engine-test: reloading the plugin and running the editor checks in an editor, without a window"
+    );
+    let reload = run_editor(&cargo, &env.engine_root, &project, &repo, &work, &logs);
 
     let lines: Vec<&str> = text
         .lines()

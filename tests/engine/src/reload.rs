@@ -29,10 +29,17 @@ pub struct ReloadHolder {
 }
 
 fn results(lines: &[String]) {
-    if let Ok(path) = std::env::var("RUSTEAL_TEST_RESULTS") {
-        let mut text = lines.join("\n");
-        text.push_str("\nDONE\n");
-        let _ = std::fs::write(path, text);
+    use std::io::Write;
+
+    if let Ok(path) = std::env::var("RUSTEAL_TEST_RESULTS")
+        && let Ok(mut file) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+    {
+        for line in lines {
+            let _ = writeln!(file, "{line}");
+        }
     }
 }
 
