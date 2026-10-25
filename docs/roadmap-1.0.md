@@ -198,6 +198,9 @@ Every milestone ends the same way: its features have tests in the headless
 harness (M1 onward), both handbooks describe them, `docs/` tracking entries are
 closed, and at least one real project (the Fab plugin or Noir Blue) uses them.
 
+[roadmap-checklist.md](roadmap-checklist.md) lists every milestone's tasks with
+what is done.
+
 ### M0 — Plugins for every project (≈0.10, L)
 
 **Status (2026-10-18):** in progress. The launcher is done on Linux: the Rust
