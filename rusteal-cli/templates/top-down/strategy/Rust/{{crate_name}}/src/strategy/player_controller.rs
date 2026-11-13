@@ -13,7 +13,7 @@ use bindings::umg::UserWidgetExt;
 use glam::{DQuat, DVec2, DVec3};
 use rusteal_runtime::runtime::input::should_display_touch_interface;
 use rusteal_runtime::runtime::{
-    OwnedStruct, Rotator, RustealResult, SubclassOf, UObjectRef, UStructRef, method,
+    OwnedStruct, Rotator, RustealResult, SubclassOf, TWeakObjectPtr, UObjectRef, UStructRef, method,
 };
 use rusteal_runtime::{uclass, uclass_impl};
 
@@ -99,10 +99,11 @@ pub struct StrategyPlayerController {
     #[uproperty(EditAnywhere, category = "Selection")]
     selection_trace_channel: ETraceTypeQuery,
 
-    controlled_camera_pawn: UObjectRef<StrategyPawn>,
+    controlled_camera_pawn: TWeakObjectPtr<StrategyPawn>,
 
-    strategy_hud: UObjectRef<StrategyHUD>,
+    strategy_hud: TWeakObjectPtr<StrategyHUD>,
 
+    #[uproperty]
     mobile_controls_widget: UObjectRef<StrategyTouchControls>,
 
     starting_drag_scroll_position: DVec2,
@@ -117,7 +118,7 @@ pub struct StrategyPlayerController {
 
     default_zoom: f32,
 
-    controlled_units: Vec<UObjectRef<StrategyUnit>>,
+    controlled_units: Vec<TWeakObjectPtr<StrategyUnit>>,
 }
 
 #[uclass_impl]
@@ -144,7 +145,9 @@ impl StrategyPlayerController {
             return;
         };
 
-        self.set_controlled_camera_pawn(possessed_pawn.cast().unwrap_or_default());
+        self.set_controlled_camera_pawn(TWeakObjectPtr::from_ref(
+            &possessed_pawn.cast().unwrap_or_default(),
+        ));
 
         if let Ok(camera) = camera_pawn.get_camera().and_then(|camera| camera.checked()) {
             let ortho_width = camera.get_ortho_width();
@@ -153,7 +156,9 @@ impl StrategyPlayerController {
         }
 
         if let Ok(me) = self.as_ref().checked() {
-            self.set_strategy_hud(me.get_hud().cast().unwrap_or_default());
+            self.set_strategy_hud(TWeakObjectPtr::from_ref(
+                &me.get_hud().cast().unwrap_or_default(),
+            ));
         }
 
         if let Ok(mobile_controls) = StrategyTouchControls::from_obj(self.mobile_controls_widget())
@@ -311,13 +316,21 @@ impl StrategyPlayerController {
             for unit in units {
                 self.select(unit);
             }
-        } else if !self.controlled_units().is_empty() {
+        } else if !self.selected_units().is_empty() {
             self.do_deselect_all_units_command();
         }
     }
 
     pub fn get_selected_units(&self) -> Vec<UObjectRef<StrategyUnit>> {
+        self.selected_units()
+    }
+
+    /// The selected units that still exist: a unit destroyed while selected drops out.
+    fn selected_units(&self) -> Vec<UObjectRef<StrategyUnit>> {
         self.controlled_units()
+            .iter()
+            .filter_map(TWeakObjectPtr::get)
+            .collect()
     }
 
     pub fn get_default_zoom_percentage(&self) -> f32 {
@@ -351,9 +364,9 @@ impl StrategyPlayerController {
             return false;
         };
 
-        if self.controlled_units().contains(&unit) {
+        if self.selected_units().contains(&unit) {
             self.controlled_units_mut()
-                .retain(|selected| *selected != unit);
+                .retain(|selected| selected.get() != Some(unit));
 
             if let Ok(unit) = StrategyUnit::from_obj(unit) {
                 unit.unit_deselected();
@@ -379,14 +392,14 @@ impl StrategyPlayerController {
                 .checked()
                 .is_ok_and(|actor| actor.was_recently_rendered(Some(RECENTLY_RENDERED_TOLERANCE)));
 
-            if !self.controlled_units().contains(&unit) && on_screen {
+            if !self.selected_units().contains(&unit) && on_screen {
                 self.select(unit);
             }
         }
     }
 
     pub fn do_deselect_all_units_command(&mut self) {
-        for unit in self.controlled_units() {
+        for unit in self.selected_units() {
             if let Ok(unit) = StrategyUnit::from_obj(unit) {
                 unit.unit_deselected();
             }
@@ -396,7 +409,7 @@ impl StrategyPlayerController {
     }
 
     pub fn do_toggle_select_all_units_command(&mut self) {
-        if !self.controlled_units().is_empty() {
+        if !self.selected_units().is_empty() {
             self.do_deselect_all_units_command();
         } else {
             self.do_select_all_units_on_screen_command();
@@ -416,7 +429,7 @@ impl StrategyPlayerController {
     }
 
     pub fn do_move_units_command(&mut self, goal_location: DVec3) {
-        let units = self.controlled_units();
+        let units = self.selected_units();
 
         if units.is_empty() {
             self.bp_cursor_feedback(&FVector::from_dvec3(goal_location), false);
@@ -602,7 +615,8 @@ impl StrategyPlayerController {
                     widget.checked()?.add_to_player_screen(Some(0));
 
                     let mut mobile_controls = StrategyTouchControls::from_obj(widget)?;
-                    mobile_controls.set_player_controller(self.as_ref().cast()?);
+                    mobile_controls
+                        .set_player_controller(TWeakObjectPtr::from_ref(&self.as_ref().cast()?));
                     self.set_mobile_controls_widget(widget);
                 }
                 Err(_) => log::error!("Could not spawn mobile controls widget."),
@@ -629,7 +643,8 @@ impl StrategyPlayerController {
     }
 
     fn select(&mut self, unit: UObjectRef<StrategyUnit>) {
-        self.controlled_units_mut().push(unit);
+        self.controlled_units_mut()
+            .push(TWeakObjectPtr::from_ref(&unit));
 
         if let Ok(unit) = StrategyUnit::from_obj(unit) {
             unit.unit_selected();
@@ -640,13 +655,13 @@ impl StrategyPlayerController {
         let start = self.starting_box_selection_position();
         let selection_size = selection_position - start;
 
-        if let Ok(mut hud) = StrategyHUD::from_obj(self.strategy_hud()) {
+        if let Ok(mut hud) = StrategyHUD::from_obj(self.strategy_hud().get().unwrap_or_default()) {
             hud.drag_select_update(start, selection_size, selection_position, true);
         }
     }
 
     fn hide_selection_box(&mut self) {
-        if let Ok(mut hud) = StrategyHUD::from_obj(self.strategy_hud()) {
+        if let Ok(mut hud) = StrategyHUD::from_obj(self.strategy_hud().get().unwrap_or_default()) {
             hud.drag_select_update(DVec2::ZERO, DVec2::ZERO, DVec2::ZERO, false);
         }
     }
@@ -654,7 +669,9 @@ impl StrategyPlayerController {
     fn apply_zoom(&mut self, zoom: f32) {
         self.set_camera_zoom(zoom);
 
-        if let Ok(pawn) = StrategyPawn::from_obj(self.controlled_camera_pawn()) {
+        if let Ok(pawn) =
+            StrategyPawn::from_obj(self.controlled_camera_pawn().get().unwrap_or_default())
+        {
             let _ = pawn.set_zoom_modifier(zoom);
         }
     }
@@ -676,7 +693,7 @@ impl StrategyPlayerController {
         target_location: DVec3,
     ) -> Option<UObjectRef<StrategyUnit>> {
         let (units, locations): (Vec<_>, Vec<_>) = self
-            .controlled_units()
+            .selected_units()
             .into_iter()
             .filter_map(|unit| {
                 Some((
