@@ -18,31 +18,26 @@ unsafe impl<T: UeClass> Send for TWeakObjectPtr<T> {}
 
 impl<T: UeClass> TWeakObjectPtr<T> {
     pub fn from_ref(obj: &UObjectRef<T>) -> Self {
-        let handle = unsafe { ffi_dispatch::core_make_weak(obj.raw()) };
-
         TWeakObjectPtr {
-            handle,
+            handle: obj.weak_handle(),
             _marker: PhantomData,
         }
     }
 
+    /// The object, while it lives.
     pub fn get(&self) -> Option<UObjectRef<T>> {
-        let obj = unsafe { ffi_dispatch::core_resolve_weak(self.handle) };
+        let obj = UObjectRef::<T>::from_weak(self.handle);
 
-        if obj.is_null() {
-            None
-        } else {
-            Some(unsafe { UObjectRef::from_raw(obj) })
-        }
+        obj.is_valid().then_some(obj)
     }
 
     pub fn is_valid(&self) -> bool {
-        unsafe { ffi_dispatch::core_is_weak_valid(self.handle) }
+        UObjectRef::<T>::from_weak(self.handle).is_valid()
     }
 
     #[track_caller]
     pub fn checked(&self) -> RustealResult<Checked<T>> {
-        unsafe { UObjectRef::<T>::from_raw(ffi_dispatch::core_resolve_weak(self.handle)) }.checked()
+        UObjectRef::<T>::from_weak(self.handle).checked()
     }
 
     #[inline]
@@ -71,7 +66,7 @@ impl<T: UeClass> ObjectPointer for TWeakObjectPtr<T> {
 
     #[inline]
     fn object_handle(&self) -> UObjectHandle {
-        unsafe { ffi_dispatch::core_resolve_weak(self.handle) }
+        UObjectRef::<T>::from_weak(self.handle).raw()
     }
 }
 

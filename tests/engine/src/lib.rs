@@ -10,6 +10,7 @@ mod interfaces;
 mod libraries;
 mod movement_commandlet;
 mod net;
+mod object_lifetimes;
 mod perf;
 mod profiling;
 mod reload;

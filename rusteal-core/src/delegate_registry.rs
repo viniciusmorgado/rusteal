@@ -83,7 +83,7 @@ pub fn invoke(callback_id: u64, params: NativePtr) {
 
 pub struct DelegateBinding {
     callback_id: u64,
-    owner: UObjectHandle,
+    owner: rusteal_ffi::FWeakObjectHandle,
     prop: FPropertyHandle,
     is_multicast: bool,
 }
@@ -97,7 +97,7 @@ impl DelegateBinding {
     ) -> Self {
         Self {
             callback_id,
-            owner,
+            owner: unsafe { crate::object_ref::weak_handle_of(owner) },
             prop,
             is_multicast,
         }
@@ -118,17 +118,23 @@ impl Drop for DelegateBinding {
     fn drop(&mut self) {
         unregister_callback(self.callback_id);
 
-        if crate::api::is_api_initialized() {
+        let owner = if crate::api::is_api_initialized() {
+            crate::object_ref::resolve_weak_handle(self.owner)
+        } else {
+            UObjectHandle::null()
+        };
+
+        if !owner.is_null() {
             unsafe {
                 if self.is_multicast {
                     let _ = crate::ffi_dispatch::delegate_remove_multicast(
-                        self.owner,
+                        owner,
                         self.prop,
                         self.callback_id,
                     );
                 } else {
                     let _ = crate::ffi_dispatch::delegate_unbind_delegate(
-                        self.owner,
+                        owner,
                         self.prop,
                         self.callback_id,
                     );

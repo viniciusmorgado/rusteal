@@ -166,8 +166,7 @@ pub fn spawn_local<T: 'static>(
     owner: &UObjectRef<impl UeClass>,
     future: impl Future<Output = T> + 'static,
 ) -> JoinHandle<T> {
-    let weak = unsafe { crate::ffi_dispatch::core_make_weak(owner.raw()) };
-    spawn_with(Some(weak), future)
+    spawn_with(Some(owner.weak_handle()), future)
 }
 
 pub(crate) fn spawn_owned_by<T: 'static>(

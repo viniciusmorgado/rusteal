@@ -273,7 +273,7 @@ pub fn generate_delegate_impls(out: &mut String, delegates: &[DelegateInfo]) {
              \x20               {class_name}::static_class(), {byte_lit}.as_ptr(), {prop_name_len}\n\
              \x20           )\n\
              \x20       }});\n\
-             \x20       {struct_name} {{ owner: self.handle(), prop }}\n\
+             \x20       {struct_name} {{ owner: unsafe {{ rusteal_core::weak_handle_of(self.handle()) }}, prop }}\n\
              \x20   }}\n\n"
         ));
     }
@@ -286,7 +286,7 @@ pub fn generate_delegate_structs(out: &mut String, delegates: &[DelegateInfo], c
 
         out.push_str(&format!(
             "pub struct {struct_name} {{\n\
-             \x20   pub owner: rusteal_core::UObjectHandle,\n\
+             \x20   pub owner: rusteal_core::FWeakObjectHandle,\n\
              \x20   pub prop: rusteal_core::FPropertyHandle,\n\
              }}\n\n"
         ));
@@ -329,7 +329,7 @@ pub fn generate_delegate_structs(out: &mut String, delegates: &[DelegateInfo], c
              \x20   pub fn {ufunction_method}(&self, target: &rusteal_core::UObjectRef<impl rusteal_core::UeClass>, function: &str) -> rusteal_core::RustealResult<()> {{\n\
              \x20       let target = target.checked()?.raw();\n\
              \x20       rusteal_core::check_ffi(unsafe {{\n\
-             \x20           rusteal_core::ffi_dispatch::delegate_add_function(self.owner, self.prop, target, function.as_ptr(), function.len() as u32)\n\
+             \x20           rusteal_core::ffi_dispatch::delegate_add_function(rusteal_core::resolve_weak_handle(self.owner), self.prop, target, function.as_ptr(), function.len() as u32)\n\
              \x20       }})\n\
              \x20   }}\n\n",
             if is_multicast { "AddDynamic" } else { "BindDynamic" },
@@ -364,7 +364,7 @@ pub fn generate_delegate_structs(out: &mut String, delegates: &[DelegateInfo], c
 
         if d.params.is_empty() {
             out.push_str(&format!(
-                "        let owner = self.owner;\n\
+                "        let owner = rusteal_core::resolve_weak_handle(self.owner);\n\
                  \x20       let prop = self.prop;\n\
                  \x20       rusteal_core::delegate_registry::{api_fn}(owner, prop, move |_params: rusteal_core::ffi_dispatch::NativePtr| {{\n\
                  \x20           callback();\n\
@@ -377,7 +377,7 @@ pub fn generate_delegate_structs(out: &mut String, delegates: &[DelegateInfo], c
         }
 
         out.push_str(&format!(
-            "        let owner = self.owner;\n\
+            "        let owner = rusteal_core::resolve_weak_handle(self.owner);\n\
              \x20       let prop = self.prop;\n\
              \x20       rusteal_core::delegate_registry::{api_fn}(owner, prop, move |params: rusteal_core::ffi_dispatch::NativePtr| {{\n\
              \x20           unsafe {{\n"

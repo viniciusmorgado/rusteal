@@ -1,7 +1,7 @@
 use std::future::Future;
 use std::marker::PhantomData;
 
-use rusteal_ffi::{RustealNativeEvent, RustealNativeEventArgs, UObjectHandle};
+use rusteal_ffi::{RustealNativeEvent, RustealNativeEventArgs};
 
 use crate::delegate_registry::{register_callback, unregister_callback};
 use crate::error::{RustealResult, check_ffi};
@@ -35,7 +35,7 @@ impl Drop for EventBinding {
 /// make one per event (`core_events::pre_exit()`, `world_events::level_added()`...).
 pub struct NativeEvent<A> {
     kind: RustealNativeEvent,
-    target: UObjectHandle,
+    target: rusteal_ffi::FWeakObjectHandle,
     convert: fn(&RustealNativeEventArgs) -> A,
     _marker: PhantomData<fn() -> A>,
 }
@@ -44,7 +44,7 @@ impl<A: Send + 'static> NativeEvent<A> {
     #[doc(hidden)]
     pub const fn new(
         kind: RustealNativeEvent,
-        target: UObjectHandle,
+        target: rusteal_ffi::FWeakObjectHandle,
         convert: fn(&RustealNativeEventArgs) -> A,
     ) -> Self {
         NativeEvent {
@@ -69,8 +69,15 @@ impl<A: Send + 'static> NativeEvent<A> {
             callback(convert(args));
         });
 
+        let target = crate::object_ref::resolve_weak_handle(self.target);
+
+        if target.is_null() && self.target != rusteal_ffi::FWeakObjectHandle::default() {
+            unregister_callback(id);
+            return Err(crate::error::RustealError::object_destroyed());
+        }
+
         let bound = check_ffi(unsafe {
-            ffi_dispatch::world_bind_native_event(self.kind as u32, self.target, id)
+            ffi_dispatch::world_bind_native_event(self.kind as u32, target, id)
         });
 
         if let Err(e) = bound {
