@@ -5,6 +5,11 @@ use std::marker::PhantomData;
 
 use crate::ffi_dispatch;
 
+/// The `OnceLock` of the crate's `sync` module, for the statics [`trace_scope!`](crate::trace_scope) and
+/// [`stat_scope!`](crate::stat_scope) declare in the crate that expands them.
+#[doc(hidden)]
+pub use crate::sync::OnceLock as __OnceLock;
+
 /// A CPU event in Unreal Insights' timing view, from its creation to its drop, on the thread
 /// that made it. [`trace_scope!`](crate::trace_scope) makes one with a name registered once.
 #[must_use = "the event ends when the scope is dropped"]
@@ -45,7 +50,8 @@ pub fn event_type(name: &str) -> u32 {
 macro_rules! trace_scope {
     ($name:expr) => {
         let __rusteal_trace_scope = {
-            static EVENT_TYPE: ::std::sync::OnceLock<u32> = ::std::sync::OnceLock::new();
+            static EVENT_TYPE: $crate::profiling::__OnceLock<u32> =
+                $crate::profiling::__OnceLock::new();
             $crate::profiling::CpuScope::of_type(
                 *EVENT_TYPE.get_or_init(|| $crate::profiling::event_type($name)),
             )
@@ -88,8 +94,8 @@ impl Drop for StatScope {
 macro_rules! stat_scope {
     ($name:expr) => {
         let __rusteal_stat_scope = {
-            static STAT: ::std::sync::OnceLock<$crate::profiling::Stat> =
-                ::std::sync::OnceLock::new();
+            static STAT: $crate::profiling::__OnceLock<$crate::profiling::Stat> =
+                $crate::profiling::__OnceLock::new();
             STAT.get_or_init(|| $crate::profiling::Stat::new($name))
                 .scope()
         };
