@@ -545,6 +545,23 @@ pub fn delegates(probe: &Probe) -> RustealResult<()> {
     Ok(())
 }
 
+pub fn watch(probe: &mut Probe, other: UObjectRef<Actor>) -> RustealResult<()> {
+    let destroyed = other.checked()?.on_destroyed();
+
+    destroyed
+        .add_method(probe, |me: &mut Probe, gone: UObjectRef<Actor>| {
+            let _ = (me.speed(), gone.is_valid());
+        })?
+        .detach();
+
+    destroyed.add_method(probe, Probe::forget)?.detach();
+    Ok(())
+}
+
+impl Probe {
+    fn forget(&mut self, _gone: UObjectRef<Actor>) {}
+}
+
 pub fn upcasts<'a>(probe: UObjectRef<'a, Probe>, pc: UObjectRef<'a, PlayerController>) -> (UObjectRef<'a, Actor>, UObjectRef<'a, Pawn>) {
     let _controller: UObjectRef<Controller> = pc.upcast_to::<Controller>();
     let _actor_class: SubclassOf<Actor> = SubclassOf::<PlayerController>::base().upcast_to::<Actor>();

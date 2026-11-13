@@ -116,6 +116,14 @@ const MIGRATIONS: &[(&str, &str)] = &[
     ),
     (
         "0.10.0",
+        "A delegate whose parameters include objects binds a class's method with \
+         add_method(self, Self::on_hit), or a closure taking the class first \
+         (add_method(self, |me: &mut Self, other| ...)); a #[udelegate] has <name>_add_method. \
+         add(method(self, Self::on_hit)) no longer compiles for them: the objects live only as \
+         long as each call. method() stays for timers, input and delegates of plain values.",
+    ),
+    (
+        "0.10.0",
         "Pinned<T> keeps its object as a reference the garbage collector sees instead of a root, \
          one per Pinned: a clone or a second pin keeps the object on its own, and dropping one \
          no longer lets the others' object go. It stays on the game thread. Call checked() or \

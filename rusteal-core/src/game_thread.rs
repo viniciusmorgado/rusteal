@@ -46,6 +46,17 @@ impl<T> RustRef<'_, T> {
     }
 }
 
+impl<'a, T> RustRef<'a, T> {
+    /// The class turned into something else for the same call, such as a trait object:
+    /// `CombatEnemy::from_obj(actor)?.map(|e| Box::new(e) as Box<dyn Damageable>)`.
+    pub fn map<U>(self, f: impl FnOnce(T) -> U) -> RustRef<'a, U> {
+        RustRef {
+            value: f(self.value),
+            _scope: PhantomData,
+        }
+    }
+}
+
 impl<T> Deref for RustRef<'_, T> {
     type Target = T;
 

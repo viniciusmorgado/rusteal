@@ -500,6 +500,16 @@ pub(crate) fn binding_methods(struct_name: &Ident, d: &DelegateInfo) -> TokenStr
         }
     });
 
+    let add_method = format_ident!("{}_method", add);
+    let add_method_doc = format!(
+        " `{add}` with a method of a Rust class's `object`, or a closure taking the class first: \
+         the object is found again each time `{ue_name}` fires, and the call is skipped once it is \
+         gone."
+    );
+    let method_args: Vec<Ident> = (0..d.params.len())
+        .map(|i| format_ident!("__m{i}"))
+        .collect();
+
     quote! {
         impl #struct_name {
             #[doc = #add_doc]
@@ -538,6 +548,34 @@ pub(crate) fn binding_methods(struct_name: &Ident, d: &DelegateInfo) -> TokenStr
             }
 
             #next_method
+
+            #[doc = #add_method_doc]
+            #[track_caller]
+            pub fn #add_method<__T: ::rusteal_runtime::runtime::RustObject>(
+                &self,
+                object: &__T,
+                mut function: impl FnMut(&mut __T #(, #callback_types)*) + 'static,
+            ) -> ::rusteal_runtime::runtime::RustealResult<::rusteal_runtime::runtime::DelegateBinding> {
+                let __weak = unsafe {
+                    ::rusteal_runtime::runtime::weak_handle_of(
+                        ::rusteal_runtime::runtime::RustObject::object_handle(object),
+                    )
+                };
+
+                self.#add(move |#(#method_args),*| {
+                    let __handle = ::rusteal_runtime::runtime::resolve_weak_handle(__weak);
+
+                    if __handle.is_null() {
+                        return;
+                    }
+
+                    if let Ok(mut __this) =
+                        <__T as ::rusteal_runtime::runtime::RustObject>::from_object_handle(__handle)
+                    {
+                        function(&mut __this #(, #method_args)*);
+                    }
+                })
+            }
 
             #[doc = #add_ufunction_doc]
             pub fn #add_ufunction(
