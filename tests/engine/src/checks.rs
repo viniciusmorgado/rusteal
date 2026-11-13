@@ -975,7 +975,7 @@ fn latent_engine_functions_resume_their_task(context: &Context) -> Outcome {
 
             let moved = async {
                 let root = TestActor::from_obj(actor)
-                    .and_then(|actor| actor.root())
+                    .and_then(|this| Ok(this.root()?.with_scope_of(&actor)))
                     .map_err(|e| format!("{e:?}"))?;
 
                 KismetSystemLibrary::move_component_to(
@@ -1772,12 +1772,11 @@ fn input_and_delegates_reach_closures_and_methods(context: &Context) -> Outcome 
 
         let subsystem = enhanced_input_subsystem(controller).map_err(e)?;
 
-        let weak = TWeakObjectPtr::from_ref;
         Ok::<_, String>((
-            weak(&actor),
-            weak(&action),
+            TWeakObjectPtr::from_ref(&actor),
+            TWeakObjectPtr::from_ref(&action),
             pinned_action,
-            weak(&subsystem),
+            TWeakObjectPtr::from_ref(&subsystem),
             closure,
             presses,
             pinged,
@@ -1958,8 +1957,9 @@ fn engine_soft_reference_crosses_as_a_path(_: &Context) -> Outcome {
     done((|| {
         let soft = SoftObjectRef::<Material>::new(DEFAULT_MATERIAL);
         let material = default_material(&soft)?;
+        let gt = GameThread::current().map_err(|e| format!("{e:?}"))?;
         let loaded =
-            KismetSystemLibrary::load_asset_blocking(&SoftObjectRef::new(DEFAULT_MATERIAL));
+            KismetSystemLibrary::load_asset_blocking(&gt, &SoftObjectRef::new(DEFAULT_MATERIAL));
         ensure(
             loaded.raw() == material.raw(),
             "LoadAsset_Blocking did not load the path",
@@ -1983,11 +1983,13 @@ fn engine_weak_property_follows_its_object(context: &Context) -> Outcome {
         let root = TestActor::from_obj(target)
             .map_err(|e| format!("{e:?}"))?
             .root()
-            .map_err(|e| format!("{e:?}"))?;
+            .map_err(|e| format!("{e:?}"))?
+            .with_scope_of(&target);
 
         movement.set_homing_target_component(TWeakObjectPtr::from_ref(&root));
 
-        let followed = movement.get_homing_target_component().get();
+        let homing = movement.get_homing_target_component();
+        let followed = homing.get();
         ensure(
             followed.map(|c| c.raw()) == Some(root.raw()),
             "the weak reference does not reach the component",
@@ -2090,7 +2092,8 @@ fn engine_soft_class_reference_crosses_as_a_path(_: &Context) -> Outcome {
 
 fn engine_soft_class_property_keeps_the_path(_: &Context) -> Outcome {
     done((|| {
-        let input = InputSettings::get_input_settings()
+        let gt = GameThread::current().map_err(|e| format!("{e:?}"))?;
+        let input = InputSettings::get_input_settings(&gt)
             .checked()
             .map_err(|e| format!("input settings: {e:?}"))?;
         let class: SoftClassRef<PlayerInput> = input.get_default_player_input_class();
@@ -2258,14 +2261,15 @@ fn engine_function_takes_an_interface(context: &Context) -> Outcome {
         let len = array.len().map_err(|e| format!("len: {e:?}"))?;
         ensure(len == 1, format!("{len} blendables"))?;
         let first = array.get(0).map_err(|e| format!("get: {e:?}"))?;
-        let object = first.as_ref().get_object();
+        let first = first.as_ref();
+        let object = first.get_object();
         ensure(
             object.raw() == material.raw(),
             "the blendable is not the material",
         )?;
         ensure(
-            first.as_ref().get_weight() == 0.5,
-            format!("weight {}", first.as_ref().get_weight()),
+            first.get_weight() == 0.5,
+            format!("weight {}", first.get_weight()),
         )
     })())
 }
@@ -2307,12 +2311,9 @@ fn engine_member_function_takes_a_closure_with_arguments(context: &Context) -> O
         let timeline = add_component::<TimelineComponent>(context)?
             .checked()
             .map_err(|e| format!("checked: {e:?}"))?;
-        let curve = rusteal_runtime::runtime::world::new_object_raw(
-            timeline.raw(),
-            CurveFloat::static_class(),
-        )
-        .and_then(|curve| unsafe { UObjectRef::<CurveFloat>::from_handle(curve) })
-        .map_err(|e| format!("curve: {e:?}"))?;
+        let outer = timeline.as_ref();
+        let curve = bindings::manual::world_ext::new_object::<CurveFloat>(&outer)
+            .map_err(|e| format!("curve: {e:?}"))?;
         let checked = curve.checked().map_err(|e| format!("checked: {e:?}"))?;
 
         let rich = checked.get_float_curve();
@@ -2783,9 +2784,8 @@ fn static_functions_of_a_library(_: &Context) -> Outcome {
         let e = |e| format!("{e:?}");
         ensure(TestLibrary::add_three(1, 2, 3) == 6, "add_three from Rust")?;
 
-        let library = SubclassOf::<TestLibrary>::base()
-            .default_object()
-            .map_err(e)?;
+        let class = SubclassOf::<TestLibrary>::base();
+        let library = class.default_object().map_err(e)?;
 
         let mut call = DynamicCall::new(&library, "AddThree").map_err(e)?;
         call.set_value("A", &1i32).map_err(e)?;

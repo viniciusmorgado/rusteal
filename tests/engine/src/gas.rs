@@ -172,7 +172,7 @@ pub fn gameplay_effect_changes_a_rust_attribute(context: &Context) -> Outcome {
         let e = |e| format!("{e:?}");
         let actor = spawn_target(context)?;
         let asc = AbilityTarget::from_obj(actor)
-            .and_then(|target| target.ability_system())
+            .and_then(|target| Ok(target.ability_system()?.with_scope_of(&actor)))
             .map_err(e)?
             .checked()
             .map_err(e)?;
@@ -219,7 +219,7 @@ pub fn rust_gameplay_ability_activates_and_ends(context: &Context) -> Outcome {
         let e = |e| format!("{e:?}");
         let actor = spawn_target(context)?;
         let asc = AbilityTarget::from_obj(actor)
-            .and_then(|target| target.ability_system())
+            .and_then(|target| Ok(target.ability_system()?.with_scope_of(&actor)))
             .map_err(e)?
             .checked()
             .map_err(e)?;

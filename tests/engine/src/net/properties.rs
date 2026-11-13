@@ -2,7 +2,9 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use bindings::engine::{Actor, ActorComponent, ActorComponentExt, ActorExt, GameplayStatics, SceneComponent};
+use bindings::engine::{
+    Actor, ActorComponent, ActorComponentExt, ActorExt, GameplayStatics, SceneComponent,
+};
 use bindings::manual::world_ext::new_object;
 use bindings::prelude::*;
 use bindings::rusteal::RustealReplicatedObject;

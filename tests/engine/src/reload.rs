@@ -78,7 +78,10 @@ fn verify(world: UObjectRef<World>) -> Result<(), String> {
         .first()
         .copied()
         .ok_or("no ReloadHolder after the reload")?;
-    let record = ReloadHolder::from_obj(holder).map_err(e)?.record();
+    let record = ReloadHolder::from_obj(holder)
+        .map_err(e)?
+        .record()
+        .with_scope_of(&holder);
     let probe = record
         .cast::<ProbeRecord>()
         .map_err(e)?
@@ -87,10 +90,8 @@ fn verify(world: UObjectRef<World>) -> Result<(), String> {
 
     let class = GameplayStatics::get_object_class(record.upcast_to());
     let new_parent = rusteal_runtime::runtime::reflected::class_at(PROBE_RECORD);
-    let reparented = KismetMathLibrary::class_is_child_of(
-        class,
-        SubclassOf::from_class(new_parent).map_err(e)?,
-    );
+    let reparented =
+        KismetMathLibrary::class_is_child_of(class, SubclassOf::from_class(new_parent).map_err(e)?);
 
     let kept = probe.charge();
     let total = probe.add_charge(3).map_err(e)?;
