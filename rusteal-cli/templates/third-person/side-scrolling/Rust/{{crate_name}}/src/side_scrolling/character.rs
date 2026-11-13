@@ -380,7 +380,8 @@ impl SideScrollingCharacter {
             return Ok(());
         }
 
-        let target = out_hit.as_ref().get_component().checked()?.get_owner();
+        let component = out_hit.as_ref().get_component();
+        let target = component.checked()?.get_owner();
         interactable::interact(target, self.as_ref().upcast_to());
 
         Ok(())
@@ -434,7 +435,7 @@ impl SideScrollingCharacter {
         Ok(())
     }
 
-    fn wall_jump(&mut self, state: &mut MoveState) -> RustealResult<bool> {
+    fn wall_jump(&self, state: &mut MoveState) -> RustealResult<bool> {
         let me = self.as_ref().checked()?;
 
         let start = me.k2_get_actor_location().to_dvec3();
@@ -495,7 +496,7 @@ impl SideScrollingCharacter {
         Ok(true)
     }
 
-    fn check_for_soft_collision(&mut self) -> RustealResult<()> {
+    fn check_for_soft_collision(&self) -> RustealResult<()> {
         let mut state = self.state();
         state.drop_value = 0.0;
         self.set_state(state);

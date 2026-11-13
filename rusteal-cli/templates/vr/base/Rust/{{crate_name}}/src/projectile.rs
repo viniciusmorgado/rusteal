@@ -63,22 +63,20 @@ impl Projectile {
 
     #[ufunction(Override)]
     fn receive_begin_play(&mut self) {
-        let me = self.as_ref();
-
         let bound = self
             .sphere_collision()
             .and_then(|sphere| sphere.checked())
             .and_then(|sphere| {
-                sphere.on_component_begin_overlap().add(
-                    move |_overlapped,
-                          _other_actor,
-                          other_comp,
-                          _body,
-                          _from_sweep,
-                          sweep_result| {
-                        if let Ok(projectile) = Projectile::from_obj(me)
-                            && let Err(e) = projectile.hit(other_comp, &sweep_result)
-                        {
+                sphere.on_component_begin_overlap().add_method(
+                    self,
+                    |projectile: &mut Self,
+                     _overlapped,
+                     _other_actor,
+                     other_comp,
+                     _body,
+                     _from_sweep,
+                     sweep_result| {
+                        if let Err(e) = projectile.hit(other_comp, &sweep_result) {
                             log::warn!("[VR] projectile hit failed: {e}");
                         }
                     },
@@ -93,15 +91,16 @@ impl Projectile {
             .projectile_movement()
             .and_then(|movement| movement.checked())
             .and_then(|movement| {
-                movement.on_projectile_stop().add(move |_impact| {
-                    if let Ok(projectile) = Projectile::from_obj(me)
-                        && let Ok(sphere) = projectile
+                movement
+                    .on_projectile_stop()
+                    .add_method(self, |projectile: &mut Self, _impact| {
+                        if let Ok(sphere) = projectile
                             .sphere_collision()
                             .and_then(|sphere| sphere.checked())
-                    {
-                        sphere.set_collision_enabled(ECollisionEnabled::NoCollision);
-                    }
-                })
+                        {
+                            sphere.set_collision_enabled(ECollisionEnabled::NoCollision);
+                        }
+                    })
             });
 
         if let Ok(binding) = stopped {

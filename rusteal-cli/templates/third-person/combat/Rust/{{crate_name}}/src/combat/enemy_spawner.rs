@@ -155,7 +155,7 @@ impl CombatEnemySpawner {
         self.set_timer(self.respawn_delay(), method(self, Self::spawn_enemy));
     }
 
-    fn set_timer(&mut self, time: f32, callback: impl FnMut() + Send + 'static) {
+    fn set_timer(&mut self, time: f32, callback: impl FnMut() + 'static) {
         if let Some(pending_timer) = self.pending_timer() {
             pending_timer.clear();
         }

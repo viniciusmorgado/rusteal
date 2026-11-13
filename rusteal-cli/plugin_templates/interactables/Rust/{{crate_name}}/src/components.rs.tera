@@ -1,7 +1,10 @@
 use bindings::engine::{Actor, ActorComponent, ActorExt};
 use rusteal_runtime::runtime::{RustealError, RustealResult, SubclassOf, UObjectRef, UeClass};
 
-pub fn named<T: UeClass>(actor: UObjectRef<Actor>, name: &str) -> RustealResult<UObjectRef<T>> {
+pub fn named<'a, T: UeClass>(
+    actor: UObjectRef<'a, Actor>,
+    name: &str,
+) -> RustealResult<UObjectRef<'a, T>> {
     actor
         .checked()?
         .k2_get_components_by_class(SubclassOf::<ActorComponent>::base())

@@ -1,6 +1,6 @@
 use bindings::engine::{Actor, AnimMontage};
 use glam::DVec3;
-use rusteal_runtime::runtime::{SubclassOf, UObjectRef};
+use rusteal_runtime::runtime::{RustRef, SubclassOf, UObjectRef};
 
 use super::character::ShooterCharacter;
 use super::npc::ShooterNPC;
@@ -18,11 +18,14 @@ pub trait ShooterWeaponHolder {
     fn on_semi_weapon_refire(&mut self);
 }
 
-pub fn weapon_holder(actor: UObjectRef<Actor>) -> Option<Box<dyn ShooterWeaponHolder>> {
+/// The Rust class behind `actor` as a weapon holder, for this call.
+pub fn weapon_holder(
+    actor: UObjectRef<'_, Actor>,
+) -> Option<RustRef<'_, Box<dyn ShooterWeaponHolder>>> {
     if let Ok(character) = ShooterCharacter::from_obj(actor) {
-        Some(Box::new(character))
+        Some(character.map(|c| Box::new(c) as Box<_>))
     } else if let Ok(npc) = ShooterNPC::from_obj(actor) {
-        Some(Box::new(npc))
+        Some(npc.map(|c| Box::new(c) as Box<_>))
     } else {
         None
     }

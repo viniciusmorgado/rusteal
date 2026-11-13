@@ -98,23 +98,18 @@ impl ShooterAIController {
 
     fn bind_perception(&self) -> RustealResult<()> {
         let perception = self.ai_perception()?.checked()?;
-        let me: UObjectRef<AIController> = self.as_ref();
 
         perception
             .on_target_perception_updated()
-            .add(move |actor, stimulus| {
-                if let Ok(controller) = ShooterAIController::from_obj(me) {
-                    controller.on_perception_updated(actor, stimulus);
-                }
+            .add_method(self, |controller: &mut Self, actor, stimulus| {
+                controller.on_perception_updated(actor, stimulus);
             })?
             .detach();
 
         perception
             .on_target_perception_forgotten()
-            .add(move |actor| {
-                if let Ok(controller) = ShooterAIController::from_obj(me) {
-                    controller.on_perception_forgotten(actor);
-                }
+            .add_method(self, |controller: &mut Self, actor| {
+                controller.on_perception_forgotten(actor);
             })?
             .detach();
 

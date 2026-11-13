@@ -34,11 +34,11 @@ pub struct EnvQueryContextPlayer {}
 #[uclass_impl]
 impl EnvQueryContextPlayer {
     #[ufunction(Override)]
-    fn provide_single_actor(
+    fn provide_single_actor<'a>(
         &self,
-        querier_object: UObjectRef<Object>,
-        _querier_actor: UObjectRef<Actor>,
-        resulting_actor: OutRef<UObjectRef<Actor>>,
+        querier_object: UObjectRef<'a, Object>,
+        _querier_actor: UObjectRef<'a, Actor>,
+        resulting_actor: OutRef<UObjectRef<'a, Actor>>,
     ) {
         let player_pawn = GameplayStatics::get_player_pawn(querier_object, 0);
 

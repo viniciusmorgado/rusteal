@@ -9,7 +9,7 @@ use bindings::prelude::*;
 use bindings::umg::{WidgetComponent, WidgetComponentExt};
 use glam::{DVec2, DVec3};
 use rusteal_runtime::runtime::{
-    FName, LinearColor, OwnedStruct, Rotator, RustealResult, UObjectRef, UStructRef,
+    FName, LinearColor, OwnedStruct, Rotator, RustRef, RustealResult, UObjectRef, UStructRef,
 };
 use rusteal_runtime::{uclass, uclass_impl};
 
@@ -380,7 +380,8 @@ impl Placeable {
         }
 
         let result = result.as_ref();
-        let actor = result.get_component().checked().ok()?.get_owner();
+        let component = result.get_component();
+        let actor = component.checked().ok()?.get_owner();
 
         (actor == self.bp_plane().upcast_to()).then(|| result.get_location().to_dvec3())
     }
@@ -431,7 +432,7 @@ impl Placeable {
         }
     }
 
-    fn hud(&self) -> Option<InteractionHUD> {
+    fn hud(&self) -> Option<RustRef<'_, InteractionHUD>> {
         let widget = self.hud_interaction().ok()?.checked().ok()?.get_widget();
         InteractionHUD::from_obj(widget).ok()
     }

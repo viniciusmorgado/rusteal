@@ -956,7 +956,13 @@ impl XRPawn {
             return Ok(UObjectRef::null());
         }
 
-        let actor = result.as_ref().get_component().checked()?.get_owner();
+        // The hit result is a local copy: what it gives is re-scoped to this pawn's call.
+        let actor = result
+            .as_ref()
+            .get_component()
+            .checked()?
+            .get_owner()
+            .with_scope_of(&me);
 
         let candidates: Vec<(UObjectRef<GrabComponent>, DVec3)> = actor
             .checked()?

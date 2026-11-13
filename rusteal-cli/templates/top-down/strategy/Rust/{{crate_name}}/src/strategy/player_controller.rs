@@ -169,10 +169,9 @@ impl StrategyPlayerController {
 
     #[ufunction]
     fn move_camera(&mut self, value: UStructRef<FInputActionValue>) {
-        let (Ok(me), Ok(pawn)) = (
-            self.as_ref().checked(),
-            self.controlled_camera_pawn().checked(),
-        ) else {
+        let camera_pawn = self.controlled_camera_pawn();
+
+        let (Ok(me), Ok(pawn)) = (self.as_ref().checked(), camera_pawn.checked()) else {
             return;
         };
 
@@ -326,10 +325,12 @@ impl StrategyPlayerController {
     }
 
     /// The selected units that still exist: a unit destroyed while selected drops out.
-    fn selected_units(&self) -> Vec<UObjectRef<StrategyUnit>> {
+    fn selected_units(&self) -> Vec<UObjectRef<'_, StrategyUnit>> {
+        let me = self.as_ref();
+
         self.controlled_units()
             .iter()
-            .filter_map(TWeakObjectPtr::get)
+            .filter_map(|unit| Some(unit.get()?.with_scope_of(&me)))
             .collect()
     }
 
@@ -365,8 +366,9 @@ impl StrategyPlayerController {
         };
 
         if self.selected_units().contains(&unit) {
-            self.controlled_units_mut()
-                .retain(|selected| selected.get() != Some(unit));
+            let mut units = self.controlled_units();
+            units.retain(|selected| selected.get() != Some(unit));
+            self.set_controlled_units(units);
 
             if let Ok(unit) = StrategyUnit::from_obj(unit) {
                 unit.unit_deselected();
@@ -642,9 +644,10 @@ impl StrategyPlayerController {
         should_display_touch_interface() || self.b_force_touch_controls()
     }
 
-    fn select(&mut self, unit: UObjectRef<StrategyUnit>) {
-        self.controlled_units_mut()
-            .push(TWeakObjectPtr::from_ref(&unit));
+    fn select(&self, unit: UObjectRef<StrategyUnit>) {
+        let mut units = self.controlled_units();
+        units.push(TWeakObjectPtr::from_ref(&unit));
+        self.set_controlled_units(units);
 
         if let Ok(unit) = StrategyUnit::from_obj(unit) {
             unit.unit_selected();

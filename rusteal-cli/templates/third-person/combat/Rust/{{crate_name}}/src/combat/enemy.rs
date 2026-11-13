@@ -288,7 +288,7 @@ impl CombatEnemy {
         self.state().last_danger_time
     }
 
-    fn play_attack_montage(&mut self, montage: UObjectRef<AnimMontage>) {
+    fn play_attack_montage(&self, montage: UObjectRef<AnimMontage>) {
         let Ok(anim_instance) = self.anim_instance() else {
             return;
         };
@@ -302,21 +302,16 @@ impl CombatEnemy {
         }
     }
 
-    fn bind_attack_end(&mut self, anim_instance: UObjectRef<AnimInstance>) -> RustealResult<()> {
+    fn bind_attack_end(&self, anim_instance: UObjectRef<AnimInstance>) -> RustealResult<()> {
         if self.attack_end_bound() {
             return Ok(());
         }
 
-        let enemy: UObjectRef<Character> = self.as_ref();
-
         anim_instance
             .checked()?
             .on_montage_ended()
-            .add(move |montage, _interrupted| {
-                if let Ok(mut me) = CombatEnemy::from_obj(enemy)
-                    && (montage == me.combo_attack_montage()
-                        || montage == me.charged_attack_montage())
-                {
+            .add_method(self, |me: &mut Self, montage, _interrupted| {
+                if montage == me.combo_attack_montage() || montage == me.charged_attack_montage() {
                     me.attack_montage_ended();
                 }
             })?
@@ -406,8 +401,9 @@ impl CombatAttacker for CombatEnemy {
 
         for hit in hits {
             let hit = hit.as_ref();
+            let component = hit.get_component();
 
-            let Ok(actor) = hit.get_component().checked().map(|c| c.get_owner()) else {
+            let Ok(actor) = component.checked().map(|c| c.get_owner()) else {
                 continue;
             };
 

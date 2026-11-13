@@ -7,7 +7,7 @@ use bindings::engine::{
 use bindings::prelude::*;
 use glam::{DQuat, DVec3};
 use rusteal_runtime::runtime::{
-    OwnedStruct, Rotator, RustealResult, SubclassOf, Transform, UObjectRef, method,
+    GameThread, OwnedStruct, Rotator, RustealResult, SubclassOf, Transform, UObjectRef, method,
 };
 use rusteal_runtime::{uclass, uclass_impl};
 
@@ -323,19 +323,22 @@ impl UnlockableDoor {
 
     fn assign_default_meshes(&mut self) {
         if !self.corner_mesh().is_valid()
-            && let Ok(mesh) = load_object::<StaticMesh>(CORNER_MESH)
+            && let Ok(gt) = GameThread::current()
+            && let Ok(mesh) = load_object::<StaticMesh>(&gt, CORNER_MESH)
         {
             self.set_corner_mesh(mesh);
         }
 
         if !self.edge_mesh().is_valid()
-            && let Ok(mesh) = load_object::<StaticMesh>(EDGE_MESH)
+            && let Ok(gt) = GameThread::current()
+            && let Ok(mesh) = load_object::<StaticMesh>(&gt, EDGE_MESH)
         {
             self.set_edge_mesh(mesh);
         }
 
         if !self.door_mesh().is_valid()
-            && let Ok(mesh) = load_object::<StaticMesh>(DOOR_MESH)
+            && let Ok(gt) = GameThread::current()
+            && let Ok(mesh) = load_object::<StaticMesh>(&gt, DOOR_MESH)
         {
             self.set_door_mesh(mesh);
         }

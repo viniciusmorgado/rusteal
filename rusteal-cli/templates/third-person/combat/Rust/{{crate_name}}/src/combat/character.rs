@@ -495,7 +495,7 @@ impl CombatCharacter {
         self.play_attack_montage(self.charged_attack_montage());
     }
 
-    fn play_attack_montage(&mut self, montage: UObjectRef<AnimMontage>) {
+    fn play_attack_montage(&self, montage: UObjectRef<AnimMontage>) {
         let Ok(anim_instance) = self.anim_instance() else {
             return;
         };
@@ -510,23 +510,18 @@ impl CombatCharacter {
     }
 
     fn bind_attack_end(
-        &mut self,
+        &self,
         anim_instance: UObjectRef<bindings::engine::AnimInstance>,
     ) -> RustealResult<()> {
         if self.attack_end_bound() {
             return Ok(());
         }
 
-        let character: UObjectRef<Character> = self.as_ref();
-
         anim_instance
             .checked()?
             .on_montage_ended()
-            .add(move |montage, interrupted| {
-                if let Ok(mut me) = CombatCharacter::from_obj(character)
-                    && (montage == me.combo_attack_montage()
-                        || montage == me.charged_attack_montage())
-                {
+            .add_method(self, |me: &mut Self, montage, interrupted| {
+                if montage == me.combo_attack_montage() || montage == me.charged_attack_montage() {
                     me.attack_montage_ended(interrupted);
                 }
             })?
@@ -585,12 +580,9 @@ impl CombatCharacter {
             self.danger_trace_radius(),
             &[ECollisionChannel::ECC_Pawn],
         ) {
-            let Ok(actor) = hit
-                .as_ref()
-                .get_component()
-                .checked()
-                .map(|c| c.get_owner())
-            else {
+            let component = hit.as_ref().get_component();
+
+            let Ok(actor) = component.checked().map(|c| c.get_owner()) else {
                 continue;
             };
 
@@ -695,8 +687,9 @@ impl CombatAttacker for CombatCharacter {
 
         for hit in self.sweep(start, end, self.melee_trace_radius(), &channels) {
             let hit = hit.as_ref();
+            let component = hit.get_component();
 
-            let Ok(actor) = hit.get_component().checked().map(|c| c.get_owner()) else {
+            let Ok(actor) = component.checked().map(|c| c.get_owner()) else {
                 continue;
             };
 

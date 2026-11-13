@@ -8,7 +8,9 @@ use bindings::slate_core::{
     ESlateColorStylingMode, FSlateColor, FSlateColorExt, FSlateFontInfo, FSlateFontInfoExt,
 };
 use bindings::umg::{Image, ImageExt, TextBlock, TextBlockExt, UserWidget};
-use rusteal_runtime::runtime::{FName, LinearColor, OwnedStruct, UObjectRef, UeArray};
+use rusteal_runtime::runtime::{
+    FName, LinearColor, OwnedStruct, TWeakObjectPtr, UObjectRef, UeArray,
+};
 use rusteal_runtime::{uclass, uclass_impl, ustruct};
 
 use crate::buttons::{CapsuleButton, ToggleButton};
@@ -53,16 +55,18 @@ pub struct StructStyle {
     icons: UeArray<OwnedStruct<StructIcon>>,
 }
 
+/// A style read from the table. It is kept past the call that read it, so its assets are weak:
+/// the table holds them.
 #[derive(Clone)]
 pub struct StyleData {
     pub button_color_on: LinearColor,
     pub button_color_off: LinearColor,
     pub bg_color: LinearColor,
     pub text_color: LinearColor,
-    pub font: UObjectRef<Object>,
+    pub font: TWeakObjectPtr<Object>,
     pub font_type: EFontTypeFace,
     pub font_size: i32,
-    pub icons: Vec<(EIconType, UObjectRef<Texture2D>)>,
+    pub icons: Vec<(EIconType, TWeakObjectPtr<Texture2D>)>,
 }
 
 impl Default for StyleData {
@@ -74,7 +78,7 @@ impl Default for StyleData {
             button_color_off: dark,
             bg_color: LinearColor::new(0.9, 0.9, 0.9, 1.0),
             text_color: dark,
-            font: UObjectRef::null(),
+            font: TWeakObjectPtr::default(),
             font_type: EFontTypeFace::Regular,
             font_size: 24,
             icons: Vec::new(),
@@ -83,11 +87,11 @@ impl Default for StyleData {
 }
 
 impl StyleData {
-    pub fn icon(&self, kind: EIconType) -> UObjectRef<Texture2D> {
+    pub fn icon(&self, kind: EIconType) -> UObjectRef<'_, Texture2D> {
         self.icons
             .iter()
             .find(|(icon_kind, _)| *icon_kind == kind)
-            .map(|(_, icon)| *icon)
+            .and_then(|(_, icon)| icon.get())
             .unwrap_or_default()
     }
 }
@@ -132,7 +136,7 @@ impl StylizedUI {
                 .to_vec()
                 .unwrap_or_default()
                 .iter()
-                .map(|icon| (icon.kind(), icon.icon()))
+                .map(|icon| (icon.kind(), TWeakObjectPtr::from_ref(&icon.icon())))
                 .collect();
 
             return StyleData {
@@ -140,7 +144,7 @@ impl StylizedUI {
                 button_color_off: row.button_color_off().to_linear_color(),
                 bg_color: row.bg_color().to_linear_color(),
                 text_color: row.text_color().to_linear_color(),
-                font: row.font(),
+                font: TWeakObjectPtr::from_ref(&row.font()),
                 font_type: row.font_type(),
                 font_size: row.font_size(),
                 icons,
@@ -163,7 +167,7 @@ pub fn slate_color(color: LinearColor) -> OwnedStruct<FSlateColor> {
 pub fn font_info(style: &StyleData) -> OwnedStruct<FSlateFontInfo> {
     let font = OwnedStruct::<FSlateFontInfo>::new();
     let font_ref = font.as_ref();
-    font_ref.set_font_object(style.font);
+    font_ref.set_font_object(style.font.get().unwrap_or_default());
     font_ref.set_typeface_font_name(FName::new(style.font_type.typeface()).handle());
     font_ref.set_size(style.font_size as f32);
     font

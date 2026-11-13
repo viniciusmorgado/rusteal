@@ -3,7 +3,7 @@ use std::time::Duration;
 use bindings::core_ue::Object;
 use bindings::engine::{GameModeBase, GameplayStatics, KismetSystemLibrary, SoundBase};
 use bindings::prelude::*;
-use rusteal_runtime::runtime::{SoftObjectRef, UObjectRef, http, task, timer};
+use rusteal_runtime::runtime::{SoftObjectRef, TWeakObjectPtr, UObjectRef, http, task, timer};
 use rusteal_runtime::{uclass, uclass_impl};
 
 #[uclass(parent = GameModeBase)]
@@ -38,7 +38,7 @@ impl IntroGameMode {
         let me = self.as_ref();
 
         let welcome = Self::welcome(
-            me,
+            TWeakObjectPtr::from_ref(&me),
             self.welcome_sound(),
             self.welcome_delay(),
             self.welcome_url(),
@@ -50,8 +50,10 @@ impl IntroGameMode {
 }
 
 impl IntroGameMode {
+    /// The task outlives this frame, so it holds the game mode as a weak pointer and finds it again
+    /// after each wait.
     async fn welcome(
-        me: UObjectRef<GameModeBase>,
+        me: TWeakObjectPtr<GameModeBase>,
         sound: SoftObjectRef<SoundBase>,
         delay: f32,
         url: String,
@@ -69,7 +71,11 @@ impl IntroGameMode {
             }
         };
 
-        timer::sleep(&me, Duration::from_secs_f32(delay.max(0.0))).await;
+        let Some(context) = me.get() else {
+            return;
+        };
+
+        timer::sleep(&context, Duration::from_secs_f32(delay.max(0.0))).await;
 
         let message = if url.is_empty() {
             fallback
@@ -87,9 +93,13 @@ impl IntroGameMode {
             }
         };
 
+        let Some(me) = me.get() else {
+            return;
+        };
+
         let world: UObjectRef<Object> = me.upcast_to();
 
-        if let Some(sound) = sound {
+        if let Some(sound) = sound.as_ref().and_then(TWeakObjectPtr::get) {
             GameplayStatics::play_sound2_d(world, sound, None, None, None, None, None, None);
         }
 

@@ -2,12 +2,14 @@ use bindings::engine::{
     ActorComponentExt, AnimNotify, AnimSequenceBase, FAnimNotifyEventReference,
     SkeletalMeshComponent,
 };
-use rusteal_runtime::runtime::{FName, UObjectRef, UStructRef};
+use rusteal_runtime::runtime::{FName, RustRef, UObjectRef, UStructRef};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use super::interfaces::{self, CombatAttacker};
 
-fn attacker(mesh_comp: UObjectRef<SkeletalMeshComponent>) -> Option<Box<dyn CombatAttacker>> {
+fn attacker(
+    mesh_comp: UObjectRef<'_, SkeletalMeshComponent>,
+) -> Option<RustRef<'_, Box<dyn CombatAttacker>>> {
     interfaces::attacker(mesh_comp.checked().ok()?.get_owner())
 }
 

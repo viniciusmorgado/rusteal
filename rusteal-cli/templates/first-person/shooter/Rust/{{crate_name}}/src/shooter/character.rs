@@ -12,7 +12,7 @@ use bindings::prelude::*;
 use glam::DVec3;
 use rusteal_runtime::runtime::timer::{self, TimerHandle};
 use rusteal_runtime::runtime::{
-    FName, Rotator, RustealResult, SubclassOf, UObjectRef, UeArray, method,
+    Checked, FName, Rotator, RustRef, RustealResult, SubclassOf, UObjectRef, UeArray, method,
 };
 use rusteal_runtime::{uclass, uclass_impl};
 
@@ -241,8 +241,24 @@ impl ShooterCharacter {
 }
 
 impl ShooterCharacter {
-    fn base(&self) -> RustealResult<FirstPersonCharacter> {
-        FirstPersonCharacter::from_obj(self.as_ref())
+    /// The first person arms, a component of the parent Rust class.
+    fn arms(&self) -> RustealResult<Checked<'_, bindings::engine::SkeletalMeshComponent>> {
+        let me = self.as_ref();
+
+        FirstPersonCharacter::from_obj(me)?
+            .first_person_mesh()?
+            .with_scope_of(&me)
+            .checked()
+    }
+
+    /// The first person camera, a component of the parent Rust class.
+    fn camera(&self) -> RustealResult<Checked<'_, bindings::engine::CameraComponent>> {
+        let me = self.as_ref();
+
+        FirstPersonCharacter::from_obj(me)?
+            .first_person_camera_component()?
+            .with_scope_of(&me)
+            .checked()
     }
 
     pub fn is_dead(&self) -> bool {
@@ -285,7 +301,7 @@ impl ShooterCharacter {
         Ok(())
     }
 
-    fn listener(&self) -> Option<ShooterPlayerController> {
+    fn listener(&self) -> Option<RustRef<'_, ShooterPlayerController>> {
         let controller = self.as_ref().checked().ok()?.get_controller();
 
         ShooterPlayerController::from_obj(controller).ok()
@@ -389,8 +405,7 @@ impl ShooterWeaponHolder for ShooterCharacter {
 
         if let (Ok(first_person), Ok(arms)) = (
             weapon.first_person_mesh().and_then(|m| m.checked()),
-            self.base()
-                .and_then(|base| base.first_person_mesh()?.checked()),
+            self.arms(),
         ) {
             first_person.k2_attach_to_component(
                 arms.as_ref().upcast_to(),
@@ -430,10 +445,7 @@ impl ShooterWeaponHolder for ShooterCharacter {
     }
 
     fn get_weapon_target_location(&mut self) -> DVec3 {
-        let Ok(camera) = self
-            .base()
-            .and_then(|base| base.first_person_camera_component()?.checked())
-        else {
+        let Ok(camera) = self.camera() else {
             return DVec3::ZERO;
         };
 
@@ -491,10 +503,7 @@ impl ShooterWeaponHolder for ShooterCharacter {
     fn on_weapon_activated(&mut self, weapon: &ShooterWeapon) {
         self.broadcast_bullet_count(weapon.magazine_size(), weapon.bullet_count());
 
-        if let Ok(arms) = self
-            .base()
-            .and_then(|base| base.first_person_mesh()?.checked())
-        {
+        if let Ok(arms) = self.arms() {
             arms.set_anim_instance_class(weapon.first_person_anim_instance_class().upcast_to());
         }
 

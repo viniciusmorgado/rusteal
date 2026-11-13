@@ -9,7 +9,7 @@ use bindings::engine::{
 use bindings::prelude::*;
 use glam::DVec3;
 use rusteal_runtime::runtime::timer::{self, TimerHandle};
-use rusteal_runtime::runtime::{FName, RustealResult, SubclassOf, UObjectRef, method};
+use rusteal_runtime::runtime::{Checked, FName, RustealResult, SubclassOf, UObjectRef, method};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use super::ai_controller::ShooterAIController;
@@ -136,8 +136,24 @@ impl ShooterNPC {
 }
 
 impl ShooterNPC {
-    fn base(&self) -> RustealResult<FirstPersonCharacter> {
-        FirstPersonCharacter::from_obj(self.as_ref())
+    /// The first person arms, a component of the parent Rust class.
+    fn arms(&self) -> RustealResult<Checked<'_, bindings::engine::SkeletalMeshComponent>> {
+        let me = self.as_ref();
+
+        FirstPersonCharacter::from_obj(me)?
+            .first_person_mesh()?
+            .with_scope_of(&me)
+            .checked()
+    }
+
+    /// The first person camera, a component of the parent Rust class.
+    fn camera(&self) -> RustealResult<Checked<'_, bindings::engine::CameraComponent>> {
+        let me = self.as_ref();
+
+        FirstPersonCharacter::from_obj(me)?
+            .first_person_camera_component()?
+            .with_scope_of(&me)
+            .checked()
     }
 
     fn die(&mut self) {
@@ -235,8 +251,7 @@ impl ShooterWeaponHolder for ShooterNPC {
             weapon_to_attach
                 .first_person_mesh()
                 .and_then(|m| m.checked()),
-            self.base()
-                .and_then(|base| base.first_person_mesh()?.checked()),
+            self.arms(),
         ) {
             first_person.k2_attach_to_component(
                 arms.as_ref().upcast_to(),
@@ -272,10 +287,7 @@ impl ShooterWeaponHolder for ShooterNPC {
     fn update_weapon_hud(&mut self, _current_ammo: i32, _magazine_size: i32) {}
 
     fn get_weapon_target_location(&mut self) -> DVec3 {
-        let Ok(camera) = self
-            .base()
-            .and_then(|base| base.first_person_camera_component()?.checked())
-        else {
+        let Ok(camera) = self.camera() else {
             return DVec3::ZERO;
         };
 

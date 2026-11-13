@@ -10,7 +10,7 @@ use bindings::input_core::EControllerHand;
 use bindings::prelude::*;
 use glam::DVec3;
 use rusteal_runtime::runtime::{
-    FName, OwnedStruct, Rotator, RustealResult, SubclassOf, UObjectRef, method,
+    FName, OwnedStruct, Rotator, RustRef, RustealResult, SubclassOf, UObjectRef, method,
 };
 use rusteal_runtime::{uclass, uclass_impl};
 
@@ -88,20 +88,14 @@ impl Pistol {
             return;
         };
 
-        let me = self.as_ref();
-
-        let grabbed = grab.on_grabbed_add(move || {
-            if let Ok(mut pistol) = Pistol::from_obj(me)
-                && let Err(e) = pistol.grabbed()
-            {
+        let grabbed = grab.on_grabbed_add_method(self, |pistol: &mut Self| {
+            if let Err(e) = pistol.grabbed() {
                 log::warn!("[VR] pistol grab failed: {e}");
             }
         });
 
-        let dropped = grab.on_dropped_add(move || {
-            if let Ok(pistol) = Pistol::from_obj(me)
-                && let Err(e) = pistol.dropped()
-            {
+        let dropped = grab.on_dropped_add_method(self, |pistol: &mut Self| {
+            if let Err(e) = pistol.dropped() {
                 log::warn!("[VR] pistol drop failed: {e}");
             }
         });
@@ -133,7 +127,7 @@ impl Pistol {
 }
 
 impl Pistol {
-    fn grab(&self) -> RustealResult<GrabComponent> {
+    fn grab(&self) -> RustealResult<RustRef<'_, GrabComponent>> {
         GrabComponent::from_obj(self.grab_component_snap()?)
     }
 

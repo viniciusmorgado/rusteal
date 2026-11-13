@@ -15,7 +15,9 @@ use bindings::umg::{
     WidgetExt,
 };
 use rusteal_runtime::runtime::timer::set_timer;
-use rusteal_runtime::runtime::{FName, Inherits, RustealResult, UObjectRef, UStructRef, method};
+use rusteal_runtime::runtime::{
+    FName, GameThread, Inherits, RustRef, RustealResult, UObjectRef, UStructRef, method,
+};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use crate::buttons::{CapsuleButton, ToggleButton};
@@ -41,7 +43,7 @@ fn show<T: Inherits<Widget>>(widget: UObjectRef<T>, visible: bool) {
 fn play<T: Inherits<UserWidget>>(
     widget: UObjectRef<T>,
     animation: UObjectRef<WidgetAnimation>,
-    finished: Option<Box<dyn FnMut() + Send>>,
+    finished: Option<Box<dyn FnMut()>>,
 ) {
     let Ok(user_widget) = widget.upcast_to::<UserWidget>().checked() else {
         return;
@@ -67,7 +69,7 @@ fn play<T: Inherits<UserWidget>>(
 
 fn bind_released(
     button: UObjectRef<ToggleButton>,
-    callback: impl FnMut(bool, i32) + Send + 'static,
+    callback: impl FnMut(bool, i32) + 'static,
 ) -> RustealResult<()> {
     ToggleButton::from_obj(button)?
         .on_release_event_add(callback)?
@@ -77,7 +79,7 @@ fn bind_released(
 
 fn bind_style(
     widget: UObjectRef<UserWidget>,
-    callback: impl FnMut(EUIStyle) + Send + 'static,
+    callback: impl FnMut(EUIStyle) + 'static,
 ) -> RustealResult<()> {
     StylizedUI::from_obj(widget)?
         .switch_style_add(callback)?
@@ -223,7 +225,9 @@ impl StartMenu {
             None,
             None,
         );
+        let gt = GameThread::current()?;
         let icon = bindings::umg::WidgetBlueprintLibrary::get_brush_resource_as_texture2_d(
+            &gt,
             &circle.get_brush(),
         );
 
@@ -527,11 +531,11 @@ impl BottomMenu {
     }
 }
 
-fn image_material(
-    owner: UObjectRef<UserWidget>,
-    parent: UObjectRef<MaterialInterface>,
-    image: UObjectRef<Image>,
-) -> RustealResult<UObjectRef<MaterialInstanceDynamic>> {
+fn image_material<'a>(
+    owner: UObjectRef<'a, UserWidget>,
+    parent: UObjectRef<'a, MaterialInterface>,
+    image: UObjectRef<'a, Image>,
+) -> RustealResult<UObjectRef<'a, MaterialInstanceDynamic>> {
     let image = image.checked()?;
     let material = KismetMaterialLibrary::create_dynamic_material_instance(
         owner.upcast_to(),
@@ -539,8 +543,11 @@ fn image_material(
         None,
         None,
     );
-    let icon =
-        bindings::umg::WidgetBlueprintLibrary::get_brush_resource_as_texture2_d(&image.get_brush());
+    let gt = GameThread::current()?;
+    let icon = bindings::umg::WidgetBlueprintLibrary::get_brush_resource_as_texture2_d(
+        &gt,
+        &image.get_brush(),
+    );
 
     material
         .checked()?
@@ -1042,7 +1049,7 @@ impl MainMenu {
 }
 
 impl MainMenu {
-    fn ar_pawn(&self) -> Option<ARPawn> {
+    fn ar_pawn(&self) -> Option<RustRef<'_, ARPawn>> {
         ARPawn::from_obj(GameplayStatics::get_player_pawn(
             self.as_ref().upcast_to(),
             0,
@@ -1102,7 +1109,7 @@ impl MainMenu {
         if let Some(pawn) = self.ar_pawn() {
             pawn.ar_object_spawned_add(method(self, Self::placed))?
                 .detach();
-            pawn.bp_plane_is_selected_add(method(self, Self::plane_selected))?
+            pawn.bp_plane_is_selected_add_method(self, Self::plane_selected)?
                 .detach();
         }
 
@@ -1133,7 +1140,8 @@ impl MainMenu {
         self.set_scan_timer(self.scan_timer() + delta as f32);
 
         if f64::from(self.scan_timer()) <= model::SCAN_SECONDS
-            || ARBlueprintLibrary::get_all_geometries().is_empty()
+            || GameThread::current()
+                .is_ok_and(|gt| ARBlueprintLibrary::get_all_geometries(&gt).is_empty())
         {
             return;
         }

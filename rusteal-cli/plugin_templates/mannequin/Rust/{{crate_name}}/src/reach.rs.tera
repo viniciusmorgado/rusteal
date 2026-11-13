@@ -7,7 +7,7 @@ use bindings::engine::{
 };
 use bindings::prelude::*;
 use glam::{DQuat, DVec3};
-use rusteal_runtime::runtime::{FName, RustealResult, Transform, UObjectRef};
+use rusteal_runtime::runtime::{FName, GameThread, RustealResult, Transform, UObjectRef};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use crate::components;
@@ -40,7 +40,8 @@ impl CopycatMannequin {
         };
 
         if !mesh.get_skeletal_mesh_asset().is_valid()
-            && let Ok(manny) = load_object::<SkeletalMesh>(MANNY)
+            && let Ok(gt) = GameThread::current()
+            && let Ok(manny) = load_object::<SkeletalMesh>(&gt, MANNY)
         {
             mesh.set_skeletal_mesh_asset(manny);
         }
@@ -73,7 +74,8 @@ impl ReachTarget {
     fn user_construction_script(&mut self) {
         if let Ok(mesh) = self.mesh().and_then(|m| m.checked())
             && !mesh.get_static_mesh().is_valid()
-            && let Ok(sphere) = load_object::<StaticMesh>(TARGET_MESH)
+            && let Ok(gt) = GameThread::current()
+            && let Ok(sphere) = load_object::<StaticMesh>(&gt, TARGET_MESH)
         {
             mesh.set_static_mesh(sphere);
         }
@@ -142,12 +144,14 @@ impl ReachingMannequin {
 
 impl ReachingMannequin {
     fn assign_assets(&mut self) -> RustealResult<()> {
+        let gt = GameThread::current()?;
+
         if !self.mesh().is_valid() {
-            self.set_mesh(load_object::<SkeletalMesh>(MANNY)?);
+            self.set_mesh(load_object::<SkeletalMesh>(&gt, MANNY)?);
         }
 
         if !self.idle_animation().is_valid() {
-            self.set_idle_animation(load_object::<AnimSequence>(IDLE)?);
+            self.set_idle_animation(load_object::<AnimSequence>(&gt, IDLE)?);
         }
 
         self.body()?.checked()?.set_skeletal_mesh_asset(self.mesh());

@@ -8,7 +8,7 @@ use bindings::engine::{
 use bindings::prelude::*;
 use rusteal_runtime::runtime::timer::{self, TimerHandle};
 use rusteal_runtime::runtime::{
-    FName, Rotator, RustealResult, SubclassOf, UObjectRef, UStructRef, method,
+    FName, Rotator, RustRef, RustealResult, SubclassOf, UObjectRef, UStructRef, method,
 };
 use rusteal_runtime::{uclass, uclass_impl};
 
@@ -139,7 +139,7 @@ impl TwinStickNPC {
 }
 
 impl TwinStickNPC {
-    fn game_mode(&self) -> Option<TwinStickGameMode> {
+    fn game_mode(&self) -> Option<RustRef<'_, TwinStickGameMode>> {
         TwinStickGameMode::from_obj(GameplayStatics::get_game_mode(self.as_ref().upcast_to())).ok()
     }
 

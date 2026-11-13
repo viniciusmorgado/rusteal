@@ -4,7 +4,7 @@ use bindings::engine::{
     StaticMeshComponent,
 };
 use bindings::prelude::*;
-use rusteal_runtime::runtime::{RustealResult, UObjectRef, UStructRef, method};
+use rusteal_runtime::runtime::{RustealResult, UObjectRef, UStructRef};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use super::character::SideScrollingCharacter;
@@ -53,21 +53,29 @@ impl SideScrollingSoftPlatform {
 
     #[ufunction(Override)]
     fn receive_begin_play(&mut self) {
-        let mut on_overlap = method(self, Self::on_soft_collision_overlap);
-
         let bound = self.collision_check_box().and_then(|check_box| {
-            check_box.checked()?.on_component_begin_overlap().add(
-                move |component, other_actor, other_comp, body_index, from_sweep, sweep| {
-                    on_overlap(
-                        component,
-                        other_actor,
-                        other_comp,
-                        body_index,
-                        from_sweep,
-                        sweep.as_ref(),
-                    );
-                },
-            )
+            check_box
+                .checked()?
+                .on_component_begin_overlap()
+                .add_method(
+                    self,
+                    |me: &mut Self,
+                     component,
+                     other_actor,
+                     other_comp,
+                     body_index,
+                     from_sweep,
+                     sweep| {
+                        me.on_soft_collision_overlap(
+                            component,
+                            other_actor,
+                            other_comp,
+                            body_index,
+                            from_sweep,
+                            sweep.as_ref(),
+                        );
+                    },
+                )
         });
 
         match bound {
