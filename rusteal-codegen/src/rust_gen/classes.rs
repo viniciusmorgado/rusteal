@@ -483,9 +483,7 @@ fn generate_scalar_function(
                         })
                         .unwrap_or_default();
 
-                    sig.push_str(&format!(
-                        "{pname}: impl FnMut({callback_sig}) + Send + 'static, "
-                    ));
+                    sig.push_str(&format!("{pname}: impl FnMut({callback_sig}) + 'static, "));
                 }
                 ConversionKind::ObjectRef
                     if param.prop_type == "TextProperty" && *dir == ParamDirection::In =>

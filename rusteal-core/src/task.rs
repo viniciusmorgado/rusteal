@@ -6,14 +6,15 @@ use std::time::Duration;
 
 use crate::lock_or_recover;
 use crate::module::{self, ModuleId};
-use crate::sync::Mutex;
+use crate::sync::{GameThreadOnly, Mutex};
 
 pub use crate::executor::{
     AbortHandle, JoinHandle, next_frame, run_blocking, spawn_local, spawn_local_unowned, yield_now,
 };
 
 type Job = Box<dyn FnOnce() + Send>;
-type TickFn = Box<dyn FnMut(f32) + Send>;
+/// A tick hook: it runs on the game thread and may capture what stays there.
+type TickFn = GameThreadOnly<Box<dyn FnMut(f32)>>;
 
 #[derive(Default)]
 struct ModuleTasks {
@@ -190,10 +191,15 @@ fn queue_for(module: ModuleId, job: Job) {
     with_tasks(module, |tasks| tasks.queue.push(job));
 }
 
+/// Runs `work` on one of the engine's worker threads, then `done` with its result back on the
+/// game thread, where this is called. Only `work` and its result cross threads: `done` stays on
+/// the game thread and may capture what lives there.
+#[track_caller]
 pub fn spawn<T: Send + 'static>(
     work: impl FnOnce() -> T + Send + 'static,
-    done: impl FnOnce(T) + Send + 'static,
+    done: impl FnOnce(T) + 'static,
 ) {
+    let done = GameThreadOnly::new(done);
     let owner = module::current();
     with_tasks(owner, |tasks| tasks.running += 1);
 
@@ -202,7 +208,7 @@ pub fn spawn<T: Send + 'static>(
         let result = std::panic::catch_unwind(AssertUnwindSafe(work));
 
         match result {
-            Ok(value) => queue_for(owner, Box::new(move || done(value))),
+            Ok(value) => queue_for(owner, Box::new(move || (done.into_inner())(value))),
             Err(_) => queue_for(
                 owner,
                 Box::new(|| log(crate::LOG_ERROR, "[Rusteal] task::spawn: the work panicked")),
@@ -242,10 +248,13 @@ impl TickHandle {
     }
 }
 
-pub fn on_tick(f: impl FnMut(f32) + Send + 'static) -> TickHandle {
+/// Calls `f` every frame on the game thread, where it is registered, until the handle removes it.
+#[track_caller]
+pub fn on_tick(f: impl FnMut(f32) + 'static) -> TickHandle {
     let module = module::current();
     let id = NEXT_TICKER.fetch_add(1, Ordering::Relaxed);
-    with_tasks(module, |tasks| tasks.tickers.push((id, Box::new(f))));
+    let hook: TickFn = GameThreadOnly::new(Box::new(f));
+    with_tasks(module, |tasks| tasks.tickers.push((id, hook)));
     TickHandle { module, id }
 }
 
@@ -276,6 +285,8 @@ pub fn tick(delta_seconds: f32) {
     let mut running = with_tasks(module, |tasks| std::mem::take(&mut tasks.tickers));
 
     for (_, hook) in running.iter_mut() {
+        let hook = hook.get_mut();
+
         if std::panic::catch_unwind(AssertUnwindSafe(|| hook(delta_seconds))).is_err() {
             log(crate::LOG_ERROR, "[Rusteal] a tick hook panicked");
         }

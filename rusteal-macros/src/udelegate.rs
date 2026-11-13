@@ -465,7 +465,7 @@ pub(crate) fn binding_methods(struct_name: &Ident, d: &DelegateInfo) -> TokenStr
             #[doc = #add_doc]
             pub fn #add(
                 &self,
-                mut callback: impl FnMut(#(#callback_types),*) + Send + 'static,
+                mut callback: impl FnMut(#(#callback_types),*) + 'static,
             ) -> ::rusteal_runtime::runtime::RustealResult<::rusteal_runtime::runtime::DelegateBinding> {
                 let prop = #prop;
                 let owner = self.as_ref().checked()?.raw();

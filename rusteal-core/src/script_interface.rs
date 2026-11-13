@@ -41,8 +41,6 @@ impl<I: UeInterface + ?Sized> std::fmt::Debug for ScriptInterface<I> {
     }
 }
 
-unsafe impl<I: UeInterface + ?Sized> Send for ScriptInterface<I> {}
-
 impl<I: UeInterface + ?Sized> ScriptInterface<I> {
     #[track_caller]
     pub fn new(object: UObjectHandle) -> RustealResult<Self> {

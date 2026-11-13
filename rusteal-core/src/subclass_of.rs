@@ -34,8 +34,6 @@ impl<T: UeClass> std::hash::Hash for SubclassOf<T> {
     }
 }
 
-unsafe impl<T: UeClass> Send for SubclassOf<T> {}
-
 impl<T: UeClass> SubclassOf<T> {
     pub fn null() -> Self {
         Self {

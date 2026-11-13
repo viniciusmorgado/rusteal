@@ -341,7 +341,7 @@ pub fn generate_delegate_structs(out: &mut String, delegates: &[DelegateInfo], c
         }
 
         out.push_str(&format!(
-            "    #[track_caller]\n    pub fn {method_name}(&self, mut callback: impl FnMut({callback_sig}) + Send + 'static) -> rusteal_core::RustealResult<rusteal_core::DelegateBinding> {{\n"
+            "    #[track_caller]\n    pub fn {method_name}(&self, mut callback: impl FnMut({callback_sig}) + 'static) -> rusteal_core::RustealResult<rusteal_core::DelegateBinding> {{\n"
         ));
 
         if !d.params.is_empty() {

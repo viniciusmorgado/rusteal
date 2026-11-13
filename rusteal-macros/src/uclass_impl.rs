@@ -611,7 +611,9 @@ pub fn expand_uclass_impl(attr: TokenStream, item: TokenStream) -> syn::Result<T
         };
 
         let game_thread_guard = if uf.thread_safe {
-            quote! {}
+            quote! {
+                let __rusteal_thread_safe = ::rusteal_runtime::runtime::thread_safe_scope();
+            }
         } else {
             quote! {
                 if ::rusteal_runtime::runtime::reify_registry::refused_off_game_thread(

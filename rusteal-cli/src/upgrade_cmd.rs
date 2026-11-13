@@ -76,6 +76,16 @@ const MIGRATIONS: &[(&str, &str)] = &[
          it alive; several objects are #[uproperty] UeArray<UObjectRef<T>> or \
          Vec<TWeakObjectPtr<T>>.",
     ),
+    (
+        "0.10.0",
+        "UObjectRef, Checked, Pinned, ScriptInterface and SubclassOf are no longer Send: engine \
+         objects stay on the game thread. To use one in background work, send a \
+         TWeakObjectPtr<T> and resolve it on the game thread, in task::run_on_game_thread or in \
+         task::spawn's `done`, which now runs there without needing Send and must be called \
+         from the game thread. Callbacks for timers, delegates, input, ticks, console commands, \
+         Slate and details no longer need Send either. Debug builds check that engine calls are \
+         made on the game thread (or inside a #[ufunction(ThreadSafe)] for properties).",
+    ),
 ];
 
 pub fn migration_notes(from: Version, to: Version) -> Vec<(Version, &'static str)> {

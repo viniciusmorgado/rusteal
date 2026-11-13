@@ -276,6 +276,14 @@ pub const ALL: &[(&str, Check)] = &[
         crate::object_lifetimes::a_method_callback_skips_a_destroyed_object,
     ),
     (
+        "an_engine_call_off_the_game_thread_is_refused",
+        crate::object_lifetimes::an_engine_call_off_the_game_thread_is_refused,
+    ),
+    (
+        "a_weak_pointer_comes_back_to_the_game_thread",
+        crate::object_lifetimes::a_weak_pointer_comes_back_to_the_game_thread,
+    ),
+    (
         "profiling_scopes_run",
         crate::profiling::profiling_scopes_run,
     ),

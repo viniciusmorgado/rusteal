@@ -64,8 +64,15 @@ impl FuncTable {
         Ok(())
     }
 
+    /// The wrapper of engine function `id`, which every generated binding calls through: debug
+    /// builds check here that the call is made on the game thread, or inside a
+    /// `#[ufunction(ThreadSafe)]` for the engine functions it may call on a worker.
     #[inline]
+    #[track_caller]
     pub fn get(&self, id: u32) -> *const c_void {
+        #[cfg(debug_assertions)]
+        crate::sync::assert_game_thread_or_thread_safe("a generated engine function");
+
         let table = self.table.load(Ordering::Acquire);
 
         assert!(

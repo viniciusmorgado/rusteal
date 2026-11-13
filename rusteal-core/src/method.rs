@@ -39,9 +39,9 @@ macro_rules! methods {
         impl<T, F, $($arg: 'static),*> Method<T, ($($arg,)*), ByMut> for F
         where
             T: RustObject,
-            F: FnMut(&mut T $(, $arg)*) + Send + 'static,
+            F: FnMut(&mut T $(, $arg)*) + 'static,
         {
-            type Callback = Box<dyn FnMut($($arg),*) + Send>;
+            type Callback = Box<dyn FnMut($($arg),*)>;
 
             #[allow(unused_variables)]
             fn into_callback(mut self, object: FWeakObjectHandle) -> Self::Callback {
@@ -62,9 +62,9 @@ macro_rules! methods {
         impl<T, F, $($arg: 'static),*> Method<T, ($($arg,)*), ByRef> for F
         where
             T: RustObject,
-            F: FnMut(&T $(, $arg)*) + Send + 'static,
+            F: FnMut(&T $(, $arg)*) + 'static,
         {
-            type Callback = Box<dyn FnMut($($arg),*) + Send>;
+            type Callback = Box<dyn FnMut($($arg),*)>;
 
             #[allow(unused_variables)]
             fn into_callback(mut self, object: FWeakObjectHandle) -> Self::Callback {

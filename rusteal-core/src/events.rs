@@ -40,7 +40,7 @@ pub struct NativeEvent<A> {
     _marker: PhantomData<fn() -> A>,
 }
 
-impl<A: Send + 'static> NativeEvent<A> {
+impl<A: 'static> NativeEvent<A> {
     #[doc(hidden)]
     pub const fn new(
         kind: RustealNativeEvent,
@@ -57,7 +57,7 @@ impl<A: Send + 'static> NativeEvent<A> {
 
     /// Binds `callback`, called with what the event gives each time it fires.
     #[track_caller]
-    pub fn add(&self, mut callback: impl FnMut(A) + Send + 'static) -> RustealResult<EventBinding> {
+    pub fn add(&self, mut callback: impl FnMut(A) + 'static) -> RustealResult<EventBinding> {
         let convert = self.convert;
 
         let id = register_callback(move |params| {

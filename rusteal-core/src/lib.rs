@@ -44,6 +44,10 @@ pub mod strings;
 pub mod struct_ref;
 pub mod subclass_of;
 mod sync;
+pub use sync::{
+    GameThreadOnly, ThreadSafeScope, assert_game_thread, assert_game_thread_or_thread_safe,
+    thread_safe_scope,
+};
 pub mod task;
 pub mod text;
 pub mod tick;

@@ -12,7 +12,7 @@ fn second<T: rusteal_core::UeClass>(args: &RustealNativeEventArgs) -> UObjectRef
     unsafe { UObjectRef::from_raw(args.second) }
 }
 
-fn global<A: Send + 'static>(
+fn global<A: 'static>(
     kind: RustealNativeEvent,
     convert: fn(&RustealNativeEventArgs) -> A,
 ) -> NativeEvent<A> {
