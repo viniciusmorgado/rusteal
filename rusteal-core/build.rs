@@ -146,10 +146,16 @@ fn thread_rule(table: &SubTable, func: &ApiFn) -> ThreadRule {
             ThreadRule::Any
         }
         "property" | "container" => ThreadRule::GameThreadOrThreadSafe,
+        // What a #[ufunction(ThreadSafe)] reads to find its parameters, and struct operations:
+        // lookups of metadata the engine does not change while the game runs.
         "reflection"
             if matches!(
                 name,
                 "find_property"
+                    | "find_struct_property"
+                    | "find_function_by_class"
+                    | "get_function_param"
+                    | "get_property_offset"
                     | "get_property_size"
                     | "get_struct_size"
                     | "initialize_struct"
