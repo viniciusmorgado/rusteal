@@ -1,0 +1,11 @@
+[package]
+name = "{{ editor_crate }}"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+rusteal-runtime = { workspace = true }
+bindings = { package = "{{ editor_crate }}-bindings", path = "../editor-bindings" }
+glam = { workspace = true }
+log = { workspace = true }

@@ -1,9 +1,12 @@
 #include "RustealApiTable.h"
 #include "RustealErrors.h"
 #include "RustealFNameHelper.h"
+#include "UObject/PropertyOptional.h"
 #include "UObject/TextProperty.h"
 #include "UObject/UObjectGlobals.h"
 #include "UObject/UnrealType.h"
+#include "RustealStrings.h"
+#include "RustealUtf8.h"
 
 #define RUSTEAL_CHECK_VALID(ObjHandle)                                         \
   void *Object = (ObjHandle).ptr;                                              \
@@ -138,18 +141,7 @@ static ERustealErrorCode GetStringImpl(RustealUObjectHandle Obj,
     return RustealFailType(Property, TEXT("FTextProperty"));
   }
 
-  const FTCHARToUTF8 Utf8(*Value);
-  const uint32 Len = static_cast<uint32>(Utf8.Length());
-
-  if (OutLen) {
-    *OutLen = Len;
-  }
-
-  if (Buf && BufLen > 0) {
-    const uint32 CopyLen = FMath::Min(Len, BufLen);
-    FMemory::Memcpy(Buf, Utf8.Get(), CopyLen);
-  }
-
+  RustealWriteUtf8(Value, Buf, BufLen, OutLen);
   return ERustealErrorCode::Ok;
 }
 
@@ -159,8 +151,7 @@ static ERustealErrorCode SetStringImpl(RustealUObjectHandle Obj,
   RUSTEAL_CHECK_VALID(Obj);
   FProperty *Property = static_cast<FProperty *>(Prop.ptr);
 
-  const FString Value(Len,
-                      UTF8_TO_TCHAR(reinterpret_cast<const char *>(InBuf)));
+  const FString Value = RustealUtf8ToFString(InBuf, Len);
 
   if (FStrProperty *StrProp = CastField<FStrProperty>(Property)) {
     StrProp->SetPropertyValue_InContainer(Object, Value);
@@ -216,11 +207,98 @@ static ERustealErrorCode SetSoftObjectPathImpl(RustealUObjectHandle Obj,
     return RustealFailType(Prop.ptr, TEXT("FSoftObjectProperty"));
   }
 
-  const FString Path(Len, UTF8_TO_TCHAR(reinterpret_cast<const char *>(InBuf)));
+  const FString Path = RustealUtf8ToFString(InBuf, Len);
 
   SoftProp->SetPropertyValue_InContainer(Object,
                                          FSoftObjectPtr(FSoftObjectPath(Path)));
 
+  return ERustealErrorCode::Ok;
+}
+
+static ERustealErrorCode GetTextImpl(RustealUObjectHandle Obj,
+                                     RustealFPropertyHandle Prop, void **Out) {
+  RUSTEAL_CHECK_VALID(Obj);
+
+  const FTextProperty *TextProp =
+      CastField<FTextProperty>(static_cast<FProperty *>(Prop.ptr));
+
+  if (!TextProp) {
+    return RustealFailType(Prop.ptr, TEXT("FTextProperty"));
+  }
+
+  *Out = new FText(TextProp->GetPropertyValue_InContainer(Object));
+  return ERustealErrorCode::Ok;
+}
+
+static ERustealErrorCode SetTextImpl(RustealUObjectHandle Obj,
+                                     RustealFPropertyHandle Prop,
+                                     const void *Text) {
+  RUSTEAL_CHECK_VALID(Obj);
+
+  FTextProperty *TextProp =
+      CastField<FTextProperty>(static_cast<FProperty *>(Prop.ptr));
+
+  if (!TextProp) {
+    return RustealFailType(Prop.ptr, TEXT("FTextProperty"));
+  }
+
+  TextProp->SetPropertyValue_InContainer(Object,
+                                         *static_cast<const FText *>(Text));
+  return ERustealErrorCode::Ok;
+}
+
+static ERustealErrorCode GetOptionalImpl(RustealUObjectHandle Obj,
+                                         RustealFPropertyHandle Prop,
+                                         uint8 *OutBuf, uint32 BufSize,
+                                         bool *OutIsSet) {
+  RUSTEAL_CHECK_VALID(Obj);
+
+  const FOptionalProperty *OptProp =
+      CastField<FOptionalProperty>(static_cast<FProperty *>(Prop.ptr));
+
+  if (!OptProp) {
+    return RustealFailType(Prop.ptr, TEXT("FOptionalProperty"));
+  }
+
+  const void *OptPtr = OptProp->ContainerPtrToValuePtr<void>(Object);
+  *OutIsSet = OptProp->IsSet(OptPtr);
+
+  if (!*OutIsSet) {
+    return ERustealErrorCode::Ok;
+  }
+
+  FProperty *Value = OptProp->GetValueProperty();
+
+  if (BufSize < static_cast<uint32>(Value->GetSize())) {
+    return RustealFail(ERustealErrorCode::BufferTooSmall);
+  }
+
+  Value->InitializeValue(OutBuf);
+  Value->CopyCompleteValue(OutBuf, OptProp->GetValuePointerForRead(OptPtr));
+  return ERustealErrorCode::Ok;
+}
+
+static ERustealErrorCode SetOptionalImpl(RustealUObjectHandle Obj,
+                                         RustealFPropertyHandle Prop,
+                                         const uint8 *InBuf) {
+  RUSTEAL_CHECK_VALID(Obj);
+
+  FOptionalProperty *OptProp =
+      CastField<FOptionalProperty>(static_cast<FProperty *>(Prop.ptr));
+
+  if (!OptProp) {
+    return RustealFailType(Prop.ptr, TEXT("FOptionalProperty"));
+  }
+
+  void *OptPtr = OptProp->ContainerPtrToValuePtr<void>(Object);
+
+  if (!InBuf) {
+    OptProp->MarkUnset(OptPtr);
+    return ERustealErrorCode::Ok;
+  }
+
+  void *Value = OptProp->MarkSetAndGetInitializedValuePointerToReplace(OptPtr);
+  OptProp->GetValueProperty()->CopyCompleteValue(Value, InBuf);
   return ERustealErrorCode::Ok;
 }
 
@@ -249,6 +327,13 @@ static ERustealErrorCode GetObjectImpl(RustealUObjectHandle Obj,
                                        RustealUObjectHandle *Out) {
   RUSTEAL_CHECK_VALID(Obj);
 
+  if (const FInterfaceProperty *IfaceProp =
+          CastField<FInterfaceProperty>(static_cast<FProperty *>(Prop.ptr))) {
+    Out->ptr =
+        IfaceProp->ContainerPtrToValuePtr<FScriptInterface>(Object)->GetObject();
+    return ERustealErrorCode::Ok;
+  }
+
   const FObjectPropertyBase *ObjProp =
       CastField<FObjectPropertyBase>(static_cast<FProperty *>(Prop.ptr));
 
@@ -265,6 +350,17 @@ static ERustealErrorCode SetObjectImpl(RustealUObjectHandle Obj,
                                        RustealFPropertyHandle Prop,
                                        RustealUObjectHandle Val) {
   RUSTEAL_CHECK_VALID(Obj);
+
+  if (FInterfaceProperty *IfaceProp =
+          CastField<FInterfaceProperty>(static_cast<FProperty *>(Prop.ptr))) {
+    UObject *Value = static_cast<UObject *>(Val.ptr);
+    FScriptInterface *Iface =
+        IfaceProp->ContainerPtrToValuePtr<FScriptInterface>(Object);
+    Iface->SetObject(Value);
+    Iface->SetInterface(
+        Value ? Value->GetInterfaceAddress(IfaceProp->InterfaceClass) : nullptr);
+    return ERustealErrorCode::Ok;
+  }
 
   FObjectPropertyBase *ObjProp =
       CastField<FObjectPropertyBase>(static_cast<FProperty *>(Prop.ptr));
@@ -331,6 +427,7 @@ static ERustealErrorCode GetStructImpl(RustealUObjectHandle Obj,
   }
 
   const void *SrcPtr = StructProp->ContainerPtrToValuePtr<void>(Object);
+  StructProp->Struct->InitializeStruct(OutBuf);
   StructProp->Struct->CopyScriptStruct(OutBuf, SrcPtr);
   return ERustealErrorCode::Ok;
 }
@@ -374,6 +471,7 @@ static ERustealErrorCode GetPropertyAtImpl(RustealUObjectHandle Obj,
   if (BufSize < ElemSize)
     return RustealFail(ERustealErrorCode::InternalError);
 
+  Property->InitializeValue(OutBuf);
   Property->CopySingleValue(OutBuf, Src);
   return ERustealErrorCode::Ok;
 }
@@ -431,4 +529,8 @@ FRustealPropertyApi GPropertyApi = {
     &SetPropertyAtImpl,
     &GetSoftObjectPathImpl,
     &SetSoftObjectPathImpl,
+    &GetTextImpl,
+    &SetTextImpl,
+    &GetOptionalImpl,
+    &SetOptionalImpl,
 };

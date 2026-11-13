@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use bindings::engine::{
     Actor, ActorExt, AnimMontage, CharacterExt, Controller, DamageType, EAttachmentRule,
     ECollisionEnabled, EDrawDebugTrace, ETraceTypeQuery, FHitResultExt, GameplayStatics,
@@ -6,7 +8,8 @@ use bindings::engine::{
 };
 use bindings::prelude::*;
 use glam::DVec3;
-use rusteal_runtime::runtime::{FName, RustealResult, SubclassOf, UObjectRef};
+use rusteal_runtime::runtime::timer::{self, TimerHandle};
+use rusteal_runtime::runtime::{FName, RustealResult, SubclassOf, UObjectRef, method};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use super::ai_controller::ShooterAIController;
@@ -72,6 +75,8 @@ pub struct ShooterNPC {
     is_shooting: bool,
 
     is_dead: bool,
+
+    destruction_timer: Option<TimerHandle>,
 }
 
 #[uclass_impl]
@@ -98,7 +103,9 @@ impl ShooterNPC {
 
     #[ufunction(Override)]
     fn receive_end_play(&mut self, _end_play_reason: u8) {
-        KismetSystemLibrary::k2_clear_timer(self.as_ref().upcast_to(), "DeferredDestruction");
+        if let Some(destruction_timer) = self.destruction_timer() {
+            destruction_timer.clear();
+        }
     }
 
     #[ufunction(Override)]
@@ -175,15 +182,15 @@ impl ShooterNPC {
             mesh.set_physics_blend_weight(1.0);
         }
 
-        KismetSystemLibrary::k2_set_timer(
-            me.as_ref().upcast_to(),
-            "DeferredDestruction",
-            self.deferred_destruction_time(),
+        let destruction_timer = timer::set_timer(
+            &self.as_ref(),
+            Duration::from_secs_f32(self.deferred_destruction_time()),
             false,
-            None,
-            None,
-            None,
-        );
+            method(self, Self::deferred_destruction),
+        )
+        .ok();
+
+        self.set_destruction_timer(destruction_timer);
     }
 
     pub fn start_shooting(&mut self, actor_to_shoot: UObjectRef<Actor>) {

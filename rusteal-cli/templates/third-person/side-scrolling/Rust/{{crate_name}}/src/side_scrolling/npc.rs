@@ -1,9 +1,11 @@
+use std::time::Duration;
+
 use bindings::engine::{
-    Actor, ActorExt, Character, CharacterExt, CharacterMovementComponentExt, KismetSystemLibrary,
-    MovementComponentExt,
+    Actor, ActorExt, Character, CharacterExt, CharacterMovementComponentExt, MovementComponentExt,
 };
 use bindings::prelude::*;
-use rusteal_runtime::runtime::{RustealResult, UObjectRef};
+use rusteal_runtime::runtime::timer::{self, TimerHandle};
+use rusteal_runtime::runtime::{RustealResult, UObjectRef, method};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use super::interactable::Interactable;
@@ -22,6 +24,8 @@ pub struct SideScrollingNPC {
 
     #[uproperty(VisibleAnywhere, BlueprintReadOnly, default = false)]
     b_deactivated: bool,
+
+    deactivation_timer: Option<TimerHandle>,
 }
 
 #[uclass_impl]
@@ -39,7 +43,9 @@ impl SideScrollingNPC {
 
     #[ufunction(Override)]
     fn receive_end_play(&mut self, _end_play_reason: u8) {
-        KismetSystemLibrary::k2_clear_timer(self.as_ref().upcast_to(), "ResetDeactivation");
+        if let Some(deactivation_timer) = self.deactivation_timer() {
+            deactivation_timer.clear();
+        }
     }
 
     #[ufunction(BlueprintCallable)]
@@ -66,15 +72,18 @@ impl SideScrollingNPC {
 
         me.launch_character(&FVector::from_dvec3(launch), true, true);
 
-        KismetSystemLibrary::k2_set_timer(
-            self.as_ref().upcast_to(),
-            "ResetDeactivation",
-            self.deactivation_time(),
+        if let Some(deactivation_timer) = self.deactivation_timer() {
+            deactivation_timer.clear();
+        }
+
+        let deactivation_timer = timer::set_timer(
+            &self.as_ref(),
+            Duration::from_secs_f32(self.deactivation_time()),
             false,
-            None,
-            None,
-            None,
-        );
+            method(self, Self::reset_deactivation),
+        )?;
+
+        self.set_deactivation_timer(Some(deactivation_timer));
 
         Ok(())
     }

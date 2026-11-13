@@ -9,6 +9,7 @@
 #include "UObject/Stack.h"
 #include "UObject/UnrealType.h"
 #include "UObject/WeakObjectPtr.h"
+#include "RustealStrings.h"
 
 #define LOCTEXT_NAMESPACE "RustealErrors"
 
@@ -106,9 +107,7 @@ bool RustealTakeErrorMessage(ERustealErrorCode Code, uint8 *Buf, uint32 BufLen,
 }
 
 static FString Utf8String(const uint8 *Text, uint32 Len) {
-  return Text && Len > 0
-             ? FString(Len, UTF8_TO_TCHAR(reinterpret_cast<const char *>(Text)))
-             : FString();
+  return Text && Len > 0 ? RustealUtf8ToFString(Text, Len) : FString();
 }
 
 void RustealReport(const FRustealErrorReport *Report) {

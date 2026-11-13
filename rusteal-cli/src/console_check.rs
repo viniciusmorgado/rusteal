@@ -94,7 +94,7 @@ fn rust_files(dir: &Path, out: &mut Vec<PathBuf>) {
         let name = entry.file_name().to_string_lossy().into_owned();
 
         if path.is_dir() {
-            if name != "target" && name != "bindings" && !name.starts_with('.') {
+            if name != "target" && !name.ends_with("bindings") && !name.starts_with('.') {
                 rust_files(&path, out);
             }
         } else if name.ends_with(".rs") {

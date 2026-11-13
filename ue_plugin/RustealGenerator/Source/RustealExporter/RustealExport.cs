@@ -23,7 +23,6 @@ public static class RustealExport
         EPropertyFlags.NativeAccessSpecifierProtected;
 
     private const EFunctionFlags NoExportFuncFlags =
-        EFunctionFlags.NetServer |
         EFunctionFlags.NetRequest |
         EFunctionFlags.NetResponse |
         EFunctionFlags.Private |
@@ -616,7 +615,7 @@ public static class RustealExport
 
             if (prop is UhtInterfaceProperty ifaceProp)
             {
-                info["interface_name"] = StripPrefix(ifaceProp.InterfaceClass.SourceName);
+                info["interface_name"] = ifaceProp.InterfaceClass.EngineName;
             }
 
             if (prop is UhtStructProperty structProp)
@@ -644,11 +643,23 @@ public static class RustealExport
                 info["element_prop"] = ExportInnerProperty(setProp.ValueProperty);
             }
 
+            if (prop is UhtOptionalProperty optProp)
+            {
+                info["inner_prop"] = ExportInnerProperty(optProp.ValueProperty);
+            }
+
             if (prop is UhtMapProperty mapProp)
             {
                 info["key_prop"] = ExportInnerProperty(mapProp.KeyProperty);
                 info["value_prop"] = ExportInnerProperty(mapProp.ValueProperty);
             }
+        }
+
+        private static bool IsLinkable(UhtFunction func)
+        {
+            return func.FunctionFlags.HasAnyFlags(EFunctionFlags.RequiredAPI)
+                || (func.Outer is UhtClass owner
+                    && owner.ClassFlags.HasAnyFlags(EClassFlags.RequiredAPI));
         }
 
         private static bool ShouldExportFunction(UhtFunction func)
@@ -657,6 +668,9 @@ public static class RustealExport
                 return false;
 
             if (func.FunctionFlags.HasAnyFlags(NoExportFuncFlags))
+                return false;
+
+            if (func.FunctionFlags.HasAnyFlags(EFunctionFlags.Net) && !IsLinkable(func))
                 return false;
 
             if (func.FunctionFlags.HasAnyFlags(EFunctionFlags.Protected)

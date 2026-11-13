@@ -43,14 +43,24 @@ pub fn expand_ustruct(attr: TokenStream, item: TokenStream) -> syn::Result<Token
             ));
         };
 
-        let args = parse_uproperty_args(attr)?;
+        let mut args = parse_uproperty_args(attr)?;
+        args.add_doc_tooltip(&field.attrs);
+
+        if args.is_replicated() {
+            return Err(syn::Error::new_spanned(
+                attr,
+                "a #[ustruct]'s fields replicate with the property that holds the struct: \
+                 Replicated goes on that #[uclass] property",
+            ));
+        }
 
         let Some(info) = prop_type::map_type(&field.ty) else {
             return Err(syn::Error::new_spanned(
                 &field.ty,
-                "unsupported uproperty type: supported are bool/i32/i64/u8/f32/f64, \
-                 UObjectRef<T>, SubclassOf<T>, SoftObjectRef<T>, UeArray of those, \
-                 OwnedStruct<T>, FName, String and UE enums",
+                "unsupported uproperty type: supported are bool, the integers, f32, f64, \
+                 String, FName, Text, UE enums, UObjectRef<T>, TWeakObjectPtr<T>, \
+                 SubclassOf<T>, SoftObjectRef<T>, SoftClassRef<T>, ScriptInterface<dyn I>, \
+                 OwnedStruct<T>, and UeArray, UeMap and UeSet of those",
             ));
         };
 
@@ -104,6 +114,7 @@ pub fn expand_ustruct(attr: TokenStream, item: TokenStream) -> syn::Result<Token
         &quote! { self.as_ptr() },
         &format_ident!("reflection_find_struct_property"),
         &quote! { <#name as ::rusteal_runtime::runtime::UeStruct>::static_struct() },
+        false,
     );
 
     let docs_of = |accessor: &str| {

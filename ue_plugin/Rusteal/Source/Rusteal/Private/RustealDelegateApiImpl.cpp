@@ -40,6 +40,12 @@ RustealDelegateApi_BindDelegate(RustealUObjectHandle ObjHandle,
   Proxy->Library = RustealCurrentLibrary();
   Proxy->Signature = DelegateProp->SignatureFunction;
   Proxy->OwnerObject = Object;
+  URustealDelegateProxy::Keep(Proxy);
+
+  if (URustealDelegateProxy *Old =
+          Cast<URustealDelegateProxy>(Delegate->GetUObject())) {
+    URustealDelegateProxy::Release(Old);
+  }
 
   Delegate->BindUFunction(Proxy, URustealDelegateProxy::FakeFuncName);
 
@@ -48,7 +54,8 @@ RustealDelegateApi_BindDelegate(RustealUObjectHandle ObjHandle,
 
 static ERustealErrorCode
 RustealDelegateApi_UnbindDelegate(RustealUObjectHandle ObjHandle,
-                                  RustealFPropertyHandle PropHandle) {
+                                  RustealFPropertyHandle PropHandle,
+                                  uint64 CallbackId) {
   RUSTEAL_CHECK_ARGS(ObjHandle, PropHandle);
 
   FDelegateProperty *DelegateProp = CastField<FDelegateProperty>(RawProp);
@@ -64,7 +71,38 @@ RustealDelegateApi_UnbindDelegate(RustealUObjectHandle ObjHandle,
     return RustealFail(ERustealErrorCode::InternalError);
   }
 
+  URustealDelegateProxy *Bound =
+      Cast<URustealDelegateProxy>(Delegate->GetUObject());
+
+  if (!Bound || Bound->CallbackId != CallbackId ||
+      Bound->Library != RustealCurrentLibrary()) {
+    return ERustealErrorCode::Ok;
+  }
+
+  URustealDelegateProxy::Release(Bound);
   Delegate->Unbind();
+  return ERustealErrorCode::Ok;
+}
+
+static ERustealErrorCode
+RustealDelegateApi_ExecuteDelegate(RustealUObjectHandle ObjHandle,
+                                   RustealFPropertyHandle PropHandle,
+                                   uint8 *Params) {
+  RUSTEAL_CHECK_ARGS(ObjHandle, PropHandle);
+
+  FDelegateProperty *DelegateProp = CastField<FDelegateProperty>(RawProp);
+
+  if (!DelegateProp) {
+    return RustealFailType(RawProp, TEXT("FDelegateProperty"));
+  }
+
+  const FScriptDelegate *Delegate =
+      DelegateProp->GetPropertyValuePtr_InContainer(Object);
+
+  if (Delegate && Delegate->IsBound()) {
+    Delegate->ProcessDelegate<UObject>(Params);
+  }
+
   return ERustealErrorCode::Ok;
 }
 
@@ -86,6 +124,7 @@ RustealDelegateApi_AddMulticast(RustealUObjectHandle ObjHandle,
   Proxy->Library = RustealCurrentLibrary();
   Proxy->Signature = MultiProp->SignatureFunction;
   Proxy->OwnerObject = Object;
+  URustealDelegateProxy::Keep(Proxy);
 
   FScriptDelegate ScriptDelegate;
   ScriptDelegate.BindUFunction(Proxy, URustealDelegateProxy::FakeFuncName);
@@ -109,7 +148,7 @@ RustealDelegateApi_RemoveMulticast(RustealUObjectHandle ObjHandle,
   }
 
   TArray<UObject *> Children;
-  GetObjectsWithOuter(Object, Children, false);
+  GetObjectsWithOuter(Object, Children, EGetObjectsFlags::None);
 
   for (UObject *Child : Children) {
     URustealDelegateProxy *Proxy = Cast<URustealDelegateProxy>(Child);
@@ -119,6 +158,7 @@ RustealDelegateApi_RemoveMulticast(RustealUObjectHandle ObjHandle,
       FScriptDelegate ScriptDelegate;
       ScriptDelegate.BindUFunction(Proxy, URustealDelegateProxy::FakeFuncName);
       MultiProp->RemoveDelegate(ScriptDelegate, Object);
+      URustealDelegateProxy::Release(Proxy);
       return ERustealErrorCode::Ok;
     }
   }
@@ -180,20 +220,15 @@ RustealDelegateApi_ReadParam(RustealFPropertyHandle PropHandle, void *ParamsBuf,
   }
 
   if (const FTextProperty *TextProp = CastField<FTextProperty>(Prop)) {
-    FString Str = TextProp->GetPropertyValue(ValuePtr).ToString();
-    FTCHARToUTF8 Utf8(*Str);
-    uint32 Len = static_cast<uint32>(Utf8.Length());
-    uint32 Required = sizeof(uint32) + Len;
-
     if (OutWritten)
-      *OutWritten = Required;
+      *OutWritten = sizeof(void *);
 
-    if (OutBufSize < Required) {
+    if (OutBufSize < sizeof(void *)) {
       return RustealFail(ERustealErrorCode::BufferTooSmall);
     }
 
-    FMemory::Memcpy(OutBuf, &Len, sizeof(uint32));
-    FMemory::Memcpy(OutBuf + sizeof(uint32), Utf8.Get(), Len);
+    void *Text = new FText(TextProp->GetPropertyValue(ValuePtr));
+    FMemory::Memcpy(OutBuf, &Text, sizeof(void *));
     return ERustealErrorCode::Ok;
   }
 
@@ -222,6 +257,7 @@ RustealDelegateApi_ReadParam(RustealFPropertyHandle PropHandle, void *ParamsBuf,
       return RustealFail(ERustealErrorCode::BufferTooSmall);
     }
 
+    StructProp->Struct->InitializeStruct(OutBuf);
     StructProp->Struct->CopyScriptStruct(OutBuf, ValuePtr);
     return ERustealErrorCode::Ok;
   }
@@ -252,6 +288,31 @@ RustealDelegateApi_ReadParam(RustealFPropertyHandle PropHandle, void *ParamsBuf,
 
   FMemory::Memcpy(OutBuf, ValuePtr, Size);
   return ERustealErrorCode::Ok;
+}
+
+static void *RustealDelegateApi_MakeDelegate(RustealUFunctionHandle Signature,
+                                             RustealUObjectHandle OwnerHandle,
+                                             uint64 CallbackId) {
+  UObject *Owner = static_cast<UObject *>(OwnerHandle.ptr);
+
+  if (!IsValid(Owner)) {
+    Owner = GetTransientPackage();
+  }
+
+  URustealDelegateProxy *Proxy = NewObject<URustealDelegateProxy>(Owner);
+  Proxy->CallbackId = CallbackId;
+  Proxy->Library = RustealCurrentLibrary();
+  Proxy->Signature = static_cast<UFunction *>(Signature.ptr);
+  Proxy->OwnerObject = Owner;
+  URustealDelegateProxy::Keep(Proxy);
+
+  FScriptDelegate *Delegate = new FScriptDelegate();
+  Delegate->BindUFunction(Proxy, URustealDelegateProxy::FakeFuncName);
+  return Delegate;
+}
+
+static void RustealDelegateApi_FreeDelegate(void *Delegate) {
+  delete static_cast<FScriptDelegate *>(Delegate);
 }
 
 static ERustealErrorCode RustealDelegateApi_AddFunction(
@@ -299,16 +360,39 @@ static ERustealErrorCode RustealDelegateApi_AddFunction(
       return RustealFailType(RawProp, TEXT("FDelegateProperty"));
     }
 
-    *DelegateProp->GetPropertyValuePtr_InContainer(Object) = ScriptDelegate;
+    FScriptDelegate *Delegate =
+        DelegateProp->GetPropertyValuePtr_InContainer(Object);
+
+    if (URustealDelegateProxy *Old =
+            Cast<URustealDelegateProxy>(Delegate->GetUObject())) {
+      URustealDelegateProxy::Release(Old);
+    }
+
+    *Delegate = ScriptDelegate;
     return ERustealErrorCode::Ok;
   }
 
   return RustealFailType(RawProp, TEXT("FDelegateProperty"));
 }
 
+ERustealErrorCode RustealLatent_Cancel(uint64 CallbackId);
+uint32 RustealLatent_LiveProxies();
+uint64 RustealLatent_FunctionBegin(RustealUObjectHandle Owner,
+                                   const uint8 *Info, uint64 AbortCallbackId);
+void RustealLatent_FunctionFinish(uint64 Id, bool bCompleted);
+uint32 RustealLatent_LiveFunctions();
+
 FRustealDelegateApi GDelegateApi = {
     &RustealDelegateApi_BindDelegate,       &RustealDelegateApi_UnbindDelegate,
     &RustealDelegateApi_AddMulticast,       &RustealDelegateApi_RemoveMulticast,
     &RustealDelegateApi_BroadcastMulticast, &RustealDelegateApi_ReadParam,
     &RustealDelegateApi_AddFunction,
+    &RustealDelegateApi_MakeDelegate,
+    &RustealDelegateApi_FreeDelegate,
+    &RustealDelegateApi_ExecuteDelegate,
+    &RustealLatent_Cancel,
+    &RustealLatent_LiveProxies,
+    &RustealLatent_FunctionBegin,
+    &RustealLatent_FunctionFinish,
+    &RustealLatent_LiveFunctions,
 };

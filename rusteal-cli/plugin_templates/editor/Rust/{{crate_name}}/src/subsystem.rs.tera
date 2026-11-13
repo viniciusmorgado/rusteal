@@ -40,8 +40,8 @@ impl {{ plugin }}EditorSubsystem {
             FName::new("LevelEditor.MainMenu.Tools").handle(),
             FName::new("{{ plugin }}").handle(),
             FName::new("{{ plugin }}CountAssets").handle(),
-            Some("Count assets"),
-            Some("Count the project's assets by type, off the game thread"),
+            "Count assets",
+            "Count the project's assets by type, off the game thread",
         );
 
         script.register_menu_entry();

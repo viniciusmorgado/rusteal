@@ -32,6 +32,8 @@ public:
 
   TArray<FRustealComponentDef> ComponentDefs;
 
+  TMap<FName, UClass *> SubobjectOverrides;
+
   static void
   RustealClassConstructor(const FObjectInitializer &ObjectInitializer);
 

@@ -6,12 +6,24 @@ const EXCLUDED_DIRS: &[&str] = &["Generated", "Binaries", "Intermediate", "obj"]
 
 pub fn run_sync() {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let source_root = manifest_dir.join("..").join("ue_plugin");
-    let dest_root = manifest_dir.join("ue_plugin_embed");
 
-    if !source_root.join("Rusteal").exists() {
+    sync(
+        &manifest_dir.join("..").join("ue_plugin"),
+        &manifest_dir.join("ue_plugin_embed"),
+        "Rusteal",
+    );
+
+    sync(
+        &manifest_dir.join("..").join("ue_launcher"),
+        &manifest_dir.join("ue_launcher_embed"),
+        "RustealLauncher",
+    );
+}
+
+fn sync(source_root: &Path, dest_root: &Path, plugin: &str) {
+    if !source_root.join(plugin).exists() {
         eprintln!(
-            "Error: source directory not found: {}/Rusteal/",
+            "Error: source directory not found: {}/{plugin}/",
             source_root.display()
         );
 
@@ -20,11 +32,14 @@ pub fn run_sync() {
     }
 
     let mut files: Vec<(String, PathBuf)> = Vec::new();
-    collect_files(&source_root, &source_root, &mut files);
+    collect_files(source_root, source_root, &mut files);
 
     let mut written_paths: HashSet<PathBuf> = HashSet::new();
 
-    eprintln!("rusteal sync-plugin: syncing {} files...", files.len());
+    eprintln!(
+        "rusteal sync-plugin: syncing {} {plugin} files...",
+        files.len()
+    );
 
     for (rel_path, src_path) in &files {
         let dest_path = dest_root.join(rel_path);
@@ -54,23 +69,26 @@ pub fn run_sync() {
 
     if dest_root.exists() {
         let mut stale: Vec<PathBuf> = Vec::new();
-        collect_all_files(&dest_root, &mut stale);
+        collect_all_files(dest_root, &mut stale);
 
         for path in stale {
             if !written_paths.contains(&path) {
                 eprintln!(
                     "  removed stale: {}",
-                    path.strip_prefix(&dest_root).unwrap().display()
+                    path.strip_prefix(dest_root).unwrap().display()
                 );
 
                 let _ = fs::remove_file(&path);
             }
         }
 
-        clean_empty_dirs(&dest_root);
+        clean_empty_dirs(dest_root);
     }
 
-    eprintln!("rusteal sync-plugin: done! ({} files)", files.len());
+    eprintln!(
+        "rusteal sync-plugin: {plugin} done! ({} files)",
+        files.len()
+    );
 }
 
 fn collect_files(root: &Path, dir: &Path, out: &mut Vec<(String, PathBuf)>) {

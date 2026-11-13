@@ -1,5 +1,6 @@
 pub mod fill_table;
 pub mod func_ids;
+pub mod shims;
 pub mod wrapper;
 
 use std::collections::{BTreeMap, HashSet};

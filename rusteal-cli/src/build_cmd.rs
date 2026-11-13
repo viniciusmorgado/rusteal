@@ -4,7 +4,7 @@ use std::process::Command;
 use std::time::Instant;
 
 use rusteal_codegen::config::{
-    PluginConfig, PluginLayout, ProjectConfig, ProjectLayout, find_plugins,
+    PluginConfig, PluginLayout, PluginLibrary, ProjectConfig, ProjectLayout, find_plugins,
 };
 
 pub fn canonical_no_prefix(path: &Path) -> PathBuf {
@@ -22,6 +22,13 @@ pub fn canonical_no_prefix(path: &Path) -> PathBuf {
 }
 
 pub const RUST_STEP: u8 = 4;
+
+fn steps_build_cpp(step: Option<u8>, from: u8) -> bool {
+    match step {
+        Some(s) => s == 1 || s == 3,
+        None => from <= 3,
+    }
+}
 
 pub fn run_build(
     project_root: &Path,
@@ -54,6 +61,9 @@ pub fn run_build(
     });
 
     let ctx = BuildContext::new(&config, project_root, engine_path, release, plugin);
+
+    ctx.project_shims(&config, steps_build_cpp(step, from));
+    ctx.loc_text(&config);
 
     let steps: Vec<u8> = if let Some(s) = step {
         vec![s]
@@ -112,8 +122,8 @@ pub fn run_build(
         eprintln!("{}", "-".repeat(60));
 
         match step_num {
-            1 => ctx.step1_ue_build(),
-            2 => ctx.step2_codegen(),
+            1 => ctx.step1_ue_build(steps.contains(&2) && steps.contains(&3)),
+            2 => ctx.step2_codegen(steps.contains(&1) && steps.contains(&3)),
             3 => ctx.step3_ue_rebuild(),
             4 => ctx.step4_cargo_build(),
             5 => ctx.step5_copy_dll(),
@@ -125,11 +135,13 @@ pub fn run_build(
     }
 
     if steps.contains(&RUST_STEP) {
-        let workspaces: Vec<PathBuf> = ctx
+        let mut workspaces: Vec<PathBuf> = ctx
             .libraries
             .iter()
             .map(|library| library.rust_workspace.clone())
             .collect();
+
+        workspaces.dedup();
 
         crate::console_check::report(project_root, &workspaces);
     }
@@ -176,7 +188,7 @@ impl HostPlatform {
         lib_extension: "dylib",
     };
 
-    fn lib_filename(&self, crate_name: &str) -> String {
+    pub fn lib_filename(&self, crate_name: &str) -> String {
         format!(
             "{}{}.{}",
             self.lib_prefix,
@@ -197,7 +209,8 @@ struct Library {
     features: Vec<String>,
     deploy_dir: PathBuf,
     deploy_stem: String,
-    plugin: Option<PluginLayout>,
+    bindings_crate: PathBuf,
+    plugin: Option<(PluginLayout, PluginLibrary)>,
 }
 
 struct BuildContext {
@@ -227,6 +240,7 @@ impl BuildContext {
                 features: config.project.features.clone(),
                 deploy_dir: project_root.join("Plugins/Rusteal/Binaries").join(platform),
                 deploy_stem: "rusteal".to_string(),
+                bindings_crate: layout.bindings_crate(),
                 plugin: None,
             });
         }
@@ -256,20 +270,47 @@ impl BuildContext {
                 continue;
             }
 
+            if plugin.is_precompiled() {
+                eprintln!(
+                    "  plugin {}: precompiled (\"Installed\": true), its libraries are used as \
+                     they are",
+                    plugin.name
+                );
+
+                continue;
+            }
+
             let plugin_config = PluginConfig::load(&plugin.dir).unwrap_or_else(|e| {
                 eprintln!("Error: {e}");
                 std::process::exit(1);
             });
 
-            libraries.push(Library {
-                label: format!("plugin {}", plugin.name),
-                rust_workspace: plugin.rust_workspace(),
-                crate_name: plugin_config.plugin.crate_name,
-                features: plugin_config.plugin.features,
-                deploy_dir: plugin.binaries(platform),
-                deploy_stem: plugin.library_stem(),
-                plugin: Some(plugin),
-            });
+            if let Some(editor) = &plugin_config.editor {
+                refuse_runtime_dependency(
+                    &plugin.rust_workspace(),
+                    &editor.crate_name,
+                    &plugin_config.plugin.crate_name,
+                );
+            }
+
+            for library in plugin_config.libraries(&plugin.name) {
+                let label = if library.module == plugin.name {
+                    format!("plugin {}", plugin.name)
+                } else {
+                    format!("plugin {} ({})", plugin.name, library.module)
+                };
+
+                libraries.push(Library {
+                    label,
+                    rust_workspace: plugin.rust_workspace(),
+                    crate_name: library.crate_name.clone(),
+                    features: library.features.clone(),
+                    deploy_dir: plugin.binaries(platform),
+                    deploy_stem: plugin.library_stem_of(&library),
+                    bindings_crate: plugin.library_output(&library).bindings_crate,
+                    plugin: Some((PluginLayout::new(&plugin.dir), library)),
+                });
+            }
         }
 
         BuildContext {
@@ -312,6 +353,14 @@ impl BuildContext {
     }
 
     fn run_ubt(&self) {
+        let code = self.run_ubt_code();
+
+        if code != 0 {
+            std::process::exit(code);
+        }
+    }
+
+    fn run_ubt_code(&self) -> i32 {
         let platform = &HostPlatform::CURRENT;
         let script = self.engine_path.join(platform.ubt_script);
 
@@ -324,18 +373,18 @@ impl BuildContext {
         let uproject = self.uproject_path();
         let uproject_abs = canonical_no_prefix(&uproject);
 
-        run_cmd(&[
+        run_cmd_code(&[
             script.to_str().unwrap(),
             &target,
             platform.ubt_platform,
             "Development",
             &format!("-Project={}", uproject_abs.display()),
             "-NoHotReload",
-        ]);
+        ])
     }
 
-    fn step1_ue_build(&self) {
-        self.run_ubt();
+    fn step1_ue_build(&self, regenerates: bool) {
+        let code = self.run_ubt_code();
 
         let uht_input = self.layout.uht_json();
 
@@ -379,16 +428,166 @@ impl BuildContext {
             json_files.len(),
             uht_input.display()
         );
+
+        if code != 0 {
+            if regenerates && copied == json_files.len() {
+                eprintln!(
+                    "  The build failed with the code generated before; it is generated \
+                     again from the engine's reflection and built in step 3."
+                );
+            } else {
+                std::process::exit(code);
+            }
+        }
     }
 
-    fn step2_codegen(&self) {
+    fn descriptors(&self) -> Vec<PathBuf> {
+        std::iter::once(self.layout.plugin_descriptor())
+            .chain(
+                self.libraries
+                    .iter()
+                    .filter_map(|l| l.plugin.as_ref().map(|(plugin, _)| plugin.descriptor())),
+            )
+            .collect()
+    }
+
+    fn plugin_dependencies(&self) -> Vec<String> {
+        self.descriptors()
+            .iter()
+            .flat_map(|descriptor| {
+                let json: serde_json::Value = fs::read_to_string(descriptor)
+                    .ok()
+                    .and_then(|text| serde_json::from_str(&text).ok())
+                    .unwrap_or_default();
+
+                json["Plugins"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|p| p["Name"].as_str().map(str::to_string))
+                    .collect::<Vec<_>>()
+            })
+            .collect()
+    }
+
+    fn step2_codegen(&self, reexports: bool) {
+        let before = self.plugin_dependencies();
+        self.generate_all();
+
+        if reexports && self.plugin_dependencies() != before {
+            eprintln!(
+                "  The bindings now use engine plugins the reflection dump did not have; \
+                 it is exported again and the bindings generated from it."
+            );
+
+            let header = self
+                .project_path()
+                .join("Plugins/RustealGenerator/Source/RustealGenerator/RustealGeneratorDummy.h");
+
+            if let Ok(file) = fs::File::options().write(true).open(&header) {
+                let _ = file.set_modified(std::time::SystemTime::now());
+            }
+
+            self.step1_ue_build(true);
+            self.generate_all();
+        }
+    }
+
+    fn generate_all(&self) {
         for library in &self.libraries {
             match &library.plugin {
                 None => rusteal_codegen::run_generate(&self.layout.root),
-                Some(plugin) => rusteal_codegen::run_generate_plugin(&self.layout.root, plugin),
+                Some((plugin, plugin_library)) => rusteal_codegen::run_generate_plugin_library(
+                    &self.layout.root,
+                    plugin,
+                    plugin_library,
+                ),
             }
 
             crate::migrate::bindings_dependency(&library.rust_workspace, &library.crate_name);
+        }
+    }
+
+    fn loc_text(&self, config: &ProjectConfig) {
+        let root = &self.layout.root;
+        let Some(project) = rusteal_codegen::config::find_uproject(root).and_then(|uproject| {
+            uproject
+                .file_stem()
+                .map(|s| s.to_string_lossy().into_owned())
+        }) else {
+            return;
+        };
+
+        let module = root.join("Source").join(&project);
+        let header = if module.is_dir() {
+            module.join(rusteal_codegen::loc_text::HEADER)
+        } else {
+            root.join("Source").join(rusteal_codegen::loc_text::HEADER)
+        };
+
+        let dirs: Vec<PathBuf> = std::iter::once(
+            self.layout
+                .rust_workspace()
+                .join(&config.project.crate_name)
+                .join("src"),
+        )
+        .chain(
+            rusteal_codegen::plugin_sources(root)
+                .into_iter()
+                .map(|source| source.src_dir),
+        )
+        .collect();
+
+        let texts = rusteal_codegen::loc_text::texts_in_dirs(&dirs);
+
+        match rusteal_codegen::loc_text::write_header(&header, &texts) {
+            Ok(true) if texts.is_empty() => {
+                eprintln!("  No loctext! left: removed {}", header.display())
+            }
+            Ok(true) => eprintln!(
+                "  {} loctext! texts written to {} for the localization gather",
+                texts.len(),
+                header.display()
+            ),
+            Ok(false) => {}
+            Err(e) => eprintln!("Warning: cannot write {}: {e}", header.display()),
+        }
+    }
+
+    fn project_shims(&self, config: &ProjectConfig, writes: bool) {
+        let generated = self.layout.cpp_generated();
+        let shims = match rusteal_codegen::cpp_gen::shims::project_shim_specs(
+            &config.codegen.features,
+            &config.codegen.shims,
+        ) {
+            Ok(shims) => shims,
+            Err(e) => {
+                eprintln!("Error: {e}");
+                std::process::exit(1);
+            }
+        };
+        let shims = &shims;
+
+        if writes {
+            match rusteal_codegen::cpp_gen::shims::write_project_shims(&generated, shims) {
+                Ok(true) => eprintln!(
+                    "  Engine virtual bases written to {}",
+                    generated
+                        .join(rusteal_codegen::cpp_gen::shims::PROJECT_SHIMS_DIR)
+                        .display()
+                ),
+                Ok(false) => {}
+                Err(e) => {
+                    eprintln!("Error: the engine virtual bases: {e}");
+                    std::process::exit(1);
+                }
+            }
+        } else if !rusteal_codegen::cpp_gen::shims::project_shims_up_to_date(&generated, shims) {
+            eprintln!(
+                "Warning: the engine virtual bases ([[codegen.shims]] in rusteal.toml, or a \
+                 feature's) changed: run `rusteal build --all` to build them before the Rust that \
+                 uses them."
+            );
         }
     }
 
@@ -397,12 +596,10 @@ impl BuildContext {
     }
 
     fn step4_cargo_build(&self) {
+        rusteal_codegen::refresh_plugin_bindings(&self.layout.root);
+
         for library in &self.libraries {
-            if !library
-                .rust_workspace
-                .join("bindings/src/func_ids.rs")
-                .is_file()
-            {
+            if !library.bindings_crate.join("src/func_ids.rs").is_file() {
                 eprintln!(
                     "Error: the {} library's bindings have not been generated yet: \
                      run `rusteal build --all` once.",
@@ -533,9 +730,63 @@ pub fn run_cmd_code_env(args: &[&str], env: &[(&str, &Path)]) -> i32 {
     code
 }
 
+fn depends_on(manifest_text: &str, crate_name: &str) -> bool {
+    let Ok(manifest) = manifest_text.parse::<toml::Table>() else {
+        return false;
+    };
+
+    ["dependencies", "build-dependencies"]
+        .iter()
+        .any(|section| {
+            manifest
+                .get(*section)
+                .and_then(toml::Value::as_table)
+                .is_some_and(|deps| {
+                    deps.iter().any(|(name, spec)| {
+                        let package = spec
+                            .as_table()
+                            .and_then(|t| t.get("package"))
+                            .and_then(toml::Value::as_str)
+                            .unwrap_or(name);
+
+                        package == crate_name
+                    })
+                })
+        })
+}
+
+fn refuse_runtime_dependency(workspace: &Path, editor_crate: &str, runtime_crate: &str) {
+    let manifest = workspace.join(editor_crate).join("Cargo.toml");
+    let text = fs::read_to_string(&manifest).unwrap_or_default();
+
+    if depends_on(&text, runtime_crate) {
+        eprintln!(
+            "Error: {} depends on {runtime_crate}, the plugin's runtime crate. The editor \
+             library would register the runtime library's classes a second time: reach them \
+             through reflection (DynamicCall, interfaces, Blueprint classes), and move shared \
+             code without Rust types into a crate of its own.",
+            manifest.display()
+        );
+
+        std::process::exit(1);
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::deploy;
+    use super::{depends_on, deploy};
+
+    #[test]
+    fn an_editor_crate_depending_on_the_runtime_crate_is_seen() {
+        let by_name = "[dependencies]\ninventory = { path = \"../inventory\" }\n";
+        let by_package =
+            "[dependencies]\ninv = { package = \"inventory\", path = \"../inventory\" }\n";
+        let unrelated = "[dependencies]\nrusteal-runtime = { workspace = true }\n";
+
+        assert!(depends_on(by_name, "inventory"));
+        assert!(depends_on(by_package, "inventory"));
+        assert!(!depends_on(unrelated, "inventory"));
+    }
 
     #[test]
     fn deploy_replaces_the_library_and_leaves_nothing_else() {

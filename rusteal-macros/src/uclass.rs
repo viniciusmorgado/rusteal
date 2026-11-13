@@ -13,22 +13,53 @@ struct UClassArgs {
     implements: Vec<String>,
     rust_interfaces: Vec<syn::Path>,
     config: Option<String>,
+    subobject_classes: Vec<(String, syn::Path)>,
 }
 
 fn parse_uclass_args(attr: TokenStream) -> syn::Result<UClassArgs> {
-    let metas: Punctuated<Meta, Token![,]> = parse2::<syn::parse::Nothing>(attr.clone())
-        .map(|_| Punctuated::new())
-        .unwrap_or_else(|_| {
-            syn::parse::Parser::parse2(Punctuated::<Meta, Token![,]>::parse_terminated, attr)
-                .unwrap_or_default()
-        });
+    let metas: Punctuated<Meta, Token![,]> =
+        syn::parse::Parser::parse2(Punctuated::<Meta, Token![,]>::parse_terminated, attr)?;
 
     let mut parent_path: Option<syn::Path> = None;
     let mut implements = Vec::new();
     let mut rust_interfaces = Vec::new();
     let mut config = None;
+    let mut subobject_classes = Vec::new();
 
     for meta in &metas {
+        if let Meta::List(list) = meta
+            && list.path.is_ident("subobject_class")
+        {
+            let pairs = list
+                .parse_args_with(Punctuated::<syn::MetaNameValue, Token![,]>::parse_terminated)?;
+
+            for pair in pairs {
+                let name = pair
+                    .path
+                    .get_ident()
+                    .map(|ident| ident.unraw().to_string())
+                    .ok_or_else(|| {
+                        syn::Error::new_spanned(
+                            &pair.path,
+                            "subobject_class names an inherited subobject: \
+                             subobject_class(CharMoveComp = HeroMovement)",
+                        )
+                    })?;
+
+                let Expr::Path(class) = &pair.value else {
+                    return Err(syn::Error::new_spanned(
+                        &pair.value,
+                        "the class of a subobject is a type path: \
+                         subobject_class(CharMoveComp = HeroMovement)",
+                    ));
+                };
+
+                subobject_classes.push((name, class.path.clone()));
+            }
+
+            continue;
+        }
+
         if let Meta::NameValue(nv) = meta
             && nv.path.is_ident("config")
         {
@@ -80,7 +111,15 @@ fn parse_uclass_args(attr: TokenStream) -> syn::Result<UClassArgs> {
                      Example: #[uclass(parent = Actor)]",
                 ));
             }
+
+            continue;
         }
+
+        return Err(syn::Error::new_spanned(
+            meta,
+            "unknown #[uclass] argument: expected parent = ..., implements = [...], \
+             config = \"...\" or subobject_class(...)",
+        ));
     }
 
     let parent_path = parent_path.ok_or_else(|| {
@@ -107,6 +146,7 @@ fn parse_uclass_args(attr: TokenStream) -> syn::Result<UClassArgs> {
         implements,
         rust_interfaces,
         config,
+        subobject_classes,
     })
 }
 
@@ -124,6 +164,169 @@ pub(crate) struct UPropertyArgs {
     name: Option<String>,
     category: Option<String>,
     bind_widget: Option<&'static str>,
+    meta: Vec<(String, String)>,
+    replicated: bool,
+    rep_notify: Option<String>,
+    replication: Option<u8>,
+}
+
+const REPLICATION_CONDITIONS: &[(&str, u8)] = &[
+    ("None", 0),
+    ("InitialOnly", 1),
+    ("OwnerOnly", 2),
+    ("SkipOwner", 3),
+    ("SimulatedOnly", 4),
+    ("AutonomousOnly", 5),
+    ("SimulatedOrPhysics", 6),
+    ("InitialOrOwner", 7),
+    ("Custom", 8),
+    ("ReplayOrOwner", 9),
+    ("ReplayOnly", 10),
+    ("SimulatedOnlyNoReplay", 11),
+    ("SimulatedOrPhysicsNoReplay", 12),
+    ("SkipReplay", 13),
+    ("Dynamic", 14),
+    ("Never", 15),
+];
+
+fn replication_condition(value: &Expr) -> syn::Result<u8> {
+    let name = str_value(value, "replication")?;
+
+    REPLICATION_CONDITIONS
+        .iter()
+        .find(|(condition, _)| *condition == name)
+        .map(|(_, value)| *value)
+        .ok_or_else(|| {
+            syn::Error::new_spanned(
+                value,
+                format!(
+                    "unknown replication condition `{name}`: expected one of {}",
+                    REPLICATION_CONDITIONS
+                        .iter()
+                        .map(|(condition, _)| *condition)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+            )
+        })
+}
+
+fn rep_notify_name(value: &Expr) -> syn::Result<String> {
+    match value {
+        Expr::Path(path) if path.path.get_ident().is_some() => Ok(prop_type::to_pascal_case(
+            &path.path.get_ident().unwrap().unraw().to_string(),
+        )),
+        Expr::Lit(syn::ExprLit {
+            lit: syn::Lit::Str(s),
+            ..
+        }) => Ok(s.value()),
+        other => Err(syn::Error::new_spanned(
+            other,
+            "ReplicatedUsing names a #[ufunction] of the class: ReplicatedUsing = on_rep_health, \
+             or its Unreal name as a string",
+        )),
+    }
+}
+
+fn meta_value(value: &Expr) -> syn::Result<String> {
+    match value {
+        Expr::Lit(syn::ExprLit {
+            lit: syn::Lit::Str(s),
+            ..
+        }) => Ok(s.value()),
+        Expr::Lit(syn::ExprLit {
+            lit: syn::Lit::Bool(b),
+            ..
+        }) => Ok(b.value.to_string()),
+        Expr::Lit(syn::ExprLit {
+            lit: syn::Lit::Int(i),
+            ..
+        }) => Ok(i.base10_digits().to_string()),
+        Expr::Lit(syn::ExprLit {
+            lit: syn::Lit::Float(f),
+            ..
+        }) => Ok(f.base10_digits().to_string()),
+        Expr::Unary(syn::ExprUnary {
+            op: syn::UnOp::Neg(_),
+            expr,
+            ..
+        }) => Ok(format!("-{}", meta_value(expr)?)),
+        other => Err(syn::Error::new_spanned(
+            other,
+            "a meta value is a string, a number or a bool",
+        )),
+    }
+}
+
+pub(crate) fn parse_meta_list(list: &syn::MetaList) -> syn::Result<Vec<(String, String)>> {
+    let entries = list.parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated)?;
+    let mut out = Vec::new();
+
+    for entry in &entries {
+        match entry {
+            Meta::Path(p) => {
+                let key = p.get_ident().ok_or_else(|| {
+                    syn::Error::new_spanned(p, "a meta key is a plain name, such as ClampMin")
+                })?;
+
+                out.push((key.to_string(), "true".to_string()));
+            }
+            Meta::NameValue(nv) => {
+                let key = nv.path.get_ident().ok_or_else(|| {
+                    syn::Error::new_spanned(
+                        &nv.path,
+                        "a meta key is a plain name, such as ClampMin",
+                    )
+                })?;
+
+                out.push((key.to_string(), meta_value(&nv.value)?));
+            }
+            Meta::List(l) => {
+                return Err(syn::Error::new_spanned(
+                    l,
+                    "a meta entry is Key = value, or a Key alone for true",
+                ));
+            }
+        }
+    }
+
+    Ok(out)
+}
+
+pub(crate) fn doc_tooltip(attrs: &[syn::Attribute]) -> Option<String> {
+    let lines: Vec<String> = attrs
+        .iter()
+        .filter(|a| a.path().is_ident("doc"))
+        .filter_map(|a| match &a.meta {
+            Meta::NameValue(nv) => match &nv.value {
+                Expr::Lit(syn::ExprLit {
+                    lit: syn::Lit::Str(s),
+                    ..
+                }) => Some(s.value().trim().to_string()),
+                _ => None,
+            },
+            _ => None,
+        })
+        .collect();
+
+    let text = lines.join("\n").trim().to_string();
+    (!text.is_empty()).then_some(text)
+}
+
+impl UPropertyArgs {
+    pub(crate) fn is_replicated(&self) -> bool {
+        self.replicated
+    }
+
+    pub(crate) fn add_doc_tooltip(&mut self, attrs: &[syn::Attribute]) {
+        if self.meta.iter().any(|(key, _)| key == "ToolTip") {
+            return;
+        }
+
+        if let Some(tooltip) = doc_tooltip(attrs) {
+            self.meta.push(("ToolTip".to_string(), tooltip));
+        }
+    }
 }
 
 fn str_value(value: &Expr, what: &str) -> syn::Result<String> {
@@ -177,14 +380,17 @@ pub(crate) fn parse_uproperty_args(attr: &syn::Attribute) -> syn::Result<UProper
                 } else if p.is_ident("BindWidgetAnimOptional") {
                     args.bind_widget = Some("BindWidgetAnimOptional");
                     args.transient = true;
+                } else if p.is_ident("Replicated") {
+                    args.replicated = true;
                 } else {
                     return Err(syn::Error::new_spanned(
                         p,
                         "unknown #[uproperty] argument: expected BlueprintReadWrite, \
                          BlueprintReadOnly, EditAnywhere, EditDefaultsOnly, VisibleAnywhere, \
                          SaveGame, Config, Transient, BindWidget, BindWidgetOptional, \
-                         BindWidgetAnim, BindWidgetAnimOptional, default = ..., \
-                         name = \"...\" or category = \"...\"",
+                         BindWidgetAnim, BindWidgetAnimOptional, Replicated, \
+                         ReplicatedUsing = ..., replication = \"...\", default = ..., \
+                         name = \"...\", category = \"...\" or meta(...)",
                     ));
                 }
             }
@@ -197,6 +403,16 @@ pub(crate) fn parse_uproperty_args(attr: &syn::Attribute) -> syn::Result<UProper
             Meta::NameValue(nv) if nv.path.is_ident("category") => {
                 args.category = Some(str_value(&nv.value, "category")?);
             }
+            Meta::List(list) if list.path.is_ident("meta") => {
+                args.meta.extend(parse_meta_list(list)?);
+            }
+            Meta::NameValue(nv) if nv.path.is_ident("ReplicatedUsing") => {
+                args.replicated = true;
+                args.rep_notify = Some(rep_notify_name(&nv.value)?);
+            }
+            Meta::NameValue(nv) if nv.path.is_ident("replication") => {
+                args.replication = Some(replication_condition(&nv.value)?);
+            }
             other => {
                 return Err(syn::Error::new_spanned(
                     other,
@@ -204,6 +420,14 @@ pub(crate) fn parse_uproperty_args(attr: &syn::Attribute) -> syn::Result<UProper
                 ));
             }
         }
+    }
+
+    if args.replication.is_some() && !args.replicated {
+        return Err(syn::Error::new_spanned(
+            attr,
+            "`replication` is the condition of a replicated property: add Replicated or \
+             ReplicatedUsing = ...",
+        ));
     }
 
     Ok(args)
@@ -224,17 +448,16 @@ fn parse_component_args(attr: &syn::Attribute) -> syn::Result<ComponentArgs> {
         name: None,
     };
 
-    let nested = match attr.parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated) {
-        Ok(n) => n,
-        Err(_) => return Ok(args),
-    };
+    if let Meta::Path(_) = attr.meta {
+        return Ok(args);
+    }
+
+    let nested = attr.parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated)?;
 
     for meta in &nested {
         match meta {
-            Meta::Path(p) => {
-                if p.is_ident("root") {
-                    args.is_root = true;
-                }
+            Meta::Path(p) if p.is_ident("root") => {
+                args.is_root = true;
             }
             Meta::NameValue(nv) if nv.path.is_ident("attach") => {
                 if let Expr::Lit(syn::ExprLit {
@@ -267,7 +490,13 @@ fn parse_component_args(attr: &syn::Attribute) -> syn::Result<ComponentArgs> {
             Meta::NameValue(nv) if nv.path.is_ident("name") => {
                 args.name = Some(str_value(&nv.value, "name")?);
             }
-            _ => {}
+            other => {
+                return Err(syn::Error::new_spanned(
+                    other,
+                    "unknown #[component] argument: expected root, attach = \"...\", \
+                     socket = \"...\" or name = \"...\"",
+                ));
+            }
         }
     }
 
@@ -373,14 +602,16 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
                 subobject_name,
             });
         } else if let Some(attr) = uprop_attr {
-            let pargs = parse_uproperty_args(attr)?;
+            let mut pargs = parse_uproperty_args(attr)?;
+            pargs.add_doc_tooltip(&field.attrs);
 
             let Some(info) = prop_type::map_type(&field_ty) else {
                 return Err(syn::Error::new_spanned(
                     &field_ty,
-                    "unsupported uproperty type: supported are bool/i32/i64/u8/f32/f64, \
-                     UObjectRef<T>, SubclassOf<T>, SoftObjectRef<T>, UeArray of those, \
-                     OwnedStruct<T>, FName, String and UE enums",
+                    "unsupported uproperty type: supported are bool, the integers, f32, f64, \
+                     String, FName, Text, UE enums, UObjectRef<T>, TWeakObjectPtr<T>, \
+                     SubclassOf<T>, SoftObjectRef<T>, SoftClassRef<T>, ScriptInterface<dyn I>, \
+                     OwnedStruct<T>, and UeArray, UeMap and UeSet of those",
                 ));
             };
 
@@ -395,13 +626,18 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
             if pargs.default_expr.is_some()
                 && !matches!(
                     info.kind,
-                    prop_type::PropKind::Scalar { .. } | prop_type::PropKind::Enum { .. }
+                    prop_type::PropKind::Scalar { .. }
+                        | prop_type::PropKind::RawScalar { .. }
+                        | prop_type::PropKind::Enum { .. }
+                        | prop_type::PropKind::Str
+                        | prop_type::PropKind::Name
+                        | prop_type::PropKind::Text
                 )
             {
                 return Err(syn::Error::new_spanned(
                     &field_ty,
-                    "`default = ...` is only supported for bool/i32/i64/u8/f32/f64 and enum properties; \
-                     the others are set in #[class_defaults] or a Blueprint child",
+                    "`default = ...` is supported for bool, integer, float, enum, String, FName \
+                     and Text properties; the others are set in #[class_defaults] or a Blueprint child",
                 ));
             }
 
@@ -450,6 +686,14 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
             let ty = &c.component_type;
             quote! { <#ty as ::rusteal_runtime::runtime::UeClass>::RUST_TYPE_ID }
         })
+        .chain(args.subobject_classes.iter().map(|(_, ty)| {
+            quote! { <#ty as ::rusteal_runtime::runtime::UeClass>::RUST_TYPE_ID }
+        }))
+        .chain(uprops.iter().filter_map(|prop| {
+            let info = prop_type::map_type(&prop.ty)?;
+            let class = property_class(&info.kind)?.clone();
+            Some(quote! { <#class as ::rusteal_runtime::runtime::UeClass>::RUST_TYPE_ID })
+        }))
         .collect();
 
     let shape_value = shape::hash(
@@ -514,6 +758,18 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
                 *#class_handle_name.get().expect(concat!("Failed to find UClass for ", stringify!(#struct_name), " — was it registered?"))
             }
         }
+
+        impl ::rusteal_runtime::runtime::RustObject for #struct_name {
+            fn object_handle(&self) -> ::rusteal_runtime::ffi::UObjectHandle {
+                self.__obj
+            }
+
+            fn from_object_handle(
+                handle: ::rusteal_runtime::ffi::UObjectHandle,
+            ) -> ::rusteal_runtime::runtime::RustealResult<Self> {
+                Self::from_obj(unsafe { ::rusteal_runtime::runtime::UObjectRef::<Self>::from_raw(handle) })
+            }
+        }
     };
 
     let mut accessor_methods: Vec<TokenStream> = Vec::new();
@@ -525,6 +781,7 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
         &container,
         &format_ident!("reflection_find_property"),
         &owner,
+        true,
     ) {
         let signature = accessor.signature();
         let body = &accessor.body;
@@ -643,6 +900,41 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
         }
     };
 
+    let thread_safe_ident = format_ident!("{}ThreadSafe", struct_name);
+    let class_owner =
+        quote! { <#struct_name as ::rusteal_runtime::runtime::UeClass>::static_class() };
+    let thread_safe_accessors: Vec<TokenStream> = property_accessors(
+        &uprops,
+        &container,
+        &format_ident!("reflection_find_property"),
+        &class_owner,
+        false,
+    )
+    .into_iter()
+    .map(|accessor| {
+        let signature = accessor.signature();
+        let body = &accessor.body;
+        quote! { pub #signature { #body } }
+    })
+    .collect();
+    let thread_safe_doc = format!(
+        "What a `#[ufunction(ThreadSafe)]` of [`{struct_name}`] reaches while the engine runs it on \
+         a worker thread: the `#[uproperty]` fields, never the Rust-only ones."
+    );
+
+    let thread_safe_view = quote! {
+        #[doc = #thread_safe_doc]
+        #[derive(Clone, Copy, Debug)]
+        #struct_vis struct #thread_safe_ident {
+            #[doc(hidden)]
+            pub __obj: ::rusteal_runtime::ffi::UObjectHandle,
+        }
+
+        impl #thread_safe_ident {
+            #(#thread_safe_accessors)*
+        }
+    };
+
     let parent_path = &args.parent_path;
     let parent_name = args.parent_name.as_str();
     let parent_name_bytes = parent_name.as_bytes();
@@ -740,6 +1032,29 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
         });
     }
 
+    for (name, ty) in &args.subobject_classes {
+        let name_bytes = name.as_bytes();
+        let name_len = name.len() as u32;
+
+        add_comp_stmts.push(quote! {
+            {
+                let comp_class = <#ty as ::rusteal_runtime::runtime::UeClass>::static_class();
+
+                unsafe {
+                    ::rusteal_runtime::runtime::ffi_dispatch::reify_add_default_subobject(
+                        class,
+                        [#(#name_bytes),*].as_ptr(), #name_len,
+                        std::ptr::null(), 0u32,
+                        comp_class,
+                        4u32,
+                        std::ptr::null(), 0u32,
+                        std::ptr::null(), 0u32,
+                    );
+                }
+            }
+        });
+    }
+
     let mut finalize_cdo_stmts: Vec<TokenStream> = Vec::new();
 
     for prop in &uprops {
@@ -753,6 +1068,38 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
                     ::rusteal_runtime::runtime::ffi_dispatch::property_set_enum(
                         cdo, prop, ::rusteal_runtime::runtime::UeEnum::to_i64(#default_expr),
                     )
+                },
+                prop_type::PropKind::RawScalar { .. } => {
+                    let rust_ty = prop_type::map_type(&prop.ty).unwrap().rust_type;
+
+                    quote! {
+                        {
+                            let value: #rust_ty = #default_expr;
+                            ::rusteal_runtime::runtime::ffi_dispatch::property_set_property_at(
+                                cdo, prop, 0, &value as *const #rust_ty as *const u8,
+                                std::mem::size_of::<#rust_ty>() as u32,
+                            )
+                        }
+                    }
+                }
+                prop_type::PropKind::Str => quote! {
+                    {
+                        let value: &str = #default_expr;
+                        ::rusteal_runtime::runtime::ffi_dispatch::property_set_string(
+                            cdo, prop, value.as_ptr(), value.len() as u32,
+                        )
+                    }
+                },
+                prop_type::PropKind::Name => quote! {
+                    ::rusteal_runtime::runtime::ffi_dispatch::property_set_fname(
+                        cdo, prop, ::rusteal_runtime::runtime::FName::new(#default_expr).handle(),
+                    )
+                },
+                prop_type::PropKind::Text => quote! {
+                    {
+                        let value: ::rusteal_runtime::runtime::Text = (#default_expr).into();
+                        ::rusteal_runtime::runtime::ffi_dispatch::property_set_text(cdo, prop, value.as_raw())
+                    }
                 },
                 _ => continue,
             };
@@ -972,6 +1319,7 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
         #parent_check
         #deref_impl
         #accessors_impl
+        #thread_safe_view
         #register_fn
         #finalize_fn
         #after_defaults_fn
@@ -1014,6 +1362,18 @@ pub(crate) fn to_screaming_snake(s: &str) -> String {
     to_snake_case(s).to_uppercase()
 }
 
+fn property_class(kind: &prop_type::PropKind) -> Option<&syn::Type> {
+    match kind {
+        prop_type::PropKind::Object { class }
+        | prop_type::PropKind::SoftObject { class }
+        | prop_type::PropKind::Weak { class } => Some(class),
+        prop_type::PropKind::Class { meta_class }
+        | prop_type::PropKind::SoftClass { meta_class } => Some(meta_class),
+        prop_type::PropKind::Array { element } => property_class(&element.kind),
+        _ => None,
+    }
+}
+
 pub(crate) struct Accessor {
     pub name: Ident,
     pub param: Option<TokenStream>,
@@ -1030,11 +1390,352 @@ impl Accessor {
     }
 }
 
+pub(crate) type SetterParts = Option<(TokenStream, TokenStream)>;
+
+pub(crate) fn accessor_parts(
+    kind: &prop_type::PropKind,
+    rust_ty: &TokenStream,
+    container: &TokenStream,
+    ue_name: &str,
+) -> (TokenStream, SetterParts) {
+    match kind {
+        prop_type::PropKind::Scalar {
+            getter_fn,
+            setter_fn,
+            zero_expr,
+        } => {
+            let getter_dispatch = format_ident!("property_{}", getter_fn);
+            let setter_dispatch = format_ident!("property_{}", setter_fn);
+
+            (
+                quote! {
+                    let mut val: #rust_ty = #zero_expr;
+                    unsafe { ::rusteal_runtime::runtime::ffi_dispatch::#getter_dispatch(#container, prop, &mut val); }
+                    val
+                },
+                Some((
+                    quote! { #rust_ty },
+                    quote! {
+                        unsafe { ::rusteal_runtime::runtime::ffi_dispatch::#setter_dispatch(#container, prop, val); }
+                    },
+                )),
+            )
+        }
+        prop_type::PropKind::Object { .. } => (
+            quote! {
+                let mut h = ::rusteal_runtime::ffi::UObjectHandle::null();
+                unsafe { ::rusteal_runtime::runtime::ffi_dispatch::property_get_object(#container, prop, &mut h); }
+                unsafe { <#rust_ty>::from_raw(h) }
+            },
+            Some((
+                quote! { #rust_ty },
+                quote! {
+                    unsafe { ::rusteal_runtime::runtime::ffi_dispatch::property_set_object(#container, prop, val.raw()); }
+                },
+            )),
+        ),
+        prop_type::PropKind::Class { .. } => (
+            quote! {
+                let mut h = ::rusteal_runtime::ffi::UObjectHandle::null();
+                unsafe { ::rusteal_runtime::runtime::ffi_dispatch::property_get_object(#container, prop, &mut h); }
+                unsafe { <#rust_ty>::from_raw(::rusteal_runtime::ffi::UClassHandle(h.0)) }
+            },
+            Some((
+                quote! { #rust_ty },
+                quote! {
+                    unsafe {
+                        ::rusteal_runtime::runtime::ffi_dispatch::property_set_object(
+                            #container, prop, ::rusteal_runtime::ffi::UObjectHandle(val.raw().0),
+                        );
+                    }
+                },
+            )),
+        ),
+        prop_type::PropKind::Array { .. } => (quote! { <#rust_ty>::new(#container, prop) }, None),
+        prop_type::PropKind::OwnedStruct { .. } => (
+            quote! {
+                let size = unsafe { ::rusteal_runtime::runtime::ffi_dispatch::reflection_get_property_size(prop) } as usize;
+                let mut buf = vec![0u8; size];
+                ::rusteal_runtime::runtime::ffi_infallible_ctx(unsafe {
+                    ::rusteal_runtime::runtime::ffi_dispatch::property_get_struct(#container, prop, buf.as_mut_ptr(), size as u32)
+                }, #ue_name);
+                unsafe { ::rusteal_runtime::runtime::OwnedStruct::from_constructed(buf) }
+            },
+            Some((
+                quote! { &#rust_ty },
+                quote! {
+                    let bytes = val.to_bytes();
+                    ::rusteal_runtime::runtime::ffi_infallible_ctx(unsafe {
+                        ::rusteal_runtime::runtime::ffi_dispatch::property_set_struct(#container, prop, bytes.as_ptr(), bytes.len() as u32)
+                    }, #ue_name);
+                },
+            )),
+        ),
+        prop_type::PropKind::SoftObject { .. } => (
+            quote! {
+                let mut len: u32 = 0;
+                unsafe {
+                    ::rusteal_runtime::runtime::ffi_dispatch::property_get_soft_object_path(
+                        #container, prop, std::ptr::null_mut(), 0, &mut len,
+                    );
+                }
+                let mut buf = vec![0u8; len as usize];
+                unsafe {
+                    ::rusteal_runtime::runtime::ffi_dispatch::property_get_soft_object_path(
+                        #container, prop, buf.as_mut_ptr(), len, &mut len,
+                    );
+                }
+                buf.truncate(len as usize);
+                ::rusteal_runtime::runtime::SoftObjectRef::new(String::from_utf8(buf).unwrap_or_default())
+            },
+            Some((
+                quote! { &#rust_ty },
+                quote! {
+                    let path = val.path();
+                    unsafe {
+                        ::rusteal_runtime::runtime::ffi_dispatch::property_set_soft_object_path(
+                            #container, prop, path.as_ptr(), path.len() as u32,
+                        );
+                    }
+                },
+            )),
+        ),
+        prop_type::PropKind::Name => (
+            quote! {
+                let mut h = ::rusteal_runtime::runtime::FName::NONE.handle();
+                unsafe { ::rusteal_runtime::runtime::ffi_dispatch::property_get_fname(#container, prop, &mut h); }
+                ::rusteal_runtime::runtime::FName(h)
+            },
+            Some((
+                quote! { #rust_ty },
+                quote! {
+                    unsafe { ::rusteal_runtime::runtime::ffi_dispatch::property_set_fname(#container, prop, val.handle()); }
+                },
+            )),
+        ),
+        prop_type::PropKind::Str => (
+            quote! {
+                let mut len: u32 = 0;
+                unsafe {
+                    ::rusteal_runtime::runtime::ffi_dispatch::property_get_string(
+                        #container, prop, std::ptr::null_mut(), 0, &mut len,
+                    );
+                }
+                let mut buf = vec![0u8; len as usize];
+                unsafe {
+                    ::rusteal_runtime::runtime::ffi_dispatch::property_get_string(
+                        #container, prop, buf.as_mut_ptr(), len, &mut len,
+                    );
+                }
+                buf.truncate(len as usize);
+                String::from_utf8(buf).unwrap_or_default()
+            },
+            Some((
+                quote! { &str },
+                quote! {
+                    unsafe {
+                        ::rusteal_runtime::runtime::ffi_dispatch::property_set_string(
+                            #container, prop, val.as_ptr(), val.len() as u32,
+                        );
+                    }
+                },
+            )),
+        ),
+        prop_type::PropKind::Enum { ty } => (
+            quote! {
+                let mut raw: i64 = 0;
+                unsafe { ::rusteal_runtime::runtime::ffi_dispatch::property_get_enum(#container, prop, &mut raw); }
+                <#ty as ::rusteal_runtime::runtime::UeEnum>::from_i64(raw)
+                    .unwrap_or_else(|| panic!("{} holds {}, not a {}", #ue_name, raw, stringify!(#ty)))
+            },
+            Some((
+                quote! { #rust_ty },
+                quote! {
+                    unsafe {
+                        ::rusteal_runtime::runtime::ffi_dispatch::property_set_enum(
+                            #container, prop, ::rusteal_runtime::runtime::UeEnum::to_i64(val),
+                        );
+                    }
+                },
+            )),
+        ),
+        prop_type::PropKind::RawScalar { zero_expr } => (
+            quote! {
+                let mut val: #rust_ty = #zero_expr;
+                unsafe {
+                    ::rusteal_runtime::runtime::ffi_dispatch::property_get_property_at(
+                        #container, prop, 0, &mut val as *mut #rust_ty as *mut u8,
+                        std::mem::size_of::<#rust_ty>() as u32,
+                    );
+                }
+                val
+            },
+            Some((
+                quote! { #rust_ty },
+                quote! {
+                    unsafe {
+                        ::rusteal_runtime::runtime::ffi_dispatch::property_set_property_at(
+                            #container, prop, 0, &val as *const #rust_ty as *const u8,
+                            std::mem::size_of::<#rust_ty>() as u32,
+                        );
+                    }
+                },
+            )),
+        ),
+        prop_type::PropKind::Text => (
+            quote! {
+                let mut raw: *mut u8 = std::ptr::null_mut();
+                ::rusteal_runtime::runtime::ffi_infallible_ctx(unsafe {
+                    ::rusteal_runtime::runtime::ffi_dispatch::property_get_text(#container, prop, &mut raw)
+                }, #ue_name);
+                unsafe { ::rusteal_runtime::runtime::Text::from_raw(raw) }
+            },
+            Some((
+                quote! { impl Into<::rusteal_runtime::runtime::Text> },
+                quote! {
+                    let val: ::rusteal_runtime::runtime::Text = val.into();
+                    ::rusteal_runtime::runtime::ffi_infallible_ctx(unsafe {
+                        ::rusteal_runtime::runtime::ffi_dispatch::property_set_text(#container, prop, val.as_raw())
+                    }, #ue_name);
+                },
+            )),
+        ),
+        prop_type::PropKind::Weak { .. } => (
+            quote! {
+                let mut h = ::rusteal_runtime::ffi::UObjectHandle::null();
+                unsafe { ::rusteal_runtime::runtime::ffi_dispatch::property_get_object(#container, prop, &mut h); }
+                unsafe { <#rust_ty as ::rusteal_runtime::runtime::ObjectPointer>::from_object_handle(h) }
+            },
+            Some((
+                quote! { #rust_ty },
+                quote! {
+                    let h = ::rusteal_runtime::runtime::ObjectPointer::object_handle(&val);
+                    unsafe { ::rusteal_runtime::runtime::ffi_dispatch::property_set_object(#container, prop, h); }
+                },
+            )),
+        ),
+        prop_type::PropKind::SoftClass { .. } => (
+            quote! {
+                let mut len: u32 = 0;
+                unsafe {
+                    ::rusteal_runtime::runtime::ffi_dispatch::property_get_soft_object_path(
+                        #container, prop, std::ptr::null_mut(), 0, &mut len,
+                    );
+                }
+                let mut buf = vec![0u8; len as usize];
+                unsafe {
+                    ::rusteal_runtime::runtime::ffi_dispatch::property_get_soft_object_path(
+                        #container, prop, buf.as_mut_ptr(), len, &mut len,
+                    );
+                }
+                buf.truncate(len as usize);
+                <#rust_ty>::new(String::from_utf8(buf).unwrap_or_default())
+            },
+            Some((
+                quote! { &#rust_ty },
+                quote! {
+                    let path = val.path();
+                    unsafe {
+                        ::rusteal_runtime::runtime::ffi_dispatch::property_set_soft_object_path(
+                            #container, prop, path.as_ptr(), path.len() as u32,
+                        );
+                    }
+                },
+            )),
+        ),
+        prop_type::PropKind::Interface { .. } => (
+            quote! {
+                let mut h = ::rusteal_runtime::ffi::UObjectHandle::null();
+                unsafe { ::rusteal_runtime::runtime::ffi_dispatch::property_get_object(#container, prop, &mut h); }
+                <#rust_ty>::new(h).ok()
+            },
+            Some((
+                quote! { Option<#rust_ty> },
+                quote! {
+                    let h = val.map_or(::rusteal_runtime::ffi::UObjectHandle::null(), |v| v.raw());
+                    unsafe { ::rusteal_runtime::runtime::ffi_dispatch::property_set_object(#container, prop, h); }
+                },
+            )),
+        ),
+        prop_type::PropKind::Map { .. } | prop_type::PropKind::Set { .. } => {
+            (quote! { <#rust_ty>::new(#container, prop) }, None)
+        }
+        prop_type::PropKind::Vec { element } => {
+            let elem = &element.rust_type;
+
+            (
+                quote! {
+                    ::rusteal_runtime::runtime::UeArray::<#elem>::new(#container, prop)
+                        .to_vec()
+                        .unwrap_or_default()
+                },
+                Some((
+                    quote! { #rust_ty },
+                    quote! {
+                        let _ = ::rusteal_runtime::runtime::UeArray::<#elem>::new(#container, prop).set_all(&val);
+                    },
+                )),
+            )
+        }
+        prop_type::PropKind::HashSet { element } => {
+            let elem = &element.rust_type;
+
+            (
+                quote! {
+                    ::rusteal_runtime::runtime::UeSet::<#elem>::new(#container, prop)
+                        .to_hash_set()
+                        .unwrap_or_default()
+                },
+                Some((
+                    quote! { #rust_ty },
+                    quote! {
+                        let set = ::rusteal_runtime::runtime::UeSet::<#elem>::new(#container, prop);
+                        let _ = set.clear();
+
+                        for item in &val {
+                            let _ = set.add(item);
+                        }
+                    },
+                )),
+            )
+        }
+        prop_type::PropKind::HashMap { key, value } => {
+            let key_ty = &key.rust_type;
+            let value_ty = &value.rust_type;
+
+            (
+                quote! {
+                    ::rusteal_runtime::runtime::UeMap::<#key_ty, #value_ty>::new(#container, prop)
+                        .to_hash_map()
+                        .unwrap_or_default()
+                },
+                Some((
+                    quote! { #rust_ty },
+                    quote! {
+                        let map = ::rusteal_runtime::runtime::UeMap::<#key_ty, #value_ty>::new(#container, prop);
+                        let _ = map.clear();
+
+                        for (key, value) in &val {
+                            let _ = map.add(key, value);
+                        }
+                    },
+                )),
+            )
+        }
+        prop_type::PropKind::Struct { .. } => {
+            unreachable!("rejected when the field was parsed")
+        }
+    }
+}
+
+/// `mark_dirty`: the container is the object, and writes to a replicated property tell push
+/// model replication it changed.
 pub(crate) fn property_accessors(
     uprops: &[UPropertyField],
     container: &TokenStream,
     find_fn: &Ident,
     owner: &TokenStream,
+    mark_dirty: bool,
 ) -> Vec<Accessor> {
     let mut accessors = Vec::new();
 
@@ -1057,180 +1758,37 @@ pub(crate) fn property_accessors(
             });
         };
 
-        let (getter_body, setter_body) = match &info.kind {
-            prop_type::PropKind::Scalar {
-                getter_fn,
-                setter_fn,
-                zero_expr,
-            } => {
-                let getter_dispatch = format_ident!("property_{}", getter_fn);
-                let setter_dispatch = format_ident!("property_{}", setter_fn);
+        let (getter_body, setter_body) = accessor_parts(&info.kind, rust_ty, container, &ue_name);
 
-                (
-                    quote! {
-                        let mut val: #rust_ty = #zero_expr;
-                        unsafe { ::rusteal_runtime::runtime::ffi_dispatch::#getter_dispatch(#container, prop, &mut val); }
-                        val
-                    },
-                    Some((
-                        quote! { #rust_ty },
-                        quote! {
-                            unsafe { ::rusteal_runtime::runtime::ffi_dispatch::#setter_dispatch(#container, prop, val); }
-                        },
-                    )),
-                )
+        let dirty = (mark_dirty && prop.args.replicated).then(|| {
+            quote! {
+                unsafe {
+                    ::rusteal_runtime::runtime::ffi_dispatch::world_mark_property_dirty(#container, prop);
+                }
             }
-            prop_type::PropKind::Object { .. } => (
-                quote! {
-                    let mut h = ::rusteal_runtime::ffi::UObjectHandle::null();
-                    unsafe { ::rusteal_runtime::runtime::ffi_dispatch::property_get_object(#container, prop, &mut h); }
-                    unsafe { <#rust_ty>::from_raw(h) }
-                },
-                Some((
-                    quote! { #rust_ty },
-                    quote! {
-                        unsafe { ::rusteal_runtime::runtime::ffi_dispatch::property_set_object(#container, prop, val.raw()); }
-                    },
-                )),
-            ),
-            prop_type::PropKind::Class { .. } => (
-                quote! {
-                    let mut h = ::rusteal_runtime::ffi::UObjectHandle::null();
-                    unsafe { ::rusteal_runtime::runtime::ffi_dispatch::property_get_object(#container, prop, &mut h); }
-                    unsafe { <#rust_ty>::from_raw(::rusteal_runtime::ffi::UClassHandle(h.0)) }
-                },
-                Some((
-                    quote! { #rust_ty },
-                    quote! {
-                        unsafe {
-                            ::rusteal_runtime::runtime::ffi_dispatch::property_set_object(
-                                #container, prop, ::rusteal_runtime::ffi::UObjectHandle(val.raw().0),
-                            );
-                        }
-                    },
-                )),
-            ),
-            prop_type::PropKind::Array { .. } => {
-                (quote! { <#rust_ty>::new(#container, prop) }, None)
-            }
-            prop_type::PropKind::OwnedStruct { .. } => (
-                quote! {
-                    let size = unsafe { ::rusteal_runtime::runtime::ffi_dispatch::reflection_get_property_size(prop) } as usize;
-                    let mut buf = vec![0u8; size];
-                    ::rusteal_runtime::runtime::ffi_infallible_ctx(unsafe {
-                        ::rusteal_runtime::runtime::ffi_dispatch::property_get_struct(#container, prop, buf.as_mut_ptr(), size as u32)
-                    }, #ue_name);
-                    ::rusteal_runtime::runtime::OwnedStruct::from_bytes(buf)
-                },
-                Some((
-                    quote! { &#rust_ty },
-                    quote! {
-                        let bytes = val.to_bytes();
-                        ::rusteal_runtime::runtime::ffi_infallible_ctx(unsafe {
-                            ::rusteal_runtime::runtime::ffi_dispatch::property_set_struct(#container, prop, bytes.as_ptr(), bytes.len() as u32)
-                        }, #ue_name);
-                    },
-                )),
-            ),
-            prop_type::PropKind::SoftObject { .. } => (
-                quote! {
-                    let mut len: u32 = 0;
-                    unsafe {
-                        ::rusteal_runtime::runtime::ffi_dispatch::property_get_soft_object_path(
-                            #container, prop, std::ptr::null_mut(), 0, &mut len,
-                        );
-                    }
-                    let mut buf = vec![0u8; len as usize];
-                    unsafe {
-                        ::rusteal_runtime::runtime::ffi_dispatch::property_get_soft_object_path(
-                            #container, prop, buf.as_mut_ptr(), len, &mut len,
-                        );
-                    }
-                    buf.truncate(len as usize);
-                    ::rusteal_runtime::runtime::SoftObjectRef::new(String::from_utf8(buf).unwrap_or_default())
-                },
-                Some((
-                    quote! { &#rust_ty },
-                    quote! {
-                        let path = val.path();
-                        unsafe {
-                            ::rusteal_runtime::runtime::ffi_dispatch::property_set_soft_object_path(
-                                #container, prop, path.as_ptr(), path.len() as u32,
-                            );
-                        }
-                    },
-                )),
-            ),
-            prop_type::PropKind::Name => (
-                quote! {
-                    let mut h = ::rusteal_runtime::runtime::FName::NONE.handle();
-                    unsafe { ::rusteal_runtime::runtime::ffi_dispatch::property_get_fname(#container, prop, &mut h); }
-                    ::rusteal_runtime::runtime::FName(h)
-                },
-                Some((
-                    quote! { #rust_ty },
-                    quote! {
-                        unsafe { ::rusteal_runtime::runtime::ffi_dispatch::property_set_fname(#container, prop, val.handle()); }
-                    },
-                )),
-            ),
-            prop_type::PropKind::Str => (
-                quote! {
-                    let mut len: u32 = 0;
-                    unsafe {
-                        ::rusteal_runtime::runtime::ffi_dispatch::property_get_string(
-                            #container, prop, std::ptr::null_mut(), 0, &mut len,
-                        );
-                    }
-                    let mut buf = vec![0u8; len as usize];
-                    unsafe {
-                        ::rusteal_runtime::runtime::ffi_dispatch::property_get_string(
-                            #container, prop, buf.as_mut_ptr(), len, &mut len,
-                        );
-                    }
-                    buf.truncate(len as usize);
-                    String::from_utf8(buf).unwrap_or_default()
-                },
-                Some((
-                    quote! { &str },
-                    quote! {
-                        unsafe {
-                            ::rusteal_runtime::runtime::ffi_dispatch::property_set_string(
-                                #container, prop, val.as_ptr(), val.len() as u32,
-                            );
-                        }
-                    },
-                )),
-            ),
-            prop_type::PropKind::Enum { ty } => (
-                quote! {
-                    let mut raw: i64 = 0;
-                    unsafe { ::rusteal_runtime::runtime::ffi_dispatch::property_get_enum(#container, prop, &mut raw); }
-                    <#ty as ::rusteal_runtime::runtime::UeEnum>::from_i64(raw)
-                        .unwrap_or_else(|| panic!("{} holds {}, not a {}", #ue_name, raw, stringify!(#ty)))
-                },
-                Some((
-                    quote! { #rust_ty },
-                    quote! {
-                        unsafe {
-                            ::rusteal_runtime::runtime::ffi_dispatch::property_set_enum(
-                                #container, prop, ::rusteal_runtime::runtime::UeEnum::to_i64(val),
-                            );
-                        }
-                    },
-                )),
-            ),
-            prop_type::PropKind::Struct { .. } => {
-                unreachable!("rejected when the field was parsed")
-            }
+        });
+
+        let getter_writes = matches!(
+            info.kind,
+            prop_type::PropKind::Array { .. }
+                | prop_type::PropKind::Map { .. }
+                | prop_type::PropKind::Set { .. }
+        );
+        let getter_dirty = if getter_writes { dirty.clone() } else { None };
+
+        let getter_ret = if matches!(info.kind, prop_type::PropKind::Interface { .. }) {
+            quote! { Option<#rust_ty> }
+        } else {
+            quote! { #rust_ty }
         };
 
         accessors.push(Accessor {
             name: format_ident!("{}", field_ident),
             param: None,
-            ret: Some(quote! { #rust_ty }),
+            ret: Some(getter_ret),
             body: quote! {
                 #find_prop
+                #getter_dirty
                 #getter_body
             },
         });
@@ -1243,6 +1801,7 @@ pub(crate) fn property_accessors(
                 body: quote! {
                     #find_prop
                     #setter_body
+                    #dirty
                 },
             });
         }
@@ -1324,7 +1883,13 @@ pub(crate) fn add_property_statements(uprops: &[UPropertyField]) -> Vec<TokenStr
             .category
             .iter()
             .map(|category| ("Category", category.as_str()))
-            .chain(prop.args.bind_widget.map(|key| (key, "true")));
+            .chain(prop.args.bind_widget.map(|key| (key, "true")))
+            .chain(
+                prop.args
+                    .meta
+                    .iter()
+                    .map(|(key, value)| (key.as_str(), value.as_str())),
+            );
 
         let meta_stmts: Vec<TokenStream> = metadata
             .map(|(key, value)| {
@@ -1344,6 +1909,21 @@ pub(crate) fn add_property_statements(uprops: &[UPropertyField]) -> Vec<TokenStr
             })
             .collect();
 
+        let replication_stmt = prop.args.replicated.then(|| {
+            let condition = prop.args.replication.unwrap_or(0);
+            let notify = prop.args.rep_notify.clone().unwrap_or_default();
+            let notify_bytes = notify.as_bytes();
+            let notify_len = notify.len() as u32;
+
+            quote! {
+                ::rusteal_runtime::runtime::ffi_infallible_ctx(unsafe {
+                    ::rusteal_runtime::runtime::ffi_dispatch::reify_set_property_replication(
+                        #prop_var, #condition, [#(#notify_bytes),*].as_ptr(), #notify_len,
+                    )
+                }, #ue_name);
+            }
+        });
+
         add_prop_stmts.push(quote! {
             let #prop_var = unsafe {
                 ::rusteal_runtime::runtime::ffi_dispatch::reify_add_property(
@@ -1357,6 +1937,7 @@ pub(crate) fn add_property_statements(uprops: &[UPropertyField]) -> Vec<TokenStr
             };
             if !#prop_var.is_null() {
                 #(#meta_stmts)*
+                #replication_stmt
             }
         });
     }
@@ -1498,6 +2079,48 @@ mod tests {
     }
 
     #[test]
+    fn meta_entries_and_doc_comments_become_metadata() {
+        let attr: syn::Attribute = parse_quote!(#[uproperty(
+            EditAnywhere,
+            meta(ClampMin = 0, ClampMax = 1.5, UIMin = -10, Units = "cm", InlineEditConditionToggle)
+        )]);
+        let mut args = parse_uproperty_args(&attr).unwrap();
+        let field: syn::Field = parse_quote! {
+            /// How far it reaches.
+            ///
+            /// In centimetres.
+            range: f32
+        };
+        args.add_doc_tooltip(&field.attrs);
+
+        let meta: Vec<(&str, &str)> = args
+            .meta
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .collect();
+
+        assert_eq!(
+            meta,
+            [
+                ("ClampMin", "0"),
+                ("ClampMax", "1.5"),
+                ("UIMin", "-10"),
+                ("Units", "cm"),
+                ("InlineEditConditionToggle", "true"),
+                ("ToolTip", "How far it reaches.\n\nIn centimetres."),
+            ]
+        );
+
+        let attr: syn::Attribute = parse_quote!(#[uproperty(meta(ToolTip = "Given"))]);
+        let mut args = parse_uproperty_args(&attr).unwrap();
+        args.add_doc_tooltip(&field.attrs);
+        assert_eq!(args.meta, [("ToolTip".to_string(), "Given".to_string())]);
+
+        let attr: syn::Attribute = parse_quote!(#[uproperty(meta(ClampMin(0)))]);
+        assert!(parse_uproperty_args(&attr).is_err());
+    }
+
+    #[test]
     fn bind_widget_properties_carry_their_metadata() {
         let attr: syn::Attribute = parse_quote!(#[uproperty(BindWidget, BlueprintReadOnly)]);
         assert_eq!(
@@ -1516,8 +2139,69 @@ mod tests {
     }
 
     #[test]
+    fn unknown_uclass_and_component_arguments_are_errors() {
+        let err = parse_uclass_args(quote! { parent = Actor, Blueprintable })
+            .err()
+            .unwrap();
+        assert!(err.to_string().contains("unknown #[uclass] argument"));
+        assert!(parse_uclass_args(quote! { parent = Actor, config = "Game" }).is_ok());
+        assert!(parse_uclass_args(quote! { parent = Actor,, }).is_err());
+
+        let attr: syn::Attribute = parse_quote!(#[component(root, transient)]);
+        let err = parse_component_args(&attr).err().unwrap();
+        assert!(err.to_string().contains("unknown #[component] argument"));
+
+        let attr: syn::Attribute = parse_quote!(#[component]);
+        assert!(!parse_component_args(&attr).unwrap().is_root);
+
+        let attr: syn::Attribute = parse_quote!(#[component(root, name = "Body")]);
+        assert!(parse_component_args(&attr).unwrap().is_root);
+    }
+
+    #[test]
+    fn subobject_classes_replace_inherited_subobjects() {
+        let args = parse_uclass_args(
+            quote! { parent = RustealCharacter, subobject_class(CharMoveComp = HeroMovement) },
+        )
+        .unwrap();
+
+        assert_eq!(args.subobject_classes.len(), 1);
+        assert_eq!(args.subobject_classes[0].0, "CharMoveComp");
+
+        assert!(parse_uclass_args(quote! { parent = Actor, subobject_class(Mesh = "X") }).is_err());
+        assert!(parse_uclass_args(quote! { parent = Actor, subobject_class(a::b = X) }).is_err());
+    }
+
+    #[test]
+    fn replication_arguments() {
+        let attr: syn::Attribute = parse_quote!(#[uproperty(Replicated)]);
+        let args = parse_uproperty_args(&attr).unwrap();
+        assert!(args.replicated && args.rep_notify.is_none() && args.replication.is_none());
+
+        let attr: syn::Attribute =
+            parse_quote!(#[uproperty(ReplicatedUsing = on_rep_health, replication = "OwnerOnly")]);
+        let args = parse_uproperty_args(&attr).unwrap();
+        assert!(args.replicated);
+        assert_eq!(args.rep_notify.as_deref(), Some("OnRepHealth"));
+        assert_eq!(args.replication, Some(2));
+
+        let attr: syn::Attribute = parse_quote!(#[uproperty(ReplicatedUsing = "OnRep_Health")]);
+        assert_eq!(
+            parse_uproperty_args(&attr).unwrap().rep_notify.as_deref(),
+            Some("OnRep_Health")
+        );
+
+        let attr: syn::Attribute = parse_quote!(#[uproperty(replication = "OwnerOnly")]);
+        assert!(parse_uproperty_args(&attr).is_err());
+
+        let attr: syn::Attribute = parse_quote!(#[uproperty(Replicated, replication = "Owner")]);
+        let err = parse_uproperty_args(&attr).err().unwrap().to_string();
+        assert!(err.contains("unknown replication condition") && err.contains("SkipOwner"));
+    }
+
+    #[test]
     fn unknown_uproperty_arguments_are_errors() {
-        let attr: syn::Attribute = parse_quote!(#[uproperty(EditAnywhere, Replicated)]);
+        let attr: syn::Attribute = parse_quote!(#[uproperty(EditAnywhere, Replicate)]);
         let err = parse_uproperty_args(&attr).err().unwrap();
         assert!(err.to_string().contains("unknown #[uproperty] argument"));
         let attr: syn::Attribute = parse_quote!(#[uproperty(meta = "x")]);

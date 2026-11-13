@@ -4,4 +4,4 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Unreal Engine reflection flag constants for rusteal"
+description = "Unreal Engine reflection flag constants and names for rusteal"

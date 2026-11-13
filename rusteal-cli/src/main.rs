@@ -1,6 +1,7 @@
 mod build_cmd;
 mod console_check;
 mod global_config;
+mod launcher_cmd;
 mod migrate;
 mod new_cmd;
 mod optimizations;
@@ -9,6 +10,7 @@ mod platform;
 mod plugin_cmd;
 mod project_version;
 mod setup;
+mod standalone;
 mod static_link;
 mod sync_plugin;
 mod templates;
@@ -54,6 +56,10 @@ enum Commands {
         no_build: bool,
         #[arg(long, value_parser = optimizations::Switch::parse, default_value = "on")]
         optimizations: optimizations::Switch,
+        #[arg(long)]
+        engine: Option<PathBuf>,
+        #[arg(long)]
+        in_place: bool,
     },
     Plugin {
         #[command(subcommand)]
@@ -101,11 +107,29 @@ enum Commands {
         platform: Option<String>,
         #[arg(long, value_parser = optimizations::Switch::parse, default_value = "on")]
         optimizations: optimizations::Switch,
+        #[arg(long)]
+        server: bool,
     },
     Upgrade {
         project: Option<PathBuf>,
     },
     SyncPlugin,
+    Launcher {
+        #[command(subcommand)]
+        command: LauncherCommands,
+    },
+}
+
+#[derive(Subcommand)]
+enum LauncherCommands {
+    Install {
+        #[arg(long)]
+        engine: Option<PathBuf>,
+    },
+    Remove {
+        #[arg(long)]
+        engine: Option<PathBuf>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -124,6 +148,15 @@ enum PluginCommands {
         project: Option<PathBuf>,
         #[arg(long)]
         no_build: bool,
+        #[arg(long)]
+        editor: bool,
+    },
+    Editor {
+        name: String,
+        #[arg(long)]
+        project: Option<PathBuf>,
+        #[arg(long)]
+        no_build: bool,
     },
     Package {
         name: String,
@@ -131,6 +164,15 @@ enum PluginCommands {
         project: Option<PathBuf>,
         #[arg(long)]
         output: Option<PathBuf>,
+        #[arg(long)]
+        precompiled: bool,
+        #[arg(long, conflicts_with = "precompiled")]
+        standalone: bool,
+    },
+    Merge {
+        into: PathBuf,
+        #[arg(required = true)]
+        from: Vec<PathBuf>,
     },
 }
 
@@ -147,8 +189,10 @@ fn main() {
             features,
             no_build,
             optimizations,
+            engine,
+            in_place,
         } => {
-            let engine = global_config::engine_path();
+            let engine = global_config::engine_path_or(engine.as_deref());
 
             new_cmd::run_new(&new_cmd::NewOptions {
                 name: &name,
@@ -160,6 +204,7 @@ fn main() {
                 features: &features,
                 build: !no_build,
                 optimizations,
+                in_place,
             });
         }
         Commands::Plugin {
@@ -169,6 +214,7 @@ fn main() {
                     template,
                     project,
                     no_build,
+                    editor,
                 },
         } => {
             let root = project_root(project.as_deref());
@@ -181,7 +227,21 @@ fn main() {
                 root: &root,
                 engine: &engine,
                 build: !no_build,
+                editor,
             });
+        }
+        Commands::Plugin {
+            command:
+                PluginCommands::Editor {
+                    name,
+                    project,
+                    no_build,
+                },
+        } => {
+            let root = project_root(project.as_deref());
+            check_version(&root, Scope::PinsAndPlugins);
+            let engine = global_config::engine_path();
+            plugin_cmd::run_plugin_editor(&name, &root, &engine, !no_build);
         }
         Commands::Plugin {
             command:
@@ -189,13 +249,27 @@ fn main() {
                     name,
                     project,
                     output,
+                    precompiled,
+                    standalone,
                 },
         } => {
             let root = project_root(project.as_deref());
             check_version(&root, Scope::PinsAndPlugins);
             let engine = global_config::engine_path();
             let output = output.unwrap_or_else(|| root.join("Packaged/Plugins"));
-            package_cmd::run_plugin_package(&root, &engine, &name, &output);
+            package_cmd::run_plugin_package(
+                &root,
+                &engine,
+                &name,
+                &output,
+                precompiled,
+                standalone,
+            );
+        }
+        Commands::Plugin {
+            command: PluginCommands::Merge { into, from },
+        } => {
+            package_cmd::run_plugin_merge(&into, &from);
         }
         Commands::Package {
             project,
@@ -204,6 +278,7 @@ fn main() {
             link_statically,
             platform,
             optimizations,
+            server,
         } => {
             let root = project_root(project.as_deref());
             check_version(&root, Scope::PinsAndPlugins);
@@ -220,6 +295,7 @@ fn main() {
                 optimizations,
                 link_statically,
                 &target,
+                server,
             );
         }
         Commands::Platform {
@@ -285,12 +361,24 @@ fn main() {
             rusteal_codegen::run_generate(&root);
 
             for plugin in find_plugins(&root) {
-                rusteal_codegen::run_generate_plugin(&root, &plugin);
+                if !plugin.is_precompiled() {
+                    rusteal_codegen::run_generate_plugin(&root, &plugin);
+                }
             }
         }
         Commands::Upgrade { project } => {
             let root = project_root(project.as_deref());
             upgrade_cmd::run_upgrade(&root);
+        }
+        Commands::Launcher {
+            command: LauncherCommands::Install { engine },
+        } => {
+            launcher_cmd::run_install(&global_config::engine_path_or(engine.as_deref()));
+        }
+        Commands::Launcher {
+            command: LauncherCommands::Remove { engine },
+        } => {
+            launcher_cmd::run_remove(&global_config::engine_path_or(engine.as_deref()));
         }
         Commands::SyncPlugin => {
             sync_plugin::run_sync();

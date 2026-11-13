@@ -3,7 +3,7 @@ use bindings::engine::{
     Actor, ActorComponent, ActorExt, SubsystemBlueprintLibrary, WorldSubsystem,
 };
 use bindings::rusteal::RustealWorldSubsystem;
-use rusteal_runtime::runtime::{RustealResult, SubclassOf, Transform, UObjectRef, UeClass};
+use rusteal_runtime::runtime::{RustealResult, SubclassOf, Transform, UObjectRef};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use crate::component::{{ plugin }}Component;

@@ -7,18 +7,26 @@
 #include "Misc/App.h"
 #include "Misc/Paths.h"
 #include "Containers/Ticker.h"
+#include "Misc/CoreDelegates.h"
+#include "UObject/UObjectIterator.h"
 #include "Modules/ModuleManager.h"
 #include "RustealApiTable.h"
 #include "RustealLibraries.h"
 #include "RustealLibrary.h"
+#include "RustealStrings.h"
 #include "URustealReifiedClass.h"
 
 #if WITH_EDITOR && PLATFORM_LINUX
+#include <sys/stat.h>
 #include <unistd.h>
 #endif
 
 #ifndef RUSTEAL_STATIC
 #define RUSTEAL_STATIC 0
+#endif
+
+#ifndef RUSTEAL_HOSTS_GAME_LIBRARY
+#define RUSTEAL_HOSTS_GAME_LIBRARY 1
 #endif
 
 DEFINE_LOG_CATEGORY(LogRusteal);
@@ -47,8 +55,20 @@ extern void RustealRegisterComponentListResync();
 extern void RustealUnregisterComponentListResync();
 
 extern void RustealConsoleForgetLibrary(FRustealLibrary *Library);
+extern void RustealTimersForgetLibrary(FRustealLibrary *Library);
+extern void RustealTickFunctionsForgetLibrary(FRustealLibrary *Library);
+extern void RustealSlateForgetLibrary(FRustealLibrary *Library);
+extern void RustealDetailsForgetLibrary(FRustealLibrary *Library);
+extern void RustealAutomationForgetLibrary(FRustealLibrary *Library);
+extern void RustealLatentProxiesForgetLibrary(FRustealLibrary *Library);
+extern void RustealLoadingForgetLibrary(FRustealLibrary *Library);
+extern void RustealLatentFunctionsForgetLibrary(FRustealLibrary *Library);
+extern void RustealEventsForgetLibrary(FRustealLibrary *Library);
+extern void RustealHttpForgetLibrary(FRustealLibrary *Library);
+extern void RustealInputForgetLibrary(FRustealLibrary *Library);
 
 extern void RustealPinnedForgetLibrary(FRustealLibrary *Library);
+extern void RustealDelegateProxiesForgetLibrary(FRustealLibrary *Library);
 extern void RustealPinnedShutdown();
 
 extern void RustealFillFuncTable();
@@ -59,8 +79,7 @@ extern uint64_t RustealGetFuncFingerprint();
 #define LOCTEXT_NAMESPACE "FRustealModule"
 
 static void RustealLogImpl(uint8 Level, const uint8 *Msg, uint32 MsgLen) {
-  const FString MsgStr(MsgLen,
-                       UTF8_TO_TCHAR(reinterpret_cast<const char *>(Msg)));
+  const FString MsgStr = RustealUtf8ToFString(Msg, MsgLen);
 
   switch (Level) {
   case 0:
@@ -81,11 +100,15 @@ static FRustealApiTable GApiTable;
 static bool GApiTableFilled = false;
 
 static uint32 RustealPluginVersion() {
+#ifdef RUSTEAL_PLUGIN_VERSION
+  return RUSTEAL_PLUGIN_VERSION;
+#else
   TSharedPtr<IPlugin> Plugin =
       IPluginManager::Get().FindPlugin(TEXT("Rusteal"));
 
   return Plugin.IsValid() ? static_cast<uint32>(Plugin->GetDescriptor().Version)
                           : 0;
+#endif
 }
 
 static FString RustealVersionString(uint32 Version) {
@@ -118,7 +141,7 @@ static void FillApiTable() {
 }
 
 static TArray<TUniquePtr<FRustealLibrary>> GLibraries;
-static FRustealLibrary *GCurrentLibrary = nullptr;
+static thread_local FRustealLibrary *GCurrentLibrary = nullptr;
 
 static FTSTicker::FDelegateHandle GTickerHandle;
 
@@ -222,6 +245,15 @@ static bool LoadLibraryFile(FRustealLibrary &Library, const FString &LoadPath) {
   }
 
   Library.LoadedPath = LoadPath;
+
+#if WITH_EDITOR && PLATFORM_LINUX
+  struct stat LoadedStat;
+
+  if (stat(TCHAR_TO_UTF8(*LoadPath), &LoadedStat) == 0) {
+    Library.LoadedDevice = static_cast<uint64>(LoadedStat.st_dev);
+    Library.LoadedInode = static_cast<uint64>(LoadedStat.st_ino);
+  }
+#endif
 
   auto VersionFn = reinterpret_cast<FRustealVersionFn>(
       FPlatformProcess::GetDllExport(Library.Handle, TEXT("rusteal_version")));
@@ -350,11 +382,20 @@ static bool LoadStaticLibrary(FRustealLibrary &Library) {
 #if !RUSTEAL_STATIC && WITH_EDITOR
 // Not a hard link on Mac: dlclose never unloads a Rust library there, and
 // dlopen returns the library still loaded from the same file (inode).
-static bool MakeLoadCopy(const FString &Source, const FString &Copy) {
+static bool MakeLoadCopy(const FRustealLibrary &Library, const FString &Source,
+                         const FString &Copy) {
 #if PLATFORM_LINUX
   IFileManager::Get().Delete(*Copy, false, true, true);
 
-  if (link(TCHAR_TO_UTF8(*Source), TCHAR_TO_UTF8(*Copy)) == 0) {
+  struct stat SourceStat;
+
+  const bool bSameFile =
+      Library.LoadedInode != 0 &&
+      stat(TCHAR_TO_UTF8(*Source), &SourceStat) == 0 &&
+      static_cast<uint64>(SourceStat.st_dev) == Library.LoadedDevice &&
+      static_cast<uint64>(SourceStat.st_ino) == Library.LoadedInode;
+
+  if (!bSameFile && link(TCHAR_TO_UTF8(*Source), TCHAR_TO_UTF8(*Copy)) == 0) {
     return true;
   }
 
@@ -383,7 +424,7 @@ static bool LoadLibrary(FRustealLibrary &Library) {
 #if WITH_EDITOR
   const FString CopyPath = HotCopyPath(Library);
 
-  if (!MakeLoadCopy(Library.SourcePath, CopyPath)) {
+  if (!MakeLoadCopy(Library, Library.SourcePath, CopyPath)) {
     UE_LOG(LogRusteal, Warning,
            TEXT("[Rusteal] %s: could not copy %s to %s, loading it in place."),
            *Library.Name.ToString(), *Library.SourcePath, *CopyPath);
@@ -432,7 +473,19 @@ static void UnloadLibrary(FRustealLibrary &Library) {
   Library.Callbacks = nullptr;
   Library.Exports = nullptr;
   RustealPinnedForgetLibrary(&Library);
+  RustealDelegateProxiesForgetLibrary(&Library);
   RustealConsoleForgetLibrary(&Library);
+  RustealTimersForgetLibrary(&Library);
+  RustealTickFunctionsForgetLibrary(&Library);
+  RustealDetailsForgetLibrary(&Library);
+  RustealAutomationForgetLibrary(&Library);
+  RustealSlateForgetLibrary(&Library);
+  RustealLatentProxiesForgetLibrary(&Library);
+  RustealLoadingForgetLibrary(&Library);
+  RustealLatentFunctionsForgetLibrary(&Library);
+  RustealEventsForgetLibrary(&Library);
+  RustealHttpForgetLibrary(&Library);
+  RustealInputForgetLibrary(&Library);
 
   if (Library.Handle) {
     FreeHandle(Library);
@@ -454,6 +507,77 @@ static bool ClassBelongsTo(const URustealReifiedClass *Class,
                            const FRustealLibrary *Library) {
   return Class->Library == Library;
 }
+#endif
+
+#if !RUSTEAL_STATIC
+static TArray<FRustealLibrary *> LibrariesOnRetiredParents() {
+  TArray<FRustealLibrary *> Found;
+
+  for (TObjectIterator<URustealReifiedClass> It; It; ++It) {
+    const URustealReifiedClass *Class = *It;
+
+    if (!Class->Library || !Class->Library->IsLoaded()) {
+      continue;
+    }
+
+    for (const UClass *Super = Class->GetSuperClass(); Super;
+         Super = Super->GetSuperClass()) {
+      const URustealReifiedClass *Reified = Cast<URustealReifiedClass>(Super);
+
+      if (Reified && !Reified->Library) {
+        Found.AddUnique(Class->Library);
+        break;
+      }
+    }
+  }
+
+  return Found;
+}
+
+static int32 DropRustData(FRustealLibrary &Library) {
+  int32 Dropped = 0;
+
+  RustealReifyForEachReifiedInstance(
+      [&Library, &Dropped](UObject *Obj, URustealReifiedClass *Class) {
+        if (!ClassBelongsTo(Class, &Library)) {
+          return;
+        }
+
+        RustealCallLibrary(&Library,
+                           [Obj, Class](const FRustealRustCallbacks &Cb) {
+                             Cb.drop_rust_instance(RustealUObjectHandle{Obj},
+                                                   Class->RustTypeId, nullptr);
+                           });
+
+        Dropped++;
+      });
+
+  return Dropped;
+}
+
+static int32 BuildRustData(FRustealLibrary &Library) {
+  int32 Constructed = 0;
+
+  RustealReifyForEachReifiedInstance(
+      [&Library, &Constructed](UObject *Obj, URustealReifiedClass *Class) {
+        if (!ClassBelongsTo(Class, &Library)) {
+          return;
+        }
+
+        const bool bIsCDO = Obj->HasAnyFlags(RF_ClassDefaultObject);
+
+        RustealCallLibrary(
+            &Library, [Obj, Class, bIsCDO](const FRustealRustCallbacks &Cb) {
+              Cb.construct_rust_instance(RustealUObjectHandle{Obj},
+                                         Class->RustTypeId, bIsCDO);
+            });
+
+        Constructed++;
+      });
+
+  return Constructed;
+}
+
 #endif
 
 static bool ReloadLibrary(FRustealLibrary &Library) {
@@ -479,31 +603,42 @@ static bool ReloadLibrary(FRustealLibrary &Library) {
   };
 
   if (Library.IsLoaded()) {
-    int32 Dropped = 0;
-
-    RustealReifyForEachReifiedInstance(
-        [&Library, &Dropped](UObject *Obj, URustealReifiedClass *Class) {
-          if (!ClassBelongsTo(Class, &Library)) {
-            return;
-          }
-
-          RustealCallLibrary(
-              &Library, [Obj, Class](const FRustealRustCallbacks &Cb) {
-                Cb.drop_rust_instance(RustealUObjectHandle{Obj},
-                                      Class->RustTypeId, nullptr);
-              });
-
-          Dropped++;
-        });
-
     UE_LOG(LogRusteal, Display, TEXT("[Rusteal] Dropped %d Rust instances"),
-           Dropped);
+           DropRustData(Library));
   }
 
   const double DropMs = Lap();
   UnloadLibrary(Library);
 
   const bool bLoaded = LoadLibrary(Library);
+  TArray<FRustealLibrary *> Group = {&Library};
+
+  while (bLoaded) {
+    TArray<FRustealLibrary *> Dependents;
+
+    for (FRustealLibrary *Dependent : LibrariesOnRetiredParents()) {
+      if (!Group.Contains(Dependent)) {
+        Dependents.Add(Dependent);
+      }
+    }
+
+    if (Dependents.IsEmpty()) {
+      break;
+    }
+
+    for (FRustealLibrary *Dependent : Dependents) {
+      UE_LOG(LogRusteal, Display,
+             TEXT("[Rusteal] %s has classes whose parent changed: it is "
+                  "reloaded with %s."),
+             *Dependent->Name.ToString(), *Library.Name.ToString());
+
+      DropRustData(*Dependent);
+      UnloadLibrary(*Dependent);
+      LoadLibrary(*Dependent);
+      Group.Add(Dependent);
+    }
+  }
+
   const double LoadMs = Lap();
 
   RustealReifyReinstanceReplacedClasses();
@@ -519,22 +654,11 @@ static bool ReloadLibrary(FRustealLibrary &Library) {
 
   int32 Constructed = 0;
 
-  RustealReifyForEachReifiedInstance(
-      [&Library, &Constructed](UObject *Obj, URustealReifiedClass *Class) {
-        if (!ClassBelongsTo(Class, &Library)) {
-          return;
-        }
-
-        const bool bIsCDO = Obj->HasAnyFlags(RF_ClassDefaultObject);
-
-        RustealCallLibrary(
-            &Library, [Obj, Class, bIsCDO](const FRustealRustCallbacks &Cb) {
-              Cb.construct_rust_instance(RustealUObjectHandle{Obj},
-                                         Class->RustTypeId, bIsCDO);
-            });
-
-        Constructed++;
-      });
+  for (FRustealLibrary *Member : Group) {
+    if (Member->IsLoaded()) {
+      Constructed += BuildRustData(*Member);
+    }
+  }
 
   UE_LOG(LogRusteal, Display, TEXT("[Rusteal] Reconstructed %d Rust instances"),
          Constructed);
@@ -551,6 +675,22 @@ static bool ReloadLibrary(FRustealLibrary &Library) {
   return true;
 #endif
 }
+
+static void RetryDeferredClasses(const FRustealLibrary *Registered,
+                                 bool bLastTry) {
+  for (const TUniquePtr<FRustealLibrary> &Other : GLibraries) {
+    if (Other.Get() == Registered || !Other->IsLoaded()) {
+      continue;
+    }
+
+    RustealCallLibrary(Other.Get(),
+                       [bLastTry](const FRustealRustCallbacks &Cb) {
+                         Cb.retry_deferred_classes(bLastTry);
+                       });
+  }
+}
+
+static FDelegateHandle GPostEngineInitHandle;
 
 static bool RegisterLibrary(FName Name, const FString &PackagePath,
                             const FString &LibraryPath, void *const *FuncTable,
@@ -581,6 +721,11 @@ static bool RegisterLibrary(FName Name, const FString &PackagePath,
   Library->Table.func_count = FuncCount;
   Library->Table.func_fingerprint = FuncFingerprint;
   const bool bLoaded = LoadLibrary(*Library);
+
+  if (bLoaded) {
+    RetryDeferredClasses(Library, false);
+  }
+
   RustealOnLibraryRegistered().Broadcast(Name, LibraryPath);
   return bLoaded;
 }
@@ -610,6 +755,15 @@ bool RustealRegisterPluginLibraryChecked(const FString &PluginName,
                                          void *const *FuncTable,
                                          uint32 FuncCount,
                                          uint64 FuncFingerprint) {
+  return RustealRegisterPluginModuleLibraryChecked(
+      PluginName, PluginName, FuncTable, FuncCount, FuncFingerprint);
+}
+
+bool RustealRegisterPluginModuleLibraryChecked(const FString &PluginName,
+                                               const FString &LibraryName,
+                                               void *const *FuncTable,
+                                               uint32 FuncCount,
+                                               uint64 FuncFingerprint) {
   TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(PluginName);
 
   if (!Plugin.IsValid()) {
@@ -621,12 +775,23 @@ bool RustealRegisterPluginLibraryChecked(const FString &PluginName,
     return false;
   }
 
-  const FString Path =
-      FPaths::Combine(Plugin->GetBaseDir(), TEXT("Binaries"),
-                      FPlatformProcess::GetBinariesSubdirectory(),
-                      RustealLibraryFileName(TEXT("rusteal_") + PluginName));
+  const FString FileName =
+      RustealLibraryFileName(TEXT("rusteal_") + LibraryName);
 
-  return RustealRegisterLibraryChecked(FName(*PluginName), Path, FuncTable,
+  FString Path =
+      FPaths::Combine(Plugin->GetBaseDir(), TEXT("Binaries"),
+                      FPlatformProcess::GetBinariesSubdirectory(), FileName);
+
+  const FString Prebuilt =
+      FPaths::Combine(Plugin->GetBaseDir(), TEXT("Source"), TEXT("ThirdParty"),
+                      TEXT("RustLibraries"),
+                      FPlatformProcess::GetBinariesSubdirectory(), FileName);
+
+  if (!FPaths::FileExists(Path) && FPaths::FileExists(Prebuilt)) {
+    Path = Prebuilt;
+  }
+
+  return RustealRegisterLibraryChecked(FName(*LibraryName), Path, FuncTable,
                                        FuncCount, FuncFingerprint);
 }
 
@@ -688,6 +853,10 @@ void FRustealModule::StartupModule() {
   GTickerHandle = FTSTicker::GetCoreTicker().AddTicker(
       FTickerDelegate::CreateStatic(&TickLibraries));
 
+  GPostEngineInitHandle = FCoreDelegates::OnPostEngineInit.AddStatic(
+      []() { RetryDeferredClasses(nullptr, true); });
+
+#if RUSTEAL_HOSTS_GAME_LIBRARY
   RustealFillFuncTable();
 
   const FString GamePath = FPaths::Combine(
@@ -698,10 +867,12 @@ void FRustealModule::StartupModule() {
   RegisterLibrary(FName(FApp::GetProjectName()), TEXT("/Script/Rusteal"),
                   GamePath, RustealGetFuncTable(), RustealGetFuncCount(),
                   RustealGetFuncFingerprint());
+#endif
 }
 
 void FRustealModule::ShutdownModule() {
   FTSTicker::GetCoreTicker().RemoveTicker(GTickerHandle);
+  FCoreDelegates::OnPostEngineInit.Remove(GPostEngineInitHandle);
   RustealUnregisterComponentListResync();
 
   for (const TUniquePtr<FRustealLibrary> &Library : GLibraries) {

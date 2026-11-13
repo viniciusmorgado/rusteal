@@ -1,13 +1,16 @@
-use bindings::engine::{Actor, ActorComponentExt, KismetSystemLibrary};
+use std::time::Duration;
+
+use bindings::engine::{Actor, ActorComponentExt};
 use bindings::niagara::NiagaraComponent;
-use rusteal_runtime::runtime::{RustealResult, UObjectRef};
+use rusteal_runtime::runtime::timer::set_timer;
+use rusteal_runtime::runtime::{RustealResult, UObjectRef, method};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use crate::components;
 
 use crate::trigger::TriggerSwitch;
 
-const CONFETTI_DELAY: f32 = 1.0;
+const CONFETTI_DELAY: Duration = Duration::from_secs(1);
 
 #[uclass(parent = Actor)]
 pub struct ConfettiTrigger {
@@ -36,10 +39,10 @@ impl ConfettiTrigger {
 impl ConfettiTrigger {
     #[ufunction(Override)]
     fn receive_begin_play(&mut self) {
-        let me = self.as_ref();
-
         if let Ok(trigger) = TriggerSwitch::from_obj(self.trigger_ref())
-            && let Err(e) = trigger.trigger_add_ufunction(&me, "TriggerConfetti")
+            && let Err(e) = trigger
+                .trigger_add(method(self, Self::trigger_confetti))
+                .map(|binding| binding.detach())
         {
             log::warn!("[Interactables] confetti: {e}");
         }
@@ -52,15 +55,15 @@ impl ConfettiTrigger {
         }
 
         self.set_fired(true);
-        KismetSystemLibrary::k2_set_timer(
-            self.as_ref().upcast_to(),
-            "Burst",
+
+        if let Err(e) = set_timer(
+            &self.as_ref(),
             CONFETTI_DELAY,
             false,
-            None,
-            None,
-            None,
-        );
+            method(self, Self::burst),
+        ) {
+            log::warn!("[Interactables] confetti: {e}");
+        }
     }
 
     #[ufunction]

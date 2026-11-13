@@ -202,31 +202,6 @@
     },
     {
       "cpp_form": 2,
-      "cpp_name": "EFlowDirectionPreference",
-      "name": "EFlowDirectionPreference",
-      "package": "SlateCore",
-      "pairs": [
-        [
-          "Inherit",
-          0
-        ],
-        [
-          "Culture",
-          1
-        ],
-        [
-          "LeftToRight",
-          2
-        ],
-        [
-          "RightToLeft",
-          3
-        ]
-      ],
-      "underlying_type": "uint8"
-    },
-    {
-      "cpp_form": 2,
       "cpp_name": "EWidgetClipping",
       "name": "EWidgetClipping",
       "package": "SlateCore",
@@ -250,6 +225,31 @@
         [
           "OnDemand",
           4
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 2,
+      "cpp_name": "EFlowDirectionPreference",
+      "name": "EFlowDirectionPreference",
+      "package": "SlateCore",
+      "pairs": [
+        [
+          "Inherit",
+          0
+        ],
+        [
+          "Culture",
+          1
+        ],
+        [
+          "LeftToRight",
+          2
+        ],
+        [
+          "RightToLeft",
+          3
         ]
       ],
       "underlying_type": "uint8"
@@ -296,70 +296,43 @@
       "underlying_type": "uint8"
     },
     {
-      "cpp_form": 1,
-      "cpp_name": "EMouseCursor",
-      "name": "EMouseCursor",
-      "package": "CoreUObject",
+      "cpp_form": 2,
+      "cpp_name": "EReplicationSystem",
+      "name": "EReplicationSystem",
+      "package": "NetCore",
       "pairs": [
         [
-          "None",
+          "Default",
           0
         ],
         [
-          "Default",
+          "Generic",
           1
         ],
         [
-          "TextEditBeam",
+          "Iris",
           2
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 1,
+      "cpp_name": "EUMGSequencePlayMode",
+      "name": "EUMGSequencePlayMode",
+      "package": "UMG",
+      "pairs": [
+        [
+          "Forward",
+          0
         ],
         [
-          "ResizeLeftRight",
-          3
+          "Reverse",
+          1
         ],
         [
-          "ResizeUpDown",
-          4
-        ],
-        [
-          "ResizeSouthEast",
-          5
-        ],
-        [
-          "ResizeSouthWest",
-          6
-        ],
-        [
-          "CardinalCross",
-          7
-        ],
-        [
-          "Crosshairs",
-          8
-        ],
-        [
-          "Hand",
-          9
-        ],
-        [
-          "GrabHand",
-          10
-        ],
-        [
-          "GrabHandClosed",
-          11
-        ],
-        [
-          "SlashedCircle",
-          12
-        ],
-        [
-          "EyeDropper",
-          13
-        ],
-        [
-          "Custom",
-          14
+          "PingPong",
+          2
         ]
       ],
       "underlying_type": "uint8"
@@ -399,27 +372,6 @@
       "underlying_type": "uint8"
     },
     {
-      "cpp_form": 1,
-      "cpp_name": "EUMGSequencePlayMode",
-      "name": "EUMGSequencePlayMode",
-      "package": "UMG",
-      "pairs": [
-        [
-          "Forward",
-          0
-        ],
-        [
-          "Reverse",
-          1
-        ],
-        [
-          "PingPong",
-          2
-        ]
-      ],
-      "underlying_type": "uint8"
-    },
-    {
       "cpp_form": 2,
       "cpp_name": "ESlateVisibility",
       "name": "ESlateVisibility",
@@ -444,6 +396,111 @@
         [
           "SelfHitTestInvisible",
           4
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 1,
+      "cpp_name": "EDrawDebugTrace",
+      "name": "EDrawDebugTrace",
+      "package": "Engine",
+      "pairs": [
+        [
+          "None",
+          0
+        ],
+        [
+          "ForOneFrame",
+          1
+        ],
+        [
+          "ForDuration",
+          2
+        ],
+        [
+          "Persistent",
+          3
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 2,
+      "cpp_name": "EDrawDebugSceneDepthPriorityGroup",
+      "name": "EDrawDebugSceneDepthPriorityGroup",
+      "package": "Engine",
+      "pairs": [
+        [
+          "World",
+          0
+        ],
+        [
+          "Foreground",
+          1
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 1,
+      "cpp_name": "EMoveComponentAction",
+      "name": "EMoveComponentAction",
+      "package": "Engine",
+      "pairs": [
+        [
+          "Move",
+          0
+        ],
+        [
+          "Stop",
+          1
+        ],
+        [
+          "Return",
+          2
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 1,
+      "cpp_name": "EQuitPreference",
+      "name": "EQuitPreference",
+      "package": "Engine",
+      "pairs": [
+        [
+          "Quit",
+          0
+        ],
+        [
+          "Background",
+          1
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 2,
+      "cpp_name": "EEditorPropertyValueState",
+      "name": "EEditorPropertyValueState",
+      "package": "Engine",
+      "pairs": [
+        [
+          "Default",
+          0
+        ],
+        [
+          "Overridden",
+          1
+        ],
+        [
+          "NotFound",
+          2
+        ],
+        [
+          "AccessDenied",
+          3
         ]
       ],
       "underlying_type": "uint8"
@@ -1894,6 +1951,96 @@
         [
           "Default",
           128
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 1,
+      "cpp_name": "EMouseCursor",
+      "name": "EMouseCursor",
+      "package": "CoreUObject",
+      "pairs": [
+        [
+          "None",
+          0
+        ],
+        [
+          "Default",
+          1
+        ],
+        [
+          "TextEditBeam",
+          2
+        ],
+        [
+          "ResizeLeftRight",
+          3
+        ],
+        [
+          "ResizeUpDown",
+          4
+        ],
+        [
+          "ResizeSouthEast",
+          5
+        ],
+        [
+          "ResizeSouthWest",
+          6
+        ],
+        [
+          "CardinalCross",
+          7
+        ],
+        [
+          "Crosshairs",
+          8
+        ],
+        [
+          "Hand",
+          9
+        ],
+        [
+          "GrabHand",
+          10
+        ],
+        [
+          "GrabHandClosed",
+          11
+        ],
+        [
+          "SlashedCircle",
+          12
+        ],
+        [
+          "EyeDropper",
+          13
+        ],
+        [
+          "Custom",
+          14
+        ]
+      ],
+      "underlying_type": "uint8"
+    },
+    {
+      "cpp_form": 2,
+      "cpp_name": "EPropertyAccessChangeNotifyMode",
+      "name": "EPropertyAccessChangeNotifyMode",
+      "package": "CoreUObject",
+      "pairs": [
+        [
+          "Default",
+          0
+        ],
+        [
+          "Never",
+          1
+        ],
+        [
+          "Always",
+          2
         ]
       ],
       "underlying_type": "uint8"

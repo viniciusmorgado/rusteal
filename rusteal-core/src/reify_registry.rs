@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use crate::sync::{Mutex, OnceLock, RwLock};
@@ -72,7 +72,7 @@ impl ClassDefaultsOutcome for crate::error::RustealResult<()> {
     }
 }
 
-pub fn register_module(module: &Module) {
+pub fn register_module(module: &'static Module) {
     let owned = |krate: &str| module.owns(krate);
 
     for ereg in inventory::iter::<EnumRegistration>
@@ -91,31 +91,15 @@ pub fn register_module(module: &Module) {
         (ireg.create)();
     }
 
-    let mut pending: Vec<&ClassRegistration> = inventory::iter::<ClassRegistration>
+    let all: Vec<&'static ClassRegistration> = inventory::iter::<ClassRegistration>
         .into_iter()
         .filter(|r| owned(r.krate))
         .collect();
 
-    let class_count = pending.len() as u32;
-    let mut ordered: Vec<&ClassRegistration> = Vec::with_capacity(pending.len());
-
-    loop {
-        let before = pending.len();
-
-        pending.retain(|reg| {
-            if (reg.create)(false, class_shape(reg)) {
-                ordered.push(reg);
-
-                false
-            } else {
-                true
-            }
-        });
-
-        if pending.is_empty() || pending.len() == before {
-            break;
-        }
-    }
+    let class_count = all.len() as u32;
+    let local_ids: Vec<u64> = all.iter().map(|reg| reg.type_id).collect();
+    let (waiting, mut pending) = split_waiting(all, &local_ids);
+    let ordered = create_classes(&mut pending);
 
     for reg in pending {
         (reg.create)(true, class_shape(reg));
@@ -143,16 +127,133 @@ pub fn register_module(module: &Module) {
         (ireg.finalize)();
     }
 
-    for reg in &ordered {
+    let blocks = complete_classes(&ordered, &owned);
+    let deferred = create_waiting(module, waiting);
+
+    if !deferred.is_empty() {
+        let names: Vec<&str> = deferred.iter().map(|reg| reg.name).collect();
+
+        log(
+            0,
+            &format!(
+                "[Rusteal] {}: {} for a parent class in another library: {}",
+                module.krate(),
+                if deferred.len() == 1 {
+                    "one class waits"
+                } else {
+                    "classes wait"
+                },
+                names.join(", ")
+            ),
+        );
+
+        lock_or_recover(&DEFERRED).extend(deferred.into_iter().map(|reg| (module.id(), reg)));
+    }
+
+    let owner = module::current();
+
+    let total_funcs = read_or_recover(func_registry())
+        .iter()
+        .flatten()
+        .filter(|entry| entry.module == owner)
+        .count();
+
+    let msg = format!(
+        "[Rusteal] {}: registered {class_count} classes, {blocks} impl blocks, {total_funcs} function callbacks",
+        module.krate(),
+    );
+
+    let bytes = msg.as_bytes();
+
+    unsafe {
+        crate::ffi_dispatch::logging_log(0, bytes.as_ptr(), bytes.len() as u32);
+    }
+}
+
+static DEFERRED: Mutex<Vec<(ModuleId, &'static ClassRegistration)>> = Mutex::new(Vec::new());
+
+fn create_classes(
+    pending: &mut Vec<&'static ClassRegistration>,
+) -> Vec<&'static ClassRegistration> {
+    let mut ordered = Vec::with_capacity(pending.len());
+
+    loop {
+        let before = pending.len();
+
+        pending.retain(|reg| {
+            if (reg.create)(false, class_shape(reg)) {
+                ordered.push(*reg);
+
+                false
+            } else {
+                true
+            }
+        });
+
+        if pending.is_empty() || pending.len() == before {
+            break;
+        }
+    }
+
+    ordered
+}
+
+type Split = (
+    Vec<&'static ClassRegistration>,
+    Vec<&'static ClassRegistration>,
+);
+
+fn split_waiting(pending: Vec<&'static ClassRegistration>, local_ids: &[u64]) -> Split {
+    let parent = |reg: &ClassRegistration| reg.depends_on.first().copied().unwrap_or(0);
+
+    let mut waiting: Vec<u64> = pending
+        .iter()
+        .filter(|reg| parent(reg) != 0 && !local_ids.contains(&parent(reg)))
+        .map(|reg| reg.type_id)
+        .collect();
+
+    loop {
+        let before = waiting.len();
+
+        for reg in &pending {
+            if !waiting.contains(&reg.type_id)
+                && reg.depends_on.iter().any(|id| waiting.contains(id))
+            {
+                waiting.push(reg.type_id);
+            }
+        }
+
+        if waiting.len() == before {
+            break;
+        }
+    }
+
+    pending
+        .into_iter()
+        .partition(|reg| waiting.contains(&reg.type_id))
+}
+
+fn complete_classes(
+    classes: &[&'static ClassRegistration],
+    owned: &impl Fn(&str) -> bool,
+) -> usize {
+    for reg in classes {
         (reg.register)();
     }
 
-    let ordered = dependency_order(&ordered);
+    let ordered = dependency_order(classes);
 
-    let blocks: Vec<&ClassFunctionRegistration> = inventory::iter::<ClassFunctionRegistration>
+    let mut blocks: Vec<&ClassFunctionRegistration> = inventory::iter::<ClassFunctionRegistration>
         .into_iter()
-        .filter(|r| owned(r.krate))
+        .filter(|r| owned(r.krate) && ordered.iter().any(|reg| reg.type_id == r.type_id))
         .collect();
+
+    blocks.sort_by_key(|block| {
+        ordered
+            .iter()
+            .position(|reg| reg.type_id == block.type_id)
+            .unwrap_or(usize::MAX)
+    });
 
     for freg in &blocks {
         (freg.register_functions)();
@@ -172,25 +273,85 @@ pub fn register_module(module: &Module) {
         (reg.after_defaults)();
     }
 
-    let owner = module::current();
+    blocks.len()
+}
 
-    let total_funcs = read_or_recover(func_registry())
-        .iter()
-        .flatten()
-        .filter(|entry| entry.module == owner)
-        .count();
+/// Creates the classes of `module` that waited for a parent in another library, now that one
+/// more library has registered; with `last_try`, the ones still waiting are reported as errors.
+/// Returns how many still wait.
+pub fn retry_deferred(module: &'static Module, last_try: bool) -> usize {
+    let pending: Vec<&'static ClassRegistration> = {
+        let mut deferred = lock_or_recover(&DEFERRED);
+        let (mine, others): (Vec<_>, Vec<_>) =
+            deferred.drain(..).partition(|(id, _)| *id == module.id());
+        *deferred = others;
+        mine.into_iter().map(|(_, reg)| reg).collect()
+    };
 
-    let msg = format!(
-        "[Rusteal] {}: registered {class_count} classes, {} impl blocks, {total_funcs} function callbacks",
-        module.krate(),
-        blocks.len(),
-    );
-
-    let bytes = msg.as_bytes();
-
-    unsafe {
-        crate::ffi_dispatch::logging_log(0, bytes.as_ptr(), bytes.len() as u32);
+    if pending.is_empty() {
+        return 0;
     }
+
+    let left = create_waiting(module, pending);
+
+    if last_try {
+        for reg in &left {
+            (reg.create)(true, class_shape(reg));
+        }
+
+        return 0;
+    }
+
+    let count = left.len();
+    lock_or_recover(&DEFERRED).extend(left.into_iter().map(|reg| (module.id(), reg)));
+    count
+}
+
+fn create_waiting(
+    module: &'static Module,
+    mut waiting: Vec<&'static ClassRegistration>,
+) -> Vec<&'static ClassRegistration> {
+    let mut created: Vec<&'static ClassRegistration> = Vec::new();
+
+    loop {
+        let before = waiting.len();
+        let waiting_ids: Vec<u64> = waiting.iter().map(|reg| reg.type_id).collect();
+
+        waiting.retain(|reg| {
+            let blocked = reg
+                .depends_on
+                .iter()
+                .any(|id| waiting_ids.contains(id) && *id != reg.type_id);
+
+            if !blocked && (reg.create)(false, class_shape(reg)) {
+                created.push(*reg);
+                false
+            } else {
+                true
+            }
+        });
+
+        if waiting.is_empty() || waiting.len() == before {
+            break;
+        }
+    }
+
+    if !created.is_empty() {
+        let owned = |krate: &str| module.owns(krate);
+        complete_classes(&created, &owned);
+
+        let names: Vec<&str> = created.iter().map(|reg| reg.name).collect();
+        log(
+            0,
+            &format!(
+                "[Rusteal] {}: created {}, whose parent is in another library",
+                module.krate(),
+                names.join(", ")
+            ),
+        );
+    }
+
+    waiting
 }
 
 pub fn manifest(owned: impl Fn(&str) -> bool) -> Vec<String> {
@@ -475,6 +636,35 @@ pub fn drop_instance(obj: UObjectHandle, _type_id: u64) {
     for entry in dropped {
         drop_data(entry.type_id, entry.data);
     }
+}
+
+/// Whether a Rust function was called on a thread other than the game thread, where only a
+/// `#[ufunction(ThreadSafe)]` runs; the first call of each is logged as an error.
+#[doc(hidden)]
+pub fn refused_off_game_thread(class: &str, function: &str) -> bool {
+    if crate::task::is_game_thread() {
+        return false;
+    }
+
+    static REPORTED: Mutex<Option<HashSet<String>>> = Mutex::new(None);
+
+    let name = format!("{class}::{function}");
+    let first = lock_or_recover(&REPORTED)
+        .get_or_insert_with(HashSet::new)
+        .insert(name.clone());
+
+    if first {
+        log(
+            crate::LOG_ERROR,
+            &format!(
+                "[Rusteal] {name} was called on a worker thread and did not run: a function the \
+                 engine calls off the game thread is a #[ufunction(ThreadSafe)] taking the class's \
+                 ThreadSafe view"
+            ),
+        );
+    }
+
+    true
 }
 
 pub fn invoke_function(callback_id: u64, obj: UObjectHandle, params: NativePtr) {

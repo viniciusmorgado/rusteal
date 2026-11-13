@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use bindings::engine::{
     Actor, ActorExt, AnimInstance, AnimInstanceExt, AnimMontage, CapsuleComponentExt, Character,
     CharacterExt, CharacterMovementComponentExt, EAutoPossessAI, ECollisionChannel,
@@ -9,8 +11,9 @@ use bindings::prelude::*;
 use bindings::state_tree::{StateTreeTaskBlueprintBase, StateTreeTaskBlueprintBaseExt};
 use bindings::umg::{WidgetComponent, WidgetComponentExt};
 use glam::DVec3;
+use rusteal_runtime::runtime::timer::{self, TimerHandle};
 use rusteal_runtime::runtime::{
-    FName, OwnedStruct, RustealResult, SubclassOf, UObjectRef, UStructRef, UeArray,
+    FName, OwnedStruct, RustealResult, SubclassOf, UObjectRef, UStructRef, UeArray, method,
 };
 use rusteal_runtime::{uclass, uclass_impl};
 
@@ -85,6 +88,8 @@ pub struct CombatEnemy {
     landed_task: UObjectRef<StateTreeTaskBlueprintBase>,
 
     spawner: UObjectRef<Actor>,
+
+    removal_timer: Option<TimerHandle>,
 }
 
 #[uclass_impl]
@@ -138,7 +143,9 @@ impl CombatEnemy {
 
     #[ufunction(Override)]
     fn receive_end_play(&mut self, _end_play_reason: u8) {
-        KismetSystemLibrary::k2_clear_timer(self.as_ref().upcast_to(), "RemoveFromLevel");
+        if let Some(removal_timer) = self.removal_timer() {
+            removal_timer.clear();
+        }
     }
 
     #[ufunction(Override)]
@@ -506,15 +513,20 @@ impl CombatDamageable for CombatEnemy {
             spawner.on_enemy_died();
         }
 
-        KismetSystemLibrary::k2_set_timer(
-            self.as_ref().upcast_to(),
-            "RemoveFromLevel",
-            self.death_removal_time(),
+        if let Some(removal_timer) = self.removal_timer() {
+            removal_timer.clear();
+        }
+
+        let removal_timer = timer::set_timer(
+            &self.as_ref(),
+            Duration::from_secs_f32(self.death_removal_time()),
             false,
-            None,
-            None,
-            None,
-        );
+            method(self, Self::remove_from_level),
+        )
+        .inspect_err(|e| log::warn!("[Combat] enemy removal timer: {e}"))
+        .ok();
+
+        self.set_removal_timer(removal_timer);
     }
 
     fn apply_healing(&mut self, _healing: f32, _healer: UObjectRef<Actor>) {}

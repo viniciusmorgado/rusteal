@@ -5,6 +5,7 @@ use serde::Deserialize;
 include!(concat!(env!("OUT_DIR"), "/template_files.rs"));
 include!(concat!(env!("OUT_DIR"), "/plugin_template_files.rs"));
 include!(concat!(env!("OUT_DIR"), "/project_feature_files.rs"));
+include!(concat!(env!("OUT_DIR"), "/plugin_editor_library_files.rs"));
 
 pub const DEFAULT_PLUGIN_TEMPLATE: &str = "blank";
 
@@ -362,6 +363,22 @@ pub fn write_project_files(dir: &str, root: &Path, context: &tera::Context) -> u
     write_files(TEMPLATE_FILES, dir, root, context)
 }
 
+pub fn write_editor_library_files(root: &Path, context: &tera::Context) -> usize {
+    write_files(PLUGIN_EDITOR_LIBRARY_FILES, "library", root, context)
+}
+
+pub fn render_editor_library_config(context: &tera::Context) -> String {
+    let (path, contents) = PLUGIN_EDITOR_LIBRARY_FILES
+        .iter()
+        .find(|(path, _)| *path == "rusteal.editor.toml.tera")
+        .expect("the editor library's configuration is embedded");
+
+    let text = std::str::from_utf8(contents).unwrap_or_else(|e| panic!("{path} is not UTF-8: {e}"));
+
+    tera::Tera::one_off(text, context, false)
+        .unwrap_or_else(|e| panic!("Failed to render {path}: {e}"))
+}
+
 fn write_files(files: &[(&str, &[u8])], dir: &str, root: &Path, context: &tera::Context) -> usize {
     let prefix = format!("{dir}/");
     let mut written = 0;
@@ -599,6 +616,54 @@ mod tests {
                 "no task before launch"
             );
         }
+    }
+
+    #[test]
+    fn the_vscode_feature_writes_tasks_and_debugger_configurations() {
+        assert!(matches!(
+            select_feature("VSCode").unwrap().kind,
+            FeatureKind::ProjectFiles(_)
+        ));
+
+        let root = std::env::temp_dir().join(format!("rusteal-vscode-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let mut context = tera::Context::new();
+        context.insert("project", "MyGame");
+        context.insert("crate_name", "my-game");
+
+        assert_eq!(write_project_feature_files("vscode", &root, &context), 3);
+
+        let read = |name: &str| -> serde_json::Value {
+            serde_json::from_str(
+                &std::fs::read_to_string(root.join("Rust/.vscode").join(name)).unwrap(),
+            )
+            .unwrap()
+        };
+        let launch = read("launch.json");
+        let tasks = read("tasks.json");
+        let extensions = read("extensions.json");
+        std::fs::remove_dir_all(&root).unwrap();
+
+        let attach = &launch["configurations"][0];
+        assert_eq!(attach["type"], "lldb");
+        assert_eq!(attach["request"], "attach");
+        assert_eq!(attach["pid"], "${command:pickMyProcess}");
+
+        let commands: Vec<&str> = tasks["tasks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|task| task["command"].as_str())
+            .collect();
+        assert_eq!(
+            commands,
+            [
+                "cargo rusteal watch",
+                "cargo rusteal build",
+                "cargo test -p my-game"
+            ]
+        );
+        assert!(extensions.to_string().contains("vadimcn.vscode-lldb"));
     }
 
     #[test]

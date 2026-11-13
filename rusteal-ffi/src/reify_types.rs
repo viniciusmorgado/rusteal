@@ -23,6 +23,19 @@ pub enum RustealReifyPropType {
     Enum = 17,
     Array = 18,
     SoftObject = 19,
+    WeakObject = 20,
+    SoftClass = 21,
+    Interface = 22,
+    Map = 23,
+    Set = 24,
+}
+
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RustealReifyDelegateKind {
+    Multicast = 0,
+    Single = 1,
+    Sparse = 2,
 }
 
 #[repr(C)]
@@ -34,6 +47,8 @@ pub struct RustealReifyPropExtra {
     pub enum_handle: UClassHandle,
     pub enum_underlying: u32,
     pub inner_prop_type: u32,
+    pub value_prop_type: u32,
+    pub value: *const RustealReifyPropExtra,
 }
 
 impl Default for RustealReifyPropExtra {
@@ -45,6 +60,8 @@ impl Default for RustealReifyPropExtra {
             enum_handle: UClassHandle::null(),
             enum_underlying: 0,
             inner_prop_type: 0,
+            value_prop_type: 0,
+            value: std::ptr::null(),
         }
     }
 }

@@ -3,7 +3,7 @@ use crate::naming::{escape_reserved, to_snake_case};
 use crate::schema::*;
 use crate::type_map::{ConversionKind, MappedType};
 
-use super::classes::is_struct_owned;
+use super::classes::{is_soft, is_struct_owned, soft_constructor};
 use super::properties;
 
 /// A zeroed buffer as large as the engine's struct `struct_name`, its size
@@ -72,14 +72,14 @@ pub fn emit_out_param_conversion(
         }
         ConversionKind::StringUtf8 => {
             out.push_str(&format!(
-                "        {pname}_buf.truncate({pname}_len as usize);\n"
+                "        let {pname}_str = rusteal_core::take_utf8({pname}_buf, {pname}_len);\n"
             ));
 
-            out.push_str(&format!(
-                "        let {pname}_str = String::from_utf8_lossy(&{pname}_buf).into_owned();\n"
-            ));
-
-            format!("{pname}_str")
+            if is_soft(param) {
+                format!("{}({pname}_str)", soft_constructor(param))
+            } else {
+                format!("{pname}_str")
+            }
         }
         ConversionKind::EnumCast => {
             let rt = &mapped.rust_type;
@@ -99,7 +99,7 @@ pub fn emit_out_param_conversion(
         ConversionKind::StructOpaque => {
             if is_struct_owned(param.struct_name.as_deref(), ctx) {
                 out.push_str(&format!(
-                    "        let {pname}_owned = rusteal_core::OwnedStruct::from_bytes({pname}_buf);\n"
+                    "        let {pname}_owned = unsafe {{ rusteal_core::OwnedStruct::from_constructed({pname}_buf) }};\n"
                 ));
 
                 format!("{pname}_owned")

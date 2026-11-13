@@ -37,6 +37,10 @@ const CLASSES: &[&str] = &[
     "Widget",
     "UserWidget",
     "DataTable",
+    "KismetSystemLibrary",
+    "Info",
+    "GameModeBase",
+    "Level",
 ];
 
 const ENUMS: &[&str] = &[
@@ -66,6 +70,8 @@ const STRUCTS: &[&str] = &[
     "ModifyContextOptions",
     "EnhancedActionKeyMapping",
     "DataTableRowHandle",
+    "InstancedStruct",
+    "TimerHandle",
 ];
 
 const RUSTEAL_TOML: &str = r#"[project]
@@ -324,7 +330,7 @@ use bindings::umg::{UserWidget, UserWidgetExt};
 use rusteal_runtime::runtime::input::should_display_touch_interface;
 use rusteal_runtime::runtime::{
     FName, OutRef, OwnedStruct, RustealResult, SoftObjectRef, SubclassOf, UObjectRef, UStructRef,
-    UeArray,
+    UeArray, method,
 };
 use rusteal_runtime::{uclass, uclass_impl, ustruct};
 
@@ -557,9 +563,15 @@ impl Plain {
 impl Probe {
     fn bind_input(&self) -> RustealResult<()> {
         let me = self.as_ref();
-        bind_action(&me, self.jump_action(), ETriggerEvent::Started, "Jump")?;
-        bind_action(&me, self.jump_action(), ETriggerEvent::Completed, "StopJumping")?;
-        bind_action(&me, self.jump_action(), ETriggerEvent::Triggered, "Move")
+        bind_action(&me, self.jump_action(), ETriggerEvent::Triggered, method(self, Self::r#move))?;
+        bind_action(&me, self.jump_action(), ETriggerEvent::Started, move |value| {
+            let _ = value.get_bool();
+        })?
+        .unbind();
+        bind_action_instance(&me, self.jump_action(), ETriggerEvent::Triggered, |instance| {
+            let _ = (instance.value.get_bool(), instance.elapsed_seconds, instance.action);
+        })?;
+        bind_action_by_name(&me, self.jump_action(), ETriggerEvent::Completed, "StopJumping")
     }
 }
 

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "CoreTypes.h"
+
 struct RustealUObjectHandle {
   void *ptr;
 };
@@ -58,6 +60,19 @@ struct FRustealCoreApi {
 
   bool (*is_child_of)(RustealUClassHandle class_handle,
                       RustealUClassHandle parent);
+
+  uint32 (*take_pending_utf8)(const uint8 *key, uint8 *buf, uint32 buf_len);
+
+  void *(*text_from_string)(const uint8 *utf8, uint32 len);
+  void *(*text_localized)(const uint8 *ns, uint32 ns_len, const uint8 *key,
+                          uint32 key_len, const uint8 *source,
+                          uint32 source_len);
+  void *(*text_clone)(const void *text);
+  void (*text_destroy)(void *text);
+  void (*text_to_string)(const void *text, uint8 *buf, uint32 buf_len,
+                         uint32 *out_len);
+  bool (*text_is_empty)(const void *text);
+  bool (*text_equal)(const void *a, const void *b);
 };
 
 struct FRustealErrorReport {
@@ -157,6 +172,16 @@ struct FRustealPropertyApi {
   ERustealErrorCode (*set_soft_object_path)(RustealUObjectHandle obj,
                                             RustealFPropertyHandle prop,
                                             const uint8 *buf, uint32 len);
+  ERustealErrorCode (*get_text)(RustealUObjectHandle obj,
+                                RustealFPropertyHandle prop, void **out);
+  ERustealErrorCode (*set_text)(RustealUObjectHandle obj,
+                                RustealFPropertyHandle prop, const void *text);
+  ERustealErrorCode (*get_optional)(RustealUObjectHandle obj,
+                                    RustealFPropertyHandle prop, uint8 *buf,
+                                    uint32 buf_size, bool *is_set);
+  ERustealErrorCode (*set_optional)(RustealUObjectHandle obj,
+                                    RustealFPropertyHandle prop,
+                                    const uint8 *buf);
 };
 
 struct FRustealReflectionApi {
@@ -203,6 +228,13 @@ struct FRustealReflectionApi {
   RustealUClassHandle (*find_enum)(const uint8 *name, uint32 name_len);
 
   RustealUFunctionHandle (*get_delegate_signature)(RustealFPropertyHandle prop);
+
+  RustealUStructHandle (*instanced_struct_type)(const uint8 *instanced);
+  bool (*instanced_struct_get)(const uint8 *instanced,
+                               RustealUStructHandle ustruct, uint8 *out);
+  void (*instanced_struct_set)(uint8 *instanced, RustealUStructHandle ustruct,
+                               const uint8 *value);
+  void (*instanced_struct_reset)(uint8 *instanced);
 };
 
 struct FRustealContainerApi {
@@ -288,7 +320,8 @@ struct FRustealDelegateApi {
                                      RustealFPropertyHandle prop,
                                      uint64 callback_id);
   ERustealErrorCode (*unbind_delegate)(RustealUObjectHandle obj,
-                                       RustealFPropertyHandle prop);
+                                       RustealFPropertyHandle prop,
+                                       uint64 callback_id);
   ERustealErrorCode (*add_multicast)(RustealUObjectHandle obj,
                                      RustealFPropertyHandle prop,
                                      uint64 callback_id);
@@ -307,6 +340,29 @@ struct FRustealDelegateApi {
                                     RustealFPropertyHandle prop,
                                     RustealUObjectHandle target,
                                     const uint8 *name, uint32 name_len);
+
+  void *(*make_delegate)(RustealUFunctionHandle signature,
+                         RustealUObjectHandle owner, uint64 callback_id);
+  void (*free_delegate)(void *delegate);
+
+  ERustealErrorCode (*execute_delegate)(RustealUObjectHandle obj,
+                                        RustealFPropertyHandle prop,
+                                        uint8 *params);
+
+  ERustealErrorCode (*latent_cancel)(uint64 callback_id);
+  uint32 (*live_latent_proxies)();
+
+  uint64 (*latent_function_begin)(RustealUObjectHandle owner,
+                                  const uint8 *info,
+                                  uint64 abort_callback_id);
+  void (*latent_function_finish)(uint64 action, bool completed);
+  uint32 (*live_latent_functions)();
+};
+
+enum class ERustealReifyDelegateKind : uint32 {
+  Multicast = 0,
+  Single = 1,
+  Sparse = 2,
 };
 
 enum class ERustealReifyPropType : uint32 {
@@ -330,6 +386,11 @@ enum class ERustealReifyPropType : uint32 {
   Enum = 17,
   Array = 18,
   SoftObject = 19,
+  WeakObject = 20,
+  SoftClass = 21,
+  Interface = 22,
+  Map = 23,
+  Set = 24,
 };
 
 struct FRustealReifyPropExtra {
@@ -339,6 +400,8 @@ struct FRustealReifyPropExtra {
   RustealUClassHandle enum_handle;
   uint32 enum_underlying;
   uint32 inner_prop_type;
+  uint32 value_prop_type;
+  const FRustealReifyPropExtra *value;
 };
 
 struct FRustealReifyApi {
@@ -387,7 +450,7 @@ struct FRustealReifyApi {
 
   RustealUFunctionHandle (*add_delegate)(RustealUClassHandle cls,
                                          const uint8 *name, uint32 name_len,
-                                         uint64 prop_flags);
+                                         uint64 prop_flags, uint32 kind);
 
   ERustealErrorCode (*add_interface)(RustealUClassHandle cls, const uint8 *path,
                                      uint32 path_len);
@@ -407,7 +470,40 @@ struct FRustealReifyApi {
 
   ERustealErrorCode (*add_interface_class)(RustealUClassHandle cls,
                                            RustealUClassHandle interface);
+
+  ERustealErrorCode (*set_function_metadata)(RustealUFunctionHandle func,
+                                             const uint8 *key, uint32 key_len,
+                                             const uint8 *value,
+                                             uint32 value_len);
+
+  ERustealErrorCode (*set_property_replication)(RustealFPropertyHandle prop,
+                                                uint8 condition,
+                                                const uint8 *rep_notify,
+                                                uint32 rep_notify_len);
 };
+struct RustealSlateProps {
+  const uint8 *text;
+  uint32 text_len;
+  uint64 text_callback;
+  const uint8 *hint;
+  uint32 hint_len;
+  uint64 enabled_callback;
+  uint64 on_event;
+  uint64 on_commit;
+  float value;
+  float min;
+  float max;
+  bool checked;
+  float padding[4];
+};
+
+struct RustealSlateSlot {
+  float padding[4];
+  uint8 h_align;
+  uint8 v_align;
+  float fill;
+};
+
 struct FRustealWidgetApi {
   RustealUObjectHandle (*create_widget)(RustealUObjectHandle owning_object,
                                         RustealUClassHandle widget_class);
@@ -416,6 +512,35 @@ struct FRustealWidgetApi {
                                        RustealUObjectHandle root_widget);
 
   RustealUObjectHandle (*get_widget_tree)(RustealUObjectHandle user_widget);
+
+  uint64 (*slate_new)(uint32 kind, const RustealSlateProps *props);
+  ERustealErrorCode (*slate_add_child)(uint64 parent, uint64 child,
+                                       const RustealSlateSlot *slot);
+  void (*slate_release)(uint64 id);
+  void (*slate_write_text)(uint8 *out, const uint8 *utf8, uint32 len);
+  bool (*slate_simulate_click)(uint64 id);
+  ERustealErrorCode (*slate_get_text)(uint64 id, uint8 *buffer,
+                                      uint32 capacity, uint32 *out_len);
+  ERustealErrorCode (*slate_register_tab)(const uint8 *name, uint32 name_len,
+                                          const uint8 *label, uint32 label_len,
+                                          uint64 callback_id);
+  bool (*slate_invoke_tab)(const uint8 *name, uint32 name_len);
+  void (*slate_unregister_tab)(const uint8 *name, uint32 name_len);
+  uint32 (*slate_live_widgets)();
+  uint32 (*slate_live_callbacks)();
+
+  ERustealErrorCode (*details_customize_class)(RustealUClassHandle cls,
+                                               uint64 callback_id);
+  void (*details_unregister_class)(RustealUClassHandle cls);
+  ERustealErrorCode (*details_add_row)(uint64 layout, const uint8 *category,
+                                       uint32 category_len, uint64 name_widget,
+                                       uint64 value_widget);
+  ERustealErrorCode (*details_hide_property)(uint64 layout,
+                                             const uint8 *property,
+                                             uint32 property_len);
+  uint32 (*details_objects)(uint64 layout, RustealUObjectHandle *out,
+                            uint32 capacity);
+  uint64 (*details_view)(RustealUObjectHandle object);
 };
 
 struct FRustealInputApi {
@@ -426,6 +551,43 @@ struct FRustealInputApi {
                                    uint32 function_name_len);
 
   bool (*should_display_touch_interface)();
+
+  ERustealErrorCode (*bind_action_closure)(RustealUObjectHandle actor,
+                                           RustealUObjectHandle action,
+                                           uint8 trigger_event,
+                                           uint64 callback_id,
+                                           uint32 *out_handle);
+  ERustealErrorCode (*unbind_action)(RustealUObjectHandle actor,
+                                     uint32 handle);
+};
+
+enum class ERustealNativeEvent : uint32 {
+  PreExit = 0,
+  WillEnterBackground = 1,
+  HasEnteredForeground = 2,
+  WillDeactivate = 3,
+  HasReactivated = 4,
+  WorldInitialized = 10,
+  WorldCleanup = 11,
+  LevelAdded = 12,
+  LevelRemoved = 13,
+  PostLogin = 20,
+  Logout = 21,
+  MoveRequestFinished = 30,
+};
+
+struct FRustealNativeEventArgs {
+  RustealUObjectHandle first;
+  RustealUObjectHandle second;
+  uint32 a;
+  uint32 b;
+};
+
+struct FRustealInputArgs {
+  const uint8 *value;
+  float elapsed_seconds;
+  float triggered_seconds;
+  RustealUObjectHandle action;
 };
 
 struct FRustealConsoleArgs {
@@ -492,6 +654,92 @@ struct FRustealWorldApi {
   uint8 *(*find_data_table_row)(RustealUObjectHandle table,
                                 RustealFNameHandle row_name,
                                 RustealUStructHandle row_struct);
+
+  ERustealErrorCode (*set_timer)(RustealUObjectHandle context, float rate,
+                                 bool looping, bool max_once_per_frame,
+                                 float first_delay, uint64 callback_id,
+                                 uint64 *out_handle);
+  ERustealErrorCode (*set_timer_for_next_tick)(RustealUObjectHandle context,
+                                               uint64 callback_id,
+                                               uint64 *out_handle);
+  ERustealErrorCode (*clear_timer)(RustealUObjectHandle context,
+                                   uint64 handle);
+  ERustealErrorCode (*pause_timer)(RustealUObjectHandle context, uint64 handle,
+                                   bool paused);
+  float (*timer_remaining)(RustealUObjectHandle context, uint64 handle);
+  uint32 (*live_timer_callbacks)();
+
+  ERustealErrorCode (*load_async)(const uint8 *paths, uint32 paths_len,
+                                  uint64 callback_id);
+  ERustealErrorCode (*load_primary_assets)(const uint8 *ids, uint32 ids_len,
+                                           const uint8 *bundles,
+                                           uint32 bundles_len,
+                                           uint64 callback_id);
+  ERustealErrorCode (*load_finish)(uint64 callback_id,
+                                   RustealUObjectHandle *out_objects,
+                                   uint32 capacity, uint32 *out_count);
+  ERustealErrorCode (*load_cancel)(uint64 callback_id);
+  uint32 (*loads_in_progress)();
+
+  ERustealErrorCode (*bind_native_event)(uint32 kind,
+                                         RustealUObjectHandle target,
+                                         uint64 callback_id);
+  ERustealErrorCode (*unbind_native_event)(uint64 callback_id);
+
+  ERustealErrorCode (*http_send)(const uint8 *verb, uint32 verb_len,
+                                 const uint8 *url, uint32 url_len,
+                                 const uint8 *headers, uint32 headers_len,
+                                 const uint8 *body, uint32 body_len,
+                                 float timeout_seconds, uint64 callback_id);
+  ERustealErrorCode (*http_finish)(uint64 callback_id, int32 *out_status,
+                                   uint8 *headers, uint32 headers_capacity,
+                                   uint32 *out_headers_len, uint8 *body,
+                                   uint32 body_capacity, uint32 *out_body_len,
+                                   bool *out_succeeded);
+  ERustealErrorCode (*http_cancel)(uint64 callback_id);
+  uint32 (*http_in_progress)();
+
+  ERustealErrorCode (*add_tick_function)(RustealUObjectHandle target,
+                                         uint8 group, uint64 callback_id);
+  void (*remove_tick_function)(uint64 callback_id);
+  ERustealErrorCode (*tick_function_set_enabled)(uint64 callback_id,
+                                                 bool enabled);
+  ERustealErrorCode (*tick_function_set_interval)(uint64 callback_id,
+                                                  float seconds);
+  ERustealErrorCode (*tick_function_add_prerequisite)(
+      uint64 callback_id, RustealUObjectHandle object,
+      uint64 other_callback_id);
+  uint32 (*live_tick_functions)();
+
+  ERustealErrorCode (*add_gameplay_tag)(const uint8 *name, uint32 name_len,
+                                        const uint8 *comment,
+                                        uint32 comment_len);
+  bool (*gameplay_tag_is_registered)(const uint8 *name, uint32 name_len);
+
+  void (*rpc_validate_failed)(const uint8 *reason, uint32 reason_len);
+  void (*mark_property_dirty)(RustealUObjectHandle object,
+                              RustealFPropertyHandle prop);
+  ERustealErrorCode (*add_replicated_subobject)(RustealUObjectHandle actor,
+                                                RustealUObjectHandle object,
+                                                uint8 condition);
+  ERustealErrorCode (*remove_replicated_subobject)(RustealUObjectHandle actor,
+                                                   RustealUObjectHandle object);
+
+  uint32 (*trace_event_type)(const uint8 *name, uint32 name_len);
+  void (*trace_begin_event)(uint32 event_type);
+  void (*trace_end_event)();
+  uint64 (*stat_create)(const uint8 *name, uint32 name_len);
+  uint64 (*stat_begin)(uint64 stat);
+  void (*stat_end)(uint64 counter);
+  uint64 (*memory_scope_begin)(const uint8 *tag, uint32 tag_len);
+  void (*memory_scope_end)(uint64 scope);
+
+  ERustealErrorCode (*automation_register_test)(const uint8 *name,
+                                                uint32 name_len,
+                                                uint32 contexts,
+                                                uint64 callback_id);
+  void (*automation_add_message)(uint32 kind, const uint8 *text,
+                                 uint32 text_len);
 };
 
 struct FRustealPlatformApi {
@@ -539,6 +787,8 @@ struct FRustealRustCallbacks {
                                   bool is_cdo);
   void (*notify_pinned_destroyed)(RustealUObjectHandle handle);
   void (*on_tick)(float delta_seconds);
+  void (*release_delegate_callback)(uint64 callback_id);
+  void (*retry_deferred_classes)(bool last_try);
 };
 
 struct FRustealModuleExports {
