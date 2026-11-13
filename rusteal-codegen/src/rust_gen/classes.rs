@@ -215,13 +215,13 @@ pub fn generate_class(class: &ClassInfo, ctx: &CodegenContext) -> String {
 
 /// `code` with every object reference it names living for `'a`, the call lifetime of the
 /// `Checked` a class's functions are called on.
-pub(super) fn with_call_lifetime(code: &str) -> String {
+pub(crate) fn with_call_lifetime(code: &str) -> String {
     code.replace("rusteal_core::UObjectRef<", "rusteal_core::UObjectRef<'a, ")
 }
 
 /// A static function's code with its objects tied to one lifetime `'a`: the objects it takes,
 /// or, when it takes none, a `&'a GameThread` borrowed for the objects it hands out.
-pub(super) fn anchor_static_function(code: &str) -> String {
+pub(crate) fn anchor_static_function(code: &str) -> String {
     code.lines()
         .map(|line| {
             let Some(signature) = line.strip_prefix("    pub fn ") else {
