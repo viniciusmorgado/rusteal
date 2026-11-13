@@ -506,6 +506,46 @@ pub fn fnv1a_hash(s: &str) -> u64 {
     hash
 }
 
+/// `ty` with every lifetime made `'_`, for generated code that names a type the user wrote with
+/// lifetimes of their function's own (`UObjectRef<'a, T>`): in a `let`, a turbofish or a cast,
+/// the compiler infers them.
+pub(crate) fn erase_lifetimes(ty: &syn::Type) -> syn::Type {
+    syn::parse2(erase_lifetime_tokens(quote::quote!(#ty))).unwrap_or_else(|_| ty.clone())
+}
+
+fn erase_lifetime_tokens(tokens: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
+    use proc_macro2::{Group, Ident, Spacing, TokenTree};
+
+    let mut out = Vec::new();
+    let mut iter = tokens.into_iter().peekable();
+
+    while let Some(token) = iter.next() {
+        match token {
+            TokenTree::Punct(tick)
+                if tick.as_char() == '\'' && tick.spacing() == Spacing::Joint =>
+            {
+                if let Some(TokenTree::Ident(name)) = iter.peek() {
+                    let span = name.span();
+                    iter.next();
+                    out.push(TokenTree::Punct(tick));
+                    out.push(TokenTree::Ident(Ident::new("_", span)));
+                } else {
+                    out.push(TokenTree::Punct(tick));
+                }
+            }
+            TokenTree::Group(group) => {
+                let mut erased =
+                    Group::new(group.delimiter(), erase_lifetime_tokens(group.stream()));
+                erased.set_span(group.span());
+                out.push(TokenTree::Group(erased));
+            }
+            other => out.push(other),
+        }
+    }
+
+    out.into_iter().collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -20,6 +20,7 @@ pub mod dynamic_value;
 mod executor;
 pub mod ffi_guard;
 pub mod fname;
+pub mod game_thread;
 pub mod gameplay_tags;
 pub mod http;
 pub mod input;
@@ -69,6 +70,7 @@ pub use error::{
     ffi_infallible, ffi_infallible_ctx,
 };
 pub use ffi_guard::ffi_boundary;
+pub use game_thread::{GameThread, RustRef};
 pub use logging::{LOG_DISPLAY, LOG_ERROR, LOG_WARNING};
 pub use method::method;
 pub use module::{FuncTable, Module, ModuleId, type_id};

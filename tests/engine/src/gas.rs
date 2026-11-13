@@ -3,9 +3,9 @@ use std::sync::atomic::{AtomicU32, Ordering};
 
 use bindings::engine::{ActorExt, SceneComponent};
 use bindings::gameplay_abilities::{
-    AbilitySystemComponent, AbilitySystemComponentExt, AttributeSet,
-    EGameplayEffectDurationType, EGameplayEffectMagnitudeCalculation, EGameplayModOp,
-    FGameplayAttribute, FGameplayAttributeData, FGameplayAttributeDataExt, FGameplayAttributeExt,
+    AbilitySystemComponent, AbilitySystemComponentExt, AttributeSet, EGameplayEffectDurationType,
+    EGameplayEffectMagnitudeCalculation, EGameplayModOp, FGameplayAttribute,
+    FGameplayAttributeData, FGameplayAttributeDataExt, FGameplayAttributeExt,
     FGameplayEffectModifierMagnitudeExt, FGameplayEffectSpec, FGameplayModifierEvaluatedData,
     FGameplayModifierEvaluatedDataExt, FGameplayModifierInfo, FGameplayModifierInfoExt,
     FScalableFloatExt, GameplayAbility, GameplayAbilityExt, GameplayEffect, GameplayEffectExt,
@@ -156,7 +156,7 @@ pub struct AbilityTarget {
     ability_system: AbilitySystemComponent,
 }
 
-fn spawn_target(context: &Context) -> Result<UObjectRef<AbilityTarget>, String> {
+fn spawn_target<'a>(context: &Context<'a>) -> Result<UObjectRef<'a, AbilityTarget>, String> {
     let transform = FTransform::from_transform(Transform::from_translation(glam::DVec3::new(
         0.0, 0.0, -50_000.0,
     )));
@@ -197,7 +197,10 @@ pub fn gameplay_effect_changes_a_rust_attribute(context: &Context) -> Outcome {
         );
 
         let (after, _) = asc.get_gameplay_attribute_value(&health);
-        let executed = EXECUTED_MAGNITUDE.lock().ok().and_then(|executed| *executed);
+        let executed = EXECUTED_MAGNITUDE
+            .lock()
+            .ok()
+            .and_then(|executed| *executed);
 
         actor.checked().map_err(e)?.k2_destroy_actor();
 

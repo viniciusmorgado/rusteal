@@ -6,7 +6,7 @@ use bindings::umg::{
     ESlateVisibility, EUMGSequencePlayMode, UserWidget, UserWidgetExt, Widget, WidgetAnimation,
     WidgetExt,
 };
-use rusteal_runtime::runtime::{RustealResult, SubclassOf, UObjectRef};
+use rusteal_runtime::runtime::{RustRef, RustealResult, SubclassOf, UObjectRef};
 use rusteal_runtime::{uclass, uclass_impl};
 
 #[uclass(parent = UserWidget)]
@@ -127,7 +127,7 @@ impl TourSubsystem {
 }
 
 impl TourSubsystem {
-    pub fn get(context: UObjectRef<Object>) -> RustealResult<Self> {
+    pub fn get(context: UObjectRef<'_, Object>) -> RustealResult<RustRef<'_, Self>> {
         let class = SubclassOf::<Self>::base().upcast_to::<WorldSubsystem>();
         Self::from_obj(SubsystemBlueprintLibrary::get_world_subsystem(
             context, class,
@@ -190,9 +190,11 @@ impl EditorHintTrigger {
     }
 
     #[ufunction(BlueprintPure)]
-    pub fn hint_widget(&self) -> UObjectRef<EditorHintWidget> {
-        TourSubsystem::get(self.as_ref().upcast_to())
-            .map(|tour| tour.hint_widget())
+    pub fn hint_widget(&self) -> UObjectRef<'_, EditorHintWidget> {
+        let me = self.as_ref();
+
+        TourSubsystem::get(me.upcast_to())
+            .map(|tour| tour.hint_widget().with_scope_of(&me))
             .unwrap_or_default()
     }
 }

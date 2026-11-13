@@ -3,7 +3,7 @@ use bindings::engine::{
     Actor, ActorExt, ControllerExt, GameplayStatics, SubsystemBlueprintLibrary, WorldSubsystem,
 };
 use bindings::rusteal::RustealWorldSubsystem;
-use rusteal_runtime::runtime::{RustealResult, SubclassOf, UObjectRef};
+use rusteal_runtime::runtime::{GameThread, RustRef, RustealResult, SubclassOf, UObjectRef};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use crate::save_data::CheckpointSaveData;
@@ -58,7 +58,7 @@ impl CheckpointSubsystem {
 }
 
 impl CheckpointSubsystem {
-    pub fn get(context: UObjectRef<Object>) -> RustealResult<Self> {
+    pub fn get(context: UObjectRef<'_, Object>) -> RustealResult<RustRef<'_, Self>> {
         let class = SubclassOf::<Self>::base().upcast_to::<WorldSubsystem>();
         Self::from_obj(SubsystemBlueprintLibrary::get_world_subsystem(
             context, class,
@@ -70,8 +70,12 @@ impl CheckpointSubsystem {
     }
 
     fn load_game_data(&mut self) {
+        let Ok(gt) = GameThread::current() else {
+            return;
+        };
+
         let loaded = if GameplayStatics::does_save_game_exist(SLOT_NAME, 0) {
-            GameplayStatics::load_game_from_slot(SLOT_NAME, 0).cast::<CheckpointSaveData>()
+            GameplayStatics::load_game_from_slot(&gt, SLOT_NAME, 0).cast::<CheckpointSaveData>()
         } else {
             Err(rusteal_runtime::runtime::RustealError::null_argument())
         };
@@ -80,6 +84,7 @@ impl CheckpointSubsystem {
             Ok(save) => save,
             Err(_) => {
                 let save = GameplayStatics::create_save_game_object(
+                    &gt,
                     SubclassOf::<CheckpointSaveData>::base().upcast(),
                 );
                 GameplayStatics::save_game_to_slot(save, SLOT_NAME, 0);

@@ -2,10 +2,12 @@ use std::panic::AssertUnwindSafe;
 use std::sync::{Arc, Mutex};
 
 use bindings::engine::{KismetSystemLibrary, World};
-use rusteal_runtime::runtime::{UObjectRef, console, task};
+use rusteal_runtime::runtime::{TWeakObjectPtr, UObjectRef, console, task};
 
-pub struct Context {
-    pub world: UObjectRef<World>,
+/// The world the checks run in, for the call of the check: a check that waits for later frames
+/// keeps what it needs as weak pointers.
+pub struct Context<'a> {
+    pub world: UObjectRef<'a, World>,
 }
 
 pub enum Outcome {
@@ -13,7 +15,7 @@ pub enum Outcome {
     Pending(Box<dyn FnMut() -> Option<Result<(), String>>>),
 }
 
-pub type Check = fn(&Context) -> Outcome;
+pub type Check = fn(&Context<'_>) -> Outcome;
 
 const TIMEOUT_SECONDS: f32 = 30.0;
 
@@ -32,7 +34,7 @@ pub fn register() {
     }
 }
 
-fn outcome(check: Check, context: &Context) -> Outcome {
+fn outcome(check: Check, context: &Context<'_>) -> Outcome {
     std::panic::catch_unwind(AssertUnwindSafe(|| check(context)))
         .unwrap_or_else(|_| Outcome::Done(Err("panicked".to_string())))
 }
@@ -44,7 +46,7 @@ fn line(name: &str, result: &Result<(), String>) -> String {
     }
 }
 
-fn run(context: Context) {
+fn run(context: Context<'_>) {
     let mut lines = Vec::new();
     let mut pending = Vec::new();
 
@@ -67,7 +69,7 @@ fn run(context: Context) {
     }
 
     let state = Arc::new(Mutex::new((lines, pending, 0.0f32)));
-    let world = context.world;
+    let world = TWeakObjectPtr::from_ref(&context.world);
 
     let handle = Arc::new(Mutex::new(None));
     let slot = handle.clone();
@@ -92,7 +94,9 @@ fn run(context: Context) {
         }
 
         if pending.is_empty() {
-            finish(lines, &world);
+            if let Some(world) = world.get() {
+                finish(lines, &world);
+            }
 
             if let Some(handle) = slot.lock().unwrap_or_else(|e| e.into_inner()).take() {
                 task::TickHandle::remove(handle);
@@ -103,7 +107,7 @@ fn run(context: Context) {
     *handle.lock().unwrap_or_else(|e| e.into_inner()) = Some(tick);
 }
 
-fn finish(lines: &mut Vec<String>, world: &UObjectRef<World>) {
+fn finish(lines: &mut Vec<String>, world: &UObjectRef<'_, World>) {
     let path = std::env::var("RUSTEAL_TEST_RESULTS")
         .unwrap_or_else(|_| "rusteal-test-results.txt".to_string());
 

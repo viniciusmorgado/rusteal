@@ -399,16 +399,38 @@ pub fn generate_delegate_structs(out: &mut String, delegates: &[DelegateInfo], c
     }
 }
 
+/// What `next()` resolves to for a parameter, and how it is made from the parameter: objects
+/// arrive after an `.await`, past the call that passed them, so they come as weak pointers.
+fn next_output(param: &DelegateParam) -> (String, String) {
+    let name = &param.name;
+
+    if let Some(class) = param.rust_type.strip_prefix("rusteal_core::UObjectRef<") {
+        (
+            format!("rusteal_core::TWeakObjectPtr<{class}"),
+            format!("rusteal_core::TWeakObjectPtr::from_ref(&{name})"),
+        )
+    } else if param.rust_type == "rusteal_core::UObjectHandle" {
+        (
+            "rusteal_core::FWeakObjectHandle".to_string(),
+            format!("unsafe {{ rusteal_core::weak_handle_of({name}) }}"),
+        )
+    } else {
+        (param.rust_type.clone(), name.clone())
+    }
+}
+
 fn emit_next(out: &mut String, params: &[DelegateParam]) {
     let names: Vec<&str> = params.iter().map(|p| p.name.as_str()).collect();
-    let types: Vec<&str> = params.iter().map(|p| p.rust_type.as_str()).collect();
+    let outputs: Vec<(String, String)> = params.iter().map(next_output).collect();
+    let types: Vec<&str> = outputs.iter().map(|(ty, _)| ty.as_str()).collect();
+    let values: Vec<&str> = outputs.iter().map(|(_, value)| value.as_str()).collect();
 
     let (output, value) = match params.len() {
         0 => ("()".to_string(), "()".to_string()),
-        1 => (types[0].to_string(), names[0].to_string()),
+        1 => (types[0].to_string(), values[0].to_string()),
         _ => (
             format!("({})", types.join(", ")),
-            format!("({})", names.join(", ")),
+            format!("({})", values.join(", ")),
         ),
     };
 

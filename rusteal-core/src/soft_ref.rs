@@ -31,7 +31,8 @@ impl<T: UeClass> SoftObjectRef<T> {
         self.path.is_empty()
     }
 
-    pub fn get(&self) -> UObjectRef<T> {
+    /// The object while it is loaded, for as long as this reference is borrowed.
+    pub fn get(&self) -> UObjectRef<'_, T> {
         if self.is_null() {
             return UObjectRef::null();
         }
@@ -42,12 +43,12 @@ impl<T: UeClass> SoftObjectRef<T> {
     }
 
     #[track_caller]
-    pub fn checked(&self) -> RustealResult<Checked<T>> {
+    pub fn checked(&self) -> RustealResult<Checked<'_, T>> {
         self.get().checked()
     }
 
     #[track_caller]
-    pub fn load_synchronous(&self) -> RustealResult<UObjectRef<T>> {
+    pub fn load_synchronous(&self) -> RustealResult<UObjectRef<'_, T>> {
         if self.is_null() {
             return Ok(UObjectRef::null());
         }
@@ -58,12 +59,14 @@ impl<T: UeClass> SoftObjectRef<T> {
     }
 
     /// Loads the asset in the background, resuming when it is in memory; awaited in a task
-    /// started with `task::spawn_local`.
+    /// started with `task::spawn_local`. The object comes as a weak pointer, because it is used
+    /// after the `.await`.
     ///
     /// Nothing keeps the loaded object but what stores it: keep it in a `#[uproperty]` or pin it.
     pub fn load_async(
         &self,
-    ) -> impl std::future::Future<Output = RustealResult<UObjectRef<T>>> + 'static {
+    ) -> impl std::future::Future<Output = RustealResult<crate::weak_ptr::TWeakObjectPtr<T>>> + 'static
+    {
         crate::loading::load_one(self.path.clone())
     }
 }

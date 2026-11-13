@@ -464,7 +464,7 @@ impl Probe {
     }
 
     #[ufunction(BlueprintCallable)]
-    fn take_objects(&mut self, action: UObjectRef<InputAction>, class: SubclassOf<Pawn>) -> UObjectRef<InputAction> {
+    fn take_objects<'a>(&mut self, action: UObjectRef<'a, InputAction>, class: SubclassOf<Pawn>) -> UObjectRef<'a, InputAction> {
         self.set_pawn_class(class);
         action
     }
@@ -545,7 +545,7 @@ pub fn delegates(probe: &Probe) -> RustealResult<()> {
     Ok(())
 }
 
-pub fn upcasts(probe: UObjectRef<Probe>, pc: UObjectRef<PlayerController>) -> (UObjectRef<Actor>, UObjectRef<Pawn>) {
+pub fn upcasts<'a>(probe: UObjectRef<'a, Probe>, pc: UObjectRef<'a, PlayerController>) -> (UObjectRef<'a, Actor>, UObjectRef<'a, Pawn>) {
     let _controller: UObjectRef<Controller> = pc.upcast_to::<Controller>();
     let _actor_class: SubclassOf<Actor> = SubclassOf::<PlayerController>::base().upcast_to::<Actor>();
     (pc.upcast_to::<Actor>(), probe.upcast_to::<Pawn>())

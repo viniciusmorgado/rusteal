@@ -84,14 +84,16 @@ impl<T: UeClass> SubclassOf<T> {
 
     /// The class default object, Blueprint's Get Class Defaults: what new instances start from.
     #[track_caller]
-    pub fn default_object(&self) -> crate::error::RustealResult<crate::object_ref::UObjectRef<T>> {
+    pub fn default_object(
+        &self,
+    ) -> crate::error::RustealResult<crate::object_ref::UObjectRef<'_, T>> {
         if self.handle.is_null() {
             return Err(crate::error::RustealError::null_argument());
         }
 
         let cdo = unsafe { crate::ffi_dispatch::reify_get_cdo(self.handle) };
 
-        crate::object_ref::UObjectRef::from_handle(cdo)
+        unsafe { crate::object_ref::UObjectRef::from_handle(cdo) }
     }
 }
 

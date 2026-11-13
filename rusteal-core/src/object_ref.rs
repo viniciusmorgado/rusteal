@@ -39,41 +39,46 @@ pub fn resolve_weak_handle(weak: FWeakObjectHandle) -> UObjectHandle {
 /// cannot read freed memory or mistake a new object at a reused address for the old one: once
 /// the object is destroyed, [`is_valid`](Self::is_valid) is false and
 /// [`checked`](Self::checked) is an error.
+///
+/// `'a` is the call that handed the reference out: an engine event, a function, a callback. The
+/// reference cannot outlive it, so it cannot be stored where the garbage collector does not see
+/// it (a struct field, a static, a closure or a future kept for later). To keep an object, use a
+/// `#[uproperty]`, a [`TWeakObjectPtr`](crate::TWeakObjectPtr) or a [`Pinned`].
 #[repr(transparent)]
-pub struct UObjectRef<T: UeClass> {
+pub struct UObjectRef<'a, T: UeClass> {
     weak: FWeakObjectHandle,
-    _marker: PhantomData<*const T>,
+    _marker: PhantomData<(&'a (), *const T)>,
 }
 
-impl<T: UeClass> Clone for UObjectRef<T> {
+impl<T: UeClass> Clone for UObjectRef<'_, T> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<T: UeClass> Copy for UObjectRef<T> {}
+impl<T: UeClass> Copy for UObjectRef<'_, T> {}
 
-impl<T: UeClass> PartialEq for UObjectRef<T> {
+impl<T: UeClass> PartialEq for UObjectRef<'_, T> {
     fn eq(&self, other: &Self) -> bool {
         self.weak == other.weak
     }
 }
 
-impl<T: UeClass> Eq for UObjectRef<T> {}
+impl<T: UeClass> Eq for UObjectRef<'_, T> {}
 
-impl<T: UeClass> std::hash::Hash for UObjectRef<T> {
+impl<T: UeClass> std::hash::Hash for UObjectRef<'_, T> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.weak.hash(state);
     }
 }
 
-impl<T: UeClass> Default for UObjectRef<T> {
+impl<T: UeClass> Default for UObjectRef<'_, T> {
     fn default() -> Self {
         Self::null()
     }
 }
 
-impl<T: UeClass> UObjectRef<T> {
+impl<'a, T: UeClass> UObjectRef<'a, T> {
     #[inline]
     pub fn null() -> Self {
         UObjectRef {
@@ -83,7 +88,8 @@ impl<T: UeClass> UObjectRef<T> {
     }
 
     /// The reference to the object at `handle`, which must be null or an object the engine has
-    /// just given: its index and serial number are read from it now.
+    /// just given: its index and serial number are read from it now. The caller picks `'a`, so it
+    /// must not outlive the call that gave `handle`.
     #[inline]
     pub unsafe fn from_raw(handle: UObjectHandle) -> Self {
         UObjectRef {
@@ -92,13 +98,24 @@ impl<T: UeClass> UObjectRef<T> {
         }
     }
 
-    /// The reference an index and serial number name; it is valid while that object lives.
+    /// The reference an index and serial number name, for as long as the caller lets it live.
     #[inline]
-    pub fn from_weak(weak: FWeakObjectHandle) -> Self {
+    pub(crate) fn from_weak(weak: FWeakObjectHandle) -> Self {
         UObjectRef {
             weak,
             _marker: PhantomData,
         }
+    }
+
+    /// The same reference, for as long as `anchor` may live: both were handed out by calls that
+    /// are still running, so one can stand in for the other. It is how a function returns an
+    /// object it read through a temporary, such as a property of a subsystem found for the call:
+    /// `tour.hint_widget().with_scope_of(&me)`.
+    #[inline]
+    pub fn with_scope_of<'b>(self, anchor: &UObjectRef<'b, impl UeClass>) -> UObjectRef<'b, T> {
+        let _ = anchor;
+
+        UObjectRef::from_weak(self.weak)
     }
 
     /// The object's index and serial number in the engine's object array.
@@ -118,9 +135,11 @@ impl<T: UeClass> UObjectRef<T> {
         !self.raw().is_null()
     }
 
+    /// The live object, to call the engine on; it does not borrow the reference, so it lives as
+    /// long as the reference may.
     #[inline]
     #[track_caller]
-    pub fn checked(&self) -> RustealResult<Checked<T>> {
+    pub fn checked(&self) -> RustealResult<Checked<'a, T>> {
         let handle = self.raw();
 
         if handle.is_null() {
@@ -134,7 +153,7 @@ impl<T: UeClass> UObjectRef<T> {
     }
 
     #[track_caller]
-    pub fn cast<U: UeClass>(self) -> RustealResult<UObjectRef<U>> {
+    pub fn cast<U: UeClass>(self) -> RustealResult<UObjectRef<'a, U>> {
         let h = self.checked()?.raw();
         let target = U::static_class();
         if unsafe { ffi_dispatch::core_is_a(h, target) } {
@@ -173,9 +192,11 @@ impl<T: UeClass> UObjectRef<T> {
         Ok(unsafe { ffi_dispatch::core_get_outer(h) })
     }
 
+    /// The reference to the object at `handle`, checked to be alive and a `T`. Like
+    /// [`from_raw`](Self::from_raw), the caller picks `'a`.
     #[track_caller]
-    pub fn from_handle(handle: UObjectHandle) -> RustealResult<Self> {
-        if !unsafe { ffi_dispatch::core_is_valid(handle) } {
+    pub unsafe fn from_handle(handle: UObjectHandle) -> RustealResult<Self> {
+        if handle.is_null() || !unsafe { ffi_dispatch::core_is_valid(handle) } {
             return Err(RustealError::object_destroyed());
         }
 
@@ -194,8 +215,8 @@ impl<T: UeClass> UObjectRef<T> {
     }
 
     #[track_caller]
-    pub fn outer<U: UeClass>(&self) -> RustealResult<UObjectRef<U>> {
-        UObjectRef::from_handle(self.get_outer()?)
+    pub fn outer<U: UeClass>(&self) -> RustealResult<UObjectRef<'a, U>> {
+        unsafe { UObjectRef::from_handle(self.get_outer()?) }
     }
 
     #[inline]
@@ -212,21 +233,21 @@ impl<T: UeClass> UObjectRef<T> {
         !handle.is_null() && unsafe { ffi_dispatch::core_is_a(handle, I::static_class()) }
     }
 
-    pub fn interface<I: UeInterface + ?Sized>(self) -> RustealResult<ScriptInterface<I>> {
+    pub fn interface<I: UeInterface + ?Sized>(self) -> RustealResult<ScriptInterface<'a, I>> {
         ScriptInterface::new(self.checked()?.raw())
     }
 }
 
-impl<T: HasParent> UObjectRef<T> {
+impl<'a, T: HasParent> UObjectRef<'a, T> {
     #[inline]
-    pub fn upcast(self) -> UObjectRef<T::Parent> {
+    pub fn upcast(self) -> UObjectRef<'a, T::Parent> {
         UObjectRef::from_weak(self.weak)
     }
 }
 
-impl<T: UeClass> UObjectRef<T> {
+impl<'a, T: UeClass> UObjectRef<'a, T> {
     #[inline]
-    pub fn upcast_to<U: UeClass>(self) -> UObjectRef<U>
+    pub fn upcast_to<U: UeClass>(self) -> UObjectRef<'a, U>
     where
         T: crate::traits::Inherits<U>,
     {
@@ -240,7 +261,7 @@ pub trait ObjectPointer: Sized {
     fn object_handle(&self) -> UObjectHandle;
 }
 
-impl<T: UeClass> ObjectPointer for UObjectRef<T> {
+impl<T: UeClass> ObjectPointer for UObjectRef<'_, T> {
     #[inline]
     unsafe fn from_object_handle(handle: UObjectHandle) -> Self {
         unsafe { UObjectRef::from_raw(handle) }
@@ -252,15 +273,15 @@ impl<T: UeClass> ObjectPointer for UObjectRef<T> {
     }
 }
 
-impl<T: HasParent> Deref for UObjectRef<T> {
-    type Target = UObjectRef<T::Parent>;
+impl<'a, T: HasParent> Deref for UObjectRef<'a, T> {
+    type Target = UObjectRef<'a, T::Parent>;
     #[inline]
-    fn deref(&self) -> &UObjectRef<T::Parent> {
-        unsafe { &*(self as *const _ as *const UObjectRef<T::Parent>) }
+    fn deref(&self) -> &UObjectRef<'a, T::Parent> {
+        unsafe { &*(self as *const _ as *const UObjectRef<'a, T::Parent>) }
     }
 }
 
-impl<T: UeClass> UeHandle for UObjectRef<T> {
+impl<T: UeClass> UeHandle for UObjectRef<'_, T> {
     #[inline]
     fn checked_handle(&self) -> RustealResult<UObjectHandle> {
         self.checked().map(|c| c.raw())
@@ -272,7 +293,7 @@ impl<T: UeClass> UeHandle for UObjectRef<T> {
     }
 }
 
-impl<T: UeClass> std::fmt::Debug for UObjectRef<T> {
+impl<T: UeClass> std::fmt::Debug for UObjectRef<'_, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("UObjectRef")
             .field("index", &self.weak.object_index)
@@ -282,14 +303,37 @@ impl<T: UeClass> std::fmt::Debug for UObjectRef<T> {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+/// A live object, checked by [`UObjectRef::checked`], with the engine's functions on it through
+/// the generated `...Ext` traits. It lives no longer than the reference it came from.
 #[repr(transparent)]
-pub struct Checked<T: UeClass> {
+pub struct Checked<'a, T: UeClass> {
     handle: UObjectHandle,
-    _marker: PhantomData<*const T>,
+    _marker: PhantomData<(&'a (), *const T)>,
 }
 
-impl<T: UeClass> Checked<T> {
+impl<T: UeClass> Clone for Checked<'_, T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<T: UeClass> Copy for Checked<'_, T> {}
+
+impl<T: UeClass> PartialEq for Checked<'_, T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.handle == other.handle
+    }
+}
+
+impl<T: UeClass> Eq for Checked<'_, T> {}
+
+impl<T: UeClass> std::hash::Hash for Checked<'_, T> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.handle.hash(state);
+    }
+}
+
+impl<'a, T: UeClass> Checked<'a, T> {
     #[inline]
     pub(crate) fn new_unchecked(handle: UObjectHandle) -> Self {
         Checked {
@@ -304,7 +348,7 @@ impl<T: UeClass> Checked<T> {
     }
 
     #[inline]
-    pub fn as_ref(&self) -> UObjectRef<T> {
+    pub fn as_ref(&self) -> UObjectRef<'a, T> {
         unsafe { UObjectRef::from_raw(self.handle) }
     }
 
@@ -314,7 +358,7 @@ impl<T: UeClass> Checked<T> {
     }
 
     #[track_caller]
-    pub fn cast<U: UeClass>(self) -> RustealResult<Checked<U>> {
+    pub fn cast<U: UeClass>(self) -> RustealResult<Checked<'a, U>> {
         if self.is_a::<U>() {
             Ok(Checked::new_unchecked(self.handle))
         } else {
@@ -327,29 +371,29 @@ impl<T: UeClass> Checked<T> {
     }
 }
 
-impl<T: HasParent> Checked<T> {
+impl<'a, T: HasParent> Checked<'a, T> {
     #[inline]
-    pub fn upcast(self) -> Checked<T::Parent> {
+    pub fn upcast(self) -> Checked<'a, T::Parent> {
         Checked::new_unchecked(self.handle)
     }
 }
 
-impl<T: HasParent> Deref for Checked<T> {
-    type Target = Checked<T::Parent>;
+impl<'a, T: HasParent> Deref for Checked<'a, T> {
+    type Target = Checked<'a, T::Parent>;
     #[inline]
-    fn deref(&self) -> &Checked<T::Parent> {
-        unsafe { &*(self as *const _ as *const Checked<T::Parent>) }
+    fn deref(&self) -> &Checked<'a, T::Parent> {
+        unsafe { &*(self as *const _ as *const Checked<'a, T::Parent>) }
     }
 }
 
-impl<T: UeClass> ValidHandle for Checked<T> {
+impl<T: UeClass> ValidHandle for Checked<'_, T> {
     #[inline]
     fn handle(&self) -> UObjectHandle {
         self.handle
     }
 }
 
-impl<T: UeClass> std::fmt::Debug for Checked<T> {
+impl<T: UeClass> std::fmt::Debug for Checked<'_, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Checked")
             .field("handle", &self.handle)
@@ -369,7 +413,7 @@ mod tests {
         }
     }
 
-    fn named(object_index: i32, object_serial_number: i32) -> UObjectRef<Probe> {
+    fn named(object_index: i32, object_serial_number: i32) -> UObjectRef<'static, Probe> {
         UObjectRef::from_weak(FWeakObjectHandle {
             object_index,
             object_serial_number,

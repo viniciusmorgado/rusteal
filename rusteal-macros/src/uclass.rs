@@ -527,7 +527,7 @@ impl UPropertyField {
 
 /// The object reference a Rust-only field's type holds, at any depth (`Option`, `Vec`, maps,
 /// tuples, arrays, boxes...): the garbage collector does not see those fields.
-fn object_reference_in(ty: &syn::Type) -> Option<String> {
+pub(crate) fn object_reference_in(ty: &syn::Type) -> Option<String> {
     match ty {
         syn::Type::Path(tp) => tp
             .qself
@@ -841,7 +841,7 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
             fn from_object_handle(
                 handle: ::rusteal_runtime::ffi::UObjectHandle,
             ) -> ::rusteal_runtime::runtime::RustealResult<Self> {
-                Self::from_obj(unsafe { ::rusteal_runtime::runtime::UObjectRef::<Self>::from_raw(handle) })
+                Self::__from_handle(handle)
             }
         }
     };
@@ -878,7 +878,9 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
             pub fn #ident(&self) -> #ty {
                 unsafe { (*self.__rust_data).#ident.clone() }
             }
-            pub fn #setter_ident(&mut self, val: #ty) {
+            // `&self`, like the properties' setters: an object reference taken from `self`
+            // borrows it, and the class's other fields stay writable meanwhile.
+            pub fn #setter_ident(&self, val: #ty) {
                 unsafe { (*self.__rust_data).#ident = val; }
             }
             #[allow(dead_code)]
@@ -926,8 +928,23 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
 
     accessor_methods.push(quote! {
         #[track_caller]
-        pub fn from_obj(obj: ::rusteal_runtime::runtime::UObjectRef<impl ::rusteal_runtime::runtime::UeClass>) -> ::rusteal_runtime::runtime::RustealResult<Self> {
-            let handle = obj.checked()?.raw();
+        /// The Rust class behind `obj`, for as long as `obj` may live: the guard gives the class's
+        /// functions and fields, and cannot be kept past the call that found the object.
+        #[track_caller]
+        pub fn from_obj<'a>(
+            obj: ::rusteal_runtime::runtime::UObjectRef<'a, impl ::rusteal_runtime::runtime::UeClass>,
+        ) -> ::rusteal_runtime::runtime::RustealResult<::rusteal_runtime::runtime::RustRef<'a, Self>> {
+            Self::__from_handle(obj.checked()?.raw()).map(::rusteal_runtime::runtime::RustRef::new)
+        }
+
+        #[doc(hidden)]
+        #[track_caller]
+        pub fn __from_handle(
+            handle: ::rusteal_runtime::ffi::UObjectHandle,
+        ) -> ::rusteal_runtime::runtime::RustealResult<Self> {
+            if handle.is_null() {
+                return Err(::rusteal_runtime::runtime::RustealError::object_destroyed());
+            }
 
             let is_a = unsafe {
                 ::rusteal_runtime::runtime::ffi_dispatch::core_is_a(handle, <Self as ::rusteal_runtime::runtime::UeClass>::static_class())
@@ -961,7 +978,7 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
             let class = <Self as ::rusteal_runtime::runtime::UeClass>::static_class();
             let cdo = unsafe { ::rusteal_runtime::runtime::ffi_dispatch::reify_get_cdo(class) };
 
-            Self::from_obj(unsafe { ::rusteal_runtime::runtime::UObjectRef::<Self>::from_raw(cdo) })
+            Self::__from_handle(cdo)
         }
     });
 
@@ -999,12 +1016,14 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
     let thread_safe_view = quote! {
         #[doc = #thread_safe_doc]
         #[derive(Clone, Copy, Debug)]
-        #struct_vis struct #thread_safe_ident {
+        #struct_vis struct #thread_safe_ident<'a> {
             #[doc(hidden)]
             pub __obj: ::rusteal_runtime::ffi::UObjectHandle,
+            #[doc(hidden)]
+            pub __call: ::std::marker::PhantomData<&'a ()>,
         }
 
-        impl #thread_safe_ident {
+        impl #thread_safe_ident<'_> {
             #(#thread_safe_accessors)*
         }
     };

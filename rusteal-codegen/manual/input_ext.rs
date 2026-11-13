@@ -86,11 +86,11 @@ pub fn bind_action(
 /// What [`bind_action_instance`] gives its callback: the action's value, how long it has been
 /// evaluated and triggered, and the action itself.
 #[derive(Debug)]
-pub struct ActionInstance {
+pub struct ActionInstance<'a> {
     pub value: UStructRef<FInputActionValue>,
     pub elapsed_seconds: f32,
     pub triggered_seconds: f32,
-    pub action: UObjectRef<InputAction>,
+    pub action: UObjectRef<'a, InputAction>,
 }
 
 /// [`bind_action`] with the action's times and the action itself, as an [`ActionInstance`].
@@ -99,7 +99,7 @@ pub fn bind_action_instance(
     actor: &UObjectRef<impl UeClass>,
     action: UObjectRef<InputAction>,
     trigger_event: ETriggerEvent,
-    mut callback: impl FnMut(ActionInstance) + 'static,
+    mut callback: impl FnMut(ActionInstance<'_>) + 'static,
 ) -> RustealResult<ActionBinding> {
     let actor = actor.checked()?.raw();
     let action = action.checked()?.raw();
@@ -138,9 +138,9 @@ pub fn bind_action_by_name(
     rusteal_core::input::bind_action_raw(actor, action, trigger_event as u8, function)
 }
 
-pub fn enhanced_input_subsystem(
-    controller: UObjectRef<PlayerController>,
-) -> RustealResult<UObjectRef<EnhancedInputLocalPlayerSubsystem>> {
+pub fn enhanced_input_subsystem<'a>(
+    controller: UObjectRef<'a, PlayerController>,
+) -> RustealResult<UObjectRef<'a, EnhancedInputLocalPlayerSubsystem>> {
     controller.checked()?;
 
     let class: SubclassOf<LocalPlayerSubsystem> =

@@ -17,7 +17,15 @@ impl {{ plugin }}MenuEntry {
 }
 
 pub fn count_assets(path: &str) {
-    let assets = match editor_subsystem::<EditorAssetSubsystem>().and_then(|s| s.checked()) {
+    let gt = match rusteal_runtime::runtime::GameThread::current() {
+        Ok(gt) => gt,
+        Err(e) => {
+            log::error!("[{{ plugin }}] {e:?}");
+            return;
+        }
+    };
+
+    let assets = match editor_subsystem::<EditorAssetSubsystem>(&gt).and_then(|s| s.checked()) {
         Ok(subsystem) => subsystem.list_assets(path, Some(true), Some(false)),
         Err(e) => {
             log::error!("[{{ plugin }}] no asset subsystem: {e:?}");

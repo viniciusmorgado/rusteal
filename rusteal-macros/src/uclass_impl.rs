@@ -564,7 +564,7 @@ pub fn expand_uclass_impl(attr: TokenStream, item: TokenStream) -> syn::Result<T
         } else if uf.thread_safe {
             quote! {
                 let _ = rust_data;
-                let __this = #thread_safe_ident { __obj: obj };
+                let __this = #thread_safe_ident { __obj: obj, __call: ::std::marker::PhantomData };
             }
         } else if uf.is_mut {
             quote! {
@@ -1191,7 +1191,7 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
                 params.push(ParamInfo {
                     rust_name: name,
                     ue_name,
-                    rust_ty: ty,
+                    rust_ty: prop_type::erase_lifetimes(&ty),
                     out,
                 });
             }
@@ -1201,8 +1201,8 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
     let (fallible, output) = match &method.sig.output {
         ReturnType::Default => (false, None),
         ReturnType::Type(_, ty) => match result_value(ty) {
-            Some(value) => (true, Some(value)),
-            None => (false, Some((**ty).clone())),
+            Some(value) => (true, Some(prop_type::erase_lifetimes(&value))),
+            None => (false, Some(prop_type::erase_lifetimes(ty))),
         },
     };
 
@@ -1263,6 +1263,23 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
             &method.sig,
             "an async #[ufunction] returns nothing (or RustealResult<()>) and has no out \
              parameters: a latent node's outputs are set when it starts, before it finishes",
+        ));
+    }
+
+    if is_async
+        && let Some((param, found)) = params
+            .iter()
+            .find_map(|p| crate::uclass::object_reference_in(&p.rust_ty).map(|found| (p, found)))
+    {
+        let name = &param.rust_name;
+
+        return Err(syn::Error::new_spanned(
+            &param.rust_ty,
+            format!(
+                "an async #[ufunction] runs past the call that passed `{name}`, so it cannot take \
+                 a `{found}`: take `{name}: TWeakObjectPtr<T>` and `get()` it after each `.await`, \
+                 where the object may be gone"
+            ),
         ));
     }
 

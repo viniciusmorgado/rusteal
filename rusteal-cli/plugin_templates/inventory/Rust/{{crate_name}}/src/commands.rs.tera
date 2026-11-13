@@ -1,25 +1,27 @@
 use bindings::core_ue::Object;
 use bindings::engine::GameplayStatics;
 use bindings::prelude::*;
-use rusteal_runtime::runtime::{CommandContext, RustealResult, UObjectRef, console};
+use rusteal_runtime::runtime::{
+    CommandContext, GameThread, RustealResult, RustRef, UObjectRef, console,
+};
 
 use crate::component::{{ plugin }}Component;
 use crate::item::{{ plugin }}Item;
 use crate::subsystem::{{ plugin }}Subsystem;
 
-fn player_inventory(world: UObjectRef<World>) -> RustealResult<{{ plugin }}Component> {
+fn player_inventory(world: UObjectRef<'_, World>) -> RustealResult<RustRef<'_, {{ plugin }}Component>> {
     let world = world.upcast_to::<Object>();
     let pawn = GameplayStatics::get_player_pawn(world, 0).upcast_to();
     let mut subsystem = {{ plugin }}Subsystem::get(world)?;
     {{ plugin }}Component::from_obj(subsystem.inventory_of(pawn, true))
 }
 
-fn load_item(path: &str) -> RustealResult<UObjectRef<{{ plugin }}Item>> {
+fn load_item<'a>(gt: &'a GameThread, path: &str) -> RustealResult<UObjectRef<'a, {{ plugin }}Item>> {
     let full = match path.rsplit('/').next() {
         Some(name) if !name.contains('.') => format!("{path}.{name}"),
         _ => path.to_string(),
     };
-    load_object::<{{ plugin }}Item>(&full)
+    load_object::<{{ plugin }}Item>(gt, &full)
 }
 
 fn item_name(item: UObjectRef<{{ plugin }}Item>) -> String {
@@ -34,7 +36,8 @@ fn item_name(item: UObjectRef<{{ plugin }}Item>) -> String {
 fn give_or_take(args: &[&str], context: &CommandContext, give: bool) -> RustealResult<()> {
     let path = args.first().copied().unwrap_or_default();
     let count = args.get(1).and_then(|c| c.parse().ok()).unwrap_or(1);
-    let item = load_item(path)?;
+    let gt = GameThread::current()?;
+    let item = load_item(&gt, path)?;
     let mut inventory = player_inventory(context.world()?)?;
 
     let moved = if give {
