@@ -1,4 +1,4 @@
-use crate::sync::{Mutex, OnceLock};
+use crate::sync::{GameThreadOnly, Mutex, OnceLock};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -10,7 +10,8 @@ use rusteal_ffi::{FPropertyHandle, RustealErrorCode, UObjectHandle};
 use crate::error::{RustealResult, check_ffi};
 use crate::ffi_dispatch::NativePtr;
 
-type DelegateCallback = Option<Box<dyn FnMut(NativePtr) + Send>>;
+/// A callback the engine calls on the game thread; it may capture what stays there.
+type DelegateCallback = Option<GameThreadOnly<Box<dyn FnMut(NativePtr)>>>;
 
 struct Slot {
     module: ModuleId,
@@ -24,14 +25,16 @@ fn registry() -> &'static Mutex<HashMap<u64, Slot>> {
     REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-pub fn register_callback(f: impl FnMut(NativePtr) + Send + 'static) -> u64 {
+/// Registers a callback the engine will call on the game thread, where it must be registered.
+#[track_caller]
+pub fn register_callback(f: impl FnMut(NativePtr) + 'static) -> u64 {
     let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
 
     lock_or_recover(registry()).insert(
         id,
         Slot {
             module: module::current(),
-            callback: Some(Box::new(f)),
+            callback: Some(GameThreadOnly::new(Box::new(f))),
         },
     );
 
@@ -67,7 +70,7 @@ pub fn invoke(callback_id: u64, params: NativePtr) {
     };
 
     if let Some(ref mut f) = cb {
-        f(params);
+        (f.get_mut())(params);
     }
 
     if let Some(f) = cb {
@@ -147,7 +150,7 @@ impl Drop for DelegateBinding {
 pub fn bind_unicast(
     owner: UObjectHandle,
     prop: FPropertyHandle,
-    callback: impl FnMut(NativePtr) + Send + 'static,
+    callback: impl FnMut(NativePtr) + 'static,
 ) -> RustealResult<DelegateBinding> {
     let id = register_callback(callback);
     let result = unsafe { crate::ffi_dispatch::delegate_bind_delegate(owner, prop, id) };
@@ -163,7 +166,7 @@ pub fn bind_unicast(
 pub fn bind_multicast(
     owner: UObjectHandle,
     prop: FPropertyHandle,
-    callback: impl FnMut(NativePtr) + Send + 'static,
+    callback: impl FnMut(NativePtr) + 'static,
 ) -> RustealResult<DelegateBinding> {
     let id = register_callback(callback);
     let result = unsafe { crate::ffi_dispatch::delegate_add_multicast(owner, prop, id) };

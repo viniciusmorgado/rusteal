@@ -62,7 +62,7 @@ pub fn bind_action(
     actor: &UObjectRef<impl UeClass>,
     action: UObjectRef<InputAction>,
     trigger_event: ETriggerEvent,
-    mut callback: impl FnMut(UStructRef<FInputActionValue>) + Send + 'static,
+    mut callback: impl FnMut(UStructRef<FInputActionValue>) + 'static,
 ) -> RustealResult<ActionBinding> {
     let actor = actor.checked()?.raw();
     let action = action.checked()?.raw();
@@ -99,7 +99,7 @@ pub fn bind_action_instance(
     actor: &UObjectRef<impl UeClass>,
     action: UObjectRef<InputAction>,
     trigger_event: ETriggerEvent,
-    mut callback: impl FnMut(ActionInstance) + Send + 'static,
+    mut callback: impl FnMut(ActionInstance) + 'static,
 ) -> RustealResult<ActionBinding> {
     let actor = actor.checked()?.raw();
     let action = action.checked()?.raw();

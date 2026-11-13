@@ -122,6 +122,53 @@ fn main() {
     fs::write(&out_path, &output).expect("Failed to write ffi_dispatch.rs");
 }
 
+/// Which threads may make an engine call, checked in debug builds by the dispatch wrapper.
+enum ThreadRule {
+    /// Thread-safe in the engine: the platform services, logging and the profilers.
+    Any,
+    /// The engine's objects, which belong to the game thread.
+    GameThread,
+    /// What a `#[ufunction(ThreadSafe)]` reaches on a worker thread: properties, containers,
+    /// text and errors. Anywhere else it needs the game thread.
+    GameThreadOrThreadSafe,
+}
+
+fn thread_rule(table: &SubTable, func: &ApiFn) -> ThreadRule {
+    let name = func.name.as_str();
+
+    match table.module_name.as_str() {
+        "platform" | "logging" => ThreadRule::Any,
+        "world"
+            if name.starts_with("trace_")
+                || name.starts_with("stat_")
+                || name.starts_with("memory_scope_") =>
+        {
+            ThreadRule::Any
+        }
+        "property" | "container" => ThreadRule::GameThreadOrThreadSafe,
+        "reflection" if matches!(name, "find_property" | "get_property_size") => {
+            ThreadRule::GameThreadOrThreadSafe
+        }
+        "core"
+            if name.starts_with("text_")
+                || matches!(
+                    name,
+                    "take_pending_utf8"
+                        | "take_error_message"
+                        | "make_weak"
+                        | "resolve_weak"
+                        | "is_weak_valid"
+                        | "is_valid"
+                        | "get_name"
+                        | "get_class"
+                ) =>
+        {
+            ThreadRule::GameThreadOrThreadSafe
+        }
+        _ => ThreadRule::GameThread,
+    }
+}
+
 fn generate_dispatch_wrapper(out: &mut String, table: &SubTable, func: &ApiFn) {
     let fn_name = format!("{}_{}", table.module_name, func.name);
 
@@ -149,6 +196,20 @@ fn generate_dispatch_wrapper(out: &mut String, table: &SubTable, func: &ApiFn) {
     }
 
     writeln!(out, ") -> {rust_ret} {{").unwrap();
+
+    match thread_rule(table, func) {
+        ThreadRule::Any => {}
+        ThreadRule::GameThread => writeln!(
+            out,
+            "    #[cfg(debug_assertions)]\n    crate::sync::assert_game_thread(\"{fn_name}\");"
+        )
+        .unwrap(),
+        ThreadRule::GameThreadOrThreadSafe => writeln!(
+            out,
+            "    #[cfg(debug_assertions)]\n    crate::sync::assert_game_thread_or_thread_safe(\"{fn_name}\");"
+        )
+        .unwrap(),
+    }
 
     write!(
         out,

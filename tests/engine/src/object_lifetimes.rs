@@ -9,7 +9,8 @@ use bindings::engine::{ActorExt, KismetSystemLibrary};
 use bindings::enhanced_input::InputAction;
 use bindings::manual::world_ext::new_object_transient;
 use bindings::prelude::*;
-use rusteal_runtime::runtime::{UObjectRef, method, timer};
+use rusteal_runtime::runtime::TWeakObjectPtr;
+use rusteal_runtime::runtime::{UObjectRef, method, task, timer};
 
 use crate::fixtures::TestActor;
 use crate::runner::{Context, Outcome};
@@ -53,9 +54,7 @@ pub fn a_destroyed_object_is_invalid_after_collection(context: &Context) -> Outc
         }
 
         if actor.is_valid() || actor.checked().is_ok() || actor.raw() != Default::default() {
-            return Some(Err(
-                "a reference to a collected actor still resolves".into()
-            ));
+            return Some(Err("a reference to a collected actor still resolves".into()));
         }
 
         Some(Ok(()))
@@ -82,7 +81,7 @@ pub fn a_new_object_in_a_reused_slot_is_not_the_old_one(_context: &Context) -> O
 
         if old.is_valid() {
             return Some(Err(
-                "an unreferenced object outlived a garbage collection".into(),
+                "an unreferenced object outlived a garbage collection".into()
             ));
         }
 
@@ -164,5 +163,67 @@ pub fn a_method_callback_skips_a_destroyed_object(context: &Context) -> Outcome 
                 "a method bound to a destroyed actor ran {calls} times"
             ))
         })
+    }))
+}
+
+pub fn an_engine_call_off_the_game_thread_is_refused(_context: &Context) -> Outcome {
+    let refused = Arc::new(AtomicUsize::new(0));
+    let answer = refused.clone();
+
+    task::spawn(
+        || std::panic::catch_unwind(|| KismetSystemLibrary::get_engine_version()).is_err(),
+        move |panicked| answer.store(if panicked { 1 } else { 2 }, Ordering::Relaxed),
+    );
+
+    let mut frames = 0;
+
+    Outcome::Pending(Box::new(move || {
+        frames += 1;
+
+        match refused.load(Ordering::Relaxed) {
+            0 if frames < 200 => None,
+            0 => Some(Err("the worker never came back".into())),
+            // Release builds leave the check out.
+            1 => Some(Ok(())),
+            _ if !cfg!(debug_assertions) => Some(Ok(())),
+            _ => Some(Err(
+                "a debug build let a worker thread call the engine".into()
+            )),
+        }
+    }))
+}
+
+pub fn a_weak_pointer_comes_back_to_the_game_thread(context: &Context) -> Outcome {
+    let actor = match spawn(context) {
+        Ok(actor) => actor,
+        Err(e) => return Outcome::Done(Err(e)),
+    };
+
+    let weak = TWeakObjectPtr::from_ref(&actor);
+    let seen = Arc::new(AtomicUsize::new(0));
+    let answer = seen.clone();
+
+    task::spawn(
+        // The weak pointer crosses threads; the object it names stays where it is.
+        move || weak,
+        move |weak| {
+            let alive = weak.get().is_some_and(|actor| actor.checked().is_ok());
+            answer.store(if alive { 1 } else { 2 }, Ordering::Relaxed);
+        },
+    );
+
+    let mut frames = 0;
+
+    Outcome::Pending(Box::new(move || {
+        frames += 1;
+
+        match seen.load(Ordering::Relaxed) {
+            0 if frames < 200 => None,
+            0 => Some(Err("the worker never came back".into())),
+            1 => Some(Ok(())),
+            _ => Some(Err(
+                "the weak pointer did not resolve back on the game thread".into(),
+            )),
+        }
     }))
 }

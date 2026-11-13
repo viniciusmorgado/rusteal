@@ -73,7 +73,7 @@ impl DetailLayout {
 /// a library's go away when it unloads, so register them from `rusteal_runtime::on_load!`.
 #[track_caller]
 pub fn customize_class<T: UeClass>(
-    mut build: impl FnMut(&DetailLayout) -> RustealResult<()> + Send + 'static,
+    mut build: impl FnMut(&DetailLayout) -> RustealResult<()> + 'static,
 ) -> RustealResult<()> {
     let id = register_callback(move |params| {
         if params.is_null() {

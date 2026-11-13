@@ -44,8 +44,6 @@ pub struct Pinned<T: UeClass> {
     _marker: PhantomData<*const T>,
 }
 
-unsafe impl<T: UeClass> Send for Pinned<T> {}
-
 impl<T: UeClass> Pinned<T> {
     #[track_caller]
     pub fn new(obj: UObjectRef<T>) -> RustealResult<Self> {

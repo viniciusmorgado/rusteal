@@ -67,8 +67,6 @@ impl Default for FWeakObjectHandle {
     }
 }
 
-unsafe impl Send for UObjectHandle {}
-unsafe impl Sync for UObjectHandle {}
 unsafe impl Send for UClassHandle {}
 unsafe impl Sync for UClassHandle {}
 unsafe impl Send for FPropertyHandle {}

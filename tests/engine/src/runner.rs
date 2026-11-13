@@ -10,7 +10,7 @@ pub struct Context {
 
 pub enum Outcome {
     Done(Result<(), String>),
-    Pending(Box<dyn FnMut() -> Option<Result<(), String>> + Send>),
+    Pending(Box<dyn FnMut() -> Option<Result<(), String>>>),
 }
 
 pub type Check = fn(&Context) -> Outcome;

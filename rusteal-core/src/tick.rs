@@ -62,7 +62,7 @@ impl TickFunction {
 pub fn add_tick_function_raw(
     object: &UObjectRef<impl UeClass>,
     group: u8,
-    mut callback: impl FnMut(f32) + Send + 'static,
+    mut callback: impl FnMut(f32) + 'static,
 ) -> RustealResult<TickFunction> {
     let object = object.checked()?.raw();
 

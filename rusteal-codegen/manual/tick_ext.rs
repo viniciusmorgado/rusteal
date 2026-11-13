@@ -10,7 +10,7 @@ use crate::engine::ETickingGroup;
 pub fn add_tick_function(
     object: &UObjectRef<impl UeClass>,
     group: ETickingGroup,
-    callback: impl FnMut(f32) + Send + 'static,
+    callback: impl FnMut(f32) + 'static,
 ) -> RustealResult<TickFunction> {
     add_tick_function_raw(object, group as u8, callback)
 }

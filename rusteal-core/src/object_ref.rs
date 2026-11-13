@@ -67,8 +67,6 @@ impl<T: UeClass> std::hash::Hash for UObjectRef<T> {
     }
 }
 
-unsafe impl<T: UeClass> Send for UObjectRef<T> {}
-
 impl<T: UeClass> Default for UObjectRef<T> {
     fn default() -> Self {
         Self::null()
@@ -290,8 +288,6 @@ pub struct Checked<T: UeClass> {
     handle: UObjectHandle,
     _marker: PhantomData<*const T>,
 }
-
-unsafe impl<T: UeClass> Send for Checked<T> {}
 
 impl<T: UeClass> Checked<T> {
     #[inline]

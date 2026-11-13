@@ -37,7 +37,7 @@ pub fn bind_action_closure_raw(
     actor: UObjectHandle,
     action: UObjectHandle,
     trigger_event: u8,
-    mut callback: impl FnMut(&RustealInputArgs) + Send + 'static,
+    mut callback: impl FnMut(&RustealInputArgs) + 'static,
 ) -> RustealResult<u32> {
     let id = register_callback(move |params| {
         if !params.is_null() {
