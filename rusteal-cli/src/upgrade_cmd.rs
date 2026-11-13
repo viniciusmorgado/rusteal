@@ -128,7 +128,7 @@ const MIGRATIONS: &[(&str, &str)] = &[
          one per Pinned: a clone or a second pin keeps the object on its own, and dropping one \
          no longer lets the others' object go. It stays on the game thread. Call checked() or \
          as_ref() on it; it no longer derefs to the parent class's Pinned. OwnedStruct<T> keeps \
-         the objects it holds alive while it exists.",
+         the objects it holds alive while it exists, and stays on the thread that made it.",
     ),
 ];
 

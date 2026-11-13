@@ -1097,10 +1097,12 @@ pub fn struct_size_by_name(name: &str) -> usize {
     size as usize
 }
 
+/// An engine struct Rust owns. The garbage collector sees the objects it holds while it exists, so
+/// it stays on the thread that made it: its drop destroys the struct through the engine.
 pub struct OwnedStruct<T: UeStruct> {
     data: Vec<u8>,
     needs_destroy: bool,
-    _marker: PhantomData<T>,
+    _marker: PhantomData<(T, *const ())>,
 }
 
 impl<T: UeStruct> Default for OwnedStruct<T> {
