@@ -38,12 +38,12 @@ pub enum SpawnCollisionMethod {
     DontSpawnIfColliding = 4,
 }
 
-pub trait ObjectWorldExt {
-    fn get_world(&self) -> RustealResult<UObjectRef<World>>;
+pub trait ObjectWorldExt<'a> {
+    fn get_world(&self) -> RustealResult<UObjectRef<'a, World>>;
 }
 
-impl<T: UeClass> ObjectWorldExt for UObjectRef<T> {
-    fn get_world(&self) -> RustealResult<UObjectRef<World>> {
+impl<'a, T: UeClass> ObjectWorldExt<'a> for UObjectRef<'a, T> {
+    fn get_world(&self) -> RustealResult<UObjectRef<'a, World>> {
         let handle = rusteal_core::world::get_world_raw(self.checked()?.raw())?;
 
         Ok(unsafe { UObjectRef::from_raw(handle) })
@@ -51,13 +51,13 @@ impl<T: UeClass> ObjectWorldExt for UObjectRef<T> {
 }
 
 #[derive(Clone, Copy, Debug, Default)]
-pub struct SpawnParams {
-    pub owner: Option<UObjectRef<Actor>>,
-    pub instigator: Option<UObjectRef<Pawn>>,
+pub struct SpawnParams<'a> {
+    pub owner: Option<UObjectRef<'a, Actor>>,
+    pub instigator: Option<UObjectRef<'a, Pawn>>,
     pub collision: SpawnCollisionMethod,
 }
 
-impl SpawnParams {
+impl SpawnParams<'_> {
     fn owner_handle(&self) -> RustealResult<rusteal_ffi::UObjectHandle> {
         match self.owner {
             Some(owner) if !owner.raw().is_null() => Ok(owner.checked()?.raw()),
@@ -73,41 +73,41 @@ impl SpawnParams {
     }
 }
 
-pub trait WorldSpawnExt {
+pub trait WorldSpawnExt<'a> {
     fn spawn_actor<T: UeClass>(
         &self,
         transform: &OwnedStruct<FTransform>,
-    ) -> RustealResult<UObjectRef<T>>;
+    ) -> RustealResult<UObjectRef<'a, T>>;
 
     fn spawn_actor_with_owner<T: UeClass>(
         &self,
         transform: &OwnedStruct<FTransform>,
         owner: &UObjectRef<Actor>,
-    ) -> RustealResult<UObjectRef<T>>;
+    ) -> RustealResult<UObjectRef<'a, T>>;
 
     fn spawn_actor_of_class<T: UeClass>(
         &self,
         class: SubclassOf<T>,
         transform: &OwnedStruct<FTransform>,
-    ) -> RustealResult<UObjectRef<T>>;
+    ) -> RustealResult<UObjectRef<'a, T>>;
 
     fn spawn_actor_deferred<T: UeClass>(
         &self,
         transform: &OwnedStruct<FTransform>,
-    ) -> RustealResult<UObjectRef<T>>;
+    ) -> RustealResult<UObjectRef<'a, T>>;
 
     fn spawn_actor_deferred_full<T: UeClass>(
         &self,
         transform: &OwnedStruct<FTransform>,
-        params: SpawnParams,
-    ) -> RustealResult<UObjectRef<T>>;
+        params: SpawnParams<'_>,
+    ) -> RustealResult<UObjectRef<'a, T>>;
 
     fn spawn_actor_deferred_of_class<T: UeClass>(
         &self,
         class: SubclassOf<T>,
         transform: &OwnedStruct<FTransform>,
-        params: SpawnParams,
-    ) -> RustealResult<UObjectRef<T>>;
+        params: SpawnParams<'_>,
+    ) -> RustealResult<UObjectRef<'a, T>>;
 
     fn finish_spawning(
         &self,
@@ -115,14 +115,14 @@ pub trait WorldSpawnExt {
         transform: &OwnedStruct<FTransform>,
     ) -> RustealResult<()>;
 
-    fn get_all_actors_of_class<T: UeClass>(&self) -> RustealResult<Vec<UObjectRef<T>>>;
+    fn get_all_actors_of_class<T: UeClass>(&self) -> RustealResult<Vec<UObjectRef<'a, T>>>;
 }
 
-impl WorldSpawnExt for UObjectRef<World> {
+impl<'a> WorldSpawnExt<'a> for UObjectRef<'a, World> {
     fn spawn_actor<T: UeClass>(
         &self,
         transform: &OwnedStruct<FTransform>,
-    ) -> RustealResult<UObjectRef<T>> {
+    ) -> RustealResult<UObjectRef<'a, T>> {
         let world = self.checked()?.raw();
         let class = T::static_class();
         let null_owner = rusteal_ffi::UObjectHandle::null();
@@ -143,7 +143,7 @@ impl WorldSpawnExt for UObjectRef<World> {
         &self,
         transform: &OwnedStruct<FTransform>,
         owner: &UObjectRef<Actor>,
-    ) -> RustealResult<UObjectRef<T>> {
+    ) -> RustealResult<UObjectRef<'a, T>> {
         let world = self.checked()?.raw();
         let class = T::static_class();
         let owner_handle = owner.checked()?.raw();
@@ -164,7 +164,7 @@ impl WorldSpawnExt for UObjectRef<World> {
         &self,
         class: SubclassOf<T>,
         transform: &OwnedStruct<FTransform>,
-    ) -> RustealResult<UObjectRef<T>> {
+    ) -> RustealResult<UObjectRef<'a, T>> {
         let world = self.checked()?.raw();
 
         if class.is_null() {
@@ -186,7 +186,7 @@ impl WorldSpawnExt for UObjectRef<World> {
     fn spawn_actor_deferred<T: UeClass>(
         &self,
         transform: &OwnedStruct<FTransform>,
-    ) -> RustealResult<UObjectRef<T>> {
+    ) -> RustealResult<UObjectRef<'a, T>> {
         let world = self.checked()?.raw();
         let class = T::static_class();
         let null = rusteal_ffi::UObjectHandle::null();
@@ -203,8 +203,8 @@ impl WorldSpawnExt for UObjectRef<World> {
     fn spawn_actor_deferred_full<T: UeClass>(
         &self,
         transform: &OwnedStruct<FTransform>,
-        params: SpawnParams,
-    ) -> RustealResult<UObjectRef<T>> {
+        params: SpawnParams<'_>,
+    ) -> RustealResult<UObjectRef<'a, T>> {
         self.spawn_actor_deferred_of_class(SubclassOf::base(), transform, params)
     }
 
@@ -212,8 +212,8 @@ impl WorldSpawnExt for UObjectRef<World> {
         &self,
         class: SubclassOf<T>,
         transform: &OwnedStruct<FTransform>,
-        params: SpawnParams,
-    ) -> RustealResult<UObjectRef<T>> {
+        params: SpawnParams<'_>,
+    ) -> RustealResult<UObjectRef<'a, T>> {
         let world = self.checked()?.raw();
 
         if class.is_null() {
@@ -244,7 +244,7 @@ impl WorldSpawnExt for UObjectRef<World> {
         rusteal_core::world::finish_spawning_raw(actor_handle, &transform.to_bytes())
     }
 
-    fn get_all_actors_of_class<T: UeClass>(&self) -> RustealResult<Vec<UObjectRef<T>>> {
+    fn get_all_actors_of_class<T: UeClass>(&self) -> RustealResult<Vec<UObjectRef<'a, T>>> {
         let world = self.checked()?.raw();
         let class = T::static_class();
         let handles = rusteal_core::world::get_all_actors_of_class_raw(world, class)?;
@@ -256,13 +256,21 @@ impl WorldSpawnExt for UObjectRef<World> {
     }
 }
 
-pub fn find_object<T: UeClass>(path: &str) -> RustealResult<UObjectRef<T>> {
+/// The object at `path`, if one is loaded; it lives as long as `gt` is borrowed.
+pub fn find_object<'a, T: UeClass>(
+    _gt: &'a rusteal_core::GameThread,
+    path: &str,
+) -> RustealResult<UObjectRef<'a, T>> {
     let class = T::static_class();
     let handle = rusteal_core::world::find_object_raw(class, path)?;
     Ok(unsafe { UObjectRef::from_raw(handle) })
 }
 
-pub fn load_object<T: UeClass>(path: &str) -> RustealResult<UObjectRef<T>> {
+/// The object at `path`, loaded now if it is not; it lives as long as `gt` is borrowed.
+pub fn load_object<'a, T: UeClass>(
+    _gt: &'a rusteal_core::GameThread,
+    path: &str,
+) -> RustealResult<UObjectRef<'a, T>> {
     let class = T::static_class();
     let handle = rusteal_core::world::load_object_raw(class, path)?;
     Ok(unsafe { UObjectRef::from_raw(handle) })
@@ -274,14 +282,19 @@ pub fn load_class<T: UeClass>(path: &str) -> RustealResult<SubclassOf<T>> {
     SubclassOf::from_class(rusteal_ffi::UClassHandle(handle.0))
 }
 
-pub fn new_object<T: UeClass>(outer: &UObjectRef<impl UeClass>) -> RustealResult<UObjectRef<T>> {
+pub fn new_object<'a, T: UeClass>(
+    outer: &UObjectRef<'a, impl UeClass>,
+) -> RustealResult<UObjectRef<'a, T>> {
     let outer_handle = outer.checked()?.raw();
     let class = T::static_class();
     let handle = rusteal_core::world::new_object_raw(outer_handle, class)?;
     Ok(unsafe { UObjectRef::from_raw(handle) })
 }
 
-pub fn new_object_transient<T: UeClass>() -> RustealResult<UObjectRef<T>> {
+/// A new object with no outer; it lives as long as `gt` is borrowed.
+pub fn new_object_transient<'a, T: UeClass>(
+    _gt: &'a rusteal_core::GameThread,
+) -> RustealResult<UObjectRef<'a, T>> {
     let class = T::static_class();
     let null_outer = rusteal_ffi::UObjectHandle::null();
     let handle = rusteal_core::world::new_object_raw(null_outer, class)?;

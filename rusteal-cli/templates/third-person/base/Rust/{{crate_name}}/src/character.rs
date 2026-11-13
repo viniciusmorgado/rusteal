@@ -7,7 +7,9 @@ use bindings::engine::{
 };
 use bindings::enhanced_input::{ETriggerEvent, FInputActionValue, InputAction};
 use bindings::prelude::*;
-use rusteal_runtime::runtime::{Rotator, RustealResult, UObjectRef, UStructRef, method};
+use rusteal_runtime::runtime::{
+    Rotator, RustealResult, TWeakObjectPtr, UObjectRef, UStructRef, method,
+};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use model::{LookInput, MoveInput};
@@ -143,8 +145,11 @@ impl ThirdPersonCharacter {
             return Ok(false);
         }
 
+        // Input fires in later frames: the closures keep the character as a weak pointer.
+        let character = TWeakObjectPtr::from_ref(&me);
+
         bind_action(&me, self.jump_action(), ETriggerEvent::Started, move |_| {
-            if let Ok(character) = me.checked() {
+            if let Ok(character) = character.checked() {
                 character.jump();
             }
         })?;
@@ -154,7 +159,7 @@ impl ThirdPersonCharacter {
             self.jump_action(),
             ETriggerEvent::Completed,
             move |_| {
-                if let Ok(character) = me.checked() {
+                if let Ok(character) = character.checked() {
                     character.stop_jumping();
                 }
             },

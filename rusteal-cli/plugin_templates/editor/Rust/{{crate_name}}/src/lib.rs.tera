@@ -8,9 +8,14 @@ mod validator;
 
 use bindings::editor_subsystem::EditorSubsystem;
 use bindings::unreal_ed::EditorSubsystemBlueprintLibrary;
-use rusteal_runtime::runtime::{Inherits, RustealResult, SubclassOf, UObjectRef, UeClass};
+use rusteal_runtime::runtime::{
+    GameThread, Inherits, RustealResult, SubclassOf, UObjectRef, UeClass,
+};
 
-pub fn editor_subsystem<T: UeClass + Inherits<EditorSubsystem>>() -> RustealResult<UObjectRef<T>> {
+/// The editor subsystem `T`; it lives as long as `gt` is borrowed.
+pub fn editor_subsystem<T: UeClass + Inherits<EditorSubsystem>>(
+    gt: &GameThread,
+) -> RustealResult<UObjectRef<'_, T>> {
     let class = SubclassOf::<T>::base().upcast_to::<EditorSubsystem>();
-    EditorSubsystemBlueprintLibrary::get_editor_subsystem(class).cast::<T>()
+    EditorSubsystemBlueprintLibrary::get_editor_subsystem(gt, class).cast::<T>()
 }

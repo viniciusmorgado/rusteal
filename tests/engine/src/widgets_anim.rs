@@ -3,14 +3,16 @@ use std::sync::Mutex;
 use bindings::core_ue::Object;
 use bindings::engine::{
     ActorComponent, ActorExt, AnimInstance, EVisibilityBasedAnimTickOption, GameplayStatics,
-    KismetSystemLibrary,
-    SkeletalMesh, SkeletalMeshComponent, SkeletalMeshComponentExt, SkinnedMeshComponentExt,
+    KismetSystemLibrary, SkeletalMesh, SkeletalMeshComponent, SkeletalMeshComponentExt,
+    SkinnedMeshComponentExt,
 };
 use bindings::prelude::*;
 use bindings::rusteal::{RustealAnimInstance, RustealUserWidget};
 use bindings::slate_core::FGeometry;
 use bindings::umg::{UserWidgetExt, WidgetExt};
-use rusteal_runtime::runtime::{SubclassOf, Transform, UObjectRef, UStructRef, task};
+use rusteal_runtime::runtime::{
+    GameThread, SubclassOf, TWeakObjectPtr, Transform, UObjectRef, UStructRef, task,
+};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use crate::runner::{Context, Outcome};
@@ -117,7 +119,9 @@ pub fn widget_virtuals_reach_rust(context: &Context) -> Outcome {
         let controller = GameplayStatics::get_player_controller(world, 0);
         let widget = create_widget::<VirtualsWidget>(&controller).map_err(e)?;
         widget.checked().map_err(e)?.add_to_viewport(None);
-        Ok::<_, String>(widget)
+
+        // The check runs on in later frames: it keeps the widget as a weak pointer.
+        Ok::<_, String>(TWeakObjectPtr::from_ref(&widget))
     })();
 
     let widget = match started {
@@ -158,13 +162,10 @@ pub fn anim_instance_updates_off_the_game_thread(context: &Context) -> Outcome {
         let world: UObjectRef<Object> = context.world.upcast_to();
         KismetSystemLibrary::execute_console_command(world, "a.ForceParallelAnimUpdate 1", None);
 
-        let transform = FTransform::from_transform(Transform::from_translation(
-            glam::DVec3::new(-40_000.0, 0.0, 40_000.0),
-        ));
-        let actor = context
-            .world
-            .spawn_actor::<Actor>(&transform)
-            .map_err(e)?;
+        let transform = FTransform::from_transform(Transform::from_translation(glam::DVec3::new(
+            -40_000.0, 0.0, 40_000.0,
+        )));
+        let actor = context.world.spawn_actor::<Actor>(&transform).map_err(e)?;
         let checked = actor.checked().map_err(e)?;
 
         let component = checked.add_component_by_class(
@@ -179,17 +180,21 @@ pub fn anim_instance_updates_off_the_game_thread(context: &Context) -> Outcome {
             .checked()
             .map_err(e)?;
 
-        let mesh = load_object::<SkeletalMesh>("/Engine/EngineMeshes/SkeletalCube.SkeletalCube")
-            .map_err(e)?;
+        let gt = GameThread::current().map_err(e)?;
+        let mesh =
+            load_object::<SkeletalMesh>(&gt, "/Engine/EngineMeshes/SkeletalCube.SkeletalCube")
+                .map_err(e)?;
         mesh_component.set_visibility_based_anim_tick_option(
             EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones,
         );
-        mesh_component.set_anim_instance_class(
-            SubclassOf::<VirtualsAnim>::base().upcast_to::<Object>(),
-        );
+        mesh_component
+            .set_anim_instance_class(SubclassOf::<VirtualsAnim>::base().upcast_to::<Object>());
         mesh_component.set_skeletal_mesh_asset(mesh);
 
-        Ok::<_, String>((actor, mesh_component.as_ref()))
+        Ok::<_, String>((
+            TWeakObjectPtr::from_ref(&actor),
+            TWeakObjectPtr::from_ref(&mesh_component.as_ref()),
+        ))
     })();
 
     let (actor, mesh_component) = match started {
@@ -206,9 +211,12 @@ pub fn anim_instance_updates_off_the_game_thread(context: &Context) -> Outcome {
             return None;
         }
 
+        let mesh_component = mesh_component.get().unwrap_or_default();
+
         let result = (|| {
             let e = |e| format!("{e:?}");
-            let anim: UObjectRef<AnimInstance> = mesh_component.checked().map_err(e)?.get_anim_instance();
+            let anim: UObjectRef<AnimInstance> =
+                mesh_component.checked().map_err(e)?.get_anim_instance();
             let anim = VirtualsAnim::from_obj(anim).map_err(e)?;
 
             let updates = anim.updates();
@@ -221,15 +229,24 @@ pub fn anim_instance_updates_off_the_game_thread(context: &Context) -> Outcome {
                 anim.initialized()
             );
 
-            ensure(anim.initialized() && updates > 0 && thread_safe > 0, summary.clone())?;
-            ensure(worker > 0, format!("no thread-safe update ran on a worker: {summary}"))?;
+            ensure(
+                anim.initialized() && updates > 0 && thread_safe > 0,
+                summary.clone(),
+            )?;
+            ensure(
+                worker > 0,
+                format!("no thread-safe update ran on a worker: {summary}"),
+            )?;
             ensure(
                 unguarded <= thread_safe - worker,
                 format!("an override without ThreadSafe ran on a worker: {summary}"),
             )?;
             ensure(
                 anim.game_thread_only() == updates,
-                format!("{} game-thread updates for {updates}", anim.game_thread_only()),
+                format!(
+                    "{} game-thread updates for {updates}",
+                    anim.game_thread_only()
+                ),
             )
         })();
 

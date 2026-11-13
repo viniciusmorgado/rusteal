@@ -193,7 +193,7 @@ impl<T: UeStruct> DynamicValue for OwnedStruct<T> {
     }
 }
 
-impl<T: UeClass> DynamicValue for UObjectRef<T> {
+impl<T: UeClass> DynamicValue for UObjectRef<'_, T> {
     fn write_to(&self, container: UObjectHandle, prop: FPropertyHandle) -> RustealResult<()> {
         write_object(container, prop, self.raw())
     }
@@ -223,7 +223,7 @@ impl<T: UeClass> DynamicValue for TWeakObjectPtr<T> {
     }
 }
 
-impl<I: UeInterface + ?Sized> DynamicValue for Option<ScriptInterface<I>> {
+impl<I: UeInterface + ?Sized> DynamicValue for Option<ScriptInterface<'_, I>> {
     fn write_to(&self, container: UObjectHandle, prop: FPropertyHandle) -> RustealResult<()> {
         write_object(
             container,

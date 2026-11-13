@@ -6,7 +6,7 @@ use bindings::engine::{
 };
 use bindings::prelude::*;
 use bindings::rusteal::{RustealCharacter, RustealCharacterMovementComponent, RustealCommandlet};
-use rusteal_runtime::runtime::{Rotator, Transform, UObjectRef};
+use rusteal_runtime::runtime::{Rotator, TWeakObjectPtr, Transform, UObjectRef};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use crate::runner::{Context, Outcome};
@@ -64,7 +64,11 @@ impl VirtualsCommandlet {
     fn receive_main(&mut self, params: String) -> i32 {
         log::info!("[RustealTests] VirtualsCommandlet ran with `{params}`");
 
-        if params.contains("rusteal-probe") { 3 } else { 1 }
+        if params.contains("rusteal-probe") {
+            3
+        } else {
+            1
+        }
     }
 }
 
@@ -75,9 +79,9 @@ fn ensure(condition: bool, what: impl Into<String>) -> Result<(), String> {
 pub fn custom_movement_reaches_rust(context: &Context) -> Outcome {
     let started = (|| {
         let e = |e| format!("{e:?}");
-        let transform = FTransform::from_transform(Transform::from_translation(
-            glam::DVec3::new(40_000.0, -40_000.0, 40_000.0),
-        ));
+        let transform = FTransform::from_transform(Transform::from_translation(glam::DVec3::new(
+            40_000.0, -40_000.0, 40_000.0,
+        )));
         let mover = context
             .world
             .spawn_actor::<VirtualsMover>(&transform)
@@ -94,7 +98,13 @@ pub fn custom_movement_reaches_rust(context: &Context) -> Outcome {
         checked_movement.set_movement_mode(EMovementMode::MOVE_Custom, Some(1));
 
         let start_z = checked.k2_get_actor_location().to_dvec3().z;
-        Ok::<_, String>((mover, movement, changes_before, start_z))
+        // The check runs on in later frames: it keeps the objects as weak pointers.
+        Ok::<_, String>((
+            TWeakObjectPtr::from_ref(&mover),
+            TWeakObjectPtr::from_ref(&movement),
+            changes_before,
+            start_z,
+        ))
     })();
 
     let (mover, movement, changes_before, start_z) = match started {
@@ -111,13 +121,23 @@ pub fn custom_movement_reaches_rust(context: &Context) -> Outcome {
             return None;
         }
 
+        let (mover, movement) = (
+            mover.get().unwrap_or_default(),
+            movement.get().unwrap_or_default(),
+        );
+
         let result = (|| {
             let e = |e| format!("{e:?}");
             let custom = VirtualsMovement::from_obj(movement).map_err(e)?;
             let steps = custom.custom_steps();
             let max_speed = movement.checked().map_err(e)?.get_max_speed();
             let changes = MODE_CHANGES.load(Ordering::SeqCst) - changes_before;
-            let z = mover.checked().map_err(e)?.k2_get_actor_location().to_dvec3().z;
+            let z = mover
+                .checked()
+                .map_err(e)?
+                .k2_get_actor_location()
+                .to_dvec3()
+                .z;
 
             ensure(
                 steps > 0 && z > start_z,

@@ -86,6 +86,34 @@ const MIGRATIONS: &[(&str, &str)] = &[
          Slate and details no longer need Send either. Debug builds check that engine calls are \
          made on the game thread (or inside a #[ufunction(ThreadSafe)] for properties).",
     ),
+    (
+        "0.10.0",
+        "UObjectRef<'a, T>, Checked<'a, T> and ScriptInterface<'a, I> live as long as the call \
+         that handed them out: they cannot be kept in a struct field, a static, or a closure or \
+         task that runs later. Keep a TWeakObjectPtr<T> there instead and resolve it when it \
+         runs. A function that returns an object it got neither from its parameters nor from \
+         &self names the lifetime (fn f<'a>(x: UObjectRef<'a, A>) -> UObjectRef<'a, B>) or \
+         re-scopes it with with_scope_of(&other). Objects found from a path or made with no outer \
+         borrow a GameThread: load_object(&gt, path), find_object(&gt, path), \
+         new_object_transient(&gt), and engine functions with no object parameter that return \
+         one take &gt first (let gt = GameThread::current()?). SoftObjectRef::get and \
+         load_synchronous borrow the soft reference: keep it in a let first.",
+    ),
+    (
+        "0.10.0",
+        "MyClass::from_obj(object) gives a RustRef<'_, MyClass>, which derefs to the class, \
+         instead of the class itself: a function that returned MyClass returns \
+         RustRef<'_, MyClass>, and method(&*this, ...) takes the class out of it. The setters of \
+         Rust-only fields take &self. The ThreadSafe view of a class has a lifetime \
+         (MyClassThreadSafe<'_>).",
+    ),
+    (
+        "0.10.0",
+        "What arrives after an .await comes as weak pointers: a delegate's next() and native \
+         events give TWeakObjectPtr<T> for their objects, SoftObjectRef::load_async and \
+         loading::load_all/load_primary_asset give TWeakObjectPtr<T>, and an async #[ufunction] \
+         takes its object parameters as TWeakObjectPtr<T>. Call get() or checked() on them.",
+    ),
 ];
 
 pub fn migration_notes(from: Version, to: Version) -> Vec<(Version, &'static str)> {

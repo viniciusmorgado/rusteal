@@ -9,30 +9,30 @@ use crate::object_ref::UObjectRef;
 use crate::traits::{UeClass, UeInterface};
 
 /// An object that implements the interface `I`, kept like [`UObjectRef`]: by its index and serial
-/// number, valid while the object lives.
+/// number, valid while the object lives, and for no longer than the call `'a` that handed it out.
 #[repr(transparent)]
-pub struct ScriptInterface<I: UeInterface + ?Sized> {
+pub struct ScriptInterface<'a, I: UeInterface + ?Sized> {
     weak: FWeakObjectHandle,
-    _marker: PhantomData<*const I>,
+    _marker: PhantomData<(&'a (), *const I)>,
 }
 
-impl<I: UeInterface + ?Sized> Clone for ScriptInterface<I> {
+impl<I: UeInterface + ?Sized> Clone for ScriptInterface<'_, I> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<I: UeInterface + ?Sized> Copy for ScriptInterface<I> {}
+impl<I: UeInterface + ?Sized> Copy for ScriptInterface<'_, I> {}
 
-impl<I: UeInterface + ?Sized> PartialEq for ScriptInterface<I> {
+impl<I: UeInterface + ?Sized> PartialEq for ScriptInterface<'_, I> {
     fn eq(&self, other: &Self) -> bool {
         self.weak == other.weak
     }
 }
 
-impl<I: UeInterface + ?Sized> Eq for ScriptInterface<I> {}
+impl<I: UeInterface + ?Sized> Eq for ScriptInterface<'_, I> {}
 
-impl<I: UeInterface + ?Sized> std::fmt::Debug for ScriptInterface<I> {
+impl<I: UeInterface + ?Sized> std::fmt::Debug for ScriptInterface<'_, I> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ScriptInterface")
             .field("index", &self.weak.object_index)
@@ -41,7 +41,7 @@ impl<I: UeInterface + ?Sized> std::fmt::Debug for ScriptInterface<I> {
     }
 }
 
-impl<I: UeInterface + ?Sized> ScriptInterface<I> {
+impl<'a, I: UeInterface + ?Sized> ScriptInterface<'a, I> {
     #[track_caller]
     pub fn new(object: UObjectHandle) -> RustealResult<Self> {
         if !unsafe { ffi_dispatch::core_is_valid(object) } {
@@ -75,7 +75,7 @@ impl<I: UeInterface + ?Sized> ScriptInterface<I> {
     }
 
     #[track_caller]
-    pub fn object<T: UeClass>(&self) -> RustealResult<UObjectRef<T>> {
+    pub fn object<T: UeClass>(&self) -> RustealResult<UObjectRef<'a, T>> {
         UObjectRef::<T>::from_weak(self.weak).cast()
     }
 

@@ -11,8 +11,8 @@ pub struct CommandContext {
 
 impl CommandContext {
     #[track_caller]
-    pub fn world<W: UeClass>(&self) -> RustealResult<UObjectRef<W>> {
-        UObjectRef::from_handle(self.world)
+    pub fn world<W: UeClass>(&self) -> RustealResult<UObjectRef<'_, W>> {
+        unsafe { UObjectRef::from_handle(self.world) }
     }
 }
 

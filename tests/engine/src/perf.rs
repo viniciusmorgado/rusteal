@@ -41,17 +41,25 @@ fn measure(context: &Context) -> Result<Vec<String>, String> {
     for n in 0..CALLS {
         sum = black_box(sum.wrapping_add(n as i32));
     }
-    lines.push(format!("rust_add_baseline {:.1} ns", nanoseconds_per(start, CALLS)));
+    lines.push(format!(
+        "rust_add_baseline {:.1} ns",
+        nanoseconds_per(start, CALLS)
+    ));
 
     let start = Instant::now();
     for n in 0..CALLS {
         sum = KismetMathLibrary::add_int_int(black_box(sum), Some(n as i32 & 7));
     }
-    lines.push(format!("binding_call {:.1} ns", nanoseconds_per(start, CALLS)));
+    lines.push(format!(
+        "binding_call {:.1} ns",
+        nanoseconds_per(start, CALLS)
+    ));
 
-    let library = UObjectRef::<Object>::from_handle(
-        reflected::default_object(KismetMathLibrary::static_class()).map_err(e)?,
-    )
+    let library = unsafe {
+        UObjectRef::<Object>::from_handle(
+            reflected::default_object(KismetMathLibrary::static_class()).map_err(e)?,
+        )
+    }
     .map_err(e)?;
 
     let start = Instant::now();

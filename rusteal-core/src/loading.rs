@@ -9,10 +9,11 @@ use crate::delegate_registry::{register_callback, unregister_callback};
 use crate::error::{RustealError, RustealResult, check_ffi};
 use crate::ffi_dispatch;
 use crate::lock_or_recover;
-use crate::object_ref::UObjectRef;
+use crate::object_ref::ObjectPointer;
 use crate::soft_ref::SoftObjectRef;
 use crate::sync::Mutex;
 use crate::traits::UeClass;
+use crate::weak_ptr::TWeakObjectPtr;
 
 #[derive(Default)]
 struct State {
@@ -125,7 +126,7 @@ async fn load_paths(paths: Vec<String>) -> RustealResult<Vec<UObjectHandle>> {
     request.objects()
 }
 
-fn typed<T: UeClass>(handle: UObjectHandle, path: &str) -> RustealResult<UObjectRef<T>> {
+fn typed<T: UeClass>(handle: UObjectHandle, path: &str) -> RustealResult<TWeakObjectPtr<T>> {
     if handle.is_null() {
         return Err(RustealError::invalid_operation(format!(
             "load_async: failed to load: {path}"
@@ -137,7 +138,7 @@ fn typed<T: UeClass>(handle: UObjectHandle, path: &str) -> RustealResult<UObject
             .context(format!("load_async: {path}")));
     }
 
-    Ok(unsafe { UObjectRef::from_raw(handle) })
+    Ok(unsafe { TWeakObjectPtr::from_object_handle(handle) })
 }
 
 pub(crate) async fn load_raw(path: String) -> RustealResult<UObjectHandle> {
@@ -156,11 +157,12 @@ pub(crate) async fn load_raw(path: String) -> RustealResult<UObjectHandle> {
     Ok(handle)
 }
 
-/// Loads `asset` in the background, resuming when it is in memory.
+/// Loads `asset` in the background, resuming when it is in memory, as a weak pointer: the value
+/// is used after an `.await`, past the call that started the load.
 ///
 /// The loaded object is only referenced by what keeps it: store it in a `#[uproperty]`, or pin it,
 /// before the next garbage collection.
-pub(crate) async fn load_one<T: UeClass>(path: String) -> RustealResult<UObjectRef<T>> {
+pub(crate) async fn load_one<T: UeClass>(path: String) -> RustealResult<TWeakObjectPtr<T>> {
     let handle = load_paths(vec![path.clone()])
         .await?
         .first()
@@ -174,7 +176,7 @@ pub(crate) async fn load_one<T: UeClass>(path: String) -> RustealResult<UObjectR
 /// that asset or why it did not load.
 pub async fn load_all<T: UeClass>(
     assets: &[SoftObjectRef<T>],
-) -> RustealResult<Vec<RustealResult<UObjectRef<T>>>> {
+) -> RustealResult<Vec<RustealResult<TWeakObjectPtr<T>>>> {
     let paths: Vec<String> = assets.iter().map(|a| a.path().to_string()).collect();
     let handles = load_paths(paths.clone()).await?;
 
@@ -194,7 +196,7 @@ pub async fn load_all<T: UeClass>(
 pub async fn load_primary_asset<T: UeClass>(
     id: &str,
     bundles: &[&str],
-) -> RustealResult<UObjectRef<T>> {
+) -> RustealResult<TWeakObjectPtr<T>> {
     let bundles = bundles.join("\n");
     let mut request = Request::new(1);
 

@@ -170,44 +170,96 @@ pub fn generate_class(class: &ClassInfo, ctx: &CodegenContext) -> String {
 
     let trait_name = format!("{name}Ext");
 
-    out.push_str(&format!(
-        "pub trait {trait_name}: rusteal_core::ValidHandle {{\n"
-    ));
+    // Every object a class's functions and properties hand out lives as long as the `Checked`
+    // they are called on (`'a`), not as long as the borrow of it: `me.checked()?.get_owner()` is
+    // then a value that outlives the temporary `Checked`.
+    let mut trait_body = String::new();
 
     for prop in &deduped_props {
-        properties::generate_property(&mut out, prop, &pctx, ctx, &suppress_setters);
+        properties::generate_property(&mut trait_body, prop, &pctx, ctx, &suppress_setters);
     }
 
-    delegates::generate_delegate_impls(&mut out, &own_delegate_infos);
+    delegates::generate_delegate_impls(&mut trait_body, &own_delegate_infos);
 
     let (static_funcs, instance_funcs): (Vec<&FuncEntry>, Vec<&FuncEntry>) =
         class_funcs.iter().partition(|e| is_static_fn(e));
 
     for entry in &instance_funcs {
-        generate_function(&mut out, entry, &entry.class_name, ctx);
+        generate_function(&mut trait_body, entry, &entry.class_name, ctx);
     }
 
+    out.push_str(&format!(
+        "pub trait {trait_name}<'a>: rusteal_core::ValidHandle {{\n"
+    ));
+    out.push_str(&with_call_lifetime(&trait_body));
     out.push_str("}\n\n");
 
     if !static_funcs.is_empty() {
         out.push_str(&format!("impl {name} {{\n"));
 
         for entry in &static_funcs {
-            generate_function(&mut out, entry, &entry.class_name, ctx);
+            let mut function = String::new();
+            generate_function(&mut function, entry, &entry.class_name, ctx);
+            out.push_str(&anchor_static_function(&function));
         }
 
         out.push_str("}\n\n");
     }
 
     out.push_str(&format!(
-        "impl {trait_name} for rusteal_core::Checked<{name}> {{}}\n"
-    ));
-
-    out.push_str(&format!(
-        "impl {trait_name} for rusteal_core::Pinned<{name}> {{}}\n"
+        "impl<'a> {trait_name}<'a> for rusteal_core::Checked<'a, {name}> {{}}\n"
     ));
 
     out
+}
+
+/// `code` with every object reference it names living for `'a`, the call lifetime of the
+/// `Checked` a class's functions are called on.
+pub(super) fn with_call_lifetime(code: &str) -> String {
+    code.replace("rusteal_core::UObjectRef<", "rusteal_core::UObjectRef<'a, ")
+}
+
+/// A static function's code with its objects tied to one lifetime `'a`: the objects it takes,
+/// or, when it takes none, a `&'a GameThread` borrowed for the objects it hands out.
+pub(super) fn anchor_static_function(code: &str) -> String {
+    code.lines()
+        .map(|line| {
+            let Some(signature) = line.strip_prefix("    pub fn ") else {
+                return line.to_string();
+            };
+
+            if !signature.contains("rusteal_core::UObjectRef<") {
+                return line.to_string();
+            }
+
+            let Some(open) = signature.find('(') else {
+                return line.to_string();
+            };
+
+            let name = &signature[..open];
+            let rest = &signature[open + 1..];
+            let close = rest
+                .rfind(") -> ")
+                .or_else(|| rest.rfind(") {"))
+                .unwrap_or(rest.len());
+            let params = with_call_lifetime(&rest[..close]);
+            let tail = with_call_lifetime(&rest[close..]);
+
+            let params = if tail.contains("UObjectRef<'a,") && !params.contains("UObjectRef<'a,") {
+                if params.trim().is_empty() {
+                    "_gt: &'a rusteal_core::GameThread".to_string()
+                } else {
+                    format!("_gt: &'a rusteal_core::GameThread, {params}")
+                }
+            } else {
+                params
+            };
+
+            format!("    pub fn {name}<'a>({params}{tail}")
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+        + if code.ends_with('\n') { "\n" } else { "" }
 }
 
 pub(super) fn is_latent_info(param: &ParamInfo) -> bool {

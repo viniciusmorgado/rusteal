@@ -10,12 +10,12 @@ use bindings::enhanced_input::InputAction;
 use bindings::manual::world_ext::new_object_transient;
 use bindings::prelude::*;
 use rusteal_runtime::runtime::TWeakObjectPtr;
-use rusteal_runtime::runtime::{UObjectRef, method, task, timer};
+use rusteal_runtime::runtime::{GameThread, UObjectRef, method, task, timer};
 
 use crate::fixtures::TestActor;
 use crate::runner::{Context, Outcome};
 
-fn spawn(context: &Context) -> Result<UObjectRef<TestActor>, String> {
+fn spawn<'a>(context: &Context<'a>) -> Result<UObjectRef<'a, TestActor>, String> {
     let transform = FTransform::from_transform(rusteal_runtime::runtime::Transform::IDENTITY);
 
     context
@@ -24,7 +24,7 @@ fn spawn(context: &Context) -> Result<UObjectRef<TestActor>, String> {
         .map_err(|e| format!("spawn: {e:?}"))
 }
 
-fn destroy(actor: UObjectRef<TestActor>) -> Result<(), String> {
+fn destroy(actor: UObjectRef<'_, TestActor>) -> Result<(), String> {
     actor
         .checked()
         .map_err(|e| format!("checked: {e:?}"))?
@@ -43,6 +43,9 @@ pub fn a_destroyed_object_is_invalid_after_collection(context: &Context) -> Outc
         return Outcome::Done(Err("a destroyed actor is still valid".into()));
     }
 
+    // The check runs on in later frames: it keeps the actor as a weak pointer.
+    let actor = TWeakObjectPtr::from_ref(&actor);
+
     KismetSystemLibrary::collect_garbage();
     let mut frames = 0;
 
@@ -53,7 +56,7 @@ pub fn a_destroyed_object_is_invalid_after_collection(context: &Context) -> Outc
             return None;
         }
 
-        if actor.is_valid() || actor.checked().is_ok() || actor.raw() != Default::default() {
+        if actor.is_valid() || actor.checked().is_ok() || actor.get().is_some() {
             return Some(Err("a reference to a collected actor still resolves".into()));
         }
 
@@ -62,12 +65,16 @@ pub fn a_destroyed_object_is_invalid_after_collection(context: &Context) -> Outc
 }
 
 pub fn a_new_object_in_a_reused_slot_is_not_the_old_one(_context: &Context) -> Outcome {
-    let old = match new_object_transient::<InputAction>() {
+    let created = GameThread::current().and_then(|gt| {
+        new_object_transient::<InputAction>(&gt).map(|old| TWeakObjectPtr::from_ref(&old))
+    });
+
+    let old = match created {
         Ok(old) => old,
         Err(e) => return Outcome::Done(Err(format!("new_object_transient: {e:?}"))),
     };
 
-    let old_index = old.weak_handle().object_index;
+    let old_index = old.handle().object_index;
 
     KismetSystemLibrary::collect_garbage();
     let mut frames = 0;
@@ -85,16 +92,21 @@ pub fn a_new_object_in_a_reused_slot_is_not_the_old_one(_context: &Context) -> O
             ));
         }
 
+        let gt = match GameThread::current() {
+            Ok(gt) => gt,
+            Err(e) => return Some(Err(format!("{e:?}"))),
+        };
+
         let mut kept = Vec::new();
 
         for _ in 0..512 {
-            let new = match new_object_transient::<InputAction>() {
+            let new = match new_object_transient::<InputAction>(&gt) {
                 Ok(new) => new,
                 Err(e) => return Some(Err(format!("new_object_transient: {e:?}"))),
             };
 
             if new.weak_handle().object_index == old_index {
-                if new == old || old.is_valid() || !new.is_valid() {
+                if new.weak_handle() == old.handle() || old.is_valid() || !new.is_valid() {
                     return Some(Err(
                         "the object in the old one's slot was taken for it".into()
                     ));
@@ -118,7 +130,7 @@ pub fn a_method_callback_skips_a_destroyed_object(context: &Context) -> Outcome 
 
     let callback = match spawn(context).and_then(|actor| {
         let this = TestActor::from_obj(actor).map_err(|e| format!("{e:?}"))?;
-        let callback = method(&this, move |_: &TestActor| {
+        let callback = method(&*this, move |_: &TestActor| {
             counted.fetch_add(1, Ordering::Relaxed);
         });
 

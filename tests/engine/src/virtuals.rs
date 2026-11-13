@@ -9,7 +9,9 @@ use bindings::rusteal::{
     RustealPlayerController, RustealProbeActor, RustealSceneComponent,
 };
 use rusteal_runtime::runtime::tick::live_tick_functions;
-use rusteal_runtime::runtime::{OwnedStruct, SubclassOf, Transform, UObjectRef, UStructRef};
+use rusteal_runtime::runtime::{
+    OwnedStruct, SubclassOf, TWeakObjectPtr, Transform, UObjectRef, UStructRef,
+};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use crate::runner::{Context, Outcome};
@@ -248,9 +250,9 @@ pub fn project_virtuals_reach_rust(context: &Context) -> Outcome {
     })())
 }
 
-fn spawn_at<T: rusteal_runtime::runtime::UeClass>(
-    context: &Context,
-) -> Result<UObjectRef<T>, String> {
+fn spawn_at<'a, T: rusteal_runtime::runtime::UeClass>(
+    context: &Context<'a>,
+) -> Result<UObjectRef<'a, T>, String> {
     let transform = FTransform::from_transform(Transform::IDENTITY);
 
     context
@@ -324,7 +326,11 @@ pub fn every_curated_virtual_reaches_rust(context: &Context) -> Outcome {
         removed.remove();
 
         let _ = post_physics;
-        Ok::<_, String>((actor, others))
+
+        // The check runs on in later frames: it keeps the actors as weak pointers.
+        let others: Vec<TWeakObjectPtr<Actor>> =
+            others.iter().map(TWeakObjectPtr::from_ref).collect();
+        Ok::<_, String>((TWeakObjectPtr::from_ref(&actor), others))
     })();
 
     let (actor, others) = match started {
@@ -417,12 +423,7 @@ pub fn every_curated_virtual_reaches_rust(context: &Context) -> Outcome {
                         "a tick function ran before its prerequisite",
                     )
                 })
-                .and_then(|_| {
-                    ensure(
-                        !has("tick_function:removed"),
-                        "a removed tick function ran",
-                    )
-                })
+                .and_then(|_| ensure(!has("tick_function:removed"), "a removed tick function ran"))
                 .and_then(|_| {
                     ensure(
                         live_while_running == live_before + 3 && live_after == live_before,

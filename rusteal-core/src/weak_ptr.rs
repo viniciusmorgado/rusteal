@@ -8,13 +8,45 @@ use crate::ffi_dispatch;
 use crate::object_ref::{Checked, ObjectPointer, UObjectRef};
 use crate::traits::UeClass;
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+/// A reference to an object that does not keep it alive, and says when it is gone: `get()` is
+/// `None` once the object is destroyed. It is a plain value, unlike [`UObjectRef`], so it can be
+/// kept in fields, closures and tasks, and sent to other threads; it resolves on the game thread.
 pub struct TWeakObjectPtr<T: UeClass> {
     handle: FWeakObjectHandle,
-    _marker: PhantomData<*const T>,
+    _marker: PhantomData<fn() -> T>,
 }
 
-unsafe impl<T: UeClass> Send for TWeakObjectPtr<T> {}
+// By hand, so that they hold whatever `T` is: a class is not itself `Copy` or `Eq`.
+impl<T: UeClass> Clone for TWeakObjectPtr<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<T: UeClass> Copy for TWeakObjectPtr<T> {}
+
+impl<T: UeClass> PartialEq for TWeakObjectPtr<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.handle == other.handle
+    }
+}
+
+impl<T: UeClass> Eq for TWeakObjectPtr<T> {}
+
+impl<T: UeClass> std::hash::Hash for TWeakObjectPtr<T> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.handle.hash(state);
+    }
+}
+
+impl<T: UeClass> std::fmt::Debug for TWeakObjectPtr<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TWeakObjectPtr")
+            .field("index", &self.handle.object_index)
+            .field("serial", &self.handle.object_serial_number)
+            .finish()
+    }
+}
 
 impl<T: UeClass> TWeakObjectPtr<T> {
     pub fn from_ref(obj: &UObjectRef<T>) -> Self {
@@ -85,5 +117,25 @@ unsafe impl<T: UeClass> ContainerElement for TWeakObjectPtr<T> {
         }
 
         std::mem::size_of::<UObjectHandle>() as u32
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct Class;
+
+    impl UeClass for Class {
+        fn static_class() -> rusteal_ffi::UClassHandle {
+            rusteal_ffi::UClassHandle::null()
+        }
+    }
+
+    fn copy_send_sync<T: Copy + Eq + std::hash::Hash + Send + Sync + 'static>() {}
+
+    #[test]
+    fn a_weak_pointer_to_any_class_is_a_plain_value_for_any_thread() {
+        copy_send_sync::<TWeakObjectPtr<Class>>();
     }
 }

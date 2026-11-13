@@ -178,6 +178,28 @@ fn param_kind(ty: &Type) -> Option<ParamKind> {
     }
 }
 
+/// The `T` of a `UObjectRef<T>` (or `UObjectRef<'a, T>`) parameter type.
+fn object_class(ty: &Type) -> Option<Type> {
+    let Type::Path(path) = ty else {
+        return None;
+    };
+
+    let segment = path.path.segments.last()?;
+
+    if segment.ident != "UObjectRef" {
+        return None;
+    }
+
+    let syn::PathArguments::AngleBracketed(args) = &segment.arguments else {
+        return None;
+    };
+
+    args.args.iter().find_map(|arg| match arg {
+        syn::GenericArgument::Type(class) => Some(class.clone()),
+        _ => None,
+    })
+}
+
 fn prop_lookup(struct_name: &Ident, ue_name: &str) -> TokenStream {
     let bytes = ue_name.as_bytes();
     let len = ue_name.len() as u32;
@@ -425,16 +447,34 @@ pub(crate) fn binding_methods(struct_name: &Ident, d: &DelegateInfo) -> TokenStr
         let next = format_ident!("{}_next", d.method_ident.unraw());
         let names: Vec<Ident> = (0..d.params.len()).map(|i| format_ident!("__p{i}")).collect();
 
+        // A parameter arrives after an `.await`, past the call that passed it: an object comes
+        // as a weak pointer.
+        let outputs: Vec<(TokenStream, TokenStream)> = d
+            .params
+            .iter()
+            .zip(&names)
+            .zip(&callback_types)
+            .map(|((p, name), ty)| match (&p.kind, object_class(&p.rust_ty)) {
+                (ParamKind::Object, Some(class)) => (
+                    quote! { ::rusteal_runtime::runtime::TWeakObjectPtr<#class> },
+                    quote! { ::rusteal_runtime::runtime::TWeakObjectPtr::from_ref(&#name) },
+                ),
+                _ => (ty.clone(), quote! { #name }),
+            })
+            .collect();
+        let output_types: Vec<&TokenStream> = outputs.iter().map(|(ty, _)| ty).collect();
+        let output_values: Vec<&TokenStream> = outputs.iter().map(|(_, value)| value).collect();
+
         let (output, value) = match names.len() {
             0 => (quote! { () }, quote! { () }),
             1 => {
-                let ty = &callback_types[0];
-                let name = &names[0];
-                (quote! { #ty }, quote! { #name })
+                let ty = output_types[0];
+                let value = output_values[0];
+                (quote! { #ty }, quote! { #value })
             }
             _ => (
-                quote! { (#(#callback_types),*) },
-                quote! { (#(#names),*) },
+                quote! { (#(#output_types),*) },
+                quote! { (#(#output_values),*) },
             ),
         };
 

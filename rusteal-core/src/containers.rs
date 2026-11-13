@@ -169,7 +169,7 @@ unsafe impl ContainerElement for crate::fname::FName {
     }
 }
 
-unsafe impl<T: UeClass> ContainerElement for UObjectRef<T> {
+unsafe impl<T: UeClass> ContainerElement for UObjectRef<'_, T> {
     const BUF_SIZE: u32 = std::mem::size_of::<UObjectHandle>() as u32;
 
     #[inline]
