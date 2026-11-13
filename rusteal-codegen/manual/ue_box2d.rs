@@ -1,7 +1,7 @@
 use rusteal_core::{OwnedStruct, UeBox2d};
 
-use crate::core_ue::{FBox2D, FBox2DExt, FVector2D};
 use super::vector2d::OwnedFVector2DExt;
+use crate::core_ue::{FBox2D, FBox2DExt, FVector2D};
 
 pub trait OwnedFBox2DExt {
     fn to_ue_box2d(&self) -> UeBox2d;
