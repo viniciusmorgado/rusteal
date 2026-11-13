@@ -525,6 +525,61 @@ impl UPropertyField {
     }
 }
 
+/// The object reference a Rust-only field's type holds, at any depth (`Option`, `Vec`, maps,
+/// tuples, arrays, boxes...): the garbage collector does not see those fields.
+fn object_reference_in(ty: &syn::Type) -> Option<String> {
+    match ty {
+        syn::Type::Path(tp) => tp
+            .qself
+            .as_ref()
+            .and_then(|q| object_reference_in(&q.ty))
+            .or_else(|| object_reference_in_path(&tp.path)),
+        syn::Type::Tuple(tuple) => tuple.elems.iter().find_map(object_reference_in),
+        syn::Type::Array(array) => object_reference_in(&array.elem),
+        syn::Type::Slice(slice) => object_reference_in(&slice.elem),
+        syn::Type::Reference(reference) => object_reference_in(&reference.elem),
+        syn::Type::Ptr(ptr) => object_reference_in(&ptr.elem),
+        syn::Type::Paren(paren) => object_reference_in(&paren.elem),
+        syn::Type::Group(group) => object_reference_in(&group.elem),
+        syn::Type::TraitObject(object) => object.bounds.iter().find_map(|bound| match bound {
+            syn::TypeParamBound::Trait(t) => object_reference_in_path(&t.path),
+            _ => None,
+        }),
+        _ => None,
+    }
+}
+
+fn object_reference_in_path(path: &syn::Path) -> Option<String> {
+    const REFERENCES: [&str; 3] = ["UObjectRef", "Checked", "ScriptInterface"];
+
+    path.segments.iter().find_map(|segment| {
+        let name = segment.ident.to_string();
+
+        if REFERENCES.contains(&name.as_str()) {
+            return Some(name);
+        }
+
+        match &segment.arguments {
+            syn::PathArguments::AngleBracketed(args) => {
+                args.args.iter().find_map(|arg| match arg {
+                    syn::GenericArgument::Type(inner) => object_reference_in(inner),
+                    syn::GenericArgument::AssocType(assoc) => object_reference_in(&assoc.ty),
+                    _ => None,
+                })
+            }
+            syn::PathArguments::Parenthesized(args) => args
+                .inputs
+                .iter()
+                .find_map(|arg| object_reference_in(&arg.ty))
+                .or_else(|| match &args.output {
+                    syn::ReturnType::Type(_, out) => object_reference_in(out),
+                    syn::ReturnType::Default => None,
+                }),
+            syn::PathArguments::None => None,
+        }
+    })
+}
+
 struct RustPrivateField {
     ident: Ident,
     ty: syn::Type,
@@ -647,6 +702,25 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
                 args: pargs,
             });
         } else {
+            if let Some(found) = object_reference_in(&field_ty) {
+                return Err(syn::Error::new_spanned(
+                    &field_ty,
+                    format!(
+                        "`{field_ident}` keeps a `{found}` in a Rust-only field, where the garbage \
+                         collector cannot see it: the object can be destroyed while the field \
+                         still names it.\n\n\
+                         Keep it one of these ways instead:\n\
+                         - `#[uproperty] {field_ident}: UObjectRef<T>` when the class owns the \
+                         object or must keep it: the engine sees it;\n\
+                         - `{field_ident}: TWeakObjectPtr<T>` when the class only observes it: \
+                         `get()` is `None` once it is gone;\n\
+                         - `{field_ident}: Pinned<T>` when Rust alone keeps it alive.\n\n\
+                         Several objects are `#[uproperty] UeArray<UObjectRef<T>>` or \
+                         `Vec<TWeakObjectPtr<T>>`."
+                    ),
+                ));
+            }
+
             rust_fields.push(RustPrivateField {
                 ident: field_ident,
                 ty: field_ty,
@@ -2196,5 +2270,60 @@ mod tests {
         assert!(err.to_string().contains("unknown #[uproperty] argument"));
         let attr: syn::Attribute = parse_quote!(#[uproperty(meta = "x")]);
         assert!(parse_uproperty_args(&attr).is_err());
+    }
+
+    fn private_field_error(field: proc_macro2::TokenStream) -> Option<String> {
+        expand_uclass(
+            quote::quote!(parent = Actor),
+            quote::quote!(
+                pub struct Guard {
+                    #field
+                }
+            ),
+        )
+        .err()
+        .map(|e| e.to_string())
+    }
+
+    #[test]
+    fn object_references_in_rust_only_fields_are_errors() {
+        for field in [
+            quote::quote!(target: UObjectRef<Actor>),
+            quote::quote!(target: Option<UObjectRef<Actor>>),
+            quote::quote!(targets: Vec<UObjectRef<Actor>>),
+            quote::quote!(by_name: std::collections::HashMap<String, UObjectRef<Actor>>),
+            quote::quote!(pair: (i32, rusteal_runtime::runtime::UObjectRef<Actor>)),
+            quote::quote!(fixed: [UObjectRef<Actor>; 2]),
+            quote::quote!(boxed: Box<Option<Checked<Actor>>>),
+            quote::quote!(usable: ScriptInterface<dyn Usable>),
+            quote::quote!(later: Box<dyn Fn(UObjectRef<Actor>)>),
+        ] {
+            let error = private_field_error(field.clone())
+                .unwrap_or_else(|| panic!("`{field}` was accepted"));
+
+            assert!(error.contains("garbage"), "{error}");
+            assert!(error.contains("#[uproperty]"), "{error}");
+            assert!(error.contains("TWeakObjectPtr"), "{error}");
+            assert!(error.contains("Pinned"), "{error}");
+        }
+    }
+
+    #[test]
+    fn rust_only_fields_that_keep_no_object_reference_are_accepted() {
+        for field in [
+            quote::quote!(health: f32),
+            quote::quote!(target: TWeakObjectPtr<Actor>),
+            quote::quote!(targets: Vec<TWeakObjectPtr<Actor>>),
+            quote::quote!(kept: Pinned<Actor>),
+            quote::quote!(timer: Option<TimerHandle>),
+            quote::quote!(#[uproperty] target: UObjectRef<Actor>),
+            quote::quote!(#[uproperty] targets: UeArray<UObjectRef<Actor>>),
+        ] {
+            assert_eq!(
+                private_field_error(field.clone()),
+                None,
+                "`{field}` was refused"
+            );
+        }
     }
 }

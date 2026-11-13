@@ -67,6 +67,15 @@ const MIGRATIONS: &[(&str, &str)] = &[
          once the object is destroyed, and a reference never matches a new object at the old \
          address.",
     ),
+    (
+        "0.10.0",
+        "A #[uclass] refuses Rust-only fields that keep an object (UObjectRef, Checked or \
+         ScriptInterface, inside Option, Vec, maps and the like too): the garbage collector \
+         does not see them. Make the field #[uproperty] when the class owns the object or must \
+         keep it, TWeakObjectPtr<T> when it only observes it, or Pinned<T> when Rust alone keeps \
+         it alive; several objects are #[uproperty] UeArray<UObjectRef<T>> or \
+         Vec<TWeakObjectPtr<T>>.",
+    ),
 ];
 
 pub fn migration_notes(from: Version, to: Version) -> Vec<(Version, &'static str)> {

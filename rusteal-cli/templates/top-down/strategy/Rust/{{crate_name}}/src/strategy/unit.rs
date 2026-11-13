@@ -10,7 +10,9 @@ use bindings::engine::{
 };
 use bindings::prelude::*;
 use glam::DVec3;
-use rusteal_runtime::runtime::{FName, Rotator, RustealResult, SubclassOf, UObjectRef};
+use rusteal_runtime::runtime::{
+    FName, Rotator, RustealResult, SubclassOf, TWeakObjectPtr, UObjectRef,
+};
 use rusteal_runtime::{uclass, uclass_impl};
 
 const INTERACTION_RANGE_RADIUS: f32 = 100.0;
@@ -44,13 +46,13 @@ pub struct StrategyUnit {
     #[uproperty]
     env_query_instance: UObjectRef<EnvQueryInstanceBlueprintWrapper>,
 
-    ai_controller: UObjectRef<AIController>,
+    ai_controller: TWeakObjectPtr<AIController>,
 
     current_movement_goal: DVec3,
 
     b_interact_on_arrival: bool,
 
-    interact_ignore_list: Vec<UObjectRef<StrategyUnit>>,
+    interact_ignore_list: Vec<TWeakObjectPtr<StrategyUnit>>,
 }
 
 #[uclass_impl]
@@ -108,7 +110,7 @@ impl StrategyUnit {
         new_controller: UObjectRef<Controller>,
     ) {
         let ai_controller: UObjectRef<AIController> = new_controller.cast().unwrap_or_default();
-        self.set_ai_controller(ai_controller);
+        self.set_ai_controller(TWeakObjectPtr::from_ref(&ai_controller));
 
         let Ok(controller) = ai_controller.checked() else {
             return;
@@ -194,7 +196,7 @@ impl StrategyUnit {
     ) {
         self.set_current_movement_goal(location);
         self.set_b_interact_on_arrival(b_interact);
-        self.set_interact_ignore_list(ignore_list);
+        self.set_interact_ignore_list(ignore_list.iter().map(TWeakObjectPtr::from_ref).collect());
 
         self.stop_moving();
 
@@ -290,6 +292,7 @@ impl StrategyUnit {
         ignored.extend(
             self.interact_ignore_list()
                 .iter()
+                .filter_map(TWeakObjectPtr::get)
                 .map(|unit| unit.upcast_to()),
         );
 
