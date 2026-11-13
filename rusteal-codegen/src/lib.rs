@@ -3,7 +3,9 @@ pub mod context;
 pub mod cpp_gen;
 pub mod defaults;
 pub mod filter;
+pub mod loc_text;
 pub mod naming;
+pub mod plugin_bindings;
 pub mod rust_gen;
 pub mod schema;
 pub mod type_map;
@@ -11,8 +13,8 @@ pub mod type_map;
 use std::path::Path;
 
 use crate::config::{
-    CodegenConfig, LibraryKind, LibraryOutput, PluginConfig, PluginLayout, ProjectConfig,
-    ProjectLayout,
+    CodegenConfig, LibraryKind, LibraryOutput, PluginConfig, PluginLayout, PluginLibrary,
+    ProjectConfig, ProjectLayout,
 };
 use crate::schema::{ClassesFile, EnumsFile, StructsFile};
 
@@ -31,11 +33,74 @@ pub fn run_generate(project_root: &Path) {
     });
 
     let layout = ProjectLayout::new(project_root);
-    generate_library(
-        &layout.uht_json(),
-        &config.codegen,
-        &layout.game_output(&config.project.crate_name),
-    );
+    let output = layout.game_output(&config.project.crate_name);
+    let index = generate_library(&layout.uht_json(), &config.codegen, &output);
+
+    plugin_bindings::write_index(&layout.bindings_index(), &index);
+    write_game_plugin_bindings(project_root, &output.bindings_crate.join("src"), &index);
+}
+
+/// The Rust classes of the project's runtime plugins, as the game's bindings see them, from the
+/// plugins' sources and the type index the last full generation wrote; `false` when there is no
+/// index yet (`rusteal build --all` writes it).
+pub fn refresh_plugin_bindings(project_root: &Path) -> bool {
+    let layout = ProjectLayout::new(project_root);
+
+    let Some(index) = plugin_bindings::read_index(&layout.bindings_index()) else {
+        return false;
+    };
+
+    write_game_plugin_bindings(project_root, &layout.bindings_crate().join("src"), &index);
+    true
+}
+
+fn write_game_plugin_bindings(
+    project_root: &Path,
+    rust_src: &Path,
+    index: &plugin_bindings::TypeIndex,
+) {
+    let sources = plugin_sources(project_root);
+    let models = plugin_bindings::write_plugin_bindings(rust_src, &sources, index);
+
+    for model in &models {
+        eprintln!(
+            "  plugins/{}.rs: {} Rust classes of {}",
+            plugin_bindings::plugin_module_name(&model.plugin),
+            model.classes.len(),
+            model.plugin
+        );
+
+        for skipped in &model.skipped {
+            eprintln!("    not read: {skipped}");
+        }
+    }
+}
+
+pub fn plugin_sources(project_root: &Path) -> Vec<plugin_bindings::PluginSource> {
+    config::find_plugins(project_root)
+        .into_iter()
+        .filter_map(|plugin| {
+            let config = PluginConfig::load(&plugin.dir).ok()?;
+
+            if config.plugin.kind != LibraryKind::Runtime {
+                return None;
+            }
+
+            let src_dir = plugin
+                .rust_workspace()
+                .join(&config.plugin.crate_name)
+                .join("src");
+
+            src_dir
+                .join("lib.rs")
+                .is_file()
+                .then(|| plugin_bindings::PluginSource {
+                    plugin: plugin.name.clone(),
+                    crate_name: config.plugin.crate_name.clone(),
+                    src_dir,
+                })
+        })
+        .collect()
 }
 
 pub fn run_generate_plugin(project_root: &Path, plugin: &PluginLayout) {
@@ -44,17 +109,45 @@ pub fn run_generate_plugin(project_root: &Path, plugin: &PluginLayout) {
         std::process::exit(1);
     });
 
-    let layout = ProjectLayout::new(project_root);
-    eprintln!("rusteal-codegen: plugin {}", plugin.name);
-
-    generate_library(
-        &layout.uht_json(),
-        &config.codegen,
-        &plugin.output(config.plugin.kind, &config.plugin.crate_name),
-    );
+    for library in config.libraries(&plugin.name) {
+        run_generate_plugin_library(project_root, plugin, &library);
+    }
 }
 
-pub fn generate_library(uht_input: &Path, codegen: &CodegenConfig, output: &LibraryOutput) {
+pub fn run_generate_plugin_library(
+    project_root: &Path,
+    plugin: &PluginLayout,
+    library: &PluginLibrary,
+) {
+    let layout = ProjectLayout::new(project_root);
+
+    if library.module == plugin.name {
+        eprintln!("rusteal-codegen: plugin {}", plugin.name);
+    } else {
+        eprintln!(
+            "rusteal-codegen: plugin {}, library {}",
+            plugin.name, library.module
+        );
+    }
+
+    if !library.codegen.shims.is_empty() {
+        eprintln!(
+            "  Warning: [[codegen.shims]] in {}'s rusteal.toml is ignored: engine virtual bases \
+             are declared in the project's rusteal.toml",
+            plugin.name
+        );
+    }
+
+    let output = plugin.library_output(library);
+    let index = generate_library(&layout.uht_json(), &library.codegen, &output);
+    plugin_bindings::write_plugin_bindings(&output.bindings_crate.join("src"), &[], &index);
+}
+
+pub fn generate_library(
+    uht_input: &Path,
+    codegen: &CodegenConfig,
+    output: &LibraryOutput,
+) -> plugin_bindings::TypeIndex {
     let codegen = &codegen.for_library(output.kind);
     let classes_path = uht_input.join("rusteal_classes.json");
     let structs_path = uht_input.join("rusteal_structs.json");
@@ -122,7 +215,12 @@ pub fn generate_library(uht_input: &Path, codegen: &CodegenConfig, output: &Libr
 
     eprintln!("rusteal-codegen: filtering...");
     let blocklist = with_unlisted_classes(&ctx, codegen);
-    filter::apply_filters(&mut ctx, &blocklist, output.kind == LibraryKind::Editor);
+    filter::apply_filters(
+        &mut ctx,
+        &blocklist,
+        output.kind == LibraryKind::Editor,
+        output.host_module == "Rusteal",
+    );
 
     eprintln!("rusteal-codegen: building function table...");
     build_func_table(&mut ctx);
@@ -143,7 +241,19 @@ pub fn generate_library(uht_input: &Path, codegen: &CodegenConfig, output: &Libr
     eprintln!("rusteal-codegen: verifying output...");
     verify_output(&ctx, &rust_src, &cpp_out);
 
+    let index = plugin_bindings::TypeIndex::from_context(&ctx);
+
+    if !rust_src
+        .join(plugin_bindings::PLUGINS_DIR)
+        .join("mod.rs")
+        .is_file()
+    {
+        plugin_bindings::write_plugin_bindings(&rust_src, &[], &index);
+    }
+
     eprintln!("rusteal-codegen: done!");
+
+    index
 }
 
 fn with_unlisted_classes(

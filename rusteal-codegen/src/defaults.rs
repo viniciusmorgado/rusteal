@@ -32,9 +32,13 @@ pub fn parse_default_literal(
         "UInt32Property" => parse_int_default(default_str, "u32"),
         "UInt64Property" => parse_int_default(default_str, "u64"),
         "EnumProperty" => parse_enum_default(default_str, param, ctx),
-        "ObjectProperty" | "ClassProperty" | "SoftObjectProperty" | "WeakObjectProperty"
-        | "InterfaceProperty" => parse_object_default(default_str, mapped),
-        "StrProperty" | "TextProperty" => parse_string_default(default_str),
+        "SoftObjectProperty" | "SoftClassProperty" => {
+            (default_str == "None").then(|| "\"\"".to_string())
+        }
+        "ObjectProperty" | "ClassProperty" | "WeakObjectProperty" | "InterfaceProperty" => {
+            parse_object_default(default_str, mapped)
+        }
+        "StrProperty" => parse_string_default(default_str),
         "NameProperty" => parse_fname_default(default_str),
         _ => None,
     }

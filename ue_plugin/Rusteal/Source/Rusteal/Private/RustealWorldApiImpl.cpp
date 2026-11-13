@@ -7,9 +7,10 @@
 #include "GameFramework/Pawn.h"
 #include "RustealApiTable.h"
 #include "UObject/UObjectGlobals.h"
+#include "RustealStrings.h"
 
 static FString Utf8ToFStr(const uint8 *Buf, uint32 Len) {
-  return FString(Len, UTF8_TO_TCHAR(reinterpret_cast<const char *>(Buf)));
+  return RustealUtf8ToFString(Buf, Len);
 }
 
 static RustealUObjectHandle SpawnActorImpl(RustealUObjectHandle WorldHandle,
@@ -219,6 +220,83 @@ static uint8 *FindDataTableRowImpl(RustealUObjectHandle TableHandle,
   return Table->FindRowUnchecked(Name);
 }
 
+ERustealErrorCode RustealTimer_SetTimer(RustealUObjectHandle Context,
+                                        float Rate, bool bLooping,
+                                        bool bMaxOncePerFrame, float FirstDelay,
+                                        uint64 CallbackId, uint64 *OutHandle);
+ERustealErrorCode RustealTimer_SetTimerForNextTick(RustealUObjectHandle Context,
+                                                   uint64 CallbackId,
+                                                   uint64 *OutHandle);
+ERustealErrorCode RustealTimer_ClearTimer(RustealUObjectHandle Context,
+                                          uint64 Packed);
+ERustealErrorCode RustealTimer_PauseTimer(RustealUObjectHandle Context,
+                                          uint64 Packed, bool bPaused);
+float RustealTimer_TimerRemaining(RustealUObjectHandle Context, uint64 Packed);
+uint32 RustealTimer_LiveTimerCallbacks();
+ERustealErrorCode RustealLoading_LoadAsync(const uint8 *Paths, uint32 PathsLen,
+                                           uint64 CallbackId);
+ERustealErrorCode RustealLoading_LoadPrimaryAssets(const uint8 *Ids,
+                                                   uint32 IdsLen,
+                                                   const uint8 *Bundles,
+                                                   uint32 BundlesLen,
+                                                   uint64 CallbackId);
+ERustealErrorCode RustealLoading_Finish(uint64 CallbackId,
+                                        RustealUObjectHandle *OutObjects,
+                                        uint32 Capacity, uint32 *OutCount);
+ERustealErrorCode RustealLoading_Cancel(uint64 CallbackId);
+uint32 RustealLoading_InProgress();
+ERustealErrorCode RustealEvents_Bind(uint32 Kind, RustealUObjectHandle Target,
+                                     uint64 CallbackId);
+ERustealErrorCode RustealEvents_Unbind(uint64 CallbackId);
+ERustealErrorCode RustealHttp_Send(const uint8 *Verb, uint32 VerbLen,
+                                   const uint8 *Url, uint32 UrlLen,
+                                   const uint8 *Headers, uint32 HeadersLen,
+                                   const uint8 *Body, uint32 BodyLen,
+                                   float TimeoutSeconds, uint64 CallbackId);
+ERustealErrorCode RustealHttp_Finish(uint64 CallbackId, int32 *OutStatus,
+                                     uint8 *Headers, uint32 HeadersCapacity,
+                                     uint32 *OutHeadersLen, uint8 *Body,
+                                     uint32 BodyCapacity, uint32 *OutBodyLen,
+                                     bool *OutSucceeded);
+ERustealErrorCode RustealHttp_Cancel(uint64 CallbackId);
+uint32 RustealHttp_InProgress();
+ERustealErrorCode RustealTick_Add(RustealUObjectHandle Target, uint8 Group,
+                                  uint64 CallbackId);
+void RustealTick_Remove(uint64 CallbackId);
+ERustealErrorCode RustealTick_SetEnabled(uint64 CallbackId, bool bEnabled);
+ERustealErrorCode RustealTick_SetInterval(uint64 CallbackId, float Seconds);
+ERustealErrorCode RustealTick_AddPrerequisite(uint64 CallbackId,
+                                              RustealUObjectHandle Object,
+                                              uint64 OtherCallbackId);
+uint32 RustealTick_LiveFunctions();
+ERustealErrorCode RustealTags_AddNative(const uint8 *Name, uint32 NameLen,
+                                        const uint8 *Comment,
+                                        uint32 CommentLen);
+bool RustealTags_IsRegistered(const uint8 *Name, uint32 NameLen);
+void RustealNet_RpcValidateFailed(const uint8 *Reason, uint32 ReasonLen);
+void RustealNet_MarkPropertyDirty(RustealUObjectHandle Object,
+                                  RustealFPropertyHandle Prop);
+ERustealErrorCode RustealNet_AddReplicatedSubobject(RustealUObjectHandle Actor,
+                                                    RustealUObjectHandle Object,
+                                                    uint8 Condition);
+ERustealErrorCode
+RustealNet_RemoveReplicatedSubobject(RustealUObjectHandle Actor,
+                                     RustealUObjectHandle Object);
+uint32 RustealProfiling_TraceEventType(const uint8 *Name, uint32 NameLen);
+void RustealProfiling_TraceBeginEvent(uint32 EventType);
+void RustealProfiling_TraceEndEvent();
+uint64 RustealProfiling_StatCreate(const uint8 *Name, uint32 NameLen);
+uint64 RustealProfiling_StatBegin(uint64 Stat);
+void RustealProfiling_StatEnd(uint64 Counter);
+uint64 RustealProfiling_MemoryScopeBegin(const uint8 *Tag, uint32 TagLen);
+void RustealProfiling_MemoryScopeEnd(uint64 Scope);
+ERustealErrorCode RustealAutomation_RegisterTest(const uint8 *Name,
+                                                 uint32 NameLen,
+                                                 uint32 Contexts,
+                                                 uint64 CallbackId);
+void RustealAutomation_AddMessage(uint32 Kind, const uint8 *Text,
+                                  uint32 TextLen);
+
 FRustealWorldApi GWorldApi = {
     &SpawnActorImpl,
     &GetAllActorsOfClassImpl,
@@ -230,4 +308,43 @@ FRustealWorldApi GWorldApi = {
     &FinishSpawningImpl,
     &ChannelToObjectTypeImpl,
     &FindDataTableRowImpl,
+    &RustealTimer_SetTimer,
+    &RustealTimer_SetTimerForNextTick,
+    &RustealTimer_ClearTimer,
+    &RustealTimer_PauseTimer,
+    &RustealTimer_TimerRemaining,
+    &RustealTimer_LiveTimerCallbacks,
+    &RustealLoading_LoadAsync,
+    &RustealLoading_LoadPrimaryAssets,
+    &RustealLoading_Finish,
+    &RustealLoading_Cancel,
+    &RustealLoading_InProgress,
+    &RustealEvents_Bind,
+    &RustealEvents_Unbind,
+    &RustealHttp_Send,
+    &RustealHttp_Finish,
+    &RustealHttp_Cancel,
+    &RustealHttp_InProgress,
+    &RustealTick_Add,
+    &RustealTick_Remove,
+    &RustealTick_SetEnabled,
+    &RustealTick_SetInterval,
+    &RustealTick_AddPrerequisite,
+    &RustealTick_LiveFunctions,
+    &RustealTags_AddNative,
+    &RustealTags_IsRegistered,
+    &RustealNet_RpcValidateFailed,
+    &RustealNet_MarkPropertyDirty,
+    &RustealNet_AddReplicatedSubobject,
+    &RustealNet_RemoveReplicatedSubobject,
+    &RustealProfiling_TraceEventType,
+    &RustealProfiling_TraceBeginEvent,
+    &RustealProfiling_TraceEndEvent,
+    &RustealProfiling_StatCreate,
+    &RustealProfiling_StatBegin,
+    &RustealProfiling_StatEnd,
+    &RustealProfiling_MemoryScopeBegin,
+    &RustealProfiling_MemoryScopeEnd,
+    &RustealAutomation_RegisterTest,
+    &RustealAutomation_AddMessage,
 };

@@ -1,10 +1,13 @@
+use std::time::Duration;
+
 use bindings::engine::{EQuitPreference, GameplayStatics, KismetSystemLibrary, Texture};
 use bindings::head_mounted_display::EOrientPositionSelector;
 use bindings::prelude::*;
 use bindings::umg::{Button, ButtonExt, UserWidget};
 use bindings::xr_base::{HeadMountedDisplayFunctionLibrary, XRLoadingScreenFunctionLibrary};
 use glam::{DVec2, DVec3};
-use rusteal_runtime::runtime::{FName, RustealResult, UObjectRef};
+use rusteal_runtime::runtime::timer::set_timer;
+use rusteal_runtime::runtime::{FName, RustealResult, UObjectRef, method};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use crate::passthrough::Passthrough;
@@ -54,15 +57,16 @@ impl MenuWidget {
             Some(true),
         );
 
-        KismetSystemLibrary::k2_set_timer(
-            self.as_ref().upcast_to(),
-            "OpenRestartLevel",
-            self.restart_delay(),
+        let restarted = set_timer(
+            &self.as_ref(),
+            Duration::from_secs_f32(self.restart_delay()),
             false,
-            None,
-            None,
-            None,
+            method(self, Self::open_restart_level),
         );
+
+        if let Err(e) = restarted {
+            log::warn!("[VR] the restart timer was not set: {e}");
+        }
     }
 
     #[ufunction]
@@ -121,15 +125,19 @@ impl MenuWidget {
 
 impl MenuWidget {
     fn bind_buttons(&self) -> RustealResult<()> {
-        let me = self.as_ref().upcast_to::<UserWidget>();
-
         for (button, handler) in [
-            (self.restart_button(), "Restart"),
-            (self.exit_button(), "Exit"),
-            (self.reset_orientation_button(), "ResetOrientation"),
-            (self.passthrough_button(), "TogglePassthrough"),
+            (self.restart_button(), method(self, Self::restart)),
+            (self.exit_button(), method(self, Self::exit)),
+            (
+                self.reset_orientation_button(),
+                method(self, Self::reset_orientation),
+            ),
+            (
+                self.passthrough_button(),
+                method(self, Self::toggle_passthrough),
+            ),
         ] {
-            button.checked()?.on_clicked().add_ufunction(&me, handler)?;
+            button.checked()?.on_clicked().add(handler)?.detach();
         }
 
         Ok(())

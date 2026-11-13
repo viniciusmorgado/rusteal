@@ -16,6 +16,20 @@ pub(crate) struct ParamInfo {
     pub rust_name: Ident,
     pub ue_name: String,
     pub rust_ty: Type,
+    pub out: bool,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum RpcTarget {
+    Server,
+    Client,
+    NetMulticast,
+}
+
+struct Rpc {
+    target: RpcTarget,
+    reliable: bool,
+    validate: Option<Ident>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -24,10 +38,13 @@ enum FnKind {
     Pure,
     Override,
     ImplementableEvent,
+    NativeEvent,
     InterfaceImpl,
 }
 
 struct UFunctionInfo {
+    metadata: Vec<(String, String)>,
+    is_static: bool,
     method_ident: Ident,
     ue_name: String,
     params: Vec<ParamInfo>,
@@ -38,9 +55,20 @@ struct UFunctionInfo {
     name_expr: TokenStream,
     param_name_exprs: Vec<TokenStream>,
     fallible: bool,
+    is_async: bool,
+    thread_safe: bool,
+    rpc: Option<Rpc>,
+    authority_only: bool,
 }
 
-pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream> {
+pub fn expand_uclass_impl(attr: TokenStream, item: TokenStream) -> syn::Result<TokenStream> {
+    if !attr.is_empty() {
+        return Err(syn::Error::new_spanned(
+            attr,
+            "#[uclass_impl] takes no arguments",
+        ));
+    }
+
     let input: ItemImpl = parse2(item)?;
 
     let struct_name = match &*input.self_ty {
@@ -128,6 +156,15 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
                 .iter()
                 .any(|a| a.path().is_ident("class_defaults"))
             {
+                if let Some(attr) = method.attrs.iter().find(|a| {
+                    a.path().is_ident("class_defaults") && !matches!(a.meta, syn::Meta::Path(_))
+                }) {
+                    return Err(syn::Error::new_spanned(
+                        attr,
+                        "#[class_defaults] takes no arguments",
+                    ));
+                }
+
                 if class_defaults.is_some() {
                     return Err(syn::Error::new_spanned(
                         &method.sig,
@@ -151,6 +188,8 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
         }
     }
 
+    let mut dispatchers: Vec<ImplItem> = Vec::new();
+
     for item in &mut clean_impl.items {
         if let ImplItem::Fn(method) = item {
             if let Some(uf) = ufunctions
@@ -159,6 +198,33 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
                 && uf.kind == FnKind::ImplementableEvent
             {
                 method.block = implementable_event_body(uf);
+            }
+
+            if let Some(uf) = ufunctions
+                .iter()
+                .find(|uf| uf.method_ident == method.sig.ident)
+                && (uf.kind == FnKind::NativeEvent || uf.rpc.is_some())
+            {
+                let mut dispatcher = method.clone();
+                dispatcher.block = implementable_event_body(uf);
+                dispatcher.sig.output = match &uf.return_type {
+                    Some(ret) => {
+                        let ty = &ret.rust_ty;
+                        syn::parse_quote! { -> #ty }
+                    }
+                    None => ReturnType::Default,
+                };
+                dispatcher.attrs.retain(|a| !a.path().is_ident("ufunction"));
+
+                if uf.rpc.is_some()
+                    && let Some(receiver) = dispatcher.sig.inputs.first_mut()
+                {
+                    *receiver = syn::parse_quote! { &self };
+                }
+
+                dispatchers.push(ImplItem::Fn(dispatcher));
+
+                method.sig.ident = native_implementation_ident(&method.sig.ident);
             }
 
             if let Some(d) = delegates
@@ -175,6 +241,8 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
             });
         }
     }
+
+    clean_impl.items.extend(dispatchers);
 
     let interface_suffix = interface
         .as_ref()
@@ -209,11 +277,51 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
                 ::rusteal_runtime::ffi::FUNC_EVENT | ::rusteal_runtime::ffi::FUNC_BLUEPRINT_EVENT
                     | ::rusteal_runtime::ffi::FUNC_BLUEPRINT_CALLABLE | ::rusteal_runtime::ffi::FUNC_PUBLIC
             },
+            FnKind::NativeEvent => quote! {
+                ::rusteal_runtime::ffi::FUNC_NATIVE | ::rusteal_runtime::ffi::FUNC_EVENT
+                    | ::rusteal_runtime::ffi::FUNC_BLUEPRINT_EVENT | ::rusteal_runtime::ffi::FUNC_BLUEPRINT_CALLABLE
+                    | ::rusteal_runtime::ffi::FUNC_PUBLIC
+            },
             FnKind::InterfaceImpl => quote! {
                 ::rusteal_runtime::ffi::FUNC_NATIVE | ::rusteal_runtime::ffi::FUNC_EVENT
                     | ::rusteal_runtime::ffi::FUNC_BLUEPRINT_EVENT | ::rusteal_runtime::ffi::FUNC_BLUEPRINT_CALLABLE
                     | ::rusteal_runtime::ffi::FUNC_PUBLIC
             },
+        };
+
+        let flags_expr = match &uf.rpc {
+            None => flags_expr,
+            Some(rpc) => {
+                let target = match rpc.target {
+                    RpcTarget::Server => quote! { ::rusteal_runtime::ffi::FUNC_NET_SERVER },
+                    RpcTarget::Client => quote! { ::rusteal_runtime::ffi::FUNC_NET_CLIENT },
+                    RpcTarget::NetMulticast => {
+                        quote! { ::rusteal_runtime::ffi::FUNC_NET_MULTICAST }
+                    }
+                };
+                let reliable = if rpc.reliable {
+                    quote! { | ::rusteal_runtime::ffi::FUNC_NET_RELIABLE }
+                } else {
+                    quote! {}
+                };
+                let validate = if rpc.validate.is_some() {
+                    quote! { | ::rusteal_runtime::ffi::FUNC_NET_VALIDATE }
+                } else {
+                    quote! {}
+                };
+
+                quote! {
+                    ::rusteal_runtime::ffi::FUNC_NATIVE | ::rusteal_runtime::ffi::FUNC_EVENT
+                        | ::rusteal_runtime::ffi::FUNC_NET | ::rusteal_runtime::ffi::FUNC_BLUEPRINT_CALLABLE
+                        | ::rusteal_runtime::ffi::FUNC_PUBLIC | #target #reliable #validate
+                }
+            }
+        };
+
+        let flags_expr = if uf.authority_only {
+            quote! { #flags_expr | ::rusteal_runtime::ffi::FUNC_BLUEPRINT_AUTHORITY_ONLY }
+        } else {
+            flags_expr
         };
 
         let flags_expr = if uf.exec {
@@ -222,7 +330,14 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
             flags_expr
         };
 
-        let total_offsets = uf.params.len() + if uf.return_type.is_some() { 1 } else { 0 };
+        let flags_expr = if uf.is_static {
+            quote! { #flags_expr | ::rusteal_runtime::ffi::FUNC_STATIC }
+        } else {
+            flags_expr
+        };
+
+        let total_offsets =
+            uf.params.len() + usize::from(uf.return_type.is_some()) + usize::from(uf.is_async);
 
         let mut offset_inits: Vec<TokenStream> = Vec::new();
 
@@ -235,7 +350,7 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
                         #param_name.len() as u32,
                     );
 
-                    ::rusteal_runtime::runtime::ffi_dispatch::reflection_get_property_offset(p)
+                    (::rusteal_runtime::runtime::ffi_dispatch::reflection_get_property_offset(p), p)
                 }
             });
         }
@@ -249,22 +364,38 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
                         11u32,
                     );
 
-                    ::rusteal_runtime::runtime::ffi_dispatch::reflection_get_property_offset(p)
+                    (::rusteal_runtime::runtime::ffi_dispatch::reflection_get_property_offset(p), p)
+                }
+            });
+        }
+
+        if uf.is_async {
+            offset_inits.push(quote! {
+                {
+                    let p = ::rusteal_runtime::runtime::ffi_dispatch::reflection_get_function_param(
+                        func,
+                        b"LatentInfo".as_ptr(),
+                        10u32,
+                    );
+
+                    (::rusteal_runtime::runtime::ffi_dispatch::reflection_get_property_offset(p), p)
                 }
             });
         }
 
         let mut param_reads: Vec<TokenStream> = Vec::new();
-        let mut param_idents: Vec<&Ident> = Vec::new();
+        let mut param_idents: Vec<Ident> = Vec::new();
+        let mut param_args: Vec<TokenStream> = Vec::new();
+        let mut out_writes: Vec<TokenStream> = Vec::new();
 
         for (i, param) in uf.params.iter().enumerate() {
-            let rust_name = &param.rust_name;
+            let rust_name = &thunk_local(param);
             let rust_ty = &param.rust_ty;
             let idx = syn::Index::from(i);
 
             let read_handle = quote! {
                 ::rusteal_runtime::runtime::ffi_dispatch::native_mem_read::<::rusteal_runtime::ffi::UObjectHandle>(
-                    params, offsets[#idx] as usize,
+                    params, offsets[#idx].0 as usize,
                 )
             };
 
@@ -273,12 +404,31 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
                 Type::Path(tp) if tp.path.segments.last().is_some_and(|seg| seg.ident == "OutRef")
             );
 
-            let read = match prop_type::map_type(rust_ty).map(|info| info.kind) {
+            let fn_info = prop_type::map_fn_type(rust_ty);
+
+            let read = match fn_info.as_ref().map(|info| &info.kind) {
                 _ if is_out_ref => quote! {
-                    ::rusteal_runtime::runtime::out_ref_from_param(params, offsets[#idx] as usize)
+                    ::rusteal_runtime::runtime::out_ref_from_param(params, offsets[#idx].0 as usize)
                 },
+                Some(kind) if crossed_as_property(kind) => {
+                    let info = fn_info.as_ref().expect("a supported parameter type");
+                    let (read, _) = crate::uclass::accessor_parts(
+                        kind,
+                        &info.rust_type,
+                        &quote! { ::rusteal_runtime::ffi::UObjectHandle(params as *mut std::ffi::c_void) },
+                        &param.ue_name,
+                    );
+
+                    quote! {
+                        {
+                            let prop = offsets[#idx].1;
+                            #read
+                        }
+                    }
+                }
+
                 Some(prop_type::PropKind::Struct { .. }) => quote! {
-                    ::rusteal_runtime::runtime::struct_ref_from_param(params, offsets[#idx] as usize)
+                    ::rusteal_runtime::runtime::struct_ref_from_param(params, offsets[#idx].0 as usize)
                 },
                 Some(prop_type::PropKind::Object { .. }) => quote! {
                     <#rust_ty>::from_raw(#read_handle)
@@ -295,7 +445,7 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
 
                         let raw = ::rusteal_runtime::runtime::ffi_dispatch::native_mem_read::<
                             <#rust_ty as ::rusteal_runtime::runtime::UeEnum>::Repr,
-                        >(params, offsets[#idx] as usize);
+                        >(params, offsets[#idx].0 as usize);
 
                         <#rust_ty as ::rusteal_runtime::runtime::UeEnum>::from_i64(
                             i64::try_from(raw).unwrap_or(-1),
@@ -304,15 +454,26 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
                     }
                 },
                 _ => quote! {
-                    ::rusteal_runtime::runtime::ffi_dispatch::native_mem_read::<#rust_ty>(params, offsets[#idx] as usize)
+                    ::rusteal_runtime::runtime::ffi_dispatch::native_mem_read::<#rust_ty>(params, offsets[#idx].0 as usize)
                 },
             };
 
-            param_reads.push(quote! {
-                let #rust_name: #rust_ty = unsafe { #read };
-            });
+            if param.out {
+                param_reads.push(quote! {
+                    let mut #rust_name: #rust_ty = unsafe { #read };
+                });
 
-            param_idents.push(rust_name);
+                param_args.push(quote! { &mut #rust_name });
+                out_writes.push(out_write(param, i, fn_info.as_ref()));
+            } else {
+                param_reads.push(quote! {
+                    let #rust_name: #rust_ty = unsafe { #read };
+                });
+
+                param_args.push(quote! { #rust_name });
+            }
+
+            param_idents.push(rust_name.clone());
         }
 
         let (return_zero_init, return_write) = if let Some(ref ret) = uf.return_type {
@@ -322,12 +483,38 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
                 quote! {
                     unsafe {
                         ::rusteal_runtime::runtime::ffi_dispatch::native_mem_write(
-                            params, offsets[#ret_idx] as usize, #value,
+                            params, offsets[#ret_idx].0 as usize, #value,
                         );
                     }
                 }
             };
-            match prop_type::map_type(ret_ty).map(|info| info.kind) {
+            let ret_info = prop_type::map_fn_type(ret_ty);
+
+            match ret_info.as_ref().map(|info| &info.kind) {
+                Some(kind)
+                    if crossed_as_property(kind)
+                        && !matches!(kind, prop_type::PropKind::OwnedStruct { .. }) =>
+                {
+                    let info = ret_info.as_ref().expect("a supported return type");
+                    let (_, setter) = crate::uclass::accessor_parts(
+                        kind,
+                        &info.rust_type,
+                        &quote! { ::rusteal_runtime::ffi::UObjectHandle(params as *mut std::ffi::c_void) },
+                        "ReturnValue",
+                    );
+                    let (_, write) = setter.expect("a returned type has a setter");
+
+                    (
+                        quote! {},
+                        quote! {
+                            {
+                                let prop = offsets[#ret_idx].1;
+                                let val = __ret;
+                                #write
+                            }
+                        },
+                    )
+                }
                 Some(prop_type::PropKind::Object { .. }) => (
                     write(quote! { ::rusteal_runtime::ffi::UObjectHandle::null() }),
                     write(quote! { __ret.raw() }),
@@ -342,7 +529,7 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
                         unsafe {
                             let _ = ::rusteal_runtime::runtime::ffi_dispatch::reflection_copy_struct(
                                 <#strukt as ::rusteal_runtime::runtime::UeStruct>::static_struct(),
-                                params.add(offsets[#ret_idx] as usize),
+                                params.add(offsets[#ret_idx].0 as usize),
                                 __ret.as_bytes().as_ptr(),
                             );
                         }
@@ -370,7 +557,16 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
             (quote! {}, quote! {})
         };
 
-        let this_binding = if uf.is_mut {
+        let thread_safe_ident = format_ident!("{}ThreadSafe", struct_name);
+
+        let this_binding = if uf.is_static {
+            quote! { let _ = (obj, rust_data); }
+        } else if uf.thread_safe {
+            quote! {
+                let _ = rust_data;
+                let __this = #thread_safe_ident { __obj: obj };
+            }
+        } else if uf.is_mut {
             quote! {
                 let mut __this = #struct_name {
                     __obj: obj,
@@ -386,12 +582,25 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
             }
         };
 
+        let _ = &param_idents;
+
+        let impl_ident = if uf.kind == FnKind::NativeEvent || uf.rpc.is_some() {
+            native_implementation_ident(method_ident)
+        } else {
+            method_ident.clone()
+        };
+        let method_ident = &impl_ident;
+
         let call = match &interface {
-            Some(trait_path) if uf.is_mut => {
-                quote! { #trait_path::#method_ident(&mut __this, #(#param_idents),*) }
+            None if uf.is_static => quote! { #struct_name::#method_ident(#(#param_args),*) },
+            None if uf.thread_safe => {
+                quote! { #struct_name::#method_ident(__this, #(#param_args),*) }
             }
-            Some(trait_path) => quote! { #trait_path::#method_ident(&__this, #(#param_idents),*) },
-            None => quote! { __this.#method_ident(#(#param_idents),*) },
+            Some(trait_path) if uf.is_mut => {
+                quote! { #trait_path::#method_ident(&mut __this, #(#param_args),*) }
+            }
+            Some(trait_path) => quote! { #trait_path::#method_ident(&__this, #(#param_args),*) },
+            None => quote! { __this.#method_ident(#(#param_args),*) },
         };
 
         let struct_label = struct_name.to_string();
@@ -401,23 +610,84 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
             __error.__raise(&format!("{}::{}", #struct_label, #ue_name));
         };
 
-        let call_expr = match (uf.fallible, uf.return_type.is_some()) {
-            (true, true) => quote! {
-                let __ret = match #call {
-                    Ok(value) => value,
-                    Err(__error) => {
-                        #raise
+        let game_thread_guard = if uf.thread_safe {
+            quote! {}
+        } else {
+            quote! {
+                if ::rusteal_runtime::runtime::reify_registry::refused_off_game_thread(
+                    #struct_label,
+                    #ue_name,
+                ) {
+                    return;
+                }
+            }
+        };
+
+        let latent_idx = syn::Index::from(uf.params.len());
+
+        let validation = match uf.rpc.as_ref().and_then(|rpc| rpc.validate.as_ref()) {
+            None => quote! {},
+            Some(validate) => {
+                let failed = format!("{}_Validate", uf.ue_name);
+
+                quote! {
+                    if !__this.#validate(#(::core::clone::Clone::clone(&#param_args)),*) {
+                        unsafe {
+                            ::rusteal_runtime::runtime::ffi_dispatch::world_rpc_validate_failed(
+                                #failed.as_ptr(),
+                                #failed.len() as u32,
+                            );
+                        }
                         return;
                     }
-                };
-            },
-            (true, false) => quote! {
-                if let Err(__error) = #call {
-                    #raise
                 }
-            },
-            (false, true) => quote! { let __ret = #call; },
-            (false, false) => quote! { #call; },
+            }
+        };
+
+        let call_expr = if uf.is_async {
+            let run = if uf.fallible {
+                quote! {
+                    if let Err(__error) = __future.await {
+                        __error.__log_in(
+                            ::rusteal_runtime::runtime::LOG_WARNING,
+                            &format!("{}::{}", #struct_label, #ue_name),
+                        );
+                    }
+                }
+            } else {
+                quote! { __future.await; }
+            };
+
+            quote! {
+                let __future = #call;
+
+                unsafe {
+                    ::rusteal_runtime::runtime::latent::start_latent_function(
+                        obj,
+                        params.add(offsets[#latent_idx].0 as usize) as *const u8,
+                        async move { #run },
+                    );
+                }
+            }
+        } else {
+            match (uf.fallible, uf.return_type.is_some()) {
+                (true, true) => quote! {
+                    let __ret = match #call {
+                        Ok(value) => value,
+                        Err(__error) => {
+                            #raise
+                            return;
+                        }
+                    };
+                },
+                (true, false) => quote! {
+                    if let Err(__error) = #call {
+                        #raise
+                    }
+                },
+                (false, true) => quote! { let __ret = #call; },
+                (false, false) => quote! { #call; },
+            }
         };
 
         let func_var = format_ident!("__func_{}", method_ident);
@@ -440,7 +710,9 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
                 let callback_id = ::rusteal_runtime::runtime::reify_registry::register_function(
                     #struct_name::__RUSTEAL_TYPE_ID,
                     move |obj: ::rusteal_runtime::ffi::UObjectHandle, rust_data: *mut u8, params: ::rusteal_runtime::runtime::ffi_dispatch::NativePtr| {
-                        static OFFSETS: std::sync::OnceLock<[u32; #total_offsets]> = std::sync::OnceLock::new();
+                        #game_thread_guard
+
+                        static OFFSETS: std::sync::OnceLock<[(u32, ::rusteal_runtime::ffi::FPropertyHandle); #total_offsets]> = std::sync::OnceLock::new();
 
                         let offsets = OFFSETS.get_or_init(|| unsafe {
                             let cls = <#struct_name as ::rusteal_runtime::runtime::UeClass>::static_class();
@@ -455,7 +727,9 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
                         #(#param_reads)*
                         #return_zero_init
                         #this_binding
+                        #validation
                         #call_expr
+                        #(#out_writes)*
                         #return_write
                     }
                 );
@@ -474,14 +748,39 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
         });
         }
 
+        for (key, value) in &uf.metadata {
+            let key_bytes = key.as_bytes();
+            let key_len = key.len() as u32;
+            let value_bytes = value.as_bytes();
+            let value_len = value.len() as u32;
+
+            register_stmts.push(quote! {
+                if !#func_var.is_null() {
+                    unsafe {
+                        ::rusteal_runtime::runtime::ffi_dispatch::reify_set_function_metadata(
+                            #func_var,
+                            [#(#key_bytes),*].as_ptr(), #key_len,
+                            [#(#value_bytes),*].as_ptr(), #value_len,
+                        );
+                    }
+                }
+            });
+        }
+
         if uf.kind != FnKind::Override {
             for (param, param_name) in uf.params.iter().zip(&uf.param_name_exprs) {
                 let reg_ty =
                     event_struct_param(&param.rust_ty).unwrap_or_else(|| param.rust_ty.clone());
 
-                let info = prop_type::map_type(&reg_ty).unwrap();
+                let info = prop_type::map_fn_type(&reg_ty).unwrap();
                 let prop_type_expr = &info.prop_type_expr;
                 let extra_expr = extra_expr(&info);
+
+                let param_flags = if param.out {
+                    quote! { ::rusteal_runtime::ffi::CPF_PARM | ::rusteal_runtime::ffi::CPF_OUT_PARM }
+                } else {
+                    quote! { ::rusteal_runtime::ffi::CPF_PARM }
+                };
 
                 register_stmts.push(quote! {
                     unsafe {
@@ -490,15 +789,33 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
                             #param_name.as_ptr(),
                             #param_name.len() as u32,
                             #prop_type_expr as u32,
-                            ::rusteal_runtime::ffi::CPF_PARM,
+                            #param_flags,
                             #extra_expr,
                         );
                     }
                 });
             }
 
+            if uf.is_async {
+                register_stmts.push(quote! {
+                    unsafe {
+                        ::rusteal_runtime::runtime::ffi_dispatch::reify_add_function_param(
+                            #func_var,
+                            b"LatentInfo".as_ptr(),
+                            10u32,
+                            ::rusteal_runtime::ffi::RustealReifyPropType::Struct as u32,
+                            ::rusteal_runtime::ffi::CPF_PARM,
+                            &::rusteal_runtime::ffi::RustealReifyPropExtra {
+                                struct_handle: ::rusteal_runtime::runtime::latent::latent_info_struct(),
+                                ..::core::default::Default::default()
+                            },
+                        );
+                    }
+                });
+            }
+
             if let Some(ref ret) = uf.return_type {
-                let info = prop_type::map_type(&ret.rust_ty).unwrap();
+                let info = prop_type::map_fn_type(&ret.rust_ty).unwrap();
                 let prop_type_expr = &info.prop_type_expr;
                 let extra_expr = extra_expr(&info);
 
@@ -618,12 +935,21 @@ pub fn expand_uclass_impl(_attr: TokenStream, item: TokenStream) -> syn::Result<
 }
 
 fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
-    let (specifiers, explicit_name) =
-        if let Some(attr) = method.attrs.iter().find(|a| a.path().is_ident("ufunction")) {
-            parse_ufunction_specifiers(attr)?
-        } else {
-            (Vec::new(), None)
-        };
+    let spec = if let Some(attr) = method.attrs.iter().find(|a| a.path().is_ident("ufunction")) {
+        parse_ufunction_specifiers(attr)?
+    } else {
+        UFunctionSpec::default()
+    };
+
+    let specifiers = spec.specifiers;
+    let explicit_name = spec.name;
+    let mut metadata = spec.metadata;
+
+    if !metadata.iter().any(|(key, _)| key == "ToolTip")
+        && let Some(tooltip) = crate::uclass::doc_tooltip(&method.attrs)
+    {
+        metadata.push(("ToolTip".to_string(), tooltip));
+    }
 
     let has = |name: &str| specifiers.iter().any(|s| s == name);
 
@@ -632,7 +958,16 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
         "BlueprintPure",
         "Override",
         "BlueprintImplementableEvent",
+        "BlueprintNativeEvent",
+        "CallInEditor",
         "Exec",
+        "ThreadSafe",
+        "Server",
+        "Client",
+        "NetMulticast",
+        "Reliable",
+        "Unreliable",
+        "BlueprintAuthorityOnly",
     ];
 
     if let Some(unknown) = specifiers.iter().find(|s| !KNOWN.contains(&s.as_str())) {
@@ -640,31 +975,96 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
             &method.sig,
             format!(
                 "unknown #[ufunction] argument `{unknown}`: expected BlueprintCallable, \
-                 BlueprintPure, Override, BlueprintImplementableEvent, Exec or name = \"...\""
+                 BlueprintPure, Override, BlueprintImplementableEvent, BlueprintNativeEvent, \
+                 CallInEditor, Exec, ThreadSafe, Server, Client, NetMulticast, Reliable, \
+                 Unreliable, BlueprintAuthorityOnly, WithValidation = ..., name = \"...\", \
+                 category = \"...\" or meta(...)"
             ),
         ));
     }
 
     let exec = has("Exec");
 
+    if has("CallInEditor") {
+        metadata.push(("CallInEditor".to_string(), "true".to_string()));
+    }
+
+    let thread_safe = has("ThreadSafe");
+
+    if thread_safe {
+        let takes_view = match method.sig.inputs.first() {
+            Some(FnArg::Typed(pat_type)) => match &*pat_type.ty {
+                Type::Path(path) => path
+                    .path
+                    .segments
+                    .last()
+                    .is_some_and(|segment| segment.ident.to_string().ends_with("ThreadSafe")),
+                _ => false,
+            },
+            _ => false,
+        };
+
+        if !takes_view {
+            return Err(syn::Error::new_spanned(
+                &method.sig,
+                "a #[ufunction(ThreadSafe)] runs on a worker thread while the game thread may use \
+                 the object: it takes the class's view, `this: <Class>ThreadSafe`, which reaches \
+                 its #[uproperty] fields only, instead of &self or &mut self",
+            ));
+        }
+
+        if has("Exec")
+            || has("CallInEditor")
+            || has("BlueprintImplementableEvent")
+            || has("BlueprintNativeEvent")
+            || method.sig.asyncness.is_some()
+        {
+            return Err(syn::Error::new_spanned(
+                &method.sig,
+                "ThreadSafe goes with a BlueprintCallable, BlueprintPure or Override function, \
+                 not with an event, Exec, CallInEditor or async",
+            ));
+        }
+
+        metadata.push(("BlueprintThreadSafe".to_string(), "true".to_string()));
+    }
+
+    let is_static = !thread_safe && !matches!(method.sig.inputs.first(), Some(FnArg::Receiver(_)));
+
     let kind = match (
         has("Override"),
         has("BlueprintPure"),
         has("BlueprintImplementableEvent"),
+        has("BlueprintNativeEvent"),
     ) {
-        (false, false, false) => FnKind::Callable,
-        (true, false, false) => FnKind::Override,
-        (false, true, false) => FnKind::Pure,
-        (false, false, true) => FnKind::ImplementableEvent,
+        (false, false, false, false) => FnKind::Callable,
+        (true, false, false, false) => FnKind::Override,
+        (false, true, false, false) => FnKind::Pure,
+        (false, false, true, false) => FnKind::ImplementableEvent,
+        (false, false, false, true) => FnKind::NativeEvent,
         _ => {
             return Err(syn::Error::new_spanned(
                 &method.sig,
-                "a #[ufunction] is one of Override, BlueprintPure and BlueprintImplementableEvent",
+                "a #[ufunction] is one of Override, BlueprintPure, BlueprintImplementableEvent \
+                 and BlueprintNativeEvent",
             ));
         }
     };
 
     let is_override = kind == FnKind::Override;
+
+    if is_static
+        && matches!(
+            kind,
+            FnKind::Override | FnKind::ImplementableEvent | FnKind::NativeEvent
+        )
+    {
+        return Err(syn::Error::new_spanned(
+            &method.sig,
+            "an event belongs to an object: it takes &self or &mut self; a function with no \
+             self is a static function (a function library's)",
+        ));
+    }
 
     let check_event_type = |ty: &Type| -> syn::Result<()> {
         if kind == FnKind::ImplementableEvent
@@ -675,8 +1075,8 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
         {
             return Err(syn::Error::new_spanned(
                 ty,
-                "a BlueprintImplementableEvent takes scalars, objects, classes and structs \
-                 (&OwnedStruct<T>), and returns scalars, objects and classes",
+                "a BlueprintImplementableEvent takes and returns structs as OwnedStruct<T> \
+                 (or takes &OwnedStruct<T>), not UStructRef<T>: the Blueprint keeps no reference",
             ));
         }
 
@@ -696,6 +1096,35 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
     let ue_name = explicit_name
         .unwrap_or_else(|| prop_type::to_pascal_case(&method_ident.unraw().to_string()));
 
+    let is_async = method.sig.asyncness.is_some();
+
+    if is_async {
+        let by_value = matches!(
+            method.sig.inputs.first(),
+            Some(FnArg::Receiver(r)) if matches!(r.kind, ReceiverKind::Value)
+        );
+
+        if kind != FnKind::Callable || exec {
+            return Err(syn::Error::new_spanned(
+                &method.sig,
+                "an async #[ufunction] is a BlueprintCallable latent node: not an event, \
+                 an Override, BlueprintPure or Exec",
+            ));
+        }
+
+        if !by_value {
+            return Err(syn::Error::new_spanned(
+                &method.sig,
+                "an async #[ufunction] takes `self` (the class is a handle): a `&self` or \
+                 `&mut self` borrow cannot live across an .await while the engine runs other \
+                 code on the object",
+            ));
+        }
+
+        metadata.push(("Latent".to_string(), String::new()));
+        metadata.push(("LatentInfo".to_string(), "LatentInfo".to_string()));
+    }
+
     let is_mut = method.sig.inputs.first().is_some_and(|arg| match arg {
         FnArg::Receiver(r) => {
             r.mutability.is_some() || matches!(r.kind, ReceiverKind::Reference(_, _, Some(_)))
@@ -705,7 +1134,7 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
 
     let mut params = Vec::new();
 
-    for arg in &method.sig.inputs {
+    for arg in method.sig.inputs.iter().skip(usize::from(thread_safe)) {
         match arg {
             FnArg::Receiver(_) => continue,
             FnArg::Typed(pat_type) => {
@@ -719,30 +1148,41 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
                     }
                 };
 
-                let ty = (*pat_type.ty).clone();
+                let (ty, out) = match &*pat_type.ty {
+                    Type::Reference(reference) if reference.mutability.is_some() => {
+                        if matches!(
+                            kind,
+                            FnKind::ImplementableEvent | FnKind::NativeEvent | FnKind::Override
+                        ) {
+                            return Err(syn::Error::new_spanned(
+                                &pat_type.ty,
+                                "an out parameter (&mut T) belongs to a function only Rust \
+                                 implements: Blueprint events have none, and an Override takes \
+                                 the engine's as OutRef<T>",
+                            ));
+                        }
+
+                        ((*reference.elem).clone(), true)
+                    }
+                    other => (other.clone(), false),
+                };
 
                 let event_struct =
                     kind == FnKind::ImplementableEvent && event_struct_param(&ty).is_some();
 
-                if !is_override && !event_struct && !supported_param(&ty) {
+                let supported = supported_param(&ty);
+
+                if !is_override && !event_struct && !supported {
                     return Err(syn::Error::new_spanned(
                         &ty,
-                        "unsupported ufunction parameter type: supported are bool/i32/i64/u8/f32/f64, \
-                         UObjectRef<T>, SubclassOf<T>, UStructRef<T> and UE enums",
+                        "unsupported ufunction parameter type: supported are what a #[uproperty] \
+                         holds, but UeArray, UeMap and UeSet: Vec<T>, HashMap<K, V> and HashSet<T> \
+                         instead, copied, and Option<ScriptInterface<dyn I>>; UStructRef<T> for a \
+                         struct the engine lends",
                     ));
                 }
 
                 check_event_type(&ty)?;
-
-                if is_override
-                    && prop_type::map_type(&ty).is_some_and(|info| info.kind.property_only())
-                {
-                    return Err(syn::Error::new_spanned(
-                        &ty,
-                        "an Override takes a struct as UStructRef<T>, and a scalar out \
-                         parameter as OutRef<T>",
-                    ));
-                }
 
                 let ue_name = prop_type::to_ue_name(&name.unraw().to_string());
 
@@ -750,6 +1190,7 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
                     rust_name: name,
                     ue_name,
                     rust_ty: ty,
+                    out,
                 });
             }
         }
@@ -785,11 +1226,13 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
             } else {
                 check_event_type(ty)?;
 
-                if !is_override && !supported_return(ty) {
+                let supported = supported_return(ty);
+
+                if !is_override && !supported {
                     return Err(syn::Error::new_spanned(
                         ty,
-                        "unsupported ufunction return type: supported are bool/i32/i64/u8/f32/f64, \
-                         UObjectRef<T>, SubclassOf<T> and UE enums",
+                        "unsupported ufunction return type: supported are what a parameter takes, \
+                         but UStructRef<T>: an OwnedStruct<T> for a struct",
                     ));
                 }
 
@@ -797,6 +1240,7 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
                     rust_name: Ident::new("ReturnValue", proc_macro2::Span::call_site()),
                     ue_name: "ReturnValue".to_string(),
                     rust_ty: ty.clone(),
+                    out: false,
                 })
             }
         }
@@ -812,7 +1256,26 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
         })
         .collect();
 
+    if is_async && (params.iter().any(|p: &ParamInfo| p.out) || return_type.is_some()) {
+        return Err(syn::Error::new_spanned(
+            &method.sig,
+            "an async #[ufunction] returns nothing (or RustealResult<()>) and has no out \
+             parameters: a latent node's outputs are set when it starts, before it finishes",
+        ));
+    }
+
+    let rpc = parse_rpc(
+        method,
+        &specifiers,
+        spec.validate,
+        &params,
+        &return_type,
+        kind,
+    )?;
+
     Ok(UFunctionInfo {
+        metadata,
+        is_static,
         method_ident,
         ue_name,
         params,
@@ -823,7 +1286,90 @@ fn parse_ufunction(method: &ImplItemFn) -> syn::Result<UFunctionInfo> {
         name_expr,
         param_name_exprs,
         fallible,
+        is_async,
+        thread_safe,
+        rpc,
+        authority_only: has("BlueprintAuthorityOnly"),
     })
+}
+
+fn parse_rpc(
+    method: &ImplItemFn,
+    specifiers: &[String],
+    validate: Option<Ident>,
+    params: &[ParamInfo],
+    return_type: &Option<ParamInfo>,
+    kind: FnKind,
+) -> syn::Result<Option<Rpc>> {
+    let has = |name: &str| specifiers.iter().any(|s| s == name);
+    let targets: Vec<RpcTarget> = [
+        ("Server", RpcTarget::Server),
+        ("Client", RpcTarget::Client),
+        ("NetMulticast", RpcTarget::NetMulticast),
+    ]
+    .into_iter()
+    .filter(|(name, _)| has(name))
+    .map(|(_, target)| target)
+    .collect();
+
+    let error = |message: &str| Err(syn::Error::new_spanned(&method.sig, message));
+
+    let Some(&target) = targets.first() else {
+        if has("Reliable") || has("Unreliable") || validate.is_some() {
+            return error(
+                "Reliable, Unreliable and WithValidation go with a remote function: Server, \
+                 Client or NetMulticast",
+            );
+        }
+
+        return Ok(None);
+    };
+
+    if targets.len() > 1 {
+        return error("a remote function is one of Server, Client and NetMulticast");
+    }
+
+    if has("Reliable") == has("Unreliable") {
+        return error(
+            "a remote function is Reliable (it arrives, in order) or Unreliable (it may be \
+             dropped): say which",
+        );
+    }
+
+    if validate.is_some() && target != RpcTarget::Server {
+        return error("WithValidation checks what a client sends: it goes with Server");
+    }
+
+    let first = method.sig.inputs.first();
+    let by_reference =
+        matches!(first, Some(FnArg::Receiver(r)) if matches!(r.kind, ReceiverKind::Reference(..)));
+
+    if kind != FnKind::Callable
+        || !by_reference
+        || method.sig.asyncness.is_some()
+        || specifiers
+            .iter()
+            .any(|s| matches!(s.as_str(), "Exec" | "ThreadSafe" | "CallInEditor"))
+    {
+        return error(
+            "a remote function is a method (&self or &mut self) of an actor or a component, \
+             not an event, an Override, BlueprintPure, Exec, ThreadSafe, CallInEditor, static \
+             or async",
+        );
+    }
+
+    if return_type.is_some() || params.iter().any(|p| p.out) {
+        return error(
+            "a remote function returns nothing and has no out parameters: it runs on another \
+             machine, later",
+        );
+    }
+
+    Ok(Some(Rpc {
+        target,
+        reliable: has("Reliable"),
+        validate,
+    }))
 }
 
 fn parse_interface_fn(method: &ImplItemFn, trait_path: &syn::Path) -> syn::Result<UFunctionInfo> {
@@ -850,6 +1396,8 @@ fn parse_interface_fn(method: &ImplItemFn, trait_path: &syn::Path) -> syn::Resul
         .collect();
 
     Ok(UFunctionInfo {
+        metadata: Vec::new(),
+        is_static: false,
         method_ident,
         ue_name: signature.ue_name,
         params: signature.params,
@@ -860,6 +1408,10 @@ fn parse_interface_fn(method: &ImplItemFn, trait_path: &syn::Path) -> syn::Resul
         name_expr,
         param_name_exprs,
         fallible: false,
+        is_async: false,
+        thread_safe: false,
+        rpc: None,
+        authority_only: false,
     })
 }
 
@@ -892,18 +1444,99 @@ fn result_value(ty: &Type) -> Option<Type> {
     is_result.then_some(value)
 }
 
+fn native_implementation_ident(method: &Ident) -> Ident {
+    format_ident!("{}_implementation", method.unraw())
+}
+
+fn thunk_local(param: &ParamInfo) -> Ident {
+    let name = param.rust_name.unraw().to_string();
+    let trimmed = name.trim_start_matches('_');
+
+    if trimmed.len() == name.len() {
+        format_ident!("__rusteal_arg_{}", name)
+    } else {
+        format_ident!("__rusteal_arg_{}_{}", trimmed, name.len() - trimmed.len())
+    }
+}
+
+fn out_write(param: &ParamInfo, idx: usize, info: Option<&prop_type::PropTypeInfo>) -> TokenStream {
+    let rust_name = &thunk_local(param);
+    let idx = syn::Index::from(idx);
+    let info = info.expect("an out parameter has a supported type");
+
+    if crossed_as_property(&info.kind) {
+        let (_, setter) = crate::uclass::accessor_parts(
+            &info.kind,
+            &info.rust_type,
+            &quote! { ::rusteal_runtime::ffi::UObjectHandle(params as *mut std::ffi::c_void) },
+            &param.ue_name,
+        );
+        let (_, write) = setter.expect("an out parameter's type has a setter");
+
+        return quote! {
+            {
+                let prop = offsets[#idx].1;
+                let val = #rust_name;
+                #write
+            }
+        };
+    }
+
+    let value = match &info.kind {
+        prop_type::PropKind::Object { .. } => quote! { #rust_name.raw() },
+        prop_type::PropKind::Class { .. } => {
+            quote! { ::rusteal_runtime::ffi::UObjectHandle(#rust_name.raw().0) }
+        }
+        _ => quote! { #rust_name },
+    };
+
+    quote! {
+        unsafe {
+            ::rusteal_runtime::runtime::ffi_dispatch::native_mem_write(
+                params, offsets[#idx].0 as usize, #value,
+            );
+        }
+    }
+}
+
 pub(crate) fn supported_param(ty: &Type) -> bool {
-    prop_type::map_type(ty).is_some_and(|info| {
-        !matches!(info.kind, prop_type::PropKind::Array { .. }) && !info.kind.property_only()
+    prop_type::map_fn_type(ty).is_some_and(|info| {
+        !matches!(
+            info.kind,
+            prop_type::PropKind::Array { .. }
+                | prop_type::PropKind::Map { .. }
+                | prop_type::PropKind::Set { .. }
+        )
     })
 }
 
+pub(crate) fn crossed_as_property(kind: &prop_type::PropKind) -> bool {
+    matches!(
+        kind,
+        prop_type::PropKind::Str
+            | prop_type::PropKind::Name
+            | prop_type::PropKind::Text
+            | prop_type::PropKind::RawScalar { .. }
+            | prop_type::PropKind::OwnedStruct { .. }
+            | prop_type::PropKind::SoftObject { .. }
+            | prop_type::PropKind::SoftClass { .. }
+            | prop_type::PropKind::Weak { .. }
+            | prop_type::PropKind::Interface { .. }
+            | prop_type::PropKind::Vec { .. }
+            | prop_type::PropKind::HashMap { .. }
+            | prop_type::PropKind::HashSet { .. }
+    )
+}
+
 pub(crate) fn supported_return(ty: &Type) -> bool {
-    prop_type::map_type(ty).is_some_and(|info| {
+    prop_type::map_fn_type(ty).is_some_and(|info| {
         !matches!(
             info.kind,
-            prop_type::PropKind::Array { .. } | prop_type::PropKind::Struct { .. }
-        ) && !info.kind.property_only()
+            prop_type::PropKind::Array { .. }
+                | prop_type::PropKind::Map { .. }
+                | prop_type::PropKind::Set { .. }
+                | prop_type::PropKind::Struct { .. }
+        )
     })
 }
 
@@ -933,12 +1566,19 @@ fn event_struct_param(ty: &Type) -> Option<Type> {
     .then_some(inner)
 }
 
-fn parse_ufunction_specifiers(attr: &syn::Attribute) -> syn::Result<(Vec<String>, Option<String>)> {
-    let mut specifiers = Vec::new();
-    let mut name = None;
+#[derive(Default)]
+struct UFunctionSpec {
+    specifiers: Vec<String>,
+    name: Option<String>,
+    metadata: Vec<(String, String)>,
+    validate: Option<Ident>,
+}
+
+fn parse_ufunction_specifiers(attr: &syn::Attribute) -> syn::Result<UFunctionSpec> {
+    let mut spec = UFunctionSpec::default();
 
     if let Meta::Path(_) = attr.meta {
-        return Ok((specifiers, name));
+        return Ok(spec);
     }
 
     let nested = attr.parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated)?;
@@ -947,14 +1587,41 @@ fn parse_ufunction_specifiers(attr: &syn::Attribute) -> syn::Result<(Vec<String>
         match meta {
             Meta::Path(p) => {
                 if let Some(ident) = p.get_ident() {
-                    specifiers.push(ident.to_string());
+                    spec.specifiers.push(ident.to_string());
                 }
             }
+            Meta::List(list) if list.path.is_ident("meta") => {
+                spec.metadata.extend(crate::uclass::parse_meta_list(list)?);
+            }
+            Meta::NameValue(nv) if nv.path.is_ident("category") => match &nv.value {
+                syn::Expr::Lit(syn::ExprLit {
+                    lit: syn::Lit::Str(s),
+                    ..
+                }) => spec.metadata.push(("Category".to_string(), s.value())),
+                other => {
+                    return Err(syn::Error::new_spanned(
+                        other,
+                        "`category` is a string: category = \"Combat\"",
+                    ));
+                }
+            },
+            Meta::NameValue(nv) if nv.path.is_ident("WithValidation") => match &nv.value {
+                syn::Expr::Path(path) if path.path.get_ident().is_some() => {
+                    spec.validate = path.path.get_ident().cloned();
+                }
+                other => {
+                    return Err(syn::Error::new_spanned(
+                        other,
+                        "WithValidation names a method of the class that takes the function's \
+                         parameters and returns bool: WithValidation = validate_fire",
+                    ));
+                }
+            },
             Meta::NameValue(nv) if nv.path.is_ident("name") => match &nv.value {
                 syn::Expr::Lit(syn::ExprLit {
                     lit: syn::Lit::Str(s),
                     ..
-                }) => name = Some(s.value()),
+                }) => spec.name = Some(s.value()),
                 other => {
                     return Err(syn::Error::new_spanned(
                         other,
@@ -971,7 +1638,7 @@ fn parse_ufunction_specifiers(attr: &syn::Attribute) -> syn::Result<(Vec<String>
         }
     }
 
-    Ok((specifiers, name))
+    Ok(spec)
 }
 
 fn implementable_event_body(uf: &UFunctionInfo) -> syn::Block {
@@ -1001,6 +1668,12 @@ pub(crate) fn dynamic_call_body(
                 return quote! { call.set_struct(#param, #rust_name)?; };
             }
 
+            if prop_type::map_fn_type(&p.rust_ty)
+                .is_some_and(|info| crossed_as_property(&info.kind))
+            {
+                return quote! { call.set_value(#param, &#rust_name)?; };
+            }
+
             let kind = prop_type::map_type(&p.rust_ty).map(|info| info.kind);
 
             if matches!(kind, Some(prop_type::PropKind::Struct { .. })) {
@@ -1025,6 +1698,15 @@ pub(crate) fn dynamic_call_body(
             quote! { let _ = result; Ok(()) },
             TokenStream::new(),
         ),
+        Some(ty)
+            if prop_type::map_fn_type(ty).is_some_and(|info| crossed_as_property(&info.kind)) =>
+        {
+            (
+                quote! { #ty },
+                quote! { result.value::<#ty>("ReturnValue") },
+                quote! { <#ty as ::core::default::Default>::default() },
+            )
+        }
         Some(ty) => match prop_type::map_type(ty).map(|info| info.kind) {
             Some(prop_type::PropKind::Object { .. }) => (
                 quote! { #ty },
@@ -1087,9 +1769,114 @@ mod tests {
         assert!(
             out.contains("< dyn Interactable > :: __rusteal_signature_interact () . 1 [0usize]")
         );
-        assert!(out.contains("Interactable :: interact (& mut __this , instigator)"));
+        assert!(out.contains("Interactable :: interact (& mut __this , __rusteal_arg_instigator)"));
         assert!(out.contains("FUNC_EVENT"));
         assert!(out.contains("__rusteal_register_door_interactable_functions"));
+    }
+
+    #[test]
+    fn async_ufunctions_are_latent_nodes_taking_self() {
+        let method: ImplItemFn = syn::parse_quote! {
+            #[ufunction]
+            async fn open(self, speed: f32) {}
+        };
+
+        let info = parse_ufunction(&method).unwrap();
+        assert!(info.is_async);
+        assert!(
+            info.metadata
+                .iter()
+                .any(|(key, value)| key == "LatentInfo" && value == "LatentInfo")
+        );
+
+        let bad: Vec<ImplItemFn> = vec![
+            syn::parse_quote! { #[ufunction] async fn a(&self) {} },
+            syn::parse_quote! { #[ufunction] async fn b(&mut self) {} },
+            syn::parse_quote! { #[ufunction(BlueprintPure)] async fn c(self) {} },
+            syn::parse_quote! { #[ufunction] async fn d(self) -> i32 { 1 } },
+            syn::parse_quote! { #[ufunction] async fn e(self, out: &mut i32) {} },
+            syn::parse_quote! { #[ufunction] async fn f() {} },
+        ];
+
+        for method in &bad {
+            assert!(parse_ufunction(method).is_err(), "{}", method.sig.ident);
+        }
+    }
+
+    #[test]
+    fn thread_safe_ufunctions_take_the_class_view() {
+        let method: ImplItemFn = syn::parse_quote! {
+            #[ufunction(Override, ThreadSafe)]
+            fn blueprint_thread_safe_update_animation(this: HeroAnimThreadSafe, delta_time: f32) {}
+        };
+
+        let info = parse_ufunction(&method).unwrap();
+        assert!(info.thread_safe);
+        assert!(!info.is_static);
+        assert_eq!(info.params.len(), 1);
+        assert!(
+            info.metadata
+                .iter()
+                .any(|(key, _)| key == "BlueprintThreadSafe")
+        );
+
+        let bad: Vec<ImplItemFn> = vec![
+            syn::parse_quote! { #[ufunction(Override, ThreadSafe)] fn a(&self, dt: f32) {} },
+            syn::parse_quote! { #[ufunction(Override, ThreadSafe)] fn b(&mut self) {} },
+            syn::parse_quote! { #[ufunction(Override, ThreadSafe)] fn c(dt: f32) {} },
+            syn::parse_quote! { #[ufunction(ThreadSafe, Exec)] fn d(this: AThreadSafe) {} },
+            syn::parse_quote! { #[ufunction(ThreadSafe)] async fn e(this: AThreadSafe) {} },
+        ];
+
+        for method in &bad {
+            assert!(parse_ufunction(method).is_err(), "{}", method.sig.ident);
+        }
+    }
+
+    #[test]
+    fn ufunction_metadata_and_static_functions() {
+        let method: ImplItemFn = syn::parse_quote! {
+            /// Puts the counter back to zero.
+            #[ufunction(CallInEditor, category = "Debug", meta(DevelopmentOnly, Keywords = "reset clear"))]
+            fn reset_count(&self) {}
+        };
+
+        let info = parse_ufunction(&method).unwrap();
+        let metadata: Vec<(&str, &str)> = info
+            .metadata
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .collect();
+
+        assert_eq!(
+            metadata,
+            [
+                ("Category", "Debug"),
+                ("DevelopmentOnly", "true"),
+                ("Keywords", "reset clear"),
+                ("ToolTip", "Puts the counter back to zero."),
+                ("CallInEditor", "true"),
+            ]
+        );
+        assert!(!info.is_static);
+
+        let method: ImplItemFn = syn::parse_quote! {
+            #[ufunction(BlueprintPure)]
+            fn add(a: i32, b: i32) -> i32 { a + b }
+        };
+        assert!(parse_ufunction(&method).unwrap().is_static);
+
+        let method: ImplItemFn = syn::parse_quote! {
+            #[ufunction(BlueprintNativeEvent)]
+            fn react(amount: i32) -> i32 { amount }
+        };
+        assert!(parse_ufunction(&method).is_err());
+
+        let method: ImplItemFn = syn::parse_quote! {
+            #[ufunction(Reliable)]
+            fn shoot(&self) {}
+        };
+        assert!(parse_ufunction(&method).is_err());
     }
 
     #[test]
@@ -1116,7 +1903,7 @@ mod tests {
         assert!(
             expand(quote! {
                 impl Interactable for Door {
-                    fn interact(&mut self, name: String) {}
+                    fn interact(&mut self, name: usize) {}
                 }
             })
             .is_err()
@@ -1186,5 +1973,86 @@ mod tests {
             ))
             .is_some()
         );
+    }
+
+    #[test]
+    fn thunk_locals_are_snake_case_for_unused_parameters() {
+        let local = |name: &str| {
+            thunk_local(&ParamInfo {
+                rust_name: format_ident!("{}", name),
+                ue_name: String::new(),
+                rust_ty: syn::parse_quote!(i32),
+                out: false,
+            })
+            .to_string()
+        };
+
+        assert_eq!(local("target"), "__rusteal_arg_target");
+        assert_eq!(local("_target"), "__rusteal_arg_target_1");
+        assert_eq!(local("r#type"), "__rusteal_arg_type");
+    }
+
+    #[test]
+    fn a_remote_function_calls_through_the_engine_and_runs_its_body_where_it_lands() {
+        let out = expand(quote! {
+            impl Turret {
+                #[ufunction(Server, Reliable, WithValidation = valid_aim)]
+                fn server_aim(&mut self, yaw: f32) {
+                    self.set_yaw(yaw);
+                }
+
+                fn valid_aim(&self, yaw: f32) -> bool {
+                    yaw.is_finite()
+                }
+            }
+        })
+        .unwrap();
+
+        assert!(out.contains("fn server_aim_implementation (& mut self , yaw : f32)"));
+        assert!(out.contains("DynamicCall :: new (& self . as_ref () , \"ServerAim\")"));
+        assert!(out.contains("FUNC_NET_SERVER"));
+        assert!(out.contains("FUNC_NET_RELIABLE"));
+        assert!(out.contains("FUNC_NET_VALIDATE"));
+        assert!(out.contains(
+            "__this . valid_aim (:: core :: clone :: Clone :: clone (& __rusteal_arg_yaw))"
+        ));
+        assert!(out.contains("world_rpc_validate_failed"));
+        assert!(out.contains("__this . server_aim_implementation (__rusteal_arg_yaw)"));
+    }
+
+    #[test]
+    fn remote_functions_are_checked() {
+        let refused = |method: ImplItemFn| parse_ufunction(&method).err().unwrap().to_string();
+
+        assert!(
+            refused(syn::parse_quote! { #[ufunction(Server)] fn fire(&mut self) {} })
+                .contains("Reliable")
+        );
+        assert!(
+            refused(syn::parse_quote! { #[ufunction(Client, Reliable, WithValidation = ok)] fn note(&self) {} })
+                .contains("goes with Server")
+        );
+        assert!(
+            refused(syn::parse_quote! { #[ufunction(Server, Client, Reliable)] fn both(&self) {} })
+                .contains("one of Server, Client and NetMulticast")
+        );
+        assert!(
+            refused(syn::parse_quote! { #[ufunction(NetMulticast, Unreliable)] fn ping(&self) -> i32 { 0 } })
+                .contains("returns nothing")
+        );
+        assert!(
+            refused(syn::parse_quote! { #[ufunction(Server, Reliable)] fn spawn() {} })
+                .contains("a method")
+        );
+        assert!(
+            refused(syn::parse_quote! { #[ufunction(Reliable)] fn fire(&self) {} })
+                .contains("remote function")
+        );
+
+        let method: ImplItemFn = syn::parse_quote! { #[ufunction(NetMulticast, Unreliable, BlueprintAuthorityOnly)] fn ping(&self, at: f32) {} };
+        let info = parse_ufunction(&method).unwrap();
+        let rpc = info.rpc.unwrap();
+        assert_eq!(rpc.target, RpcTarget::NetMulticast);
+        assert!(!rpc.reliable && rpc.validate.is_none() && info.authority_only);
     }
 }

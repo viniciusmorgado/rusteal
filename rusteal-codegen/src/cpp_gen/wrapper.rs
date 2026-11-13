@@ -7,11 +7,13 @@ use crate::type_map::{self, ConversionKind, MappedType, ParamDirection};
 enum ReturnStrategy {
     Direct,
     ObjectRef,
-    SoftWeakObjectRef,
+    WeakObjectRef,
+    InterfaceRef,
     Cast(String),
     StringReturn,
     TextReturn,
-    StructReturn,
+    SoftPathReturn,
+    StructReturn { lookup: Option<String> },
     FNameReturn,
     ContainerReturn,
 }
@@ -19,14 +21,22 @@ enum ReturnStrategy {
 enum PostCallAction {
     StringOutput(String),
     TextOutput(String),
-    StructOutput { name: String, struct_cpp: String },
+    StructOutput {
+        name: String,
+        struct_cpp: String,
+        lookup: Option<String>,
+    },
     ObjectOutput(String),
-    SoftWeakObjectOutput(String),
+    WeakObjectOutput(String),
+    InterfaceOutput(String),
     FNameOutput(String),
-    EnumOutput { name: String, ffi_type: String },
-    InOutStructCopyback { name: String, struct_cpp: String },
+    EnumOutput {
+        name: String,
+        ffi_type: String,
+    },
     InOutStringCopyback(String),
-    InOutTextCopyback(String),
+    InOutSoftCopyback(String),
+    SoftPathOutput(String),
 }
 
 pub fn generate_wrapper_file(entries: &[&FuncEntry], ctx: &CodegenContext) -> String {
@@ -66,6 +76,20 @@ pub fn generate_wrapper_file(entries: &[&FuncEntry], ctx: &CodegenContext) -> St
         includes.insert("\"RustealFNameHelper.h\"".to_string());
     }
 
+    includes.insert("\"Templates/SubclassOf.h\"".to_string());
+    includes.insert("\"RustealUtf8.h\"".to_string());
+    includes.insert("\"RustealInterface.h\"".to_string());
+    includes.insert("\"RustealDelegateArg.h\"".to_string());
+    includes.insert("\"RustealStructs.h\"".to_string());
+
+    if entries
+        .iter()
+        .any(|e| e.func.params.iter().any(is_latent_info))
+    {
+        includes.insert("\"RustealLatentProxy.h\"".to_string());
+    }
+    out.push_str("#include \"CoreMinimal.h\"\n");
+
     for inc in &includes {
         out.push_str(&format!("#include {inc}\n"));
     }
@@ -74,10 +98,7 @@ pub fn generate_wrapper_file(entries: &[&FuncEntry], ctx: &CodegenContext) -> St
     out.push_str("#include <type_traits>\n");
     out.push('\n');
 
-    out.push_str("#ifdef _MSC_VER\n");
-    out.push_str("#pragma warning(push)\n");
-    out.push_str("#pragma warning(disable: 4996)\n");
-    out.push_str("#endif\n\n");
+    out.push_str("PRAGMA_DISABLE_DEPRECATION_WARNINGS\n\n");
 
     out.push_str("#ifndef RUSTEAL_ERROR_CODES_DEFINED\n");
     out.push_str("#define RUSTEAL_ERROR_CODES_DEFINED\n");
@@ -89,9 +110,7 @@ pub fn generate_wrapper_file(entries: &[&FuncEntry], ctx: &CodegenContext) -> St
         generate_wrapper_function(&mut out, entry, ctx);
     }
 
-    out.push_str("#ifdef _MSC_VER\n");
-    out.push_str("#pragma warning(pop)\n");
-    out.push_str("#endif\n");
+    out.push_str("PRAGMA_ENABLE_DEPRECATION_WARNINGS\n");
 
     out
 }
@@ -162,6 +181,48 @@ fn generate_wrapper_function(out: &mut String, entry: &FuncEntry, ctx: &CodegenC
         ));
     }
 
+    let latent = func.params.iter().find(|p| is_latent_info(p));
+
+    if let Some(info) = latent {
+        let context = if is_static {
+            func.params
+                .iter()
+                .filter(|p| {
+                    p.prop_type == "ObjectProperty"
+                        && type_map::param_direction(p) == ParamDirection::In
+                })
+                .max_by_key(|p| p.name.contains("WorldContext"))
+                .map_or("static_cast<UObject*>(GWorld)".to_string(), |p| {
+                    format!("static_cast<UObject*>({})", p.name)
+                })
+        } else {
+            "static_cast<UObject*>(Self)".to_string()
+        };
+
+        out.push_str(&format!(
+            "    URustealLatentProxy* __LatentProxy = URustealLatentProxy::Create({context}, {});\n\
+             \x20   if (!__LatentProxy) return RustealErrorCode_ObjectDestroyed;\n\
+             \x20   FLatentActionInfo __LatentInfo = __LatentProxy->MakeLatentInfo();\n",
+            info.name
+        ));
+    }
+
+    let mut heap_locals: Vec<(String, String)> = Vec::new();
+
+    let mut local = |out: &mut String, ty: &str, var: &str, init: &str| {
+        if latent.is_some() {
+            out.push_str(&format!(
+                "    TSharedRef<{ty}> __Heap{var} = MakeShared<{ty}>({init});\n\
+                 \x20   {ty}& {var} = *__Heap{var};\n"
+            ));
+            heap_locals.push((ty.to_string(), var.to_string()));
+        } else if init.is_empty() {
+            out.push_str(&format!("    {ty} {var};\n"));
+        } else {
+            out.push_str(&format!("    {ty} {var} = {init};\n"));
+        }
+    };
+
     for param in &func.params {
         if !is_container_param(param) {
             continue;
@@ -206,42 +267,57 @@ fn generate_wrapper_function(out: &mut String, entry: &FuncEntry, ctx: &CodegenC
 
         match mapped.ffi_to_rust {
             ConversionKind::StringUtf8 => {
-                if param.prop_type == "TextProperty" {
-                    out.push_str(&format!("    FText __Out{name};\n"));
-                    post_call_actions.push(PostCallAction::TextOutput(name.clone()));
+                if let Some(soft) = soft_cpp_type(param, ctx) {
+                    local(out, &soft, &format!("__Out{name}"), "");
+                    post_call_actions.push(PostCallAction::SoftPathOutput(name.clone()));
                 } else {
-                    out.push_str(&format!("    FString __Out{name};\n"));
+                    local(out, "FString", &format!("__Out{name}"), "");
                     post_call_actions.push(PostCallAction::StringOutput(name.clone()));
                 }
             }
             ConversionKind::StructOpaque => {
                 let struct_cpp = resolve_struct_opaque_cpp_type(param, ctx);
-                out.push_str(&format!("    {struct_cpp} __Out{name};\n"));
+                local(out, &struct_cpp, &format!("__Out{name}"), "");
 
                 post_call_actions.push(PostCallAction::StructOutput {
                     name: name.clone(),
                     struct_cpp,
+                    lookup: struct_lookup(param, ctx),
                 });
             }
             ConversionKind::ObjectRef => match param.prop_type.as_str() {
-                "SoftObjectProperty" => {
-                    let bare = resolve_object_cpp_type_bare(ctx, param.class_name.as_deref());
-                    out.push_str(&format!("    TSoftObjectPtr<{bare}> __Out{name};\n"));
-                    post_call_actions.push(PostCallAction::SoftWeakObjectOutput(name.clone()));
-                }
                 "WeakObjectProperty" => {
                     let bare = resolve_object_cpp_type_bare(ctx, param.class_name.as_deref());
-                    out.push_str(&format!("    TWeakObjectPtr<{bare}> __Out{name};\n"));
-                    post_call_actions.push(PostCallAction::SoftWeakObjectOutput(name.clone()));
+                    local(
+                        out,
+                        &format!("TWeakObjectPtr<{bare}>"),
+                        &format!("__Out{name}"),
+                        "",
+                    );
+                    post_call_actions.push(PostCallAction::WeakObjectOutput(name.clone()));
+                }
+                "InterfaceProperty" => {
+                    let iface = native_interface_cpp_type(ctx, param.interface_name.as_deref());
+                    local(
+                        out,
+                        &format!("TScriptInterface<{iface}>"),
+                        &format!("__Out{name}"),
+                        "",
+                    );
+                    post_call_actions.push(PostCallAction::InterfaceOutput(name.clone()));
+                }
+                "TextProperty" => {
+                    local(out, "FText", &format!("__Out{name}"), "");
+                    post_call_actions.push(PostCallAction::TextOutput(name.clone()));
                 }
                 _ => {
                     let obj_cpp = resolve_object_cpp_type(ctx, param.class_name.as_deref());
-                    out.push_str(&format!("    {obj_cpp} __Out{name} = nullptr;\n"));
+                    local(out, &obj_cpp, &format!("__Out{name}"), "nullptr");
                     post_call_actions.push(PostCallAction::ObjectOutput(name.clone()));
                 }
             },
             ConversionKind::FName => {
-                out.push_str(&format!("    FName __Out{name};\n"));
+                local(out, "FName", &format!("__Out{name}"), "");
                 post_call_actions.push(PostCallAction::FNameOutput(name.clone()));
             }
             ConversionKind::EnumCast => {
@@ -253,7 +329,7 @@ fn generate_wrapper_function(out: &mut String, entry: &FuncEntry, ctx: &CodegenC
                     _ => cpp_enum,
                 };
 
-                out.push_str(&format!("    {local_type} __Out{name};\n"));
+                local(out, &local_type, &format!("__Out{name}"), "");
 
                 post_call_actions.push(PostCallAction::EnumOutput {
                     name: name.clone(),
@@ -273,13 +349,9 @@ fn generate_wrapper_function(out: &mut String, entry: &FuncEntry, ctx: &CodegenC
             if mapped.rust_to_ffi == ConversionKind::StructOpaque {
                 let name = &param.name;
                 let struct_cpp = resolve_struct_opaque_cpp_type(param, ctx);
-                out.push_str(&format!("    {struct_cpp} __InOut{name};\n"));
-                out.push_str(&format!("    if ({name}) {{ FMemory::Memcpy(&__InOut{name}, {name}, sizeof({struct_cpp})); }}\n"));
-
-                post_call_actions.push(PostCallAction::InOutStructCopyback {
-                    name: name.clone(),
-                    struct_cpp,
-                });
+                out.push_str(&format!(
+                    "    {struct_cpp}& __InOut{name} = *reinterpret_cast<{struct_cpp}*>({name});\n"
+                ));
             }
         }
     }
@@ -293,20 +365,43 @@ fn generate_wrapper_function(out: &mut String, entry: &FuncEntry, ctx: &CodegenC
             if mapped.rust_to_ffi == ConversionKind::StringUtf8 {
                 let name = &param.name;
 
-                if param.prop_type == "TextProperty" {
-                    out.push_str(&format!(
-                        "    FText __InOut{name} = FText::FromString(FString(UTF8_TO_TCHAR(std::string({name}, {name}Len).c_str())));\n"
-                    ));
-                    post_call_actions.push(PostCallAction::InOutTextCopyback(name.clone()));
+                if let Some(soft) = soft_cpp_type(param, ctx) {
+                    local(
+                        out,
+                        &soft,
+                        &format!("__InOut{name}"),
+                        &format!(
+                            "{soft}(FSoftObjectPath(FString(UTF8_TO_TCHAR(std::string({name}, {name}Len).c_str()))))"
+                        ),
+                    );
+                    post_call_actions.push(PostCallAction::InOutSoftCopyback(name.clone()));
                 } else {
-                    out.push_str(&format!(
-                        "    FString __InOut{name} = FString(UTF8_TO_TCHAR(std::string({name}, {name}Len).c_str()));\n"
-                    ));
+                    local(
+                        out,
+                        "FString",
+                        &format!("__InOut{name}"),
+                        &format!("FString(UTF8_TO_TCHAR(std::string({name}, {name}Len).c_str()))"),
+                    );
 
                     post_call_actions.push(PostCallAction::InOutStringCopyback(name.clone()));
                 }
             }
         }
+    }
+
+    if latent.is_some() && !post_call_actions.is_empty() {
+        out.push_str("    __LatentProxy->OnComplete = [=]() {\n");
+
+        for (ty, var) in &heap_locals {
+            out.push_str(&format!("    {ty}& {var} = *__Heap{var};\n"));
+        }
+
+        for action in &post_call_actions {
+            emit_post_call(out, action);
+        }
+
+        out.push_str("    };\n");
+        post_call_actions.clear();
     }
 
     let mut call_args = Vec::new();
@@ -356,6 +451,11 @@ fn generate_wrapper_function(out: &mut String, entry: &FuncEntry, ctx: &CodegenC
         }
     } else if is_static {
         format!("{class_cpp}::{func_name}({args})")
+    } else if let Some(iface) = func.interface.as_ref().filter(|_| is_protected) {
+        out.push_str(&format!(
+            "    struct FAccess : {iface} {{ using {iface}::{func_name}; }};\n"
+        ));
+        format!("(static_cast<{iface}*>(Self)->*&FAccess::{func_name})({args})")
     } else if let Some(iface) = &func.interface {
         format!("static_cast<{iface}*>(Self)->{func_name}({args})")
     } else if is_blueprint_native {
@@ -369,7 +469,7 @@ fn generate_wrapper_function(out: &mut String, entry: &FuncEntry, ctx: &CodegenC
     };
 
     if let Some(rp) = return_param {
-        let strategy = return_strategy(rp);
+        let strategy = return_strategy(rp, ctx);
         emit_return(out, &strategy, &call_expr);
     } else {
         out.push_str(&format!("    {call_expr};\n"));
@@ -384,6 +484,11 @@ fn generate_wrapper_function(out: &mut String, entry: &FuncEntry, ctx: &CodegenC
 }
 
 fn expand_input_sig(params: &mut Vec<String>, param: &ParamInfo, dir: ParamDirection) {
+    if is_latent_info(param) {
+        params.push(format!("    uint64_t {}", param.name));
+        return;
+    }
+
     if is_container_param(param) {
         let name = &param.name;
         params.push(format!("    void* {name}_Base"));
@@ -485,10 +590,10 @@ fn scalar_input_cpp_type(mapped: &MappedType, param: &ParamInfo, dir: ParamDirec
             }
         }
         ConversionKind::FName => "uint64_t".to_string(),
+        ConversionKind::Delegate => "void*".to_string(),
         ConversionKind::ContainerArray
         | ConversionKind::ContainerMap
         | ConversionKind::ContainerSet
-        | ConversionKind::Delegate
         | ConversionKind::MulticastDelegate => {
             unreachable!("container/delegate types are property-only, never function params")
         }
@@ -546,6 +651,26 @@ fn int_ctype(cpp_type: &str) -> String {
     .to_string()
 }
 
+fn soft_cpp_type(param: &ParamInfo, ctx: &CodegenContext) -> Option<String> {
+    match param.prop_type.as_str() {
+        "SoftObjectProperty" => Some(format!(
+            "TSoftObjectPtr<{}>",
+            resolve_object_cpp_type_bare(ctx, param.class_name.as_deref())
+        )),
+        "SoftClassProperty" => Some(format!(
+            "TSoftClassPtr<{}>",
+            resolve_object_cpp_type_bare(
+                ctx,
+                param
+                    .meta_class_name
+                    .as_deref()
+                    .or(param.class_name.as_deref())
+            )
+        )),
+        _ => None,
+    }
+}
+
 fn resolve_struct_opaque_cpp_type(param: &ParamInfo, ctx: &CodegenContext) -> String {
     match param.prop_type.as_str() {
         "SoftObjectProperty" => {
@@ -577,6 +702,15 @@ fn resolve_object_cpp_type_bare(ctx: &CodegenContext, class_name: Option<&str>) 
     }
 }
 
+fn native_interface_cpp_type(ctx: &CodegenContext, interface_name: Option<&str>) -> String {
+    let uclass = resolve_object_cpp_type_bare(ctx, interface_name);
+
+    match uclass.strip_prefix('U') {
+        Some(rest) => format!("I{rest}"),
+        None => format!("I{uclass}"),
+    }
+}
+
 fn resolve_object_cpp_type(ctx: &CodegenContext, class_name: Option<&str>) -> String {
     match class_name {
         Some(cn) => {
@@ -590,7 +724,17 @@ fn resolve_object_cpp_type(ctx: &CodegenContext, class_name: Option<&str>) -> St
     }
 }
 
+fn is_latent_info(param: &ParamInfo) -> bool {
+    param.prop_type == "StructProperty"
+        && param.struct_name.as_deref() == Some("LatentActionInfo")
+        && type_map::param_direction(param) == ParamDirection::In
+}
+
 fn input_arg_expression(param: &ParamInfo, dir: ParamDirection, ctx: &CodegenContext) -> String {
+    if is_latent_info(param) {
+        return "__LatentInfo".to_string();
+    }
+
     if is_container_param(param) {
         return format!("__Container_{}", param.name);
     }
@@ -603,19 +747,20 @@ fn input_arg_expression(param: &ParamInfo, dir: ParamDirection, ctx: &CodegenCon
             let cpp_type = resolve_object_cpp_type(ctx, param.class_name.as_deref());
 
             match param.prop_type.as_str() {
-                "SoftObjectProperty" => {
-                    let bare_type = resolve_object_cpp_type_bare(ctx, param.class_name.as_deref());
-
-                    format!(
-                        "TSoftObjectPtr<{bare_type}>(static_cast<{cpp_type}>({}))",
-                        param.name
-                    )
-                }
+                "TextProperty" => format!("*static_cast<const FText*>({})", param.name),
                 "WeakObjectProperty" => {
                     let bare_type = resolve_object_cpp_type_bare(ctx, param.class_name.as_deref());
 
                     format!(
                         "TWeakObjectPtr<{bare_type}>(static_cast<{cpp_type}>({}))",
+                        param.name
+                    )
+                }
+                "InterfaceProperty" => {
+                    let iface = native_interface_cpp_type(ctx, param.interface_name.as_deref());
+
+                    format!(
+                        "RustealToScriptInterface<{iface}>(static_cast<UObject*>({}))",
                         param.name
                     )
                 }
@@ -631,8 +776,8 @@ fn input_arg_expression(param: &ParamInfo, dir: ParamDirection, ctx: &CodegenCon
                     name = param.name
                 );
 
-                if param.prop_type == "TextProperty" {
-                    format!("FText::FromString({fstring_expr})")
+                if let Some(soft) = soft_cpp_type(param, ctx) {
+                    format!("{soft}(FSoftObjectPath({fstring_expr}))")
                 } else {
                     fstring_expr
                 }
@@ -656,17 +801,30 @@ fn input_arg_expression(param: &ParamInfo, dir: ParamDirection, ctx: &CodegenCon
         ConversionKind::FName => {
             format!("RustealUnpackFName({})", param.name)
         }
+        ConversionKind::Delegate => format!("FRustealDelegateArg{{{}}}", param.name),
         ConversionKind::ContainerArray
         | ConversionKind::ContainerMap
         | ConversionKind::ContainerSet
-        | ConversionKind::Delegate
         | ConversionKind::MulticastDelegate => {
             unreachable!("container/delegate types are property-only, never function params")
         }
     }
 }
 
-fn return_strategy(param: &ParamInfo) -> ReturnStrategy {
+fn struct_lookup(param: &ParamInfo, ctx: &CodegenContext) -> Option<String> {
+    let si = ctx.structs.get(param.struct_name.as_deref()?)?;
+
+    Some(if si.has_static_struct {
+        format!("TBaseStructure<{}>::Get()", si.cpp_name)
+    } else {
+        format!(
+            "RustealFindScriptStruct(TEXT(\"/Script/{}.{}\"))",
+            si.package, si.name
+        )
+    })
+}
+
+fn return_strategy(param: &ParamInfo, ctx: &CodegenContext) -> ReturnStrategy {
     if is_container_param(param) {
         return ReturnStrategy::ContainerReturn;
     }
@@ -676,12 +834,14 @@ fn return_strategy(param: &ParamInfo) -> ReturnStrategy {
     match mapped.ffi_to_rust {
         ConversionKind::Identity | ConversionKind::IntCast => ReturnStrategy::Direct,
         ConversionKind::ObjectRef => match param.prop_type.as_str() {
-            "SoftObjectProperty" | "WeakObjectProperty" => ReturnStrategy::SoftWeakObjectRef,
+            "WeakObjectProperty" => ReturnStrategy::WeakObjectRef,
+            "InterfaceProperty" => ReturnStrategy::InterfaceRef,
+            "TextProperty" => ReturnStrategy::TextReturn,
             _ => ReturnStrategy::ObjectRef,
         },
         ConversionKind::StringUtf8 => {
-            if param.prop_type == "TextProperty" {
-                ReturnStrategy::TextReturn
+            if soft_cpp_type(param, ctx).is_some() {
+                ReturnStrategy::SoftPathReturn
             } else {
                 ReturnStrategy::StringReturn
             }
@@ -696,7 +856,9 @@ fn return_strategy(param: &ParamInfo) -> ReturnStrategy {
 
             ReturnStrategy::Cast(ctype.to_string())
         }
-        ConversionKind::StructOpaque => ReturnStrategy::StructReturn,
+        ConversionKind::StructOpaque => ReturnStrategy::StructReturn {
+            lookup: struct_lookup(param, ctx),
+        },
         ConversionKind::FName => ReturnStrategy::FNameReturn,
         ConversionKind::ContainerArray
         | ConversionKind::ContainerMap
@@ -718,9 +880,14 @@ fn emit_return(out: &mut String, strategy: &ReturnStrategy, call_expr: &str) {
                 "    *OutReturnValue = const_cast<void*>(static_cast<const void*>({call_expr}));\n"
             ));
         }
-        ReturnStrategy::SoftWeakObjectRef => {
+        ReturnStrategy::WeakObjectRef => {
             out.push_str(&format!(
                 "    *OutReturnValue = const_cast<void*>(static_cast<const void*>({call_expr}.Get()));\n"
+            ));
+        }
+        ReturnStrategy::InterfaceRef => {
+            out.push_str(&format!(
+                "    *OutReturnValue = static_cast<void*>(({call_expr}).GetObject());\n"
             ));
         }
         ReturnStrategy::Cast(ctype) => {
@@ -731,33 +898,32 @@ fn emit_return(out: &mut String, strategy: &ReturnStrategy, call_expr: &str) {
         ReturnStrategy::StringReturn => {
             out.push_str(&format!("    FString __RustealResult = {call_expr};\n"));
 
-            out.push_str(
-                "    auto __RustealUtf8 = StringCast<ANSICHAR>(*__RustealResult);\n\
-                 \x20   int32 __RustealLen = __RustealUtf8.Length();\n\
-                 \x20   if (__RustealLen > static_cast<int32>(BufLen)) __RustealLen = static_cast<int32>(BufLen);\n\
-                 \x20   FMemory::Memcpy(OutBuf, __RustealUtf8.Get(), __RustealLen);\n\
-                 \x20   *OutLen = static_cast<uint32_t>(__RustealLen);\n",
-            );
+            out.push_str("    RustealWriteUtf8(__RustealResult, OutBuf, BufLen, OutLen);\n");
         }
-        ReturnStrategy::TextReturn => {
+        ReturnStrategy::SoftPathReturn => {
             out.push_str(&format!(
-                "    FString __RustealResult = ({call_expr}).ToString();\n"
+                "    FString __RustealResult = ({call_expr}).ToSoftObjectPath().ToString();\n"
             ));
 
-            out.push_str(
-                "    auto __RustealUtf8 = StringCast<ANSICHAR>(*__RustealResult);\n\
-                 \x20   int32 __RustealLen = __RustealUtf8.Length();\n\
-                 \x20   if (__RustealLen > static_cast<int32>(BufLen)) __RustealLen = static_cast<int32>(BufLen);\n\
-                 \x20   FMemory::Memcpy(OutBuf, __RustealUtf8.Get(), __RustealLen);\n\
-                 \x20   *OutLen = static_cast<uint32_t>(__RustealLen);\n",
-            );
+            out.push_str("    RustealWriteUtf8(__RustealResult, OutBuf, BufLen, OutLen);\n");
         }
-        ReturnStrategy::StructReturn => {
+        ReturnStrategy::TextReturn => {
+            out.push_str(&format!("    *OutReturnValue = new FText({call_expr});\n"));
+        }
+        ReturnStrategy::StructReturn { lookup } => {
             out.push_str(&format!("    auto __RustealResult = {call_expr};\n"));
 
-            out.push_str(
-                "    FMemory::Memcpy(OutReturnValue, &__RustealResult, sizeof(__RustealResult));\n",
-            );
+            if let Some(lookup) = lookup {
+                out.push_str(&format!(
+                    "    static UScriptStruct* __RustealStruct = {lookup};\n\
+                     \x20   __RustealStruct->InitializeStruct(OutReturnValue);\n\
+                     \x20   __RustealStruct->CopyScriptStruct(OutReturnValue, &__RustealResult);\n"
+                ));
+            } else {
+                out.push_str(
+                    "    FMemory::Memcpy(OutReturnValue, &__RustealResult, sizeof(__RustealResult));\n",
+                );
+            }
         }
         ReturnStrategy::FNameReturn => {
             out.push_str(&format!("    FName __RustealResult = {call_expr};\n"));
@@ -805,28 +971,26 @@ fn emit_post_call(out: &mut String, action: &PostCallAction) {
     match action {
         PostCallAction::StringOutput(name) => {
             out.push_str(&format!(
-                "    {{\n\
-                 \x20       auto __Utf8 = StringCast<ANSICHAR>(*__Out{name});\n\
-                 \x20       int32 __Len = __Utf8.Length();\n\
-                 \x20       if (__Len > static_cast<int32>(Out{name}BufLen)) __Len = static_cast<int32>(Out{name}BufLen);\n\
-                 \x20       FMemory::Memcpy(Out{name}, __Utf8.Get(), __Len);\n\
-                 \x20       *Out{name}Len = static_cast<uint32_t>(__Len);\n\
-                 \x20   }}\n"
+                "    RustealWriteUtf8(__Out{name}, Out{name}, Out{name}BufLen, Out{name}Len);\n"
             ));
         }
         PostCallAction::TextOutput(name) => {
             out.push_str(&format!(
-                "    {{\n\
-                 \x20       FString __Str = __Out{name}.ToString();\n\
-                 \x20       auto __Utf8 = StringCast<ANSICHAR>(*__Str);\n\
-                 \x20       int32 __Len = __Utf8.Length();\n\
-                 \x20       if (__Len > static_cast<int32>(Out{name}BufLen)) __Len = static_cast<int32>(Out{name}BufLen);\n\
-                 \x20       FMemory::Memcpy(Out{name}, __Utf8.Get(), __Len);\n\
-                 \x20       *Out{name}Len = static_cast<uint32_t>(__Len);\n\
-                 \x20   }}\n"
+                "    *Out{name} = new FText(MoveTemp(__Out{name}));\n"
             ));
         }
-        PostCallAction::StructOutput { name, struct_cpp } => {
+        PostCallAction::StructOutput {
+            name,
+            lookup: Some(lookup),
+            ..
+        } => {
+            out.push_str(&format!(
+                "    if (Out{name}) {{ static UScriptStruct* __Struct{name} = {lookup}; __Struct{name}->InitializeStruct(Out{name}); __Struct{name}->CopyScriptStruct(Out{name}, &__Out{name}); }}\n"
+            ));
+        }
+        PostCallAction::StructOutput {
+            name, struct_cpp, ..
+        } => {
             out.push_str(&format!(
                 "    if (Out{name}) {{ FMemory::Memcpy(Out{name}, &__Out{name}, sizeof({struct_cpp})); }}\n"
             ));
@@ -836,9 +1000,14 @@ fn emit_post_call(out: &mut String, action: &PostCallAction) {
                 "    *Out{name} = static_cast<void*>(__Out{name});\n"
             ));
         }
-        PostCallAction::SoftWeakObjectOutput(name) => {
+        PostCallAction::WeakObjectOutput(name) => {
             out.push_str(&format!(
                 "    *Out{name} = static_cast<void*>(__Out{name}.Get());\n"
+            ));
+        }
+        PostCallAction::InterfaceOutput(name) => {
+            out.push_str(&format!(
+                "    *Out{name} = static_cast<void*>(__Out{name}.GetObject());\n"
             ));
         }
         PostCallAction::FNameOutput(name) => {
@@ -851,32 +1020,19 @@ fn emit_post_call(out: &mut String, action: &PostCallAction) {
                 "    *Out{name} = static_cast<{ffi_type}>(__Out{name});\n"
             ));
         }
-        PostCallAction::InOutStructCopyback { name, struct_cpp } => {
-            out.push_str(&format!(
-                "    if ({name}) {{ FMemory::Memcpy({name}, &__InOut{name}, sizeof({struct_cpp})); }}\n"
-            ));
-        }
         PostCallAction::InOutStringCopyback(name) => {
             out.push_str(&format!(
-                "    {{\n\
-                 \x20       auto __Utf8 = StringCast<ANSICHAR>(*__InOut{name});\n\
-                 \x20       int32 __Len = __Utf8.Length();\n\
-                 \x20       if (__Len > static_cast<int32>(Out{name}BufLen)) __Len = static_cast<int32>(Out{name}BufLen);\n\
-                 \x20       FMemory::Memcpy(Out{name}, __Utf8.Get(), __Len);\n\
-                 \x20       *Out{name}Len = static_cast<uint32_t>(__Len);\n\
-                 \x20   }}\n"
+                "    RustealWriteUtf8(__InOut{name}, Out{name}, Out{name}BufLen, Out{name}Len);\n"
             ));
         }
-        PostCallAction::InOutTextCopyback(name) => {
+        PostCallAction::InOutSoftCopyback(name) => {
             out.push_str(&format!(
-                "    {{\n\
-                 \x20       FString __Str = __InOut{name}.ToString();\n\
-                 \x20       auto __Utf8 = StringCast<ANSICHAR>(*__Str);\n\
-                 \x20       int32 __Len = __Utf8.Length();\n\
-                 \x20       if (__Len > static_cast<int32>(Out{name}BufLen)) __Len = static_cast<int32>(Out{name}BufLen);\n\
-                 \x20       FMemory::Memcpy(Out{name}, __Utf8.Get(), __Len);\n\
-                 \x20       *Out{name}Len = static_cast<uint32_t>(__Len);\n\
-                 \x20   }}\n"
+                "    RustealWriteUtf8(__InOut{name}.ToSoftObjectPath().ToString(), Out{name}, Out{name}BufLen, Out{name}Len);\n"
+            ));
+        }
+        PostCallAction::SoftPathOutput(name) => {
+            out.push_str(&format!(
+                "    RustealWriteUtf8(__Out{name}.ToSoftObjectPath().ToString(), Out{name}, Out{name}BufLen, Out{name}Len);\n"
             ));
         }
     }
@@ -932,7 +1088,10 @@ fn resolve_inner_cpp_type(inner: &PropertyInfo, ctx: &CodegenContext) -> String 
             }
             None => "UClass*".to_string(),
         },
-        "InterfaceProperty" => resolve_object_cpp_type(ctx, inner.interface_name.as_deref()),
+        "InterfaceProperty" => format!(
+            "TScriptInterface<{}>",
+            native_interface_cpp_type(ctx, inner.interface_name.as_deref())
+        ),
         "EnumProperty" => {
             let name = inner
                 .enum_cpp_name
@@ -987,6 +1146,7 @@ fn collect_param_headers(param: &ParamInfo, ctx: &CodegenContext, includes: &mut
     for cls_name in [
         param.class_name.as_deref(),
         param.meta_class_name.as_deref(),
+        param.interface_name.as_deref(),
     ]
     .into_iter()
     .flatten()
@@ -1014,6 +1174,7 @@ fn collect_param_headers(param: &ParamInfo, ctx: &CodegenContext, includes: &mut
         for cls_name in [
             inner.class_name.as_deref(),
             inner.meta_class_name.as_deref(),
+            inner.interface_name.as_deref(),
         ]
         .into_iter()
         .flatten()
@@ -1036,5 +1197,405 @@ fn include_struct_header(struct_name: &str, ctx: &CodegenContext, includes: &mut
         && !st.header.is_empty()
     {
         includes.insert(format!("\"{}\"", st.header));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::CodegenConfig;
+
+    fn class(name: &str, parent: &str) -> ClassInfo {
+        serde_json::from_value(serde_json::json!({
+            "name": name, "cpp_name": format!("U{name}"), "package": "Engine",
+            "header": "", "class_flags": 0, "super": parent,
+        }))
+        .unwrap()
+    }
+
+    fn param(
+        name: &str,
+        flags: u64,
+        prop_type: &str,
+        interface: Option<&str>,
+    ) -> serde_json::Value {
+        serde_json::json!({
+            "name": name, "type": prop_type, "prop_flags": flags,
+            "enum_name": null, "enum_cpp_name": null, "enum_cpp_form": null,
+            "enum_underlying_type": null, "class_name": null, "meta_class_name": null,
+            "struct_name": null, "interface_name": interface, "func_info": null,
+            "inner_prop": null, "key_prop": null, "value_prop": null,
+            "element_prop": null, "default": null,
+        })
+    }
+
+    fn entry(name: &str, params: serde_json::Value) -> FuncEntry {
+        FuncEntry {
+            func_id: 0,
+            module_name: "engine".into(),
+            class_name: "CameraComponent".into(),
+            func_name: name.into(),
+            rust_func_name: name.into(),
+            func: serde_json::from_value(serde_json::json!({
+                "name": name, "func_flags": FUNC_NATIVE, "params": params,
+            }))
+            .unwrap(),
+            cpp_class_name: "UCameraComponent".into(),
+            header: String::new(),
+        }
+    }
+
+    #[test]
+    fn interfaces_cross_as_script_interfaces() {
+        let codegen: CodegenConfig = toml::from_str(
+            "features = [\"engine\"]\n[modules]\nEngine = { module = \"engine\", feature = \"engine\" }",
+        )
+        .unwrap();
+        let ctx = CodegenContext::new(
+            vec![
+                class("Object", ""),
+                class("Interface", "Object"),
+                class("BlendableInterface", "Interface"),
+                class("CameraComponent", "Object"),
+            ],
+            vec![],
+            vec![],
+            &codegen,
+        );
+
+        let iface = Some("BlendableInterface");
+        let parm = rusteal_ue_flags::CPF_PARM;
+
+        let takes = entry(
+            "AddOrUpdateBlendable",
+            serde_json::json!([param("InBlendableObject", parm, "InterfaceProperty", iface)]),
+        );
+        let returns = entry(
+            "GetBlendable",
+            serde_json::json!([param(
+                "ReturnValue",
+                parm | CPF_OUT_PARM | CPF_RETURN_PARM,
+                "InterfaceProperty",
+                iface
+            )]),
+        );
+        let gives = entry(
+            "FindBlendable",
+            serde_json::json!([param(
+                "Found",
+                parm | CPF_OUT_PARM,
+                "InterfaceProperty",
+                iface
+            )]),
+        );
+
+        let out = generate_wrapper_file(&[&takes, &returns, &gives], &ctx);
+
+        assert!(
+            out.contains(
+                "RustealToScriptInterface<IBlendableInterface>(static_cast<UObject*>(InBlendableObject))"
+            ),
+            "{out}"
+        );
+        assert!(out.contains(").GetObject());"), "{out}");
+        assert!(
+            out.contains("TScriptInterface<IBlendableInterface> __OutFound;"),
+            "{out}"
+        );
+        assert!(out.contains("__OutFound.GetObject()"), "{out}");
+    }
+
+    #[test]
+    fn soft_references_cross_as_paths() {
+        let codegen: CodegenConfig = toml::from_str(
+            "features = [\"engine\"]\n[modules]\nEngine = { module = \"engine\", feature = \"engine\" }",
+        )
+        .unwrap();
+        let ctx = CodegenContext::new(
+            vec![
+                class("Object", ""),
+                class("MaterialInterface", "Object"),
+                class("CameraComponent", "Object"),
+            ],
+            vec![],
+            vec![],
+            &codegen,
+        );
+
+        let soft = |name: &str, flags: u64| {
+            let mut p = param(name, flags, "SoftObjectProperty", None);
+            p["class_name"] = "MaterialInterface".into();
+            p
+        };
+        let parm = rusteal_ue_flags::CPF_PARM;
+
+        let takes = entry("LoadMaterial", serde_json::json!([soft("Asset", parm)]));
+        let returns = entry(
+            "GetMaterial",
+            serde_json::json!([soft("ReturnValue", parm | CPF_OUT_PARM | CPF_RETURN_PARM)]),
+        );
+        let gives = entry(
+            "FindMaterial",
+            serde_json::json!([soft("Found", parm | CPF_OUT_PARM)]),
+        );
+
+        let out = generate_wrapper_file(&[&takes, &returns, &gives], &ctx);
+
+        assert!(
+            out.contains("TSoftObjectPtr<UMaterialInterface>(FSoftObjectPath(FString(UTF8_TO_TCHAR(std::string(Asset, AssetLen).c_str()))))"),
+            "{out}"
+        );
+        assert!(out.contains(").ToSoftObjectPath().ToString();"), "{out}");
+        assert!(
+            out.contains("TSoftObjectPtr<UMaterialInterface> __OutFound;"),
+            "{out}"
+        );
+        assert!(
+            out.contains("RustealWriteUtf8(__OutFound.ToSoftObjectPath().ToString()"),
+            "{out}"
+        );
+    }
+
+    #[test]
+    fn reflected_structs_are_constructed_in_the_rust_buffer() {
+        let codegen: CodegenConfig = toml::from_str(
+            "features = [\"engine\"]\n[modules]\nEngine = { module = \"engine\", feature = \"engine\" }",
+        )
+        .unwrap();
+        let view: StructInfo = serde_json::from_value(serde_json::json!({
+            "name": "MinimalViewInfo", "cpp_name": "FMinimalViewInfo", "package": "Engine",
+            "struct_flags": 0, "super": null, "has_static_struct": true,
+        }))
+        .unwrap();
+        let ctx = CodegenContext::new(
+            vec![class("Object", ""), class("CameraComponent", "Object")],
+            vec![view],
+            vec![],
+            &codegen,
+        );
+
+        let view_param = |name: &str, flags: u64| {
+            let mut p = param(name, flags, "StructProperty", None);
+            p["struct_name"] = "MinimalViewInfo".into();
+            p
+        };
+        let parm = rusteal_ue_flags::CPF_PARM;
+
+        let returns = entry(
+            "GetView",
+            serde_json::json!([view_param(
+                "ReturnValue",
+                parm | CPF_OUT_PARM | CPF_RETURN_PARM
+            )]),
+        );
+        let gives = entry(
+            "GetCameraView",
+            serde_json::json!([view_param("DesiredView", parm | CPF_OUT_PARM)]),
+        );
+        let edits = entry(
+            "EditView",
+            serde_json::json!([view_param(
+                "View",
+                parm | CPF_OUT_PARM | rusteal_ue_flags::CPF_REFERENCE_PARM
+            )]),
+        );
+
+        let out = generate_wrapper_file(&[&returns, &gives, &edits], &ctx);
+
+        assert!(
+            out.contains("__RustealStruct->InitializeStruct(OutReturnValue);"),
+            "{out}"
+        );
+        assert!(
+            out.contains(
+                "__StructDesiredView->CopyScriptStruct(OutDesiredView, &__OutDesiredView);"
+            ),
+            "{out}"
+        );
+        assert!(
+            out.contains(
+                "FMinimalViewInfo& __InOutView = *reinterpret_cast<FMinimalViewInfo*>(View);"
+            ),
+            "{out}"
+        );
+        assert!(!out.contains("FMemory::Memcpy"), "{out}");
+    }
+
+    #[test]
+    fn texts_cross_as_owned_ftexts() {
+        let codegen: CodegenConfig = toml::from_str(
+            "features = [\"engine\"]\n[modules]\nEngine = { module = \"engine\", feature = \"engine\" }",
+        )
+        .unwrap();
+        let ctx = CodegenContext::new(
+            vec![class("Object", ""), class("CameraComponent", "Object")],
+            vec![],
+            vec![],
+            &codegen,
+        );
+        let parm = rusteal_ue_flags::CPF_PARM;
+
+        let takes = entry(
+            "SetLabel",
+            serde_json::json!([param("Label", parm, "TextProperty", None)]),
+        );
+        let returns = entry(
+            "GetLabel",
+            serde_json::json!([param(
+                "ReturnValue",
+                parm | CPF_OUT_PARM | CPF_RETURN_PARM,
+                "TextProperty",
+                None
+            )]),
+        );
+        let gives = entry(
+            "FindLabel",
+            serde_json::json!([param("Found", parm | CPF_OUT_PARM, "TextProperty", None)]),
+        );
+
+        let out = generate_wrapper_file(&[&takes, &returns, &gives], &ctx);
+
+        assert!(
+            out.contains("Self->SetLabel(*static_cast<const FText*>(Label));"),
+            "{out}"
+        );
+        assert!(
+            out.contains("*OutReturnValue = new FText(Self->GetLabel());"),
+            "{out}"
+        );
+        assert!(
+            out.contains("*OutFound = new FText(MoveTemp(__OutFound));"),
+            "{out}"
+        );
+    }
+
+    #[test]
+    fn delegates_cross_as_script_delegates() {
+        let codegen: CodegenConfig = toml::from_str(
+            "features = [\"engine\"]\n[modules]\nEngine = { module = \"engine\", feature = \"engine\" }",
+        )
+        .unwrap();
+        let ctx = CodegenContext::new(
+            vec![class("Object", ""), class("CameraComponent", "Object")],
+            vec![],
+            vec![],
+            &codegen,
+        );
+
+        let takes = entry(
+            "SetTimerDelegate",
+            serde_json::json!([param(
+                "Delegate",
+                rusteal_ue_flags::CPF_PARM,
+                "DelegateProperty",
+                None
+            )]),
+        );
+
+        let out = generate_wrapper_file(&[&takes], &ctx);
+
+        assert!(out.contains("void* Delegate"), "{out}");
+        assert!(
+            out.contains("Self->SetTimerDelegate(FRustealDelegateArg{Delegate});"),
+            "{out}"
+        );
+        assert!(out.contains("#include \"RustealDelegateArg.h\""), "{out}");
+    }
+
+    #[test]
+    fn structs_without_static_struct_are_found_by_path() {
+        let codegen: CodegenConfig = toml::from_str(
+            "features = [\"engine\"]\n[modules]\nEngine = { module = \"engine\", feature = \"engine\" }\nCoreUObject = { module = \"core_ue\", feature = \"engine\" }",
+        )
+        .unwrap();
+        let point: StructInfo = serde_json::from_value(serde_json::json!({
+            "name": "IntPoint", "cpp_name": "FIntPoint", "package": "CoreUObject",
+            "struct_flags": 0, "super": null, "has_static_struct": false,
+        }))
+        .unwrap();
+        let ctx = CodegenContext::new(
+            vec![class("Object", ""), class("CameraComponent", "Object")],
+            vec![point],
+            vec![],
+            &codegen,
+        );
+
+        let mut ret = param(
+            "ReturnValue",
+            rusteal_ue_flags::CPF_PARM | CPF_OUT_PARM | CPF_RETURN_PARM,
+            "StructProperty",
+            None,
+        );
+        ret["struct_name"] = "IntPoint".into();
+
+        let out = generate_wrapper_file(&[&entry("GetPoint", serde_json::json!([ret]))], &ctx);
+
+        assert!(
+            out.contains("RustealFindScriptStruct(TEXT(\"/Script/CoreUObject.IntPoint\"))"),
+            "{out}"
+        );
+        assert!(!out.contains("FMemory::Memcpy"), "{out}");
+    }
+
+    #[test]
+    fn latent_functions_build_their_latent_info_and_write_outputs_on_completion() {
+        let codegen: CodegenConfig = toml::from_str(
+            "features = [\"engine\"]\n[modules]\nEngine = { module = \"engine\", feature = \"engine\" }",
+        )
+        .unwrap();
+        let latent_info: StructInfo = serde_json::from_value(serde_json::json!({
+            "name": "LatentActionInfo", "cpp_name": "FLatentActionInfo", "package": "Engine",
+            "struct_flags": 0, "super": null, "has_static_struct": true,
+        }))
+        .unwrap();
+        let ctx = CodegenContext::new(
+            vec![class("Object", ""), class("CameraComponent", "Object")],
+            vec![latent_info],
+            vec![],
+            &codegen,
+        );
+
+        let mut info = param(
+            "LatentInfo",
+            rusteal_ue_flags::CPF_PARM,
+            "StructProperty",
+            None,
+        );
+        info["struct_name"] = "LatentActionInfo".into();
+
+        let label = param(
+            "Label",
+            rusteal_ue_flags::CPF_PARM | CPF_OUT_PARM,
+            "StrProperty",
+            None,
+        );
+
+        let out = generate_wrapper_file(
+            &[&entry("OpenLatent", serde_json::json!([info, label]))],
+            &ctx,
+        );
+
+        assert!(out.contains("uint64_t LatentInfo"), "{out}");
+        assert!(out.contains("#include \"RustealLatentProxy.h\""), "{out}");
+        assert!(
+            out.contains("URustealLatentProxy::Create(static_cast<UObject*>(Self), LatentInfo)"),
+            "{out}"
+        );
+        assert!(
+            out.contains("TSharedRef<FString> __Heap__OutLabel"),
+            "{out}"
+        );
+
+        let completion = out
+            .find("__LatentProxy->OnComplete")
+            .expect("no completion");
+        let call = out
+            .find("Self->OpenLatent(__LatentInfo, __OutLabel)")
+            .expect("no call");
+        let write = out
+            .find("RustealWriteUtf8(__OutLabel")
+            .expect("no output write");
+
+        assert!(completion < write && write < call, "{out}");
     }
 }

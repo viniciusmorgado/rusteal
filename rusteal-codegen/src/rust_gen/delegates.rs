@@ -27,6 +27,7 @@ pub enum ParamConversion {
     },
     FName,
     String,
+    Text,
     Struct {
         struct_name: String,
         cpp_name: String,
@@ -65,40 +66,9 @@ pub fn collect_delegate_props<'a>(
             None => continue,
         };
 
-        let params_json = match func_info.get("params").and_then(|p| p.as_array()) {
-            Some(params) => params,
-            None => &Vec::new() as &Vec<serde_json::Value>,
-        };
-
-        let mut params = Vec::new();
-        let mut all_supported = true;
-
-        for param_value in params_json {
-            let param_name = param_value
-                .get("name")
-                .and_then(|n| n.as_str())
-                .unwrap_or("unknown");
-
-            let param_type = match param_value.get("type").and_then(|t| t.as_str()) {
-                Some(t) => t,
-                None => {
-                    all_supported = false;
-                    break;
-                }
-            };
-
-            match resolve_delegate_param(param_name, param_type, param_value, ctx) {
-                Some(dp) => params.push(dp),
-                None => {
-                    all_supported = false;
-                    break;
-                }
-            }
-        }
-
-        if !all_supported {
+        let Some(params) = closure_params(func_info, ctx) else {
             continue;
-        }
+        };
 
         let rust_name = to_snake_case(&prop.name);
         let struct_name = format!("{}{}Delegate", class_name, prop.name);
@@ -114,6 +84,36 @@ pub fn collect_delegate_props<'a>(
     }
 
     result
+}
+
+pub(super) fn closure_params(
+    func_info: &serde_json::Value,
+    ctx: &CodegenContext,
+) -> Option<Vec<DelegateParam>> {
+    let empty = Vec::new();
+    let params_json = func_info
+        .get("params")
+        .and_then(|p| p.as_array())
+        .unwrap_or(&empty);
+
+    let mut params = Vec::new();
+
+    for param_value in params_json {
+        let param_name = param_value
+            .get("name")
+            .and_then(|n| n.as_str())
+            .unwrap_or("unknown");
+
+        let param_type = param_value.get("type").and_then(|t| t.as_str())?;
+        params.push(resolve_delegate_param(
+            param_name,
+            param_type,
+            param_value,
+            ctx,
+        )?);
+    }
+
+    Some(params)
 }
 
 fn resolve_delegate_param(
@@ -170,10 +170,15 @@ fn resolve_delegate_param(
             rust_type: "rusteal_core::FNameHandle".into(),
             conversion: ParamConversion::FName,
         }),
-        "StrProperty" | "TextProperty" => Some(DelegateParam {
+        "StrProperty" => Some(DelegateParam {
             name: param_name,
             rust_type: "String".into(),
             conversion: ParamConversion::String,
+        }),
+        "TextProperty" => Some(DelegateParam {
+            name: param_name,
+            rust_type: "rusteal_core::Text".into(),
+            conversion: ParamConversion::Text,
         }),
         "ClassProperty"
             if value
@@ -229,10 +234,6 @@ fn resolve_delegate_param(
         "StructProperty" => {
             let sn = value.get("struct_name").and_then(|v| v.as_str())?;
             let si = ctx.structs.get(sn)?;
-
-            if !si.has_static_struct {
-                return None;
-            }
 
             Some(DelegateParam {
                 name: param_name,
@@ -335,55 +336,29 @@ pub fn generate_delegate_structs(out: &mut String, delegates: &[DelegateInfo], c
             if is_multicast { ": once, however many times it is called" } else { "" },
         ));
 
+        if is_multicast {
+            emit_next(out, &d.params);
+        }
+
         out.push_str(&format!(
             "    #[track_caller]\n    pub fn {method_name}(&self, mut callback: impl FnMut({callback_sig}) + Send + 'static) -> rusteal_core::RustealResult<rusteal_core::DelegateBinding> {{\n"
         ));
 
         if !d.params.is_empty() {
-            let n_params = d.params.len();
-
-            out.push_str(&format!(
-                "        static PARAM_INFO: std::sync::OnceLock<[(u32, rusteal_core::FPropertyHandle); {n_params}]> = std::sync::OnceLock::new();\n\
-                 \x20       let param_info = PARAM_INFO.get_or_init(|| unsafe {{\n\
-                 \x20           let sig_func = rusteal_core::ffi_dispatch::reflection_find_function_by_class(\n\
+            let sig_expr = format!(
+                "rusteal_core::ffi_dispatch::reflection_find_function_by_class(\n\
                  \x20               {class_name}::static_class(),\n\
-                 \x20               {sig_byte_lit}.as_ptr(), {sig_name_len});\n\
-                 \x20           [\n"
-            ));
+                 \x20               {sig_byte_lit}.as_ptr(), {sig_name_len})"
+            );
 
-            for p in &d.params {
-                let param_ue_name = &d
-                    .prop
+            emit_param_info(
+                out,
+                &d.params,
+                d.prop
                     .func_info
                     .as_ref()
-                    .and_then(|fi| fi.get("params"))
-                    .and_then(|ps| ps.as_array())
-                    .and_then(|arr| {
-                        arr.iter().find(|v| {
-                            v.get("name").and_then(|n| n.as_str()).map(to_snake_case)
-                                == Some(p.name.clone())
-                        })
-                    })
-                    .and_then(|v| v.get("name"))
-                    .and_then(|n| n.as_str())
-                    .unwrap_or(&p.name);
-
-                let pname_len = param_ue_name.len();
-                let pname_lit = format!("b\"{param_ue_name}\\0\"");
-
-                out.push_str(&format!(
-                    "                {{\n\
-                     \x20                   let param_prop = rusteal_core::ffi_dispatch::reflection_get_function_param(\n\
-                     \x20                       sig_func, {pname_lit}.as_ptr(), {pname_len});\n\
-                     \x20                   (rusteal_core::ffi_dispatch::reflection_get_property_offset(param_prop), param_prop)\n\
-                     \x20               }},\n"
-                ));
-            }
-
-            out.push_str(
-                "            ]\n\
-                 \x20       });\n\
-                 \x20       #[allow(unused_variables)] let param_info = param_info;\n",
+                    .expect("a delegate has a signature"),
+                &sig_expr,
             );
         }
 
@@ -408,30 +383,129 @@ pub fn generate_delegate_structs(out: &mut String, delegates: &[DelegateInfo], c
              \x20           unsafe {{\n"
         ));
 
-        for (i, p) in d.params.iter().enumerate() {
-            let var_name = &p.name;
+        emit_param_reads(out, &d.params);
 
-            match &p.conversion {
-                ParamConversion::Primitive(ty) => {
-                    out.push_str(&format!(
+        let param_names: Vec<&str> = d.params.iter().map(|p| p.name.as_str()).collect();
+        let call_args = param_names.join(", ");
+
+        out.push_str(&format!(
+            "                callback({call_args});\n\
+             \x20           }}\n\
+             \x20       }})\n\
+             \x20   }}\n"
+        ));
+
+        out.push_str("}\n\n");
+    }
+}
+
+fn emit_next(out: &mut String, params: &[DelegateParam]) {
+    let names: Vec<&str> = params.iter().map(|p| p.name.as_str()).collect();
+    let types: Vec<&str> = params.iter().map(|p| p.rust_type.as_str()).collect();
+
+    let (output, value) = match params.len() {
+        0 => ("()".to_string(), "()".to_string()),
+        1 => (types[0].to_string(), names[0].to_string()),
+        _ => (
+            format!("({})", types.join(", ")),
+            format!("({})", names.join(", ")),
+        ),
+    };
+
+    let args = names.join(", ");
+
+    out.push_str(&format!(
+        "    /// The next time the delegate fires, with its parameters: it binds now, and unbinds\n\
+         \x20   /// once it has fired.\n\
+         \x20   #[track_caller]\n\
+         \x20   pub fn next(&self) -> impl std::future::Future<Output = rusteal_core::RustealResult<{output}>> + 'static {{\n\
+         \x20       let (__sender, __receiver) = rusteal_core::event::once();\n\
+         \x20       let __binding = self.add(move |{args}| __sender.send({value}));\n\
+         \x20       async move {{\n\
+         \x20           let __binding = __binding?;\n\
+         \x20           let __value = __receiver.await;\n\
+         \x20           drop(__binding);\n\
+         \x20           __value\n\
+         \x20       }}\n\
+         \x20   }}\n\n"
+    ));
+}
+
+pub(super) fn emit_param_info(
+    out: &mut String,
+    params: &[DelegateParam],
+    func_info: &serde_json::Value,
+    sig_expr: &str,
+) {
+    {
+        let n_params = params.len();
+
+        out.push_str(&format!(
+                "        static PARAM_INFO: std::sync::OnceLock<[(u32, rusteal_core::FPropertyHandle); {n_params}]> = std::sync::OnceLock::new();\n\
+                 \x20       let param_info = PARAM_INFO.get_or_init(|| unsafe {{\n\
+                 \x20           let sig_func = {sig_expr};\n\
+                 \x20           [\n"
+            ));
+
+        for p in params {
+            let param_ue_name = &Some(func_info)
+                .and_then(|fi| fi.get("params"))
+                .and_then(|ps| ps.as_array())
+                .and_then(|arr| {
+                    arr.iter().find(|v| {
+                        v.get("name").and_then(|n| n.as_str()).map(to_snake_case)
+                            == Some(p.name.clone())
+                    })
+                })
+                .and_then(|v| v.get("name"))
+                .and_then(|n| n.as_str())
+                .unwrap_or(&p.name);
+
+            let pname_len = param_ue_name.len();
+            let pname_lit = format!("b\"{param_ue_name}\\0\"");
+
+            out.push_str(&format!(
+                    "                {{\n\
+                     \x20                   let param_prop = rusteal_core::ffi_dispatch::reflection_get_function_param(\n\
+                     \x20                       sig_func, {pname_lit}.as_ptr(), {pname_len});\n\
+                     \x20                   (rusteal_core::ffi_dispatch::reflection_get_property_offset(param_prop), param_prop)\n\
+                     \x20               }},\n"
+                ));
+        }
+
+        out.push_str(
+            "            ]\n\
+                 \x20       });\n\
+                 \x20       #[allow(unused_variables)] let param_info = param_info;\n",
+        );
+    }
+}
+
+pub(super) fn emit_param_reads(out: &mut String, params: &[DelegateParam]) {
+    for (i, p) in params.iter().enumerate() {
+        let var_name = &p.name;
+
+        match &p.conversion {
+            ParamConversion::Primitive(ty) => {
+                out.push_str(&format!(
                         "                let {var_name} = rusteal_core::ffi_dispatch::native_mem_read::<{ty}>(params, param_info[{i}].0 as usize);\n"
                     ));
-                }
-                ParamConversion::ObjectRef(_cls) => {
-                    out.push_str(&format!(
+            }
+            ParamConversion::ObjectRef(_cls) => {
+                out.push_str(&format!(
                         "                let {var_name} = rusteal_core::ObjectPointer::from_object_handle(\n\
                          \x20                   rusteal_core::ffi_dispatch::native_mem_read::<rusteal_core::UObjectHandle>(params, param_info[{i}].0 as usize)\n\
                          \x20               );\n"
                     ));
-                }
-                ParamConversion::Enum { rust_type, repr } => {
-                    out.push_str(&format!(
+            }
+            ParamConversion::Enum { rust_type, repr } => {
+                out.push_str(&format!(
                         "                let __raw_{var_name} = rusteal_core::ffi_dispatch::native_mem_read::<{repr}>(params, param_info[{i}].0 as usize);\n\
                          \x20               let {var_name} = {rust_type}::from_value(__raw_{var_name}).unwrap_or_else(|| std::mem::transmute(__raw_{var_name}));\n"
                     ));
-                }
-                ParamConversion::FName => {
-                    out.push_str(&format!(
+            }
+            ParamConversion::FName => {
+                out.push_str(&format!(
                         "                let {var_name} = {{\n\
                          \x20                   let mut __buf = [0u8; 8];\n\
                          \x20                   let mut __written: u32 = 0;\n\
@@ -446,9 +520,26 @@ pub fn generate_delegate_structs(out: &mut String, delegates: &[DelegateInfo], c
                          \x20                   rusteal_core::FNameHandle(u64::from_ne_bytes(__buf))\n\
                          \x20               }};\n"
                     ));
-                }
-                ParamConversion::String => {
-                    out.push_str(&format!(
+            }
+            ParamConversion::Text => {
+                out.push_str(&format!(
+                        "                let {var_name} = {{\n\
+                         \x20                   let mut __buf = [0u8; 8];\n\
+                         \x20                   let mut __written: u32 = 0;\n\
+                         \x20                   rusteal_core::ffi_infallible(rusteal_core::ffi_dispatch::delegate_read_param(\n\
+                         \x20                       param_info[{i}].1,\n\
+                         \x20                       params,\n\
+                         \x20                       param_info[{i}].0,\n\
+                         \x20                       __buf.as_mut_ptr(),\n\
+                         \x20                       8,\n\
+                         \x20                       &mut __written,\n\
+                         \x20                   ));\n\
+                         \x20                   rusteal_core::Text::from_raw(usize::from_ne_bytes(__buf) as *mut u8)\n\
+                         \x20               }};\n"
+                    ));
+            }
+            ParamConversion::String => {
+                out.push_str(&format!(
                         "                let {var_name} = {{\n\
                          \x20                   let mut __buf = vec![0u8; 260];\n\
                          \x20                   let mut __written: u32 = 0;\n\
@@ -479,9 +570,9 @@ pub fn generate_delegate_structs(out: &mut String, delegates: &[DelegateInfo], c
                          \x20                   }}\n\
                          \x20               }};\n"
                     ));
-                }
-                ParamConversion::Struct { cpp_name, .. } => {
-                    out.push_str(&format!(
+            }
+            ParamConversion::Struct { cpp_name, .. } => {
+                out.push_str(&format!(
                         "                let {var_name} = {{\n\
                          \x20                   let __size = rusteal_core::ffi_dispatch::reflection_get_property_size(param_info[{i}].1) as usize;\n\
                          \x20                   let mut __buf = vec![0u8; __size];\n\
@@ -494,23 +585,10 @@ pub fn generate_delegate_structs(out: &mut String, delegates: &[DelegateInfo], c
                          \x20                       __size as u32,\n\
                          \x20                       &mut __written,\n\
                          \x20                   ));\n\
-                         \x20                   rusteal_core::OwnedStruct::<{cpp_name}>::from_bytes(__buf)\n\
+                         \x20                   rusteal_core::OwnedStruct::<{cpp_name}>::from_constructed(__buf)\n\
                          \x20               }};\n"
                     ));
-                }
             }
         }
-
-        let param_names: Vec<&str> = d.params.iter().map(|p| p.name.as_str()).collect();
-        let call_args = param_names.join(", ");
-
-        out.push_str(&format!(
-            "                callback({call_args});\n\
-             \x20           }}\n\
-             \x20       }})\n\
-             \x20   }}\n"
-        ));
-
-        out.push_str("}\n\n");
     }
 }

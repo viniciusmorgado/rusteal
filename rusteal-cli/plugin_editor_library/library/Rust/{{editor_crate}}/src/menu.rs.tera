@@ -1,0 +1,63 @@
+use bindings::tool_menus::{FToolMenuContext, ToolMenuEntryScript};
+use bindings::unreal_ed::{EditorAssetSubsystem, EditorAssetSubsystemExt};
+use rusteal_runtime::runtime::{UStructRef, console, task};
+use rusteal_runtime::{uclass, uclass_impl};
+
+use crate::editor_subsystem;
+
+#[uclass(parent = ToolMenuEntryScript)]
+pub struct {{ plugin }}MenuEntry {}
+
+#[uclass_impl]
+impl {{ plugin }}MenuEntry {
+    #[ufunction(Override)]
+    fn execute(&mut self, _context: UStructRef<FToolMenuContext>) {
+        count_assets("/Game");
+    }
+}
+
+pub fn count_assets(path: &str) {
+    let assets = match editor_subsystem::<EditorAssetSubsystem>().and_then(|s| s.checked()) {
+        Ok(subsystem) => subsystem.list_assets(path, Some(true), Some(false)),
+        Err(e) => {
+            log::error!("[{{ plugin }}] no asset subsystem: {e:?}");
+            return;
+        }
+    };
+
+    let path = path.to_string();
+
+    task::spawn(
+        move || {
+            let mut by_prefix = std::collections::BTreeMap::<String, usize>::new();
+
+            for asset in &assets {
+                let name = asset.rsplit('/').next().unwrap_or(asset);
+                let prefix = name.split_once('_').map_or("(no prefix)", |(p, _)| p);
+                *by_prefix.entry(prefix.to_string()).or_default() += 1;
+            }
+
+            (assets.len(), by_prefix)
+        },
+        move |(total, by_prefix)| {
+            log::info!("[{{ plugin }}] {total} assets under {path}");
+
+            for (prefix, count) in by_prefix {
+                log::info!("[{{ plugin }}]   {prefix}: {count}");
+            }
+        },
+    );
+}
+
+fn startup() {
+    let result = console::register_command(
+        "{{ editor_crate | replace(from="-", to="_") }}.count_assets",
+        "Count the assets under a path (default /Game) by name prefix",
+        |args, _| count_assets(args.first().copied().unwrap_or("/Game")),
+    );
+
+    if let Err(e) = result {
+        log::error!("[{{ plugin }}] no console command: {e:?}");
+    }
+}
+rusteal_runtime::on_load!(startup);

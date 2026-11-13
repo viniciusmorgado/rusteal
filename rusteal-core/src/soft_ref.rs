@@ -2,7 +2,7 @@ use std::fmt;
 use std::marker::PhantomData;
 
 use crate::error::RustealResult;
-use crate::object_ref::UObjectRef;
+use crate::object_ref::{Checked, UObjectRef};
 use crate::traits::UeClass;
 use crate::world;
 
@@ -42,6 +42,11 @@ impl<T: UeClass> SoftObjectRef<T> {
     }
 
     #[track_caller]
+    pub fn checked(&self) -> RustealResult<Checked<T>> {
+        self.get().checked()
+    }
+
+    #[track_caller]
     pub fn load_synchronous(&self) -> RustealResult<UObjectRef<T>> {
         if self.is_null() {
             return Ok(UObjectRef::null());
@@ -50,6 +55,16 @@ impl<T: UeClass> SoftObjectRef<T> {
         let handle = world::load_object_raw(T::static_class(), &self.path)?;
 
         Ok(unsafe { UObjectRef::from_raw(handle) })
+    }
+
+    /// Loads the asset in the background, resuming when it is in memory; awaited in a task
+    /// started with `task::spawn_local`.
+    ///
+    /// Nothing keeps the loaded object but what stores it: keep it in a `#[uproperty]` or pin it.
+    pub fn load_async(
+        &self,
+    ) -> impl std::future::Future<Output = RustealResult<UObjectRef<T>>> + 'static {
+        crate::loading::load_one(self.path.clone())
     }
 }
 

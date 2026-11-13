@@ -49,7 +49,7 @@ pub fn collect_deduped_properties<'a>(
             prop.interface_name.as_deref(),
         );
 
-        if !mapped.supported {
+        if !mapped.supported && prop.prop_type != "OptionalProperty" {
             continue;
         }
 
@@ -84,7 +84,7 @@ pub fn collect_deduped_properties<'a>(
             let valid = if let Some(ctx) = ctx {
                 prop.struct_name
                     .as_deref()
-                    .is_some_and(|sn| ctx.structs.get(sn).is_some_and(|si| si.has_static_struct))
+                    .is_some_and(|sn| ctx.structs.contains_key(sn))
             } else {
                 prop.struct_name.is_some()
             };
@@ -181,6 +181,11 @@ pub fn generate_property(
         prop.interface_name.as_deref(),
     );
 
+    if prop.prop_type == "OptionalProperty" {
+        generate_optional_property(out, prop, pctx, ctx, suppress_setters);
+        return;
+    }
+
     if !mapped.supported {
         return;
     }
@@ -239,6 +244,14 @@ pub fn generate_property(
     }
 
     match mapped.rust_to_ffi {
+        ConversionKind::StringUtf8
+            if matches!(
+                prop.prop_type.as_str(),
+                "SoftObjectProperty" | "SoftClassProperty"
+            ) =>
+        {
+            generate_soft_getter(out, &rust_name, &byte_lit, prop_name_len, pctx, &mapped);
+        }
         ConversionKind::StringUtf8 => {
             generate_string_getter(out, &rust_name, &byte_lit, prop_name_len, pctx);
         }
@@ -267,6 +280,9 @@ pub fn generate_property(
             }
 
             return;
+        }
+        ConversionKind::ObjectRef if prop.prop_type == "TextProperty" => {
+            generate_text_getter(out, &rust_name, &byte_lit, prop_name_len, pctx);
         }
         ConversionKind::ObjectRef => {
             generate_object_getter(out, &rust_name, &byte_lit, prop_name_len, pctx, &mapped);
@@ -306,10 +322,21 @@ pub fn generate_property(
     }
 
     match mapped.rust_to_ffi {
+        ConversionKind::StringUtf8
+            if matches!(
+                prop.prop_type.as_str(),
+                "SoftObjectProperty" | "SoftClassProperty"
+            ) =>
+        {
+            generate_soft_setter(out, &rust_name, &byte_lit, prop_name_len, pctx, &mapped);
+        }
         ConversionKind::StringUtf8 => {
             generate_string_setter(out, &rust_name, &byte_lit, prop_name_len, pctx);
         }
         ConversionKind::StructOpaque => {}
+        ConversionKind::ObjectRef if prop.prop_type == "TextProperty" => {
+            generate_text_setter(out, &rust_name, &byte_lit, prop_name_len, pctx);
+        }
         ConversionKind::ObjectRef => {
             generate_object_setter(out, &rust_name, &byte_lit, prop_name_len, pctx, &mapped);
         }
@@ -440,8 +467,287 @@ fn generate_string_getter(
          \x20       rusteal_core::ffi_infallible_ctx(unsafe {{\n\
          \x20           rusteal_core::ffi_dispatch::property_get_string({c}, prop, buf.as_mut_ptr(), buf.len() as u32, &mut out_len)\n\
          \x20       }}, \"{rust_name}\");\n\
+         \x20       rusteal_core::take_utf8(buf, out_len)\n\
+         \x20   }}\n\n"
+    ));
+}
+
+enum OptionalValue {
+    Plain(&'static str),
+    Bool,
+    Enum {
+        rust_type: String,
+        repr: &'static str,
+    },
+    Struct {
+        cpp_name: String,
+        name: String,
+    },
+    Object(String),
+}
+
+fn optional_value(inner: &PropertyInfo, ctx: &CodegenContext) -> Option<OptionalValue> {
+    let plain = |ty| Some(OptionalValue::Plain(ty));
+    let enumeration = |name: &str| {
+        let repr = ctx.enum_actual_repr(name)?;
+
+        Some(OptionalValue::Enum {
+            rust_type: name.to_string(),
+            repr,
+        })
+    };
+
+    match inner.prop_type.as_str() {
+        "BoolProperty" => Some(OptionalValue::Bool),
+        "Int8Property" => plain("i8"),
+        "ByteProperty" => match inner.enum_name.as_deref() {
+            Some(en) => enumeration(en),
+            None => plain("u8"),
+        },
+        "EnumProperty" => enumeration(inner.enum_name.as_deref()?),
+        "Int16Property" => plain("i16"),
+        "UInt16Property" => plain("u16"),
+        "IntProperty" => plain("i32"),
+        "UInt32Property" => plain("u32"),
+        "Int64Property" => plain("i64"),
+        "UInt64Property" => plain("u64"),
+        "FloatProperty" => plain("f32"),
+        "DoubleProperty" => plain("f64"),
+        "StructProperty" => {
+            let name = inner.struct_name.as_deref()?;
+            let si = ctx.structs.get(name)?;
+
+            Some(OptionalValue::Struct {
+                cpp_name: si.cpp_name.clone(),
+                name: name.to_string(),
+            })
+        }
+        "ObjectProperty" => {
+            let class = inner.class_name.as_deref()?;
+
+            ctx.classes
+                .contains_key(class)
+                .then(|| OptionalValue::Object(class.to_string()))
+        }
+        _ => None,
+    }
+}
+
+fn generate_optional_property(
+    out: &mut String,
+    prop: &PropertyInfo,
+    pctx: &PropertyContext,
+    ctx: &CodegenContext,
+    suppress_setters: &std::collections::HashSet<String>,
+) {
+    let Some(value) = prop
+        .inner_prop
+        .as_deref()
+        .and_then(|inner| optional_value(inner, ctx))
+    else {
+        return;
+    };
+
+    let rust_name = to_snake_case(&prop.name);
+    let byte_lit = format!("b\"{}\\0\"", prop.name);
+    let prop_name_len = prop.name.len();
+    let c = &pctx.container_expr;
+
+    let (rust_type, size, decode) = match &value {
+        OptionalValue::Plain(ty) => (
+            ty.to_string(),
+            format!("std::mem::size_of::<{ty}>()"),
+            format!("Some(unsafe {{ (buf.as_ptr() as *const {ty}).read_unaligned() }})"),
+        ),
+        OptionalValue::Bool => ("bool".to_string(), "1".to_string(), "Some(buf[0] != 0)".to_string()),
+        OptionalValue::Enum { rust_type, repr } => (
+            rust_type.clone(),
+            format!("std::mem::size_of::<{repr}>()"),
+            format!(
+                "{rust_type}::from_value(unsafe {{ (buf.as_ptr() as *const {repr}).read_unaligned() }})"
+            ),
+        ),
+        OptionalValue::Struct { cpp_name, name } => (
+            format!("rusteal_core::OwnedStruct<{cpp_name}>"),
+            format!("rusteal_core::struct_size_by_name(\"{name}\")"),
+            "Some(unsafe { rusteal_core::OwnedStruct::from_constructed(buf) })".to_string(),
+        ),
+        OptionalValue::Object(class) => (
+            format!("rusteal_core::UObjectRef<{class}>"),
+            "std::mem::size_of::<rusteal_core::UObjectHandle>()".to_string(),
+            "Some(unsafe { rusteal_core::ObjectPointer::from_object_handle((buf.as_ptr() as *const rusteal_core::UObjectHandle).read_unaligned()) })".to_string(),
+        ),
+    };
+
+    out.push_str(&format!(
+        "    fn get_{rust_name}(&self) -> Option<{rust_type}> {{\n"
+    ));
+
+    emit_prop_lookup(out, &byte_lit, prop_name_len, pctx);
+    emit_pre_access(out, pctx);
+
+    out.push_str(&format!(
+        "        let mut buf = vec![0u8; {size}];\n\
+         \x20       let mut is_set = false;\n\
+         \x20       rusteal_core::ffi_infallible_ctx(unsafe {{\n\
+         \x20           rusteal_core::ffi_dispatch::property_get_optional({c}, prop, buf.as_mut_ptr(), buf.len() as u32, &mut is_set)\n\
+         \x20       }}, \"{rust_name}\");\n\
+         \x20       if !is_set {{\n\
+         \x20           return None;\n\
+         \x20       }}\n\
+         \x20       {decode}\n\
+         \x20   }}\n\n"
+    ));
+
+    if suppress_setters.contains(&format!("set_{rust_name}")) {
+        return;
+    }
+
+    let (param_type, encode) = match &value {
+        OptionalValue::Plain(_) => (rust_type.clone(), "let bytes = v.to_ne_bytes();".to_string()),
+        OptionalValue::Bool => ("bool".to_string(), "let bytes = [v as u8];".to_string()),
+        OptionalValue::Enum { repr, .. } => (
+            rust_type.clone(),
+            format!("let bytes = (v as {repr}).to_ne_bytes();"),
+        ),
+        OptionalValue::Struct { cpp_name, .. } => (
+            format!("&rusteal_core::OwnedStruct<{cpp_name}>"),
+            "let bytes = v.as_bytes();".to_string(),
+        ),
+        OptionalValue::Object(_) => (
+            rust_type.clone(),
+            "let bytes = (rusteal_core::ObjectPointer::object_handle(&v).0 as usize).to_ne_bytes();"
+                .to_string(),
+        ),
+    };
+
+    out.push_str(&format!(
+        "    fn set_{rust_name}(&self, val: Option<{param_type}>) {{\n"
+    ));
+
+    emit_prop_lookup(out, &byte_lit, prop_name_len, pctx);
+    emit_pre_access(out, pctx);
+
+    out.push_str(&format!(
+        "        let result = match val {{\n\
+         \x20           None => unsafe {{ rusteal_core::ffi_dispatch::property_set_optional({c}, prop, std::ptr::null()) }},\n\
+         \x20           Some(v) => {{\n\
+         \x20               {encode}\n\
+         \x20               unsafe {{ rusteal_core::ffi_dispatch::property_set_optional({c}, prop, bytes.as_ptr()) }}\n\
+         \x20           }}\n\
+         \x20       }};\n\
+         \x20       rusteal_core::ffi_infallible_ctx(result, \"{rust_name}\");\n\
+         \x20   }}\n\n"
+    ));
+}
+
+fn generate_text_getter(
+    out: &mut String,
+    rust_name: &str,
+    byte_lit: &str,
+    prop_name_len: usize,
+    pctx: &PropertyContext,
+) {
+    let c = &pctx.container_expr;
+
+    out.push_str(&format!(
+        "    fn get_{rust_name}(&self) -> rusteal_core::Text {{\n"
+    ));
+
+    emit_prop_lookup(out, byte_lit, prop_name_len, pctx);
+    emit_pre_access(out, pctx);
+
+    out.push_str(&format!(
+        "        let mut raw: *mut u8 = std::ptr::null_mut();\n\
+         \x20       rusteal_core::ffi_infallible_ctx(unsafe {{\n\
+         \x20           rusteal_core::ffi_dispatch::property_get_text({c}, prop, &mut raw)\n\
+         \x20       }}, \"{rust_name}\");\n\
+         \x20       unsafe {{ rusteal_core::Text::from_raw(raw) }}\n\
+         \x20   }}\n\n"
+    ));
+}
+
+fn generate_text_setter(
+    out: &mut String,
+    rust_name: &str,
+    byte_lit: &str,
+    prop_name_len: usize,
+    pctx: &PropertyContext,
+) {
+    let c = &pctx.container_expr;
+
+    out.push_str(&format!(
+        "    fn set_{rust_name}(&self, val: impl Into<rusteal_core::Text>) {{\n"
+    ));
+
+    emit_prop_lookup(out, byte_lit, prop_name_len, pctx);
+    emit_pre_access(out, pctx);
+
+    out.push_str(&format!(
+        "        let val: rusteal_core::Text = val.into();\n\
+         \x20       rusteal_core::ffi_infallible_ctx(unsafe {{\n\
+         \x20           rusteal_core::ffi_dispatch::property_set_text({c}, prop, val.as_raw())\n\
+         \x20       }}, \"{rust_name}\");\n\
+         \x20   }}\n\n"
+    ));
+}
+
+fn generate_soft_getter(
+    out: &mut String,
+    rust_name: &str,
+    byte_lit: &str,
+    prop_name_len: usize,
+    pctx: &PropertyContext,
+    mapped: &MappedType,
+) {
+    let rust_type = &mapped.rust_type;
+    let c = &pctx.container_expr;
+
+    out.push_str(&format!(
+        "    fn get_{rust_name}(&self) -> {rust_type} {{\n"
+    ));
+
+    emit_prop_lookup(out, byte_lit, prop_name_len, pctx);
+    emit_pre_access(out, pctx);
+
+    out.push_str(&format!(
+        "        let mut out_len: u32 = 0;\n\
+         \x20       rusteal_core::ffi_infallible_ctx(unsafe {{\n\
+         \x20           rusteal_core::ffi_dispatch::property_get_soft_object_path({c}, prop, std::ptr::null_mut(), 0, &mut out_len)\n\
+         \x20       }}, \"{rust_name}\");\n\
+         \x20       let mut buf = vec![0u8; out_len as usize];\n\
+         \x20       rusteal_core::ffi_infallible_ctx(unsafe {{\n\
+         \x20           rusteal_core::ffi_dispatch::property_get_soft_object_path({c}, prop, buf.as_mut_ptr(), buf.len() as u32, &mut out_len)\n\
+         \x20       }}, \"{rust_name}\");\n\
          \x20       buf.truncate(out_len as usize);\n\
-         \x20       String::from_utf8_lossy(&buf).into_owned()\n\
+         \x20       <{rust_type}>::new(String::from_utf8(buf).unwrap_or_default())\n\
+         \x20   }}\n\n"
+    ));
+}
+
+fn generate_soft_setter(
+    out: &mut String,
+    rust_name: &str,
+    byte_lit: &str,
+    prop_name_len: usize,
+    pctx: &PropertyContext,
+    mapped: &MappedType,
+) {
+    let rust_type = &mapped.rust_type;
+    let c = &pctx.container_expr;
+
+    out.push_str(&format!(
+        "    fn set_{rust_name}(&self, val: &{rust_type}) {{\n"
+    ));
+
+    emit_prop_lookup(out, byte_lit, prop_name_len, pctx);
+    emit_pre_access(out, pctx);
+
+    out.push_str(&format!(
+        "        let path = val.path();\n\
+         \x20       rusteal_core::ffi_infallible_ctx(unsafe {{\n\
+         \x20           rusteal_core::ffi_dispatch::property_set_soft_object_path({c}, prop, path.as_ptr(), path.len() as u32)\n\
+         \x20       }}, \"{rust_name}\");\n\
          \x20   }}\n\n"
     ));
 }
@@ -689,7 +995,7 @@ fn generate_struct_getter(
          \x20       rusteal_core::ffi_infallible_ctx(unsafe {{\n\
          \x20           rusteal_core::ffi_dispatch::property_get_struct({c}, prop, buf.as_mut_ptr(), size as u32)\n\
          \x20       }}, \"{rust_name}\");\n\
-         \x20       rusteal_core::OwnedStruct::from_bytes(buf)\n\
+         \x20       unsafe {{ rusteal_core::OwnedStruct::from_constructed(buf) }}\n\
          \x20   }}\n\n"
     ));
 }
@@ -800,7 +1106,7 @@ fn generate_fixed_array_property(
 
             (
                 format!("rusteal_core::OwnedStruct<{struct_cpp}>"),
-                "Ok(rusteal_core::OwnedStruct::from_bytes(buf))".to_string(),
+                "Ok(unsafe { rusteal_core::OwnedStruct::from_constructed(buf) })".to_string(),
                 format!("&rusteal_core::OwnedStruct<{struct_cpp}>"),
                 "let buf = val.to_bytes();".to_string(),
             )

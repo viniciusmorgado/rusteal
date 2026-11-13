@@ -1,9 +1,11 @@
+use std::time::Duration;
+
 use bindings::engine::{
-    Actor, ECollisionChannel, ECollisionEnabled, ECollisionResponse, KismetSystemLibrary,
-    PrimitiveComponentExt, SceneComponent, SphereComponent, SphereComponentExt,
-    StaticMeshComponent,
+    Actor, ECollisionChannel, ECollisionEnabled, ECollisionResponse, PrimitiveComponentExt,
+    SceneComponent, SphereComponent, SphereComponentExt, StaticMeshComponent,
 };
-use rusteal_runtime::runtime::{FName, RustealResult, SubclassOf, UObjectRef};
+use rusteal_runtime::runtime::timer::{self, TimerHandle};
+use rusteal_runtime::runtime::{FName, RustealResult, SubclassOf, UObjectRef, method};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use super::npc::TwinStickNPC;
@@ -38,6 +40,10 @@ pub struct TwinStickAoEAttack {
     stop_ao_e_time: f32,
 
     is_ao_e_active: bool,
+
+    start_ao_e_timer: Option<TimerHandle>,
+
+    stop_ao_e_timer: Option<TimerHandle>,
 }
 
 #[uclass_impl]
@@ -69,34 +75,36 @@ impl TwinStickAoEAttack {
             log::warn!("[TwinStick] AoE overlap: {e}");
         }
 
-        let me = self.as_ref().upcast_to();
+        let me = self.as_ref();
 
-        KismetSystemLibrary::k2_set_timer(
-            me,
-            "StartAoE",
-            self.start_ao_e_time(),
+        let start = timer::set_timer(
+            &me,
+            Duration::from_secs_f32(self.start_ao_e_time()),
             false,
-            None,
-            None,
-            None,
+            method(self, Self::start_ao_e),
         );
 
-        KismetSystemLibrary::k2_set_timer(
-            me,
-            "StopAoE",
-            self.stop_ao_e_time(),
+        self.set_start_ao_e_timer(start.ok());
+
+        let stop = timer::set_timer(
+            &me,
+            Duration::from_secs_f32(self.stop_ao_e_time()),
             false,
-            None,
-            None,
-            None,
+            method(self, Self::stop_ao_e),
         );
+
+        self.set_stop_ao_e_timer(stop.ok());
     }
 
     #[ufunction(Override)]
     fn receive_end_play(&mut self, _end_play_reason: u8) {
-        let me = self.as_ref().upcast_to();
-        KismetSystemLibrary::k2_clear_timer(me, "StartAoE");
-        KismetSystemLibrary::k2_clear_timer(me, "StopAoE");
+        if let Some(timer) = self.start_ao_e_timer() {
+            timer.clear();
+        }
+
+        if let Some(timer) = self.stop_ao_e_timer() {
+            timer.clear();
+        }
     }
 
     #[ufunction(name = "StartAoE")]
@@ -110,7 +118,7 @@ impl TwinStickAoEAttack {
         for current in
             sphere.get_overlapping_actors(Some(SubclassOf::<TwinStickNPC>::base().upcast_to()))
         {
-            if let Ok(npc) = TwinStickNPC::from_obj(current) {
+            if let Ok(mut npc) = TwinStickNPC::from_obj(current) {
                 npc.projectile_impact();
             }
         }
@@ -120,7 +128,9 @@ impl TwinStickAoEAttack {
     fn stop_ao_e(&mut self) {
         self.set_is_ao_e_active(false);
 
-        KismetSystemLibrary::k2_clear_timer(self.as_ref().upcast_to(), "StartAoE");
+        if let Some(timer) = self.start_ao_e_timer() {
+            timer.clear();
+        }
 
         self.bp_ao_e_finished();
     }
@@ -150,7 +160,7 @@ impl TwinStickAoEAttack {
 
     fn on_ao_e_overlap(&self, other_actor: UObjectRef<Actor>) {
         if self.is_ao_e_active()
-            && let Ok(npc) = TwinStickNPC::from_obj(other_actor)
+            && let Ok(mut npc) = TwinStickNPC::from_obj(other_actor)
         {
             npc.projectile_impact();
         }

@@ -89,6 +89,24 @@ pub struct RustealCoreApi {
     ) -> bool,
 
     pub is_child_of: unsafe extern "C" fn(class: UClassHandle, parent: UClassHandle) -> bool,
+
+    pub take_pending_utf8: unsafe extern "C" fn(key: *const u8, buf: *mut u8, buf_len: u32) -> u32,
+
+    pub text_from_string: unsafe extern "C" fn(utf8: *const u8, len: u32) -> *mut u8,
+    pub text_localized: unsafe extern "C" fn(
+        namespace: *const u8,
+        namespace_len: u32,
+        key: *const u8,
+        key_len: u32,
+        source: *const u8,
+        source_len: u32,
+    ) -> *mut u8,
+    pub text_clone: unsafe extern "C" fn(text: *const u8) -> *mut u8,
+    pub text_destroy: unsafe extern "C" fn(text: *mut u8),
+    pub text_to_string:
+        unsafe extern "C" fn(text: *const u8, buf: *mut u8, buf_len: u32, out_len: *mut u32),
+    pub text_is_empty: unsafe extern "C" fn(text: *const u8) -> bool,
+    pub text_equal: unsafe extern "C" fn(a: *const u8, b: *const u8) -> bool,
 }
 
 #[repr(C)]
@@ -274,6 +292,28 @@ pub struct RustealPropertyApi {
         buf: *const u8,
         len: u32,
     ) -> RustealErrorCode,
+    pub get_text: unsafe extern "C" fn(
+        obj: UObjectHandle,
+        prop: FPropertyHandle,
+        out: *mut *mut u8,
+    ) -> RustealErrorCode,
+    pub set_text: unsafe extern "C" fn(
+        obj: UObjectHandle,
+        prop: FPropertyHandle,
+        text: *const u8,
+    ) -> RustealErrorCode,
+    pub get_optional: unsafe extern "C" fn(
+        obj: UObjectHandle,
+        prop: FPropertyHandle,
+        buf: *mut u8,
+        buf_size: u32,
+        is_set: *mut bool,
+    ) -> RustealErrorCode,
+    pub set_optional: unsafe extern "C" fn(
+        obj: UObjectHandle,
+        prop: FPropertyHandle,
+        buf: *const u8,
+    ) -> RustealErrorCode,
 }
 
 #[repr(C)]
@@ -341,6 +381,13 @@ pub struct RustealReflectionApi {
     pub find_enum: unsafe extern "C" fn(name: *const u8, name_len: u32) -> UClassHandle,
 
     pub get_delegate_signature: unsafe extern "C" fn(prop: FPropertyHandle) -> UFunctionHandle,
+
+    pub instanced_struct_type: unsafe extern "C" fn(instanced: *const u8) -> UStructHandle,
+    pub instanced_struct_get:
+        unsafe extern "C" fn(instanced: *const u8, ustruct: UStructHandle, out: *mut u8) -> bool,
+    pub instanced_struct_set:
+        unsafe extern "C" fn(instanced: *mut u8, ustruct: UStructHandle, value: *const u8),
+    pub instanced_struct_reset: unsafe extern "C" fn(instanced: *mut u8),
 }
 
 #[repr(C)]
@@ -491,8 +538,11 @@ pub struct RustealDelegateApi {
         prop: FPropertyHandle,
         callback_id: u64,
     ) -> RustealErrorCode,
-    pub unbind_delegate:
-        unsafe extern "C" fn(obj: UObjectHandle, prop: FPropertyHandle) -> RustealErrorCode,
+    pub unbind_delegate: unsafe extern "C" fn(
+        obj: UObjectHandle,
+        prop: FPropertyHandle,
+        callback_id: u64,
+    ) -> RustealErrorCode,
     pub add_multicast: unsafe extern "C" fn(
         obj: UObjectHandle,
         prop: FPropertyHandle,
@@ -525,6 +575,27 @@ pub struct RustealDelegateApi {
         name: *const u8,
         name_len: u32,
     ) -> RustealErrorCode,
+
+    pub make_delegate: unsafe extern "C" fn(
+        signature: UFunctionHandle,
+        owner: UObjectHandle,
+        callback_id: u64,
+    ) -> *mut u8,
+    pub free_delegate: unsafe extern "C" fn(delegate: *mut u8),
+
+    pub execute_delegate: unsafe extern "C" fn(
+        obj: UObjectHandle,
+        prop: FPropertyHandle,
+        params: *mut u8,
+    ) -> RustealErrorCode,
+
+    pub latent_cancel: unsafe extern "C" fn(callback_id: u64) -> RustealErrorCode,
+    pub live_latent_proxies: unsafe extern "C" fn() -> u32,
+
+    pub latent_function_begin:
+        unsafe extern "C" fn(owner: UObjectHandle, info: *const u8, abort_callback_id: u64) -> u64,
+    pub latent_function_finish: unsafe extern "C" fn(action: u64, completed: bool),
+    pub live_latent_functions: unsafe extern "C" fn() -> u32,
 }
 
 #[repr(C)]
@@ -602,6 +673,7 @@ pub struct RustealReifyApi {
         name: *const u8,
         name_len: u32,
         prop_flags: u64,
+        kind: u32,
     ) -> UFunctionHandle,
 
     pub add_interface:
@@ -629,6 +701,21 @@ pub struct RustealReifyApi {
 
     pub add_interface_class:
         unsafe extern "C" fn(cls: UClassHandle, interface: UClassHandle) -> RustealErrorCode,
+
+    pub set_function_metadata: unsafe extern "C" fn(
+        func: UFunctionHandle,
+        key: *const u8,
+        key_len: u32,
+        value: *const u8,
+        value_len: u32,
+    ) -> RustealErrorCode,
+
+    pub set_property_replication: unsafe extern "C" fn(
+        prop: FPropertyHandle,
+        condition: u8,
+        rep_notify: *const u8,
+        rep_notify_len: u32,
+    ) -> RustealErrorCode,
 }
 
 pub const RUSTEAL_COMP_ROOT: u32 = 1;
@@ -647,6 +734,79 @@ pub struct RustealWidgetApi {
     ) -> RustealErrorCode,
 
     pub get_widget_tree: unsafe extern "C" fn(user_widget: UObjectHandle) -> UObjectHandle,
+
+    pub slate_new: unsafe extern "C" fn(kind: u32, props: *const RustealSlateProps) -> u64,
+    pub slate_add_child: unsafe extern "C" fn(
+        parent: u64,
+        child: u64,
+        slot: *const RustealSlateSlot,
+    ) -> RustealErrorCode,
+    pub slate_release: unsafe extern "C" fn(id: u64),
+    pub slate_write_text: unsafe extern "C" fn(out: *mut u8, utf8: *const u8, len: u32),
+    pub slate_simulate_click: unsafe extern "C" fn(id: u64) -> bool,
+    pub slate_get_text: unsafe extern "C" fn(
+        id: u64,
+        buffer: *mut u8,
+        capacity: u32,
+        out_len: *mut u32,
+    ) -> RustealErrorCode,
+    pub slate_register_tab: unsafe extern "C" fn(
+        name: *const u8,
+        name_len: u32,
+        label: *const u8,
+        label_len: u32,
+        callback_id: u64,
+    ) -> RustealErrorCode,
+    pub slate_invoke_tab: unsafe extern "C" fn(name: *const u8, name_len: u32) -> bool,
+    pub slate_unregister_tab: unsafe extern "C" fn(name: *const u8, name_len: u32),
+    pub slate_live_widgets: unsafe extern "C" fn() -> u32,
+    pub slate_live_callbacks: unsafe extern "C" fn() -> u32,
+
+    pub details_customize_class:
+        unsafe extern "C" fn(class: UClassHandle, callback_id: u64) -> RustealErrorCode,
+    pub details_unregister_class: unsafe extern "C" fn(class: UClassHandle),
+    pub details_add_row: unsafe extern "C" fn(
+        layout: u64,
+        category: *const u8,
+        category_len: u32,
+        name_widget: u64,
+        value_widget: u64,
+    ) -> RustealErrorCode,
+    pub details_hide_property: unsafe extern "C" fn(
+        layout: u64,
+        property: *const u8,
+        property_len: u32,
+    ) -> RustealErrorCode,
+    pub details_objects:
+        unsafe extern "C" fn(layout: u64, out: *mut UObjectHandle, capacity: u32) -> u32,
+    pub details_view: unsafe extern "C" fn(object: UObjectHandle) -> u64,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct RustealSlateProps {
+    pub text: *const u8,
+    pub text_len: u32,
+    pub text_callback: u64,
+    pub hint: *const u8,
+    pub hint_len: u32,
+    pub enabled_callback: u64,
+    pub on_event: u64,
+    pub on_commit: u64,
+    pub value: f32,
+    pub min: f32,
+    pub max: f32,
+    pub checked: bool,
+    pub padding: [f32; 4],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct RustealSlateSlot {
+    pub padding: [f32; 4],
+    pub h_align: u8,
+    pub v_align: u8,
+    pub fill: f32,
 }
 
 #[repr(C)]
@@ -660,6 +820,50 @@ pub struct RustealInputApi {
     ) -> RustealErrorCode,
 
     pub should_display_touch_interface: unsafe extern "C" fn() -> bool,
+
+    pub bind_action_closure: unsafe extern "C" fn(
+        actor: UObjectHandle,
+        action: UObjectHandle,
+        trigger_event: u8,
+        callback_id: u64,
+        out_handle: *mut u32,
+    ) -> RustealErrorCode,
+    pub unbind_action: unsafe extern "C" fn(actor: UObjectHandle, handle: u32) -> RustealErrorCode,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct RustealInputArgs {
+    pub value: *const u8,
+    pub elapsed_seconds: f32,
+    pub triggered_seconds: f32,
+    pub action: UObjectHandle,
+}
+
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RustealNativeEvent {
+    PreExit = 0,
+    WillEnterBackground = 1,
+    HasEnteredForeground = 2,
+    WillDeactivate = 3,
+    HasReactivated = 4,
+    WorldInitialized = 10,
+    WorldCleanup = 11,
+    LevelAdded = 12,
+    LevelRemoved = 13,
+    PostLogin = 20,
+    Logout = 21,
+    MoveRequestFinished = 30,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct RustealNativeEventArgs {
+    pub first: UObjectHandle,
+    pub second: UObjectHandle,
+    pub a: u32,
+    pub b: u32,
 }
 
 #[repr(C)]
@@ -765,4 +969,138 @@ pub struct RustealWorldApi {
         row_name: FNameHandle,
         row_struct: UStructHandle,
     ) -> *mut u8,
+
+    pub set_timer: unsafe extern "C" fn(
+        context: UObjectHandle,
+        rate: f32,
+        looping: bool,
+        max_once_per_frame: bool,
+        first_delay: f32,
+        callback_id: u64,
+        out_handle: *mut u64,
+    ) -> RustealErrorCode,
+
+    pub set_timer_for_next_tick: unsafe extern "C" fn(
+        context: UObjectHandle,
+        callback_id: u64,
+        out_handle: *mut u64,
+    ) -> RustealErrorCode,
+
+    pub clear_timer: unsafe extern "C" fn(context: UObjectHandle, handle: u64) -> RustealErrorCode,
+
+    pub pause_timer:
+        unsafe extern "C" fn(context: UObjectHandle, handle: u64, paused: bool) -> RustealErrorCode,
+
+    pub timer_remaining: unsafe extern "C" fn(context: UObjectHandle, handle: u64) -> f32,
+
+    pub live_timer_callbacks: unsafe extern "C" fn() -> u32,
+
+    pub load_async: unsafe extern "C" fn(
+        paths: *const u8,
+        paths_len: u32,
+        callback_id: u64,
+    ) -> RustealErrorCode,
+
+    pub load_primary_assets: unsafe extern "C" fn(
+        ids: *const u8,
+        ids_len: u32,
+        bundles: *const u8,
+        bundles_len: u32,
+        callback_id: u64,
+    ) -> RustealErrorCode,
+
+    pub load_finish: unsafe extern "C" fn(
+        callback_id: u64,
+        out_objects: *mut UObjectHandle,
+        capacity: u32,
+        out_count: *mut u32,
+    ) -> RustealErrorCode,
+
+    pub load_cancel: unsafe extern "C" fn(callback_id: u64) -> RustealErrorCode,
+    pub loads_in_progress: unsafe extern "C" fn() -> u32,
+
+    pub bind_native_event: unsafe extern "C" fn(
+        kind: u32,
+        target: UObjectHandle,
+        callback_id: u64,
+    ) -> RustealErrorCode,
+    pub unbind_native_event: unsafe extern "C" fn(callback_id: u64) -> RustealErrorCode,
+
+    pub http_send: unsafe extern "C" fn(
+        verb: *const u8,
+        verb_len: u32,
+        url: *const u8,
+        url_len: u32,
+        headers: *const u8,
+        headers_len: u32,
+        body: *const u8,
+        body_len: u32,
+        timeout_seconds: f32,
+        callback_id: u64,
+    ) -> RustealErrorCode,
+    pub http_finish: unsafe extern "C" fn(
+        callback_id: u64,
+        out_status: *mut i32,
+        headers: *mut u8,
+        headers_capacity: u32,
+        out_headers_len: *mut u32,
+        body: *mut u8,
+        body_capacity: u32,
+        out_body_len: *mut u32,
+        out_succeeded: *mut bool,
+    ) -> RustealErrorCode,
+    pub http_cancel: unsafe extern "C" fn(callback_id: u64) -> RustealErrorCode,
+    pub http_in_progress: unsafe extern "C" fn() -> u32,
+
+    pub add_tick_function: unsafe extern "C" fn(
+        target: UObjectHandle,
+        group: u8,
+        callback_id: u64,
+    ) -> RustealErrorCode,
+    pub remove_tick_function: unsafe extern "C" fn(callback_id: u64),
+    pub tick_function_set_enabled:
+        unsafe extern "C" fn(callback_id: u64, enabled: bool) -> RustealErrorCode,
+    pub tick_function_set_interval:
+        unsafe extern "C" fn(callback_id: u64, seconds: f32) -> RustealErrorCode,
+    pub tick_function_add_prerequisite: unsafe extern "C" fn(
+        callback_id: u64,
+        object: UObjectHandle,
+        other_callback_id: u64,
+    ) -> RustealErrorCode,
+    pub live_tick_functions: unsafe extern "C" fn() -> u32,
+
+    pub add_gameplay_tag: unsafe extern "C" fn(
+        name: *const u8,
+        name_len: u32,
+        comment: *const u8,
+        comment_len: u32,
+    ) -> RustealErrorCode,
+    pub gameplay_tag_is_registered: unsafe extern "C" fn(name: *const u8, name_len: u32) -> bool,
+
+    pub rpc_validate_failed: unsafe extern "C" fn(reason: *const u8, reason_len: u32),
+    pub mark_property_dirty: unsafe extern "C" fn(object: UObjectHandle, prop: FPropertyHandle),
+    pub add_replicated_subobject: unsafe extern "C" fn(
+        actor: UObjectHandle,
+        object: UObjectHandle,
+        condition: u8,
+    ) -> RustealErrorCode,
+    pub remove_replicated_subobject:
+        unsafe extern "C" fn(actor: UObjectHandle, object: UObjectHandle) -> RustealErrorCode,
+
+    pub trace_event_type: unsafe extern "C" fn(name: *const u8, name_len: u32) -> u32,
+    pub trace_begin_event: unsafe extern "C" fn(event_type: u32),
+    pub trace_end_event: unsafe extern "C" fn(),
+    pub stat_create: unsafe extern "C" fn(name: *const u8, name_len: u32) -> u64,
+    pub stat_begin: unsafe extern "C" fn(stat: u64) -> u64,
+    pub stat_end: unsafe extern "C" fn(counter: u64),
+    pub memory_scope_begin: unsafe extern "C" fn(tag: *const u8, tag_len: u32) -> u64,
+    pub memory_scope_end: unsafe extern "C" fn(scope: u64),
+
+    pub automation_register_test: unsafe extern "C" fn(
+        name: *const u8,
+        name_len: u32,
+        contexts: u32,
+        callback_id: u64,
+    ) -> RustealErrorCode,
+    pub automation_add_message: unsafe extern "C" fn(kind: u32, text: *const u8, text_len: u32),
 }

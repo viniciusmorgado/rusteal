@@ -210,6 +210,12 @@ pub fn generate_class(class: &ClassInfo, ctx: &CodegenContext) -> String {
     out
 }
 
+pub(super) fn is_latent_info(param: &ParamInfo) -> bool {
+    param.prop_type == "StructProperty"
+        && param.struct_name.as_deref() == Some("LatentActionInfo")
+        && type_map::param_direction(param) == ParamDirection::In
+}
+
 fn is_static_fn(entry: &FuncEntry) -> bool {
     entry.func.is_static || (entry.func.func_flags & FUNC_STATIC != 0)
 }
@@ -236,7 +242,6 @@ fn scalar_out_rust_type_ctx(
         ConversionKind::StructOpaque => {
             if let Some(sn) = struct_name
                 && let Some(si) = ctx.structs.get(sn)
-                && si.has_static_struct
             {
                 return format!("rusteal_core::OwnedStruct<{}>", si.cpp_name);
             }
@@ -247,8 +252,21 @@ fn scalar_out_rust_type_ctx(
     }
 }
 
+fn inout_struct_type(param: &ParamInfo, ctx: &CodegenContext) -> String {
+    match param
+        .struct_name
+        .as_deref()
+        .and_then(|sn| ctx.structs.get(sn))
+    {
+        Some(si) => {
+            format!("&mut rusteal_core::OwnedStruct<{}>", si.cpp_name)
+        }
+        _ => "*mut u8".to_string(),
+    }
+}
+
 pub(super) fn is_struct_owned(struct_name: Option<&str>, ctx: &CodegenContext) -> bool {
-    struct_name.is_some_and(|sn| ctx.structs.get(sn).is_some_and(|si| si.has_static_struct))
+    struct_name.is_some_and(|sn| ctx.structs.contains_key(sn))
 }
 
 pub(super) fn is_scalar_output_returnable(dir: ParamDirection, mapped: &MappedType) -> bool {
@@ -259,10 +277,41 @@ pub(super) fn is_scalar_output_returnable(dir: ParamDirection, mapped: &MappedTy
     dir == ParamDirection::Out || dir == ParamDirection::InOut
 }
 
+pub(super) fn is_soft(param: &ParamInfo) -> bool {
+    matches!(
+        param.prop_type.as_str(),
+        "SoftObjectProperty" | "SoftClassProperty"
+    )
+}
+
+pub(super) fn soft_constructor(param: &ParamInfo) -> &'static str {
+    if param.prop_type == "SoftClassProperty" {
+        "rusteal_core::SoftClassRef::new"
+    } else {
+        "rusteal_core::SoftObjectRef::new"
+    }
+}
+
 fn generate_function(out: &mut String, entry: &FuncEntry, class_name: &str, ctx: &CodegenContext) {
     let has_container = entry.func.params.iter().any(is_container_param);
 
-    if has_container {
+    if has_container
+        && entry
+            .func
+            .params
+            .iter()
+            .any(|p| is_soft(p) || p.prop_type == "DelegateProperty")
+    {
+        out.push_str(&format!(
+            "    // Skipped: {}.{} (soft reference or delegate next to a container)\n\n",
+            class_name, entry.func.name
+        ));
+    } else if has_container && entry.func.params.iter().any(is_latent_info) {
+        out.push_str(&format!(
+            "    // Skipped: {}.{} (latent function with a container)\n\n",
+            class_name, entry.func.name
+        ));
+    } else if has_container {
         generate_container_function(out, entry, class_name, ctx);
     } else {
         generate_scalar_function(out, entry, class_name, ctx);
@@ -313,6 +362,28 @@ fn generate_scalar_function(
         all_mapped.push((param, dir, mapped));
     }
 
+    let mut delegate_params: Vec<(String, Vec<delegates::DelegateParam>, &serde_json::Value)> =
+        Vec::new();
+
+    for (param, dir, mapped) in &all_mapped {
+        if mapped.rust_to_ffi != ConversionKind::Delegate {
+            continue;
+        }
+
+        let closure = param
+            .func_info
+            .as_ref()
+            .filter(|_| *dir == ParamDirection::In)
+            .and_then(|fi| Some((delegates::closure_params(fi, ctx)?, fi)));
+
+        match closure {
+            Some((params, fi)) => {
+                delegate_params.push((escape_reserved(&to_snake_case(&param.name)), params, fi))
+            }
+            None => all_supported = false,
+        }
+    }
+
     if !all_supported {
         out.push_str(&format!(
             "    // Skipped: {}.{} (unsupported param type)\n\n",
@@ -353,6 +424,7 @@ fn generate_scalar_function(
     };
 
     let is_static = func.is_static || (func.func_flags & FUNC_STATIC != 0);
+    let latent = func.params.iter().any(is_latent_info);
 
     let mut sig = String::new();
 
@@ -364,9 +436,15 @@ fn generate_scalar_function(
 
     let mut param_names = Vec::new();
     let mut default_unwraps: Vec<(String, String)> = Vec::new();
+    let mut soft_paths: Vec<(String, bool)> = Vec::new();
+    let mut texts: Vec<String> = Vec::new();
 
     for (param, dir, mapped) in &all_mapped {
         if *dir == ParamDirection::Return {
+            continue;
+        }
+
+        if is_latent_info(param) {
             continue;
         }
 
@@ -375,15 +453,52 @@ fn generate_scalar_function(
         let has_default = *dir == ParamDirection::In
             && defaults::parse_default_literal(param, mapped, ctx).is_some();
 
-        if has_default {
+        if has_default && !is_soft(param) {
             let default_expr = defaults::parse_default_literal(param, mapped, ctx)
                 .expect("default literal must be parseable (has_default was true)");
 
             default_unwraps.push((pname.clone(), default_expr));
         }
 
+        if is_soft(param) && *dir == ParamDirection::In {
+            soft_paths.push((pname.clone(), has_default));
+        }
+
+        if param.prop_type == "TextProperty" && *dir == ParamDirection::In {
+            texts.push(pname.clone());
+        }
+
         match dir {
             ParamDirection::In | ParamDirection::InOut => match mapped.rust_to_ffi {
+                ConversionKind::Delegate => {
+                    let callback_sig = delegate_params
+                        .iter()
+                        .find(|(name, ..)| *name == pname)
+                        .map(|(_, params, _)| {
+                            params
+                                .iter()
+                                .map(|p| p.rust_type.clone())
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        })
+                        .unwrap_or_default();
+
+                    sig.push_str(&format!(
+                        "{pname}: impl FnMut({callback_sig}) + Send + 'static, "
+                    ));
+                }
+                ConversionKind::ObjectRef
+                    if param.prop_type == "TextProperty" && *dir == ParamDirection::In =>
+                {
+                    sig.push_str(&format!("{pname}: impl Into<rusteal_core::Text>, "));
+                }
+                ConversionKind::StringUtf8 if is_soft(param) && *dir == ParamDirection::In => {
+                    if has_default {
+                        sig.push_str(&format!("{pname}: Option<&{}>, ", mapped.rust_type));
+                    } else {
+                        sig.push_str(&format!("{pname}: &{}, ", mapped.rust_type));
+                    }
+                }
                 ConversionKind::StringUtf8 => {
                     if has_default {
                         sig.push_str(&format!("{pname}: Option<&str>, "));
@@ -411,7 +526,7 @@ fn generate_scalar_function(
                     ));
                 }
                 ConversionKind::StructOpaque if *dir == ParamDirection::InOut => {
-                    sig.push_str(&format!("{pname}: *mut u8, "));
+                    sig.push_str(&format!("{pname}: {}, ", inout_struct_type(param, ctx)));
                 }
                 _ => {
                     if has_default {
@@ -432,7 +547,11 @@ fn generate_scalar_function(
         sig.truncate(sig.len() - 2);
     }
 
-    if return_rust_type == "()" {
+    if latent {
+        sig.push_str(&format!(
+            ") -> impl std::future::Future<Output = {return_rust_type}>"
+        ));
+    } else if return_rust_type == "()" {
         sig.push(')');
     } else {
         sig.push_str(&format!(") -> {return_rust_type}"));
@@ -447,7 +566,27 @@ fn generate_scalar_function(
         ));
     }
 
-    out.push_str("        {\n");
+    for pname in &texts {
+        out.push_str(&format!(
+            "        let {pname}: rusteal_core::Text = {pname}.into();\n"
+        ));
+    }
+
+    for (pname, has_default) in &soft_paths {
+        if *has_default {
+            out.push_str(&format!(
+                "        let {pname} = {pname}.map_or(\"\", |soft| soft.path());\n"
+            ));
+        } else {
+            out.push_str(&format!("        let {pname} = {pname}.path();\n"));
+        }
+    }
+
+    if latent {
+        out.push_str("        async move {\n");
+    } else {
+        out.push_str("        {\n");
+    }
 
     let mut ffi_params = String::new();
 
@@ -455,9 +594,17 @@ fn generate_scalar_function(
         ffi_params.push_str("rusteal_core::UObjectHandle, ");
     }
 
-    for (_param, dir, mapped) in &all_mapped {
+    for (param, dir, mapped) in &all_mapped {
+        if is_latent_info(param) {
+            ffi_params.push_str("u64, ");
+            continue;
+        }
+
         match dir {
             ParamDirection::In | ParamDirection::InOut => match mapped.rust_to_ffi {
+                ConversionKind::Delegate => {
+                    ffi_params.push_str("*mut u8, ");
+                }
                 ConversionKind::StringUtf8 => {
                     ffi_params.push_str("*const u8, u32, ");
 
@@ -558,7 +705,77 @@ fn generate_scalar_function(
         }
     }
 
-    out.push_str("        rusteal_core::ffi_infallible(unsafe { __rusteal_fn(");
+    for (pname, params, func_info) in &delegate_params {
+        let param_ue_name = func
+            .params
+            .iter()
+            .find(|p| escape_reserved(&to_snake_case(&p.name)) == *pname)
+            .map(|p| p.name.as_str())
+            .unwrap_or(pname);
+
+        let sig_expr = format!(
+            "rusteal_core::ffi_dispatch::reflection_get_delegate_signature(\n\
+             \x20               rusteal_core::ffi_dispatch::reflection_get_function_param(\n\
+             \x20                   rusteal_core::ffi_dispatch::reflection_find_function_by_class({class_name}::static_class(), b\"{func_ue}\\0\".as_ptr(), {func_len}),\n\
+             \x20                   b\"{param_ue_name}\\0\".as_ptr(), {param_len}))",
+            func_ue = func.ue_name,
+            func_len = func.ue_name.len(),
+            param_len = param_ue_name.len(),
+        );
+
+        out.push_str(&format!(
+            "        let {pname} = {{\n\
+             \x20       let mut callback = {pname};\n\
+             \x20       static SIGNATURE: std::sync::OnceLock<usize> = std::sync::OnceLock::new();\n\
+             \x20       let signature = rusteal_core::UFunctionHandle(*SIGNATURE.get_or_init(|| unsafe {{ {sig_expr} }}.0 as usize) as *mut std::ffi::c_void);\n"
+        ));
+
+        if !params.is_empty() {
+            delegates::emit_param_info(out, params, func_info, &sig_expr);
+        }
+
+        let owner = if is_static {
+            "rusteal_core::UObjectHandle::null()"
+        } else {
+            "h"
+        };
+
+        if params.is_empty() {
+            out.push_str(
+                "        let id = rusteal_core::delegate_registry::register_callback(move |_params: rusteal_core::ffi_dispatch::NativePtr| {\n\
+                 \x20           callback();\n\
+                 \x20       });\n",
+            );
+        } else {
+            out.push_str(
+                "        let id = rusteal_core::delegate_registry::register_callback(move |params: rusteal_core::ffi_dispatch::NativePtr| {\n\
+                 \x20           unsafe {\n",
+            );
+
+            delegates::emit_param_reads(out, params);
+
+            let call_args: Vec<&str> = params.iter().map(|p| p.name.as_str()).collect();
+
+            out.push_str(&format!(
+                "                callback({});\n\
+                 \x20           }}\n\
+                 \x20       }});\n",
+                call_args.join(", ")
+            ));
+        }
+
+        out.push_str(&format!(
+            "        unsafe {{ rusteal_core::ffi_dispatch::delegate_make_delegate(signature, {owner}, id) }}\n\
+             \x20       }};\n"
+        ));
+    }
+
+    if latent {
+        out.push_str("        let __latent = rusteal_core::latent::LatentCall::new();\n");
+        out.push_str("        let __latent_code = unsafe { __rusteal_fn(");
+    } else {
+        out.push_str("        rusteal_core::ffi_infallible(unsafe { __rusteal_fn(");
+    }
 
     if !is_static {
         out.push_str("h, ");
@@ -566,6 +783,11 @@ fn generate_scalar_function(
 
     for (param, dir, mapped) in &all_mapped {
         let pname = escape_reserved(&to_snake_case(&param.name));
+
+        if is_latent_info(param) {
+            out.push_str("__latent.id(), ");
+            continue;
+        }
 
         match dir {
             ParamDirection::In | ParamDirection::InOut => {
@@ -585,11 +807,19 @@ fn generate_scalar_function(
                     ConversionKind::EnumCast => {
                         out.push_str(&format!("{pname} as {}, ", mapped.rust_ffi_type));
                     }
+                    ConversionKind::IntCast if *dir == ParamDirection::In => {
+                        out.push_str(&format!("{pname} as {}, ", mapped.rust_ffi_type));
+                    }
                     ConversionKind::StructOpaque
                         if *dir == ParamDirection::In
                             && is_struct_owned(param.struct_name.as_deref(), ctx) =>
                     {
                         out.push_str(&format!("{pname}.as_bytes().as_ptr(), "));
+                    }
+                    ConversionKind::StructOpaque
+                        if is_struct_owned(param.struct_name.as_deref(), ctx) =>
+                    {
+                        out.push_str(&format!("{pname}.as_mut_ptr(), "));
                     }
                     _ => {
                         out.push_str(&format!("{pname}, "));
@@ -640,7 +870,24 @@ fn generate_scalar_function(
         out.truncate(out_len - 2);
     }
 
-    out.push_str(") });\n");
+    if latent {
+        out.push_str(&format!(
+            ") }};\n\
+             \x20       match rusteal_core::check_ffi(__latent_code) {{\n\
+             \x20           Ok(()) => __latent.await,\n\
+             \x20           Err(e) => e.__log_in(rusteal_core::LOG_WARNING, \"{class_name}.{}\"),\n\
+             \x20       }}\n",
+            func.name
+        ));
+    } else {
+        out.push_str(") });\n");
+    }
+
+    for (pname, ..) in &delegate_params {
+        out.push_str(&format!(
+            "        unsafe {{ rusteal_core::ffi_dispatch::delegate_free_delegate({pname}) }};\n"
+        ));
+    }
 
     {
         let mut return_parts = Vec::new();
@@ -658,13 +905,15 @@ fn generate_scalar_function(
                     );
                 }
                 ConversionKind::StringUtf8 => {
-                    out.push_str("        _ret_buf.truncate(_ret_len as usize);\n");
-
                     out.push_str(
-                        "        let _ret_str = String::from_utf8_lossy(&_ret_buf).into_owned();\n",
+                        "        let _ret_str = rusteal_core::take_utf8(_ret_buf, _ret_len);\n",
                     );
 
-                    return_parts.push("_ret_str".to_string());
+                    if is_soft(rp) {
+                        return_parts.push(format!("{}(_ret_str)", soft_constructor(rp)));
+                    } else {
+                        return_parts.push("_ret_str".to_string());
+                    }
                 }
                 ConversionKind::EnumCast => {
                     let rt = &rm.rust_type;
@@ -680,7 +929,7 @@ fn generate_scalar_function(
                 }
                 ConversionKind::StructOpaque => {
                     if is_struct_owned(rp.struct_name.as_deref(), ctx) {
-                        out.push_str("        let _ret_owned = rusteal_core::OwnedStruct::from_bytes(_ret_struct_buf);\n");
+                        out.push_str("        let _ret_owned = unsafe { rusteal_core::OwnedStruct::from_constructed(_ret_struct_buf) };\n");
                         return_parts.push("_ret_owned".to_string());
                     } else {
                         out.push_str("        let _ret_ptr = _ret_struct_buf.as_ptr();\n");
@@ -927,7 +1176,7 @@ fn generate_container_function(
                     ));
                 }
                 ConversionKind::StructOpaque if dir == ParamDirection::InOut => {
-                    sig.push_str(&format!("{pname}: *mut u8, "));
+                    sig.push_str(&format!("{pname}: {}, ", inout_struct_type(param, ctx)));
                 }
                 _ => {
                     if has_default {
@@ -1166,6 +1415,11 @@ fn generate_container_function(
                     {
                         out.push_str(&format!("{pname}.as_bytes().as_ptr(), "));
                     }
+                    ConversionKind::StructOpaque
+                        if is_struct_owned(param.struct_name.as_deref(), ctx) =>
+                    {
+                        out.push_str(&format!("{pname}.as_mut_ptr(), "));
+                    }
                     _ => {
                         out.push_str(&format!("{pname}, "));
                     }
@@ -1378,8 +1632,7 @@ fn emit_container_return(
                     );
                 }
                 ConversionKind::StringUtf8 => {
-                    out.push_str("        __scalar_ret_buf.truncate(__scalar_ret_len as usize);\n");
-                    out.push_str("        let __scalar_str = String::from_utf8_lossy(&__scalar_ret_buf).into_owned();\n");
+                    out.push_str("        let __scalar_str = rusteal_core::take_utf8(__scalar_ret_buf, __scalar_ret_len);\n");
                     return_parts.push("__scalar_str".to_string());
                 }
                 ConversionKind::EnumCast => {
@@ -1405,7 +1658,7 @@ fn emit_container_return(
                         return_param.expect("return_param must be Some in return conversion");
 
                     if is_struct_owned(rp_ref.struct_name.as_deref(), ctx) {
-                        out.push_str("        let __scalar_owned = rusteal_core::OwnedStruct::from_bytes(__scalar_ret_buf);\n");
+                        out.push_str("        let __scalar_owned = unsafe { rusteal_core::OwnedStruct::from_constructed(__scalar_ret_buf) };\n");
                         return_parts.push("__scalar_owned".to_string());
                     } else {
                         out.push_str("        let __scalar_ptr = __scalar_ret_buf.as_ptr();\n");

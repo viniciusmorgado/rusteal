@@ -30,12 +30,26 @@ const ENTRIES: &[(&str, &str)] = &[
     ("core", "crate::manual::plane::OwnedFPlaneExt"),
     ("core", "crate::manual::ue_box2d::OwnedFBox2DExt"),
     (
+        "core",
+        "crate::manual::instanced_struct::InstancedStructExt",
+    ),
+    (
         "engine",
         "crate::engine::{Actor, ActorExt, World, WorldExt}",
     ),
     (
         "engine",
         "crate::manual::world_ext::{ObjectWorldExt, SpawnCollisionMethod, SpawnParams, WorldSpawnExt, find_object, load_class, load_object}",
+    ),
+    (
+        "engine",
+        "crate::manual::events::{core_events, game_mode_events, world_events}",
+    ),
+    ("ai", "crate::manual::events::PathFollowingEventsExt"),
+    ("engine", "crate::manual::tick_ext::add_tick_function"),
+    (
+        "gameplay-tags",
+        "crate::manual::gameplay_tags_ext::{declare_gameplay_tag, gameplay_tag}",
     ),
     ("engine", "crate::manual::collision::object_type_query"),
     (
@@ -50,7 +64,7 @@ const ENTRIES: &[(&str, &str)] = &[
     ("input", "crate::manual::fkey::FKeyExt"),
     (
         "enhanced-input",
-        "crate::manual::input_ext::{InputActionValueExt, bind_action, enhanced_input_subsystem}",
+        "crate::manual::input_ext::{ActionBinding, ActionInstance, InputActionValueExt, bind_action, bind_action_by_name, bind_action_instance, enhanced_input_subsystem}",
     ),
 ];
 

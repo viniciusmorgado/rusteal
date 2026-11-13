@@ -60,6 +60,14 @@ pub mod callbacks {
         });
     }
 
+    pub fn release_delegate_callback(module: &'static Module, callback_id: u64) {
+        let _scope = module.enter();
+
+        runtime::ffi_boundary((), || {
+            runtime::delegate_registry::unregister_callback(callback_id);
+        });
+    }
+
     pub fn construct_rust_instance(module: &'static Module, obj: ffi::UObjectHandle, type_id: u64) {
         let _scope = module.enter();
 
@@ -81,6 +89,14 @@ pub mod callbacks {
 
         runtime::ffi_boundary((), || {
             runtime::task::tick(delta_seconds);
+        });
+    }
+
+    pub fn retry_deferred_classes(module: &'static Module, last_try: bool) {
+        let _scope = module.enter();
+
+        runtime::ffi_boundary((), || {
+            runtime::reify_registry::retry_deferred(module, last_try);
         });
     }
 
@@ -317,6 +333,14 @@ macro_rules! entry {
                 $crate::callbacks::on_tick(&__RUSTEAL_MODULE, delta_seconds)
             }
 
+            extern "C" fn release_delegate_callback(callback_id: u64) {
+                $crate::callbacks::release_delegate_callback(&__RUSTEAL_MODULE, callback_id)
+            }
+
+            extern "C" fn retry_deferred_classes(last_try: bool) {
+                $crate::callbacks::retry_deferred_classes(&__RUSTEAL_MODULE, last_try)
+            }
+
             static CALLBACKS: $crate::ffi::RustealRustCallbacks =
                 $crate::ffi::RustealRustCallbacks {
                     drop_rust_instance,
@@ -326,6 +350,8 @@ macro_rules! entry {
                     construct_rust_instance,
                     notify_pinned_destroyed,
                     on_tick,
+                    release_delegate_callback,
+                    retry_deferred_classes,
                 };
 
             extern "C" fn init(

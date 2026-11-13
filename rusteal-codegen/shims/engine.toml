@@ -1,0 +1,125 @@
+[[set]]
+name = "actor"
+virtuals = [
+    "void PreInitializeComponents()",
+    "void PostInitializeComponents()",
+    "void PostActorCreated()",
+    "void PostRegisterAllComponents()",
+    "void OnConstruction(const FTransform &Transform)",
+]
+
+[[set]]
+name = "component"
+virtuals = [
+    "void OnRegister()",
+    { signature = "void OnUnregister()", order = "before" },
+    "void InitializeComponent()",
+    { signature = "void UninitializeComponent()", order = "before" },
+    { signature = "void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction *ThisTickFunction)", drop = ["TickType", "ThisTickFunction"] },
+]
+
+[[shim]]
+class = "RustealActor"
+parent = "AActor"
+include = ["GameFramework/Actor.h"]
+sets = ["actor"]
+
+[[shim]]
+class = "RustealPawn"
+parent = "APawn"
+include = ["GameFramework/Pawn.h"]
+sets = ["actor"]
+
+[[shim]]
+class = "RustealCharacter"
+parent = "ACharacter"
+include = ["GameFramework/Character.h"]
+sets = ["actor"]
+
+[[shim]]
+class = "RustealPlayerController"
+parent = "APlayerController"
+include = ["GameFramework/PlayerController.h"]
+sets = ["actor"]
+
+[[shim]]
+class = "RustealGameModeBase"
+parent = "AGameModeBase"
+include = ["GameFramework/GameModeBase.h"]
+sets = ["actor"]
+
+[[shim]]
+class = "RustealActorComponent"
+parent = "UActorComponent"
+include = ["Components/ActorComponent.h"]
+sets = ["component"]
+constructor = [
+    "bWantsInitializeComponent = true;",
+    "PrimaryComponentTick.bCanEverTick = GetClass()->IsFunctionImplementedInScript(FName(TEXT(\"ReceiveTickComponent\")));",
+]
+
+[[shim]]
+class = "RustealSceneComponent"
+parent = "USceneComponent"
+include = ["Components/SceneComponent.h"]
+sets = ["component"]
+constructor = [
+    "bWantsInitializeComponent = true;",
+    "PrimaryComponentTick.bCanEverTick = GetClass()->IsFunctionImplementedInScript(FName(TEXT(\"ReceiveTickComponent\")));",
+]
+
+[[shim]]
+class = "RustealUserWidget"
+parent = "UUserWidget"
+include = ["Blueprint/UserWidget.h"]
+category = "Rusteal|UserWidget"
+virtuals = [
+    "void NativeOnInitialized()",
+    "void NativePreConstruct()",
+    "void NativeConstruct()",
+    { signature = "void NativeDestruct()", order = "before" },
+    "void NativeTick(const FGeometry &MyGeometry, float InDeltaTime)",
+]
+
+[[shim]]
+class = "RustealAnimInstance"
+parent = "UAnimInstance"
+include = ["Animation/AnimInstance.h"]
+virtuals = [
+    "void NativeInitializeAnimation()",
+    "void NativeBeginPlay()",
+    "void NativeUpdateAnimation(float DeltaSeconds)",
+    { signature = "void NativeThreadSafeUpdateAnimation(float DeltaSeconds)", meta = ["BlueprintThreadSafe"] },
+    "void NativePostEvaluateAnimation()",
+    { signature = "void NativeUninitializeAnimation()", order = "before" },
+]
+
+[[shim]]
+class = "RustealCharacterMovementComponent"
+parent = "UCharacterMovementComponent"
+include = ["GameFramework/CharacterMovementComponent.h"]
+category = "Rusteal|CharacterMovement"
+virtuals = [
+    "void PhysCustom(float DeltaTime, int32 Iterations)",
+    "float GetMaxSpeed() const",
+    "float GetMaxAcceleration() const",
+    "void OnMovementModeChanged(EMovementMode PreviousMovementMode, uint8 PreviousCustomMode)",
+]
+
+[[shim]]
+class = "RustealCommandlet"
+parent = "UCommandlet"
+include = ["Commandlets/Commandlet.h"]
+virtuals = ["int32 Main(const FString &Params)"]
+
+[[shim]]
+class = "RustealTaggedActor"
+parent = "AActor"
+include = ["GameFramework/Actor.h"]
+category = "Rusteal|GameplayTags"
+sets = ["actor"]
+
+[[shim.interfaces]]
+name = "IGameplayTagAssetInterface"
+include = ["GameplayTagAssetInterface.h"]
+virtuals = ["void GetOwnedGameplayTags(FGameplayTagContainer &TagContainer) const"]

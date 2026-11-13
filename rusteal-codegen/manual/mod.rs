@@ -18,12 +18,23 @@ pub mod color;
 pub mod plane;
 #[cfg(feature = "core")]
 pub mod ue_box2d;
+#[cfg(feature = "core")]
+pub mod instanced_struct;
 
 #[cfg(feature = "input")]
 pub mod fkey;
 
 #[cfg(feature = "engine")]
 pub mod world_ext;
+
+#[cfg(feature = "engine")]
+pub mod timer_ext;
+
+#[cfg(feature = "engine")]
+pub mod tick_ext;
+
+#[cfg(feature = "engine")]
+pub mod events;
 
 #[cfg(feature = "engine")]
 pub mod net_quantize;
@@ -39,3 +50,6 @@ pub mod widget_ext;
 
 #[cfg(feature = "enhanced-input")]
 pub mod input_ext;
+
+#[cfg(feature = "gameplay-tags")]
+pub mod gameplay_tags_ext;

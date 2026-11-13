@@ -3,6 +3,73 @@ use std::path::Path;
 use crate::project_version::{self, PINNED, PLUGINS, Pins, Scope, Version};
 use crate::{build_cmd, global_config, new_cmd, setup};
 
+const MIGRATIONS: &[(&str, &str)] = &[
+    (
+        "0.10.0",
+        "Engine soft references are SoftObjectRef<T> and engine weak references TWeakObjectPtr<T>, \
+     in properties, struct fields, function parameters and returns; they were UObjectRef<T>. \
+     A soft reference keeps its path when the asset is not loaded: path(), get() for the \
+     loaded object, load_synchronous() to load it. A weak one gives get() -> Option<UObjectRef<T>>, \
+     None once its object is destroyed. Functions that take one take &SoftObjectRef<T> or \
+     TWeakObjectPtr<T>: SoftObjectRef::new(path) or TWeakObjectPtr::from_ref(&object).",
+    ),
+    (
+        "0.10.0",
+        "Engine functions that change a struct passed by reference take &mut OwnedStruct<T>; \
+         they took a *mut u8.",
+    ),
+    (
+        "0.10.0",
+        "Engine FText is Text, which keeps its localization: properties, struct fields, \
+         returns and arrays give a Text (Display and to_string() for the string), and functions \
+         take impl Into<Text>, so a &str or a String still works. An FText parameter with a \
+         default value is a required one; pass \"\" for an empty text.",
+    ),
+    (
+        "0.10.0",
+        "Engine structs with no StaticStruct (FBox, FIntPoint, FTimespan, FPlatformUserId and the \
+         rest of the engine's NoExportTypes) are OwnedStruct<T> like the others, in functions, \
+         properties and arrays; functions took and returned them as a *const u8.",
+    ),
+    (
+        "0.10.0",
+        "Engine arrays, maps and sets of soft references hold SoftObjectRef<T>, with their paths; \
+         they held the loaded objects, as UObjectRef<T>.",
+    ),
+    (
+        "0.10.0",
+        "#[uclass], #[component], #[uclass_impl] and #[class_defaults] refuse arguments they do \
+         not take, which they ignored: remove the ones the compiler points at, they did nothing.",
+    ),
+    (
+        "0.10.0",
+        "Engine latent functions (KismetSystemLibrary::delay, load_asset, move_component_to, \
+         GameplayStatics::load_stream_level...) return a future and no longer take an \
+         FLatentActionInfo: await them in a task started with task::spawn_local.",
+    ),
+    (
+        "0.10.0",
+        "bind_action takes a closure, or a method of the class with method(self, Self::look), \
+         checked by the compiler; the binding by function name is bind_action_by_name, for a \
+         function a Blueprint defines.",
+    ),
+    (
+        "0.10.0",
+        "A Rust function the engine calls on a worker thread no longer runs there: an override \
+         of blueprint_thread_safe_update_animation, or of another thread-safe event, takes \
+         #[ufunction(Override, ThreadSafe)] and the class's <Class>ThreadSafe view instead of \
+         &self or &mut self.",
+    ),
+];
+
+pub fn migration_notes(from: Version, to: Version) -> Vec<(Version, &'static str)> {
+    MIGRATIONS
+        .iter()
+        .filter_map(|(version, note)| Some((Version::parse(version)?, *note)))
+        .filter(|(version, _)| *version > from && *version <= to)
+        .collect()
+}
+
 pub fn run_upgrade(root: &Path) {
     let cli = Version::cli();
 
@@ -72,6 +139,18 @@ pub fn run_upgrade(root: &Path) {
             std::fs::remove_dir_all(&dir)
                 .unwrap_or_else(|e| fail(&format!("cannot remove {}: {e}", dir.display())));
         }
+    }
+
+    let notes = migration_notes(current, cli);
+
+    if !notes.is_empty() {
+        eprintln!("\n  Changes this upgrade asks of the project's Rust code:");
+
+        for (version, note) in &notes {
+            eprintln!("  - {version}: {note}");
+        }
+
+        eprintln!();
     }
 
     setup::run_setup(root, &engine);
@@ -175,6 +254,16 @@ rusteal-core = "=0.2.1"
 rusteal-ffi = "=0.2.1"
 glam = "0.33.8"
 "#;
+
+    #[test]
+    fn notes_are_the_versions_crossed() {
+        assert!(migration_notes(v("0.10.0"), v("0.10.0")).is_empty());
+        assert!(migration_notes(v("0.10.0"), v("0.12.0")).is_empty());
+
+        let notes = migration_notes(v("0.9.0"), v("0.10.0"));
+        assert_eq!(notes.len(), 9);
+        assert_eq!(notes[0].0, v("0.10.0"));
+    }
 
     #[test]
     fn rewrite_keeps_everything_but_the_pins() {

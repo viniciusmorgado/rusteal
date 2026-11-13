@@ -21,6 +21,10 @@ RUSTEAL_API bool RustealRegisterPluginLibraryChecked(const FString &PluginName,
                                                      uint32 FuncCount,
                                                      uint64 FuncFingerprint);
 
+RUSTEAL_API bool RustealRegisterPluginModuleLibraryChecked(
+    const FString &PluginName, const FString &LibraryName,
+    void *const *FuncTable, uint32 FuncCount, uint64 FuncFingerprint);
+
 RUSTEAL_API void RustealUnregisterLibrary(FName Name);
 
 RUSTEAL_API FString RustealLibraryFileName(const FString &Stem);

@@ -5,7 +5,21 @@ use crate::context::CodegenContext;
 use crate::schema::*;
 use crate::type_map;
 
-pub fn apply_filters(ctx: &mut CodegenContext, blocklist: &Blocklist, editor: bool) {
+/// Where the bases of a project's `[[codegen.shims]]` are, relative to the Rusteal module.
+const PROJECT_SHIMS_HEADER: &str = "Generated/Shims/RustealProjectShims.h";
+
+/// `in_rusteal_module`: the library's wrappers are built in the Rusteal module, next to the
+/// project's bases, so they reach their header; a plugin's library is built in its own.
+pub fn apply_filters(
+    ctx: &mut CodegenContext,
+    blocklist: &Blocklist,
+    editor: bool,
+    in_rusteal_module: bool,
+) {
+    if in_rusteal_module {
+        reach_project_shims(ctx);
+    }
+
     let blocked_classes: HashSet<&str> = blocklist.classes.iter().map(|s| s.as_str()).collect();
     let blocked_structs: HashSet<&str> = blocklist.structs.iter().map(|s| s.as_str()).collect();
     let blocked_functions: Vec<(String, String)> = blocklist.function_tuples();
@@ -80,6 +94,25 @@ pub fn apply_filters(ctx: &mut CodegenContext, blocklist: &Blocklist, editor: bo
     }
 }
 
+fn reach_project_shims(ctx: &mut CodegenContext) {
+    let reachable = PROJECT_SHIMS_HEADER
+        .strip_prefix("Generated/")
+        .expect("the bases are under Generated");
+
+    let classes = ctx
+        .module_classes
+        .values_mut()
+        .flat_map(|classes| classes.iter_mut())
+        .chain(ctx.classes.values_mut());
+
+    for class in classes {
+        if class.package == "Rusteal" && class.header == PROJECT_SHIMS_HEADER {
+            class.header = reachable.to_string();
+            class.header_public = true;
+        }
+    }
+}
+
 fn references_any(func: &FunctionInfo, types: &HashSet<String>) -> bool {
     let names = |p: &PropertyInfo| {
         [
@@ -140,6 +173,13 @@ fn is_property_exportable(prop: &PropertyInfo, available: &HashSet<String>) -> b
         return is_delegate_exportable(prop, available);
     }
 
+    if prop.prop_type == "OptionalProperty" {
+        return prop
+            .inner_prop
+            .as_deref()
+            .is_some_and(|inner| is_inner_type_exportable(inner, available));
+    }
+
     if let Some(ref cls) = prop.class_name
         && !available.contains(cls)
     {
@@ -164,8 +204,10 @@ fn is_property_exportable(prop: &PropertyInfo, available: &HashSet<String>) -> b
         return false;
     }
 
-    if prop.prop_type == "ClassProperty"
-        && let Some(ref meta_cls) = prop.meta_class_name
+    if matches!(
+        prop.prop_type.as_str(),
+        "ClassProperty" | "SoftClassProperty"
+    ) && let Some(ref meta_cls) = prop.meta_class_name
         && !available.contains(meta_cls)
     {
         return false;
@@ -181,12 +223,31 @@ fn is_delegate_type(prop_type: &str) -> bool {
     )
 }
 
-fn is_delegate_exportable(prop: &PropertyInfo, available: &HashSet<String>) -> bool {
-    let func_info = match &prop.func_info {
-        Some(fi) => fi,
-        None => return false,
-    };
+fn is_callable_signature(func_info: &serde_json::Value, available: &HashSet<String>) -> bool {
+    let writes_back = func_info
+        .get("params")
+        .and_then(|p| p.as_array())
+        .into_iter()
+        .flatten()
+        .any(|p| {
+            p.get("prop_flags")
+                .and_then(|f| f.as_u64())
+                .is_some_and(|f| {
+                    f & CPF_RETURN_PARM != 0 || (f & CPF_OUT_PARM != 0 && f & CPF_CONST_PARM == 0)
+                })
+        });
 
+    !writes_back && is_signature_exportable(func_info, available)
+}
+
+fn is_delegate_exportable(prop: &PropertyInfo, available: &HashSet<String>) -> bool {
+    match &prop.func_info {
+        Some(fi) => is_signature_exportable(fi, available),
+        None => false,
+    }
+}
+
+fn is_signature_exportable(func_info: &serde_json::Value, available: &HashSet<String>) -> bool {
     let params = match func_info.get("params").and_then(|p| p.as_array()) {
         Some(params) => params,
         None => return true,
@@ -274,7 +335,12 @@ fn is_inner_type_exportable(inner: &PropertyInfo, available: &HashSet<String>) -
 
     if matches!(
         inner.prop_type.as_str(),
-        "ArrayProperty" | "MapProperty" | "SetProperty"
+        "ArrayProperty"
+            | "MapProperty"
+            | "SetProperty"
+            | "InterfaceProperty"
+            | "SoftClassProperty"
+            | "LazyObjectProperty"
     ) {
         return false;
     }
@@ -345,7 +411,27 @@ fn filter_functions(
                 return false;
             }
 
-            if is_delegate_type(&param.prop_type) {
+            if is_delegate_type(&param.prop_type)
+                && !(param.prop_type == "DelegateProperty"
+                    && type_map::param_direction(param) == type_map::ParamDirection::In
+                    && param
+                        .func_info
+                        .as_ref()
+                        .is_some_and(|fi| is_callable_signature(fi, available)))
+            {
+                return false;
+            }
+
+            if param.prop_type == "TextProperty"
+                && type_map::param_direction(param) == type_map::ParamDirection::InOut
+            {
+                return false;
+            }
+
+            if matches!(
+                param.prop_type.as_str(),
+                "OptionalProperty" | "LazyObjectProperty"
+            ) {
                 return false;
             }
 
@@ -381,8 +467,10 @@ fn filter_functions(
                 return false;
             }
 
-            if param.prop_type == "ClassProperty"
-                && let Some(ref meta_cls) = param.meta_class_name
+            if matches!(
+                param.prop_type.as_str(),
+                "ClassProperty" | "SoftClassProperty"
+            ) && let Some(ref meta_cls) = param.meta_class_name
                 && !available.contains(meta_cls)
             {
                 return false;

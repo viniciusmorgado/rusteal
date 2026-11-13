@@ -1,10 +1,13 @@
+use std::time::Duration;
+
 use bindings::engine::{
     Actor, ArrowComponent, CapsuleComponent, CapsuleComponentExt,
-    ESpawnActorCollisionHandlingMethod, GameplayStatics, KismetSystemLibrary,
-    PrimitiveComponentExt, SceneComponent, SceneComponentExt,
+    ESpawnActorCollisionHandlingMethod, GameplayStatics, PrimitiveComponentExt, SceneComponent,
+    SceneComponentExt,
 };
 use bindings::prelude::*;
-use rusteal_runtime::runtime::{FName, RustealResult, SubclassOf};
+use rusteal_runtime::runtime::timer::{self, TimerHandle};
+use rusteal_runtime::runtime::{FName, RustealResult, SubclassOf, method};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use super::game_mode::ShooterGameMode;
@@ -51,6 +54,8 @@ pub struct ShooterNPCSpawner {
         default = 5.0
     )]
     respawn_delay: f32,
+
+    spawn_timer: Option<TimerHandle>,
 }
 
 #[uclass_impl]
@@ -88,7 +93,7 @@ impl ShooterNPCSpawner {
 
     #[ufunction(Override)]
     fn receive_end_play(&mut self, _end_play_reason: u8) {
-        KismetSystemLibrary::k2_clear_timer(self.as_ref().upcast_to(), "SpawnNPC");
+        self.clear_spawn_timer();
     }
 
     #[ufunction(name = "SpawnNPC")]
@@ -110,16 +115,24 @@ impl ShooterNPCSpawner {
         self.schedule_spawn(self.respawn_delay());
     }
 
-    fn schedule_spawn(&self, delay: f32) {
-        KismetSystemLibrary::k2_set_timer(
-            self.as_ref().upcast_to(),
-            "SpawnNPC",
-            delay,
+    fn schedule_spawn(&mut self, delay: f32) {
+        self.clear_spawn_timer();
+
+        let spawn_timer = timer::set_timer(
+            &self.as_ref(),
+            Duration::from_secs_f32(delay),
             false,
-            None,
-            None,
-            None,
-        );
+            method(self, Self::spawn_npc),
+        )
+        .ok();
+
+        self.set_spawn_timer(spawn_timer);
+    }
+
+    fn clear_spawn_timer(&self) {
+        if let Some(spawn_timer) = self.spawn_timer() {
+            spawn_timer.clear();
+        }
     }
 
     fn spawn(&mut self) -> RustealResult<()> {

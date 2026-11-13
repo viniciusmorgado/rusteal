@@ -1,10 +1,15 @@
+use std::time::Duration;
+
 use bindings::engine::{
     Actor, ActorComponentExt, ActorExt, CapsuleComponentExt, Character, CharacterExt,
     CharacterMovementComponentExt, EAutoPossessAI, FHitResult, GameplayStatics, KismetMathLibrary,
-    KismetSystemLibrary, MovementComponentExt, PawnExt, PrimitiveComponent, PrimitiveComponentExt,
+    MovementComponentExt, PawnExt, PrimitiveComponent, PrimitiveComponentExt,
 };
 use bindings::prelude::*;
-use rusteal_runtime::runtime::{FName, Rotator, RustealResult, SubclassOf, UObjectRef, UStructRef};
+use rusteal_runtime::runtime::timer::{self, TimerHandle};
+use rusteal_runtime::runtime::{
+    FName, Rotator, RustealResult, SubclassOf, UObjectRef, UStructRef, method,
+};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use super::character::TwinStickCharacter;
@@ -41,6 +46,8 @@ pub struct TwinStickNPC {
 
     #[uproperty(VisibleAnywhere, BlueprintReadOnly, category = "NPC", default = false)]
     b_hit: bool,
+
+    deferred_destroy_timer: Option<TimerHandle>,
 }
 
 #[uclass_impl]
@@ -91,7 +98,9 @@ impl TwinStickNPC {
 
     #[ufunction(Override)]
     fn receive_end_play(&mut self, _end_play_reason: u8) {
-        KismetSystemLibrary::k2_clear_timer(self.as_ref().upcast_to(), "DeferredDestroy");
+        if let Some(timer) = self.deferred_destroy_timer() {
+            timer.clear();
+        }
     }
 
     #[ufunction(Override)]
@@ -134,7 +143,7 @@ impl TwinStickNPC {
         TwinStickGameMode::from_obj(GameplayStatics::get_game_mode(self.as_ref().upcast_to())).ok()
     }
 
-    pub fn projectile_impact(&self) {
+    pub fn projectile_impact(&mut self) {
         if self.b_hit() {
             return;
         }
@@ -184,14 +193,17 @@ impl TwinStickNPC {
 
         me.set_actor_enable_collision(false);
 
-        KismetSystemLibrary::k2_set_timer(
-            me.as_ref().upcast_to(),
-            "DeferredDestroy",
-            self.deferred_destruction_time(),
+        if let Some(timer) = self.deferred_destroy_timer() {
+            timer.clear();
+        }
+
+        let timer = timer::set_timer(
+            &self.as_ref(),
+            Duration::from_secs_f32(self.deferred_destruction_time()),
             false,
-            None,
-            None,
-            None,
+            method(self, Self::deferred_destroy),
         );
+
+        self.set_deferred_destroy_timer(timer.ok());
     }
 }

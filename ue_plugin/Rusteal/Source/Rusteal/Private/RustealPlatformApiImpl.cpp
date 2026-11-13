@@ -59,7 +59,8 @@ static uint8 *CreateThreadImpl(const void *Run, uint8 *Data, const uint8 *Name,
       reinterpret_cast<FRustealTaskRun>(const_cast<void *>(Run)), Data);
 
   Runnable->Thread = FRunnableThread::Create(
-      Runnable, *FString(ThreadName.Length(), ThreadName.Get()), 0, TPri_Normal);
+      Runnable, *FString(ThreadName.Length(), ThreadName.Get()), 0,
+      TPri_Normal);
 
   if (!Runnable->Thread) {
     delete Runnable;
@@ -87,7 +88,7 @@ static uint32 WorkerCountImpl() {
 }
 
 FRustealPlatformApi GPlatformApi = {
-    &LaunchTaskImpl,  &SecondsImpl,    &SleepImpl,       &IsGameThreadImpl,
+    &LaunchTaskImpl,   &SecondsImpl,    &SleepImpl,       &IsGameThreadImpl,
     &CreateThreadImpl, &JoinThreadImpl, &WorkerCountImpl,
 };
 

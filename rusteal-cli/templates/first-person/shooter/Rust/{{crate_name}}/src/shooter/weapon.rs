@@ -1,12 +1,14 @@
+use std::time::Duration;
+
 use bindings::engine::{
     Actor, ActorExt, AnimInstance, AnimMontage, EFirstPersonPrimitiveType,
     ESpawnActorCollisionHandlingMethod, ESpawnActorScaleMethod, GameplayStatics, KismetMathLibrary,
-    KismetSystemLibrary, Pawn, PrimitiveComponentExt, SceneComponent, SceneComponentExt,
-    SkeletalMeshComponent,
+    Pawn, PrimitiveComponentExt, SceneComponent, SceneComponentExt, SkeletalMeshComponent,
 };
 use bindings::prelude::*;
 use glam::DVec3;
-use rusteal_runtime::runtime::{FName, OwnedStruct, RustealResult, SubclassOf, UObjectRef};
+use rusteal_runtime::runtime::timer::{self, TimerHandle};
+use rusteal_runtime::runtime::{FName, OwnedStruct, RustealResult, SubclassOf, UObjectRef, method};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use super::model::{self, TriggerPull};
@@ -72,6 +74,8 @@ pub struct ShooterWeapon {
     time_of_last_shot: f32,
 
     is_firing: bool,
+
+    refire_handle: Option<TimerHandle>,
 }
 
 #[uclass_impl]
@@ -145,9 +149,9 @@ impl ShooterWeapon {
         }
 
         let next = if self.b_full_auto() {
-            "Fire"
+            method(self, Self::fire)
         } else {
-            "FireCooldownExpired"
+            method(self, Self::fire_cooldown_expired)
         };
 
         self.set_refire_timer(next, self.refire_rate());
@@ -269,7 +273,7 @@ impl ShooterWeapon {
             self.b_full_auto(),
         ) {
             TriggerPull::FireNow => self.fire(),
-            TriggerPull::FireIn(delay) => self.set_refire_timer("Fire", delay),
+            TriggerPull::FireIn(delay) => self.set_refire_timer(method(self, Self::fire), delay),
             TriggerPull::Wait => {}
         }
     }
@@ -280,24 +284,24 @@ impl ShooterWeapon {
         self.clear_refire_timer();
     }
 
-    fn set_refire_timer(&self, function: &str, delay: f32) {
+    fn set_refire_timer(&mut self, callback: impl FnMut() + Send + 'static, delay: f32) {
         self.clear_refire_timer();
 
-        KismetSystemLibrary::k2_set_timer(
-            self.as_ref().upcast_to(),
-            function,
-            delay,
+        let refire_handle = timer::set_timer(
+            &self.as_ref(),
+            Duration::from_secs_f32(delay),
             false,
-            None,
-            None,
-            None,
-        );
+            callback,
+        )
+        .ok();
+
+        self.set_refire_handle(refire_handle);
     }
 
     fn clear_refire_timer(&self) {
-        let me = self.as_ref().upcast_to();
-        KismetSystemLibrary::k2_clear_timer(me, "Fire");
-        KismetSystemLibrary::k2_clear_timer(me, "FireCooldownExpired");
+        if let Some(refire_handle) = self.refire_handle() {
+            refire_handle.clear();
+        }
     }
 
     fn fire_projectile(

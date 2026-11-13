@@ -18,9 +18,17 @@ public class Rusteal : ModuleRules
             "Slate",
             "UMG",
             "EnhancedInput",
+            "GameplayTags",
+            "NetCore",
         ]);
 
         PrivateDependencyModuleNames.Add("Projects");
+        PrivateDependencyModuleNames.AddRange(["HTTP", "AIModule"]);
+
+        if (Target.bBuildEditor)
+        {
+            PrivateDependencyModuleNames.Add("PropertyEditor");
+        }
 
         string StaticSwitch = StaticSwitchFile(Target);
 
@@ -40,10 +48,15 @@ public class Rusteal : ModuleRules
             AddRustLibrary(this, Target, PluginDirectory, "rusteal");
         }
 
-        string DepsFile = Path.Combine(ModuleDirectory, "Generated", "module_deps.txt");
-
-        if (File.Exists(DepsFile))
+        foreach (string DepsName in new[] { "module_deps.txt", "shim_module_deps.txt" })
         {
+            string DepsFile = Path.Combine(ModuleDirectory, "Generated", DepsName);
+
+            if (!File.Exists(DepsFile))
+            {
+                continue;
+            }
+
             foreach (string Module in File.ReadAllLines(DepsFile))
             {
                 string Trimmed = Module.Trim();

@@ -9,6 +9,7 @@ members = [
     "rusteal-runtime",
     "xtask",
 ]
+exclude = ["target"]
 resolver = "3"
 
 [workspace.package]

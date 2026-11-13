@@ -73,8 +73,8 @@ pub(crate) fn parse_signature(sig: &Signature) -> syn::Result<InterfaceSignature
         if !supported_param(&ty) {
             return Err(syn::Error::new_spanned(
                 &ty,
-                "unsupported interface parameter type: supported are bool/i32/i64/u8/f32/f64, \
-                 UObjectRef<T>, SubclassOf<T>, UStructRef<T> and UE enums",
+                "unsupported interface parameter type: supported are what a #[ufunction] \
+                 takes, but out parameters",
             ));
         }
 
@@ -82,6 +82,7 @@ pub(crate) fn parse_signature(sig: &Signature) -> syn::Result<InterfaceSignature
             rust_name: pat.ident.clone(),
             ue_name: prop_type::to_ue_name(&pat.ident.unraw().to_string()),
             rust_ty: ty,
+            out: false,
         });
     }
 
@@ -92,8 +93,8 @@ pub(crate) fn parse_signature(sig: &Signature) -> syn::Result<InterfaceSignature
             if !supported_return(ty) {
                 return Err(syn::Error::new_spanned(
                     ty,
-                    "unsupported interface return type: supported are bool/i32/i64/u8/f32/f64, \
-                     UObjectRef<T>, SubclassOf<T> and UE enums",
+                    "unsupported interface return type: supported are what a #[ufunction] \
+                     returns",
                 ));
             }
 
@@ -101,6 +102,7 @@ pub(crate) fn parse_signature(sig: &Signature) -> syn::Result<InterfaceSignature
                 rust_name: Ident::new("ReturnValue", proc_macro2::Span::call_site()),
                 ue_name: "ReturnValue".to_string(),
                 rust_ty: (**ty).clone(),
+                out: false,
             })
         }
     };
@@ -237,7 +239,7 @@ pub fn expand_uinterface(attr: TokenStream, item: TokenStream) -> syn::Result<To
                     )
                 }))
                 .map(|(param, flags)| {
-                    let info = prop_type::map_type(&param.rust_ty).unwrap();
+                    let info = prop_type::map_fn_type(&param.rust_ty).unwrap();
                     let param_name = &param.ue_name;
                     let prop_type_expr = &info.prop_type_expr;
                     let extra = extra_expr(&info);
@@ -412,7 +414,7 @@ mod tests {
         assert!(expand(quote! { trait A { fn f(self); } }).is_err());
         assert!(expand(quote! { trait A { fn f(); } }).is_err());
         assert!(expand(quote! { trait A { fn f<T>(&self, t: T); } }).is_err());
-        assert!(expand(quote! { trait A { fn f(&self, s: String); } }).is_err());
+        assert!(expand(quote! { trait A { fn f(&self, s: usize); } }).is_err());
         assert!(expand(quote! { trait A { const X: i32; } }).is_err());
         assert!(expand(quote! { trait A<T> { fn f(&self); } }).is_err());
         assert!(expand(quote! { trait A: Clone { fn f(&self); } }).is_err());

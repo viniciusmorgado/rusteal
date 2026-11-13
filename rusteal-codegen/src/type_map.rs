@@ -59,12 +59,23 @@ const SUPPORTED_TYPES: &[&str] = &[
     "MapProperty",
     "SetProperty",
     "SoftObjectProperty",
+    "SoftClassProperty",
+    "OptionalProperty",
     "WeakObjectProperty",
+    "LazyObjectProperty",
     "InterfaceProperty",
     "DelegateProperty",
     "MulticastInlineDelegateProperty",
     "MulticastSparseDelegateProperty",
 ];
+
+fn interface_rust_type(interface_name: &str) -> &str {
+    if interface_name == "Interface" {
+        "Object"
+    } else {
+        interface_name
+    }
+}
 
 pub fn is_supported_type(prop_type: &str) -> bool {
     SUPPORTED_TYPES.contains(&prop_type)
@@ -135,13 +146,13 @@ pub fn map_property_type(
             supported: true,
         },
         "TextProperty" => MappedType {
-            rust_type: "String".into(),
-            rust_ffi_type: "*const u8".into(),
+            rust_type: "rusteal_core::Text".into(),
+            rust_ffi_type: "rusteal_core::UObjectHandle".into(),
             cpp_type: "FText".into(),
-            property_getter: "get_string".into(),
-            property_setter: "set_string".into(),
-            rust_to_ffi: ConversionKind::StringUtf8,
-            ffi_to_rust: ConversionKind::StringUtf8,
+            property_getter: "get_text".into(),
+            property_setter: "set_text".into(),
+            rust_to_ffi: ConversionKind::ObjectRef,
+            ffi_to_rust: ConversionKind::ObjectRef,
             supported: true,
         },
         "NameProperty" => MappedType {
@@ -186,10 +197,42 @@ pub fn map_property_type(
                 }
             }
         }
-        "SoftObjectProperty" | "WeakObjectProperty" => {
+        "SoftObjectProperty" => {
             if let Some(cls) = class_name {
                 MappedType {
-                    rust_type: format!("rusteal_core::UObjectRef<{cls}>"),
+                    rust_type: format!("rusteal_core::SoftObjectRef<{cls}>"),
+                    rust_ffi_type: "*const u8".into(),
+                    cpp_type: format!("TSoftObjectPtr<{cls}>"),
+                    property_getter: "get_soft_object_path".into(),
+                    property_setter: "set_soft_object_path".into(),
+                    rust_to_ffi: ConversionKind::StringUtf8,
+                    ffi_to_rust: ConversionKind::StringUtf8,
+                    supported: true,
+                }
+            } else {
+                unsupported("SoftObjectProperty without class_name")
+            }
+        }
+        "SoftClassProperty" => {
+            if let Some(cls) = meta_class_name.or(class_name) {
+                MappedType {
+                    rust_type: format!("rusteal_core::SoftClassRef<{cls}>"),
+                    rust_ffi_type: "*const u8".into(),
+                    cpp_type: format!("TSoftClassPtr<{cls}>"),
+                    property_getter: "get_soft_object_path".into(),
+                    property_setter: "set_soft_object_path".into(),
+                    rust_to_ffi: ConversionKind::StringUtf8,
+                    ffi_to_rust: ConversionKind::StringUtf8,
+                    supported: true,
+                }
+            } else {
+                unsupported("SoftClassProperty without meta_class_name")
+            }
+        }
+        "WeakObjectProperty" | "LazyObjectProperty" => {
+            if let Some(cls) = class_name {
+                MappedType {
+                    rust_type: format!("rusteal_core::TWeakObjectPtr<{cls}>"),
                     rust_ffi_type: "rusteal_core::UObjectHandle".into(),
                     cpp_type: format!("{cls}*"),
                     property_getter: "get_object".into(),
@@ -241,7 +284,7 @@ pub fn map_property_type(
         "InterfaceProperty" => {
             if let Some(iface) = interface_name {
                 MappedType {
-                    rust_type: format!("rusteal_core::UObjectRef<{iface}>"),
+                    rust_type: format!("rusteal_core::UObjectRef<{}>", interface_rust_type(iface)),
                     rust_ffi_type: "rusteal_core::UObjectHandle".into(),
                     cpp_type: format!("{iface}*"),
                     property_getter: "get_object".into(),
@@ -462,7 +505,8 @@ pub fn container_element_rust_type(
         "UInt64Property" => Some("u64".into()),
         "FloatProperty" => Some("f32".into()),
         "DoubleProperty" => Some("f64".into()),
-        "StrProperty" | "TextProperty" => Some("String".into()),
+        "StrProperty" => Some("String".into()),
+        "TextProperty" => Some("rusteal_core::Text".into()),
         "NameProperty" => Some("rusteal_core::FNameHandle".into()),
         "ObjectProperty" | "SoftObjectProperty" | "WeakObjectProperty" => {
             if let Some(cls) = &inner.class_name {
@@ -472,7 +516,11 @@ pub fn container_element_rust_type(
                     return None;
                 }
 
-                Some(format!("rusteal_core::UObjectRef<{cls}>"))
+                match inner.prop_type.as_str() {
+                    "WeakObjectProperty" => Some(format!("rusteal_core::TWeakObjectPtr<{cls}>")),
+                    "SoftObjectProperty" => Some(format!("rusteal_core::SoftObjectRef<{cls}>")),
+                    _ => Some(format!("rusteal_core::UObjectRef<{cls}>")),
+                }
             } else {
                 Some("rusteal_core::UObjectHandle".into())
             }
@@ -503,7 +551,10 @@ pub fn container_element_rust_type(
                     return None;
                 }
 
-                Some(format!("rusteal_core::UObjectRef<{iface}>"))
+                Some(format!(
+                    "rusteal_core::UObjectRef<{}>",
+                    interface_rust_type(iface)
+                ))
             } else {
                 None
             }
@@ -524,15 +575,9 @@ pub fn container_element_rust_type(
         "StructProperty" => {
             if let Some(sn) = &inner.struct_name {
                 if let Some(ctx) = ctx {
-                    if let Some(si) = ctx.structs.get(sn.as_str()) {
-                        if si.has_static_struct {
-                            Some(format!("rusteal_core::OwnedStruct<{}>", si.cpp_name))
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
-                    }
+                    ctx.structs
+                        .get(sn.as_str())
+                        .map(|si| format!("rusteal_core::OwnedStruct<{}>", si.cpp_name))
                 } else {
                     Some(format!("rusteal_core::OwnedStruct<F{sn}>"))
                 }

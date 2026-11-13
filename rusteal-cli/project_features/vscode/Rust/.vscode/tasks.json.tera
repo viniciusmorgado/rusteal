@@ -1,0 +1,32 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Rusteal Watch",
+      "type": "shell",
+      "command": "cargo rusteal watch",
+      "isBackground": true,
+      "problemMatcher": []
+    },
+    {
+      "label": "Rusteal Build",
+      "type": "shell",
+      "command": "cargo rusteal build",
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": ["$rustc"]
+    },
+    {
+      "label": "Rusteal Test",
+      "type": "shell",
+      "command": "cargo test -p {{ crate_name }}",
+      "group": {
+        "kind": "test",
+        "isDefault": true
+      },
+      "problemMatcher": ["$rustc"]
+    }
+  ]
+}

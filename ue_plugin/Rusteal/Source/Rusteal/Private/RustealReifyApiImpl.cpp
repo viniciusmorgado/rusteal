@@ -9,22 +9,23 @@
 #include "RustealLibrary.h"
 #include "RustealModule.h"
 #include "UObject/Interface.h"
+#include "UObject/SparseDelegate.h"
 #include "UObject/UObjectArray.h"
 #include "UObject/UObjectGlobals.h"
 #include "UObject/UObjectIterator.h"
 #include "UObject/UnrealType.h"
 #include "URustealReifiedClass.h"
 #include "URustealReifiedFunction.h"
+#include "RustealStrings.h"
 
 static FName ReifyUtf8ToFName(const uint8 *Name, uint32 NameLen) {
-  const FString Str(NameLen,
-                    UTF8_TO_TCHAR(reinterpret_cast<const char *>(Name)));
+  const FString Str = RustealUtf8ToFString(Name, NameLen);
 
   return FName(*Str);
 }
 
 static FString ReifyUtf8ToFString(const uint8 *Name, uint32 NameLen) {
-  return FString(NameLen, UTF8_TO_TCHAR(reinterpret_cast<const char *>(Name)));
+  return RustealUtf8ToFString(Name, NameLen);
 }
 
 static FProperty *CreatePropertyByType(FFieldVariant Owner, FName PropName,
@@ -34,65 +35,65 @@ static FProperty *CreatePropertyByType(FFieldVariant Owner, FName PropName,
 
   switch (PropType) {
   case ERustealReifyPropType::Bool: {
-    FBoolProperty *BoolProp = new FBoolProperty(Owner, PropName, RF_Public);
+    FBoolProperty *BoolProp = new FBoolProperty(Owner, PropName);
     BoolProp->SetBoolSize(sizeof(bool), true);
     Prop = BoolProp;
     break;
   }
   case ERustealReifyPropType::Int8: {
-    Prop = new FInt8Property(Owner, PropName, RF_Public);
+    Prop = new FInt8Property(Owner, PropName);
     break;
   }
   case ERustealReifyPropType::Int16: {
-    Prop = new FInt16Property(Owner, PropName, RF_Public);
+    Prop = new FInt16Property(Owner, PropName);
     break;
   }
   case ERustealReifyPropType::Int32: {
-    Prop = new FIntProperty(Owner, PropName, RF_Public);
+    Prop = new FIntProperty(Owner, PropName);
     break;
   }
   case ERustealReifyPropType::Int64: {
-    Prop = new FInt64Property(Owner, PropName, RF_Public);
+    Prop = new FInt64Property(Owner, PropName);
     break;
   }
   case ERustealReifyPropType::UInt8: {
-    Prop = new FByteProperty(Owner, PropName, RF_Public);
+    Prop = new FByteProperty(Owner, PropName);
     break;
   }
   case ERustealReifyPropType::UInt16: {
-    Prop = new FUInt16Property(Owner, PropName, RF_Public);
+    Prop = new FUInt16Property(Owner, PropName);
     break;
   }
   case ERustealReifyPropType::UInt32: {
-    Prop = new FUInt32Property(Owner, PropName, RF_Public);
+    Prop = new FUInt32Property(Owner, PropName);
     break;
   }
   case ERustealReifyPropType::UInt64: {
-    Prop = new FUInt64Property(Owner, PropName, RF_Public);
+    Prop = new FUInt64Property(Owner, PropName);
     break;
   }
   case ERustealReifyPropType::Float: {
-    Prop = new FFloatProperty(Owner, PropName, RF_Public);
+    Prop = new FFloatProperty(Owner, PropName);
     break;
   }
   case ERustealReifyPropType::Double: {
-    Prop = new FDoubleProperty(Owner, PropName, RF_Public);
+    Prop = new FDoubleProperty(Owner, PropName);
     break;
   }
   case ERustealReifyPropType::String: {
-    Prop = new FStrProperty(Owner, PropName, RF_Public);
+    Prop = new FStrProperty(Owner, PropName);
     break;
   }
   case ERustealReifyPropType::Name: {
-    Prop = new FNameProperty(Owner, PropName, RF_Public);
+    Prop = new FNameProperty(Owner, PropName);
     break;
   }
   case ERustealReifyPropType::Text: {
-    Prop = new FTextProperty(Owner, PropName, RF_Public);
+    Prop = new FTextProperty(Owner, PropName);
     break;
   }
   case ERustealReifyPropType::Object: {
-    FObjectProperty *ObjProp = new FObjectProperty(Owner, PropName, RF_Public);
+    FObjectProperty *ObjProp = new FObjectProperty(Owner, PropName);
     if (Extra && Extra->class_handle.ptr) {
       ObjProp->PropertyClass = static_cast<UClass *>(Extra->class_handle.ptr);
     } else {
@@ -102,7 +103,7 @@ static FProperty *CreatePropertyByType(FFieldVariant Owner, FName PropName,
     break;
   }
   case ERustealReifyPropType::Class: {
-    FClassProperty *ClsProp = new FClassProperty(Owner, PropName, RF_Public);
+    FClassProperty *ClsProp = new FClassProperty(Owner, PropName);
     if (Extra) {
       ClsProp->PropertyClass =
           Extra->class_handle.ptr
@@ -132,8 +133,7 @@ static FProperty *CreatePropertyByType(FFieldVariant Owner, FName PropName,
 
       return nullptr;
     }
-    FStructProperty *StructProp =
-        new FStructProperty(Owner, PropName, RF_Public);
+    FStructProperty *StructProp = new FStructProperty(Owner, PropName);
     StructProp->Struct = ScriptStruct;
     Prop = StructProp;
     break;
@@ -148,10 +148,10 @@ static FProperty *CreatePropertyByType(FFieldVariant Owner, FName PropName,
 
       return nullptr;
     }
-    FEnumProperty *EnumProp = new FEnumProperty(Owner, PropName, RF_Public);
+    FEnumProperty *EnumProp = new FEnumProperty(Owner, PropName);
     EnumProp->SetEnum(EnumType);
     FNumericProperty *UnderlyingProp =
-        new FByteProperty(EnumProp, TEXT("UnderlyingType"), RF_Public);
+        new FByteProperty(EnumProp, TEXT("UnderlyingType"));
     EnumProp->AddCppProperty(UnderlyingProp);
     Prop = EnumProp;
     break;
@@ -180,13 +180,90 @@ static FProperty *CreatePropertyByType(FFieldVariant Owner, FName PropName,
     break;
   }
   case ERustealReifyPropType::SoftObject: {
-    FSoftObjectProperty *SoftProp =
-        new FSoftObjectProperty(Owner, PropName, RF_Public);
+    FSoftObjectProperty *SoftProp = new FSoftObjectProperty(Owner, PropName);
     SoftProp->PropertyClass =
         (Extra && Extra->class_handle.ptr)
             ? static_cast<UClass *>(Extra->class_handle.ptr)
             : UObject::StaticClass();
     Prop = SoftProp;
+    break;
+  }
+  case ERustealReifyPropType::WeakObject: {
+    FWeakObjectProperty *WeakProp = new FWeakObjectProperty(Owner, PropName);
+    WeakProp->PropertyClass =
+        (Extra && Extra->class_handle.ptr)
+            ? static_cast<UClass *>(Extra->class_handle.ptr)
+            : UObject::StaticClass();
+    Prop = WeakProp;
+    break;
+  }
+  case ERustealReifyPropType::SoftClass: {
+    FSoftClassProperty *SoftProp = new FSoftClassProperty(Owner, PropName);
+    SoftProp->PropertyClass = UClass::StaticClass();
+    SoftProp->SetMetaClass((Extra && Extra->meta_class_handle.ptr)
+                               ? static_cast<UClass *>(Extra->meta_class_handle.ptr)
+                               : UObject::StaticClass());
+    Prop = SoftProp;
+    break;
+  }
+  case ERustealReifyPropType::Interface: {
+    UClass *InterfaceClass =
+        (Extra && Extra->class_handle.ptr)
+            ? static_cast<UClass *>(Extra->class_handle.ptr)
+            : nullptr;
+    if (!InterfaceClass) {
+      UE_LOG(LogRusteal, Error,
+             TEXT("[Rusteal] CreatePropertyByType(Interface): null class_handle"));
+
+      return nullptr;
+    }
+    FInterfaceProperty *IfaceProp = new FInterfaceProperty(Owner, PropName);
+    IfaceProp->InterfaceClass = InterfaceClass;
+    Prop = IfaceProp;
+    break;
+  }
+  case ERustealReifyPropType::Set: {
+    const ERustealReifyPropType ElementType =
+        Extra ? static_cast<ERustealReifyPropType>(Extra->inner_prop_type)
+              : ERustealReifyPropType::Array;
+    FSetProperty *SetProp = new FSetProperty(Owner, PropName);
+    FProperty *Element = CreatePropertyByType(FFieldVariant(SetProp), PropName,
+                                              ElementType, Extra);
+    if (!Element) {
+      delete SetProp;
+      return nullptr;
+    }
+    Element->PropertyFlags |= CPF_HasGetValueTypeHash;
+    SetProp->AddCppProperty(Element);
+    Prop = SetProp;
+    break;
+  }
+  case ERustealReifyPropType::Map: {
+    if (!Extra || !Extra->value) {
+      UE_LOG(LogRusteal, Error,
+             TEXT("[Rusteal] CreatePropertyByType(Map): no value type for %s"),
+             *PropName.ToString());
+
+      return nullptr;
+    }
+    FMapProperty *MapProp = new FMapProperty(Owner, PropName);
+    FProperty *Key = CreatePropertyByType(
+        FFieldVariant(MapProp), *(PropName.ToString() + TEXT("_Key")),
+        static_cast<ERustealReifyPropType>(Extra->inner_prop_type), Extra);
+    FProperty *Value = CreatePropertyByType(
+        FFieldVariant(MapProp), PropName,
+        static_cast<ERustealReifyPropType>(Extra->value_prop_type),
+        Extra->value);
+    if (!Key || !Value) {
+      delete Key;
+      delete Value;
+      delete MapProp;
+      return nullptr;
+    }
+    Key->PropertyFlags |= CPF_HasGetValueTypeHash;
+    MapProp->AddCppProperty(Key);
+    MapProp->AddCppProperty(Value);
+    Prop = MapProp;
     break;
   }
   default:
@@ -201,6 +278,12 @@ static FProperty *CreatePropertyByType(FFieldVariant Owner, FName PropName,
 
 static void CopyParamsFromParentFunction(UFunction *NewFunc,
                                          UFunction *ParentFunc) {
+  FField **Tail = &NewFunc->ChildProperties;
+
+  while (*Tail) {
+    Tail = &(*Tail)->Next;
+  }
+
   for (FField *SrcField = ParentFunc->ChildProperties; SrcField;
        SrcField = SrcField->Next) {
     FProperty *SrcProp = CastField<FProperty>(SrcField);
@@ -209,88 +292,16 @@ static void CopyParamsFromParentFunction(UFunction *NewFunc,
       continue;
     }
 
-    ERustealReifyPropType PropType;
-    FRustealReifyPropExtra Extra = {};
+    FProperty *NewProp =
+        CastFieldChecked<FProperty>(FField::Duplicate(SrcProp, NewFunc));
 
-    if (SrcProp->IsA<FBoolProperty>()) {
-      PropType = ERustealReifyPropType::Bool;
-    } else if (SrcProp->IsA<FInt8Property>()) {
-      PropType = ERustealReifyPropType::Int8;
-    } else if (SrcProp->IsA<FInt16Property>()) {
-      PropType = ERustealReifyPropType::Int16;
-    } else if (SrcProp->IsA<FIntProperty>()) {
-      PropType = ERustealReifyPropType::Int32;
-    } else if (SrcProp->IsA<FInt64Property>()) {
-      PropType = ERustealReifyPropType::Int64;
-    } else if (SrcProp->IsA<FByteProperty>()) {
-      PropType = ERustealReifyPropType::UInt8;
-    } else if (SrcProp->IsA<FUInt16Property>()) {
-      PropType = ERustealReifyPropType::UInt16;
-    } else if (SrcProp->IsA<FUInt32Property>()) {
-      PropType = ERustealReifyPropType::UInt32;
-    } else if (SrcProp->IsA<FUInt64Property>()) {
-      PropType = ERustealReifyPropType::UInt64;
-    } else if (SrcProp->IsA<FFloatProperty>()) {
-      PropType = ERustealReifyPropType::Float;
-    } else if (SrcProp->IsA<FDoubleProperty>()) {
-      PropType = ERustealReifyPropType::Double;
-    } else if (SrcProp->IsA<FStrProperty>()) {
-      PropType = ERustealReifyPropType::String;
-    } else if (SrcProp->IsA<FNameProperty>()) {
-      PropType = ERustealReifyPropType::Name;
-    } else if (SrcProp->IsA<FTextProperty>()) {
-      PropType = ERustealReifyPropType::Text;
-    } else if (SrcProp->IsA<FStructProperty>()) {
-      PropType = ERustealReifyPropType::Struct;
-      Extra.struct_handle.ptr = CastField<FStructProperty>(SrcProp)->Struct;
-    } else if (SrcProp->IsA<FClassProperty>()) {
-      PropType = ERustealReifyPropType::Class;
-
-      Extra.class_handle.ptr =
-          CastField<FClassProperty>(SrcProp)->PropertyClass;
-
-      Extra.meta_class_handle.ptr =
-          CastField<FClassProperty>(SrcProp)->MetaClass;
-    } else if (SrcProp->IsA<FObjectProperty>()) {
-      PropType = ERustealReifyPropType::Object;
-
-      Extra.class_handle.ptr =
-          CastField<FObjectProperty>(SrcProp)->PropertyClass;
-    } else if (SrcProp->IsA<FEnumProperty>()) {
-      PropType = ERustealReifyPropType::Enum;
-      Extra.enum_handle.ptr = CastField<FEnumProperty>(SrcProp)->GetEnum();
-    } else {
-      UE_LOG(LogRusteal, Warning,
-             TEXT("[Rusteal] CopyParamsFromParent: unsupported property type "
-                  "'%s' for param '%s', skipping"),
-             *SrcProp->GetClass()->GetName(), *SrcProp->GetName());
-
-      continue;
+    if (NewProp->HasAnyPropertyFlags(CPF_OutParm) &&
+        !NewProp->HasAnyPropertyFlags(CPF_ReturnParm)) {
+      NewFunc->FunctionFlags |= FUNC_HasOutParms;
     }
 
-    FProperty *NewProp = CreatePropertyByType(
-        FFieldVariant(NewFunc), SrcProp->GetFName(), PropType, &Extra);
-
-    if (NewProp) {
-      NewProp->PropertyFlags = SrcProp->PropertyFlags;
-
-      if (NewProp->HasAnyPropertyFlags(CPF_OutParm) &&
-          !NewProp->HasAnyPropertyFlags(CPF_ReturnParm)) {
-        NewFunc->FunctionFlags |= FUNC_HasOutParms;
-      }
-
-      if (!NewFunc->ChildProperties) {
-        NewFunc->ChildProperties = NewProp;
-      } else {
-        FField *Last = NewFunc->ChildProperties;
-
-        while (Last->Next) {
-          Last = Last->Next;
-        }
-
-        Last->Next = NewProp;
-      }
-    }
+    *Tail = NewProp;
+    Tail = &NewProp->Next;
   }
 }
 
@@ -605,8 +616,7 @@ static ERustealErrorCode
 AddFunctionParamImpl(RustealUFunctionHandle Func, const uint8 *Name,
                      uint32 NameLen, uint32 PropType, uint64 ParamFlags,
                      const FRustealReifyPropExtra *Extra) {
-  URustealReifiedFunction *Function =
-      Cast<URustealReifiedFunction>(static_cast<UFunction *>(Func.ptr));
+  UFunction *Function = static_cast<UFunction *>(Func.ptr);
 
   if (!Function) {
     return RustealFail(ERustealErrorCode::NullArgument);
@@ -656,6 +666,18 @@ AddFunctionParamImpl(RustealUFunctionHandle Func, const uint8 *Name,
   return ERustealErrorCode::Ok;
 }
 
+static void RegisterSparseDelegates(UClass *Class, const UObject *CDO) {
+  for (TFieldIterator<FMulticastSparseDelegateProperty> It(
+           Class, EFieldIteratorFlags::ExcludeSuper);
+       It; ++It) {
+    const USparseDelegateFunction *Signature =
+        CastChecked<USparseDelegateFunction>(It->SignatureFunction);
+
+    FSparseDelegateStorage::RegisterDelegateOffset(
+        CDO, Signature->DelegateName, It->GetOffset_ForInternal());
+  }
+}
+
 static ERustealErrorCode FinalizeClassImpl(RustealUClassHandle Cls) {
   URustealReifiedClass *Class =
       Cast<URustealReifiedClass>(static_cast<UClass *>(Cls.ptr));
@@ -685,6 +707,24 @@ static ERustealErrorCode FinalizeClassImpl(RustealUClassHandle Cls) {
   Class->Bind();
   Class->StaticLink(true);
 
+  Class->NumReplicatedProperties = 0;
+
+  for (TFieldIterator<FProperty> It(Class, EFieldIteratorFlags::ExcludeSuper);
+       It; ++It) {
+    if (It->HasAnyPropertyFlags(CPF_Net)) {
+      Class->NumReplicatedProperties++;
+
+      if (It->HasAnyPropertyFlags(CPF_RepNotify) &&
+          !Class->FindFunctionByName(It->RepNotifyFunc)) {
+        UE_LOG(LogRusteal, Error,
+               TEXT("[Rusteal] %s::%s replicates with %s, which is not a "
+                    "#[ufunction] of the class"),
+               *Class->GetName(), *It->GetName(),
+               *It->RepNotifyFunc.ToString());
+      }
+    }
+  }
+
   Class->AssembleReferenceTokenStream(true);
 
   NotifyRegistrationEvent(Class->GetOutermost()->GetFName(), Class->GetFName(),
@@ -693,6 +733,7 @@ static ERustealErrorCode FinalizeClassImpl(RustealUClassHandle Cls) {
                           false, Class);
 
   UObject *CDO = Class->GetDefaultObject(true);
+  RegisterSparseDelegates(Class, CDO);
   Class->PostLoadDefaultObject(CDO);
 
   if (AActor *ActorCDO = Cast<AActor>(CDO)) {
@@ -772,6 +813,17 @@ static ERustealErrorCode AddDefaultSubobjectImpl(
   if (!CompUClass)
     return RustealFail(ERustealErrorCode::PropertyNotFound);
 
+  if ((Flags & 4) != 0) {
+    const FName SubobjectName(ReifyUtf8ToFString(Name, NameLen));
+    RC->SubobjectOverrides.Add(SubobjectName, CompUClass);
+
+    UE_LOG(LogRusteal, Display,
+           TEXT("[Rusteal] %s creates its inherited subobject '%s' as a %s"),
+           *RC->GetName(), *SubobjectName.ToString(), *CompUClass->GetName());
+
+    return ERustealErrorCode::Ok;
+  }
+
   FRustealComponentDef Def;
   Def.SubobjectName = FName(ReifyUtf8ToFString(Name, NameLen));
   Def.ComponentClass = CompUClass;
@@ -833,6 +885,24 @@ static RustealUObjectHandle FindDefaultSubobjectImpl(RustealUObjectHandle Owner,
 }
 
 static ERustealErrorCode
+SetFunctionMetadataImpl(RustealUFunctionHandle Func, const uint8 *Key,
+                        uint32 KeyLen, const uint8 *Value, uint32 ValueLen) {
+  UFunction *Function = static_cast<UFunction *>(Func.ptr);
+
+  if (!Function) {
+    return RustealFail(ERustealErrorCode::NullArgument);
+  }
+
+#if WITH_EDITORONLY_DATA
+
+  Function->SetMetaData(ReifyUtf8ToFName(Key, KeyLen),
+                        *ReifyUtf8ToFString(Value, ValueLen));
+
+#endif
+  return ERustealErrorCode::Ok;
+}
+
+static ERustealErrorCode
 SetPropertyMetadataImpl(RustealFPropertyHandle Prop, const uint8 *Key,
                         uint32 KeyLen, const uint8 *Value, uint32 ValueLen) {
   FProperty *Property = static_cast<FProperty *>(Prop.ptr);
@@ -847,6 +917,37 @@ SetPropertyMetadataImpl(RustealFPropertyHandle Prop, const uint8 *Key,
                         ReifyUtf8ToFString(Value, ValueLen));
 
 #endif
+  return ERustealErrorCode::Ok;
+}
+
+static ERustealErrorCode
+SetPropertyReplicationImpl(RustealFPropertyHandle Prop, uint8 Condition,
+                           const uint8 *RepNotify, uint32 RepNotifyLen) {
+  FProperty *Property = static_cast<FProperty *>(Prop.ptr);
+
+  if (!Property) {
+    return RustealFail(ERustealErrorCode::NullArgument);
+  }
+
+  if (Condition >= COND_Max) {
+    return RustealFail(
+        ERustealErrorCode::InvalidOperation,
+        FString::Printf(TEXT("%s: %d is not a replication condition"),
+                        *Property->GetName(), Condition));
+  }
+
+  Property->PropertyFlags |= CPF_Net;
+  Property->SetBlueprintReplicationCondition(
+      static_cast<ELifetimeCondition>(Condition));
+
+  if (RepNotifyLen > 0) {
+    Property->PropertyFlags |= CPF_RepNotify;
+    Property->RepNotifyFunc = ReifyUtf8ToFName(RepNotify, RepNotifyLen);
+  } else {
+    Property->PropertyFlags &= ~CPF_RepNotify;
+    Property->RepNotifyFunc = NAME_None;
+  }
+
   return ERustealErrorCode::Ok;
 }
 
@@ -988,7 +1089,7 @@ static ERustealErrorCode FinalizeStructImpl(RustealUStructHandle Handle) {
 
 static RustealUFunctionHandle AddDelegateImpl(RustealUClassHandle Cls,
                                               const uint8 *Name, uint32 NameLen,
-                                              uint64 PropFlags) {
+                                              uint64 PropFlags, uint32 Kind) {
   UClass *Class = static_cast<UClass *>(Cls.ptr);
 
   if (!Class) {
@@ -997,35 +1098,94 @@ static RustealUFunctionHandle AddDelegateImpl(RustealUClassHandle Cls,
 
   const FName PropName = ReifyUtf8ToFName(Name, NameLen);
 
-  for (TFieldIterator<FMulticastDelegateProperty> It(
-           Class, EFieldIteratorFlags::ExcludeSuper);
+  for (TFieldIterator<FProperty> It(Class, EFieldIteratorFlags::ExcludeSuper);
        It; ++It) {
-    if (It->GetFName() == PropName) {
-      return RustealUFunctionHandle{It->SignatureFunction};
+    if (It->GetFName() != PropName) {
+      continue;
     }
+
+    if (const FMulticastDelegateProperty *Multi =
+            CastField<FMulticastDelegateProperty>(*It)) {
+      return RustealUFunctionHandle{Multi->SignatureFunction};
+    }
+
+    if (const FDelegateProperty *Single = CastField<FDelegateProperty>(*It)) {
+      return RustealUFunctionHandle{Single->SignatureFunction};
+    }
+
+    return RustealUFunctionHandle{nullptr};
   }
 
   const FName SignatureName(
       *FString::Printf(TEXT("%s__DelegateSignature"), *PropName.ToString()));
 
-  URustealReifiedFunction *Signature =
-      NewObject<URustealReifiedFunction>(Class, SignatureName, RF_Public);
+  const ERustealReifyDelegateKind DelegateKind =
+      static_cast<ERustealReifyDelegateKind>(Kind);
 
-  Signature->FunctionFlags =
-      FUNC_Public | FUNC_Delegate | FUNC_MulticastDelegate;
+  UFunction *Signature = nullptr;
+  FProperty *Prop = nullptr;
 
-  Signature->CallbackId = 0;
+  switch (DelegateKind) {
+  case ERustealReifyDelegateKind::Single: {
+    Signature =
+        NewObject<URustealReifiedFunction>(Class, SignatureName, RF_Public);
+
+    Signature->FunctionFlags = FUNC_Public | FUNC_Delegate;
+
+    FDelegateProperty *Single =
+        new FDelegateProperty(FFieldVariant(Class), PropName);
+
+    Single->SignatureFunction = Signature;
+    Prop = Single;
+    break;
+  }
+
+  case ERustealReifyDelegateKind::Sparse: {
+    USparseDelegateFunction *Sparse =
+        NewObject<USparseDelegateFunction>(Class, SignatureName, RF_Public);
+
+    Sparse->FunctionFlags =
+        FUNC_Public | FUNC_Delegate | FUNC_MulticastDelegate;
+
+    Sparse->OwningClassName = Class->GetFName();
+    Sparse->DelegateName = PropName;
+    Signature = Sparse;
+
+    FMulticastSparseDelegateProperty *Multi =
+        new FMulticastSparseDelegateProperty(FFieldVariant(Class), PropName);
+
+    Multi->SignatureFunction = Sparse;
+    Multi->PropertyFlags |= CPF_BlueprintAssignable | CPF_BlueprintCallable;
+    Prop = Multi;
+    break;
+  }
+
+  default: {
+    Signature =
+        NewObject<URustealReifiedFunction>(Class, SignatureName, RF_Public);
+
+    Signature->FunctionFlags =
+        FUNC_Public | FUNC_Delegate | FUNC_MulticastDelegate;
+
+    FMulticastInlineDelegateProperty *Multi =
+        new FMulticastInlineDelegateProperty(FFieldVariant(Class), PropName);
+
+    Multi->SignatureFunction = Signature;
+    Multi->PropertyFlags |= CPF_BlueprintAssignable | CPF_BlueprintCallable;
+    Prop = Multi;
+    break;
+  }
+  }
+
+  if (URustealReifiedFunction *Reified =
+          Cast<URustealReifiedFunction>(Signature)) {
+    Reified->CallbackId = 0;
+  }
 
   Signature->Next = Class->Children;
   Class->Children = Signature;
 
-  FMulticastInlineDelegateProperty *Prop = new FMulticastInlineDelegateProperty(
-      FFieldVariant(Class), PropName, RF_Public);
-
-  Prop->SignatureFunction = Signature;
-
-  Prop->PropertyFlags |= CPF_BlueprintAssignable | CPF_BlueprintCallable |
-                         static_cast<EPropertyFlags>(PropFlags);
+  Prop->PropertyFlags |= static_cast<EPropertyFlags>(PropFlags);
 
   Class->AddCppProperty(Prop);
 
@@ -1100,7 +1260,7 @@ static ERustealErrorCode AddInterfaceImpl(RustealUClassHandle Cls,
   }
 
   if (GPendingInterfaces.IsEmpty()) {
-    FCoreDelegates::OnPostEngineInit.AddStatic(&ResolvePendingInterfaces);
+    FCoreDelegates::GetOnPostEngineInit().AddStatic(&ResolvePendingInterfaces);
   }
 
   GPendingInterfaces.Emplace(Class, InterfacePath);
@@ -1139,18 +1299,17 @@ static RustealUClassHandle CreateEnumImpl(const uint8 *Name, uint32 NameLen,
       .ParseIntoArray(Names, TEXT("\n"), false);
 
   if (Names.Num() != static_cast<int32>(Count)) {
-    UE_LOG(LogRusteal, Error,
-           TEXT("[Rusteal] Enum %s: %d names for %u values"), *EnumString,
-           Names.Num(), Count);
+    UE_LOG(LogRusteal, Error, TEXT("[Rusteal] Enum %s: %d names for %u values"),
+           *EnumString, Names.Num(), Count);
     return RustealUClassHandle{nullptr};
   }
 
   TArray<TPair<FName, int64>> Pairs;
 
   for (uint32 Index = 0; Index < Count; ++Index) {
-    Pairs.Emplace(FName(*FString::Printf(TEXT("%s::%s"), *EnumString,
-                                         *Names[Index])),
-                  Values[Index]);
+    Pairs.Emplace(
+        FName(*FString::Printf(TEXT("%s::%s"), *EnumString, *Names[Index])),
+        Values[Index]);
   }
 
   if (UEnum *Existing = FindObject<UEnum>(RustealPackage, *EnumString)) {
@@ -1176,7 +1335,9 @@ static RustealUClassHandle CreateEnumImpl(const uint8 *Name, uint32 NameLen,
       NewObject<UEnum>(RustealPackage, EnumName, RF_Public | RF_Standalone);
 
   NewEnum->CppType = EnumString;
-  NewEnum->SetEnums(Pairs, UEnum::ECppForm::EnumClass);
+  NewEnum->SetEnums(Pairs, UEnum::ECppForm::EnumClass,
+                    UEnum::EUnderlyingType::int64, EEnumFlags::None,
+                    UEnum::EAddMaxKeyIfMissing::Yes);
 #if WITH_EDITORONLY_DATA
 
   NewEnum->SetMetaData(TEXT("BlueprintType"), TEXT("true"));
@@ -1425,4 +1586,5 @@ FRustealReifyApi GReifyApi = {
     &AddInterfaceImpl,        &SetClassConfigImpl,
     &CreateEnumImpl,          &CreateInterfaceImpl,
     &FinalizeInterfaceImpl,   &AddInterfaceClassImpl,
+    &SetFunctionMetadataImpl, &SetPropertyReplicationImpl,
 };

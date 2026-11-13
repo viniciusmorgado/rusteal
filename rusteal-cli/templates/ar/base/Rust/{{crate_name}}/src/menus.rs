@@ -1,6 +1,8 @@
 use bindings::augmented_reality::{
     ARBlueprintLibrary, ARSessionConfig, EARSessionStatus, FARSessionStatusExt,
 };
+use std::time::Duration;
+
 use bindings::engine::{
     GameplayStatics, KismetMaterialLibrary, KismetSystemLibrary, MaterialInstanceDynamic,
     MaterialInstanceDynamicExt, MaterialInterface, Texture2D,
@@ -12,7 +14,8 @@ use bindings::umg::{
     TextBlockExt, UserWidget, UserWidgetExt, Widget, WidgetAnimation, WidgetAnimationExt,
     WidgetExt,
 };
-use rusteal_runtime::runtime::{FName, Inherits, RustealResult, UObjectRef, UStructRef};
+use rusteal_runtime::runtime::timer::set_timer;
+use rusteal_runtime::runtime::{FName, Inherits, RustealResult, UObjectRef, UStructRef, method};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use crate::buttons::{CapsuleButton, ToggleButton};
@@ -38,7 +41,7 @@ fn show<T: Inherits<Widget>>(widget: UObjectRef<T>, visible: bool) {
 fn play<T: Inherits<UserWidget>>(
     widget: UObjectRef<T>,
     animation: UObjectRef<WidgetAnimation>,
-    finished: Option<&str>,
+    finished: Option<Box<dyn FnMut() + Send>>,
 ) {
     let Ok(user_widget) = widget.upcast_to::<UserWidget>().checked() else {
         return;
@@ -53,29 +56,33 @@ fn play<T: Inherits<UserWidget>>(
         Some(false),
     );
 
-    if let (Some(function), Ok(animation)) = (finished, animation.checked()) {
-        KismetSystemLibrary::k2_set_timer(
-            widget.upcast_to::<UserWidget>().upcast_to(),
-            function,
-            animation.get_end_time().max(0.01),
-            false,
-            None,
-            None,
-            None,
-        );
+    if let (Some(finished), Ok(animation)) = (finished, animation.checked()) {
+        let delay = Duration::from_secs_f32(animation.get_end_time().max(0.01));
+
+        if let Err(e) = set_timer(&widget, delay, false, finished) {
+            log::warn!("[AR] the animation end timer was not set: {e}");
+        }
     }
 }
 
 fn bind_released(
     button: UObjectRef<ToggleButton>,
-    target: UObjectRef<UserWidget>,
-    function: &str,
+    callback: impl FnMut(bool, i32) + Send + 'static,
 ) -> RustealResult<()> {
-    ToggleButton::from_obj(button)?.on_release_event_add_ufunction(&target, function)
+    ToggleButton::from_obj(button)?
+        .on_release_event_add(callback)?
+        .detach();
+    Ok(())
 }
 
-fn bind_style(widget: UObjectRef<UserWidget>, function: &str) -> RustealResult<()> {
-    StylizedUI::from_obj(widget)?.switch_style_add_ufunction(&widget, function)
+fn bind_style(
+    widget: UObjectRef<UserWidget>,
+    callback: impl FnMut(EUIStyle) + Send + 'static,
+) -> RustealResult<()> {
+    StylizedUI::from_obj(widget)?
+        .switch_style_add(callback)?
+        .detach();
+    Ok(())
 }
 
 #[uclass(parent = StylizedUI)]
@@ -227,8 +234,9 @@ impl StartMenu {
         self.set_dm_scanning(material);
 
         CapsuleButton::from_obj(self.ui_capsule_button())?
-            .on_release_event_add_ufunction(&me, "StartAR")?;
-        bind_style(me, "SwitchUI")
+            .on_release_event_add(method(self, Self::start_ar))?
+            .detach();
+        bind_style(me, method(self, Self::switch_ui))
     }
 }
 
@@ -427,11 +435,15 @@ impl BottomMenu {
             play(
                 me,
                 self.show_circular_tutorial(),
-                Some("AnimCircularTutoDone"),
+                Some(method(self, Self::anim_circular_tuto_done)),
             );
         } else {
             show(self.ui_tutorial(), true);
-            play(me, self.show_default_tutorial(), Some("AnimDone"));
+            play(
+                me,
+                self.show_default_tutorial(),
+                Some(method(self, Self::anim_done)),
+            );
         }
     }
 
@@ -487,21 +499,17 @@ impl BottomMenu {
             .set_brush_from_material(circular.upcast_to());
         self.set_dm_circular_menu(circular);
 
-        for (buttons, function) in [
-            (
-                [self.ui_snapshot(), self.ui_circular_snapshot()],
-                "ScreenGrab",
-            ),
-            ([self.ui_reset(), self.ui_circular_reset()], "Reset"),
-            (
-                [self.ui_options(), self.ui_circular_options()],
-                "ShowOptions",
-            ),
-            ([self.ui_info(), self.ui_circular_info()], "ShowInfo"),
+        for (button, callback) in [
+            (self.ui_snapshot(), method(self, Self::screen_grab)),
+            (self.ui_circular_snapshot(), method(self, Self::screen_grab)),
+            (self.ui_reset(), method(self, Self::reset)),
+            (self.ui_circular_reset(), method(self, Self::reset)),
+            (self.ui_options(), method(self, Self::show_options)),
+            (self.ui_circular_options(), method(self, Self::show_options)),
+            (self.ui_info(), method(self, Self::show_info)),
+            (self.ui_circular_info(), method(self, Self::show_info)),
         ] {
-            for button in buttons {
-                bind_released(button, me, function)?;
-            }
+            bind_released(button, callback)?;
         }
 
         for button in [
@@ -511,10 +519,11 @@ impl BottomMenu {
             self.ui_circular_options(),
         ] {
             ToggleButton::from_obj(button)?
-                .on_pressed_event_add_ufunction(&me, "CircularMenuPressed")?;
+                .on_pressed_event_add(method(self, Self::circular_menu_pressed))?
+                .detach();
         }
 
-        bind_style(me, "StyleSwitch")
+        bind_style(me, method(self, Self::style_switch))
     }
 }
 
@@ -587,8 +596,8 @@ impl InfoMenu {
     #[ufunction(Override)]
     fn on_initialized(&mut self) {
         let me = self.as_ref().upcast_to::<UserWidget>();
-        let bound = bind_released(self.ui_button_close_info(), me, "Close")
-            .and_then(|_| bind_style(me, "ChangeStyle"));
+        let bound = bind_released(self.ui_button_close_info(), method(self, Self::close))
+            .and_then(|_| bind_style(me, method(self, Self::change_style)));
 
         if let Err(e) = bound {
             log::warn!("[AR] info menu init failed: {e}");
@@ -792,17 +801,23 @@ impl OptionMenu {
     fn init(&mut self) -> RustealResult<()> {
         let me = self.as_ref().upcast_to::<UserWidget>();
 
-        for (button, function) in [
-            (self.ui_close_button(), "Close"),
-            (self.ui_toggle_hud(), "HUD"),
-            (self.ui_toggle_snapping(), "Snap"),
-            (self.ui_style_left_arrow(), "StyleBackward"),
-            (self.ui_style_right_arrow(), "StyleForward"),
+        for (button, callback) in [
+            (self.ui_close_button(), method(self, Self::close)),
+            (self.ui_toggle_hud(), method(self, Self::hud)),
+            (self.ui_toggle_snapping(), method(self, Self::snap)),
+            (
+                self.ui_style_left_arrow(),
+                method(self, Self::style_backward),
+            ),
+            (
+                self.ui_style_right_arrow(),
+                method(self, Self::style_forward),
+            ),
         ] {
-            bind_released(button, me, function)?;
+            bind_released(button, callback)?;
         }
 
-        bind_style(me, "Switch")
+        bind_style(me, method(self, Self::switch))
     }
 }
 
@@ -913,16 +928,22 @@ impl MainMenu {
     pub fn take_screenshot(&mut self) {
         let me = self.as_ref();
         show(self.screenshot_overlay(), true);
-        play(me, self.screenshot_show(), Some("ScreenShotDone"));
-        KismetSystemLibrary::k2_set_timer(
-            me.upcast_to(),
-            "SaveScreenshot",
-            1.0,
-            false,
-            None,
-            None,
-            None,
+        play(
+            me,
+            self.screenshot_show(),
+            Some(method(self, Self::screenshot_done)),
         );
+
+        let saved = set_timer(
+            &me,
+            Duration::from_secs(1),
+            false,
+            method(self, Self::save_screenshot),
+        );
+
+        if let Err(e) = saved {
+            log::warn!("[AR] the screenshot timer was not set: {e}");
+        }
     }
 
     #[ufunction]
@@ -1030,8 +1051,6 @@ impl MainMenu {
     }
 
     fn init(&mut self) -> RustealResult<()> {
-        let me = self.as_ref().upcast_to::<UserWidget>();
-
         for widget in [
             self.ui_option_menu().upcast_to::<Widget>(),
             self.screenshot_overlay().upcast_to(),
@@ -1045,25 +1064,46 @@ impl MainMenu {
         OptionMenu::from_obj(self.ui_option_menu())?.set_default_style(self.default_ui_style());
 
         StartMenu::from_obj(self.bp_start_menu())?
-            .start_session_add_ufunction(&me, "StartSession")?;
+            .start_session_add(method(self, Self::start_session))?
+            .detach();
 
         let bottom = BottomMenu::from_obj(self.bp_bottom_menu())?;
-        bottom.show_info_pressed_add_ufunction(&me, "ShowInfo")?;
-        bottom.screenshot_pressed_add_ufunction(&me, "TakeScreenshot")?;
-        bottom.reset_pressed_add_ufunction(&me, "ResetPlaceable")?;
-        bottom.options_pressed_add_ufunction(&me, "ShowOptionMenu")?;
+        bottom
+            .show_info_pressed_add(method(self, Self::show_info))?
+            .detach();
+        bottom
+            .screenshot_pressed_add(method(self, Self::take_screenshot))?
+            .detach();
+        bottom
+            .reset_pressed_add(method(self, Self::reset_placeable))?
+            .detach();
+        bottom
+            .options_pressed_add(method(self, Self::show_option_menu))?
+            .detach();
 
-        InfoMenu::from_obj(self.bp_info_menu())?.close_info_menu_add_ufunction(&me, "CloseInfo")?;
+        InfoMenu::from_obj(self.bp_info_menu())?
+            .close_info_menu_add(method(self, Self::close_info))?
+            .detach();
 
         let options = OptionMenu::from_obj(self.ui_option_menu())?;
-        options.close_options_add_ufunction(&me, "CloseOptionsMenu")?;
-        options.toggle_snap_event_add_ufunction(&me, "ToggleSnap")?;
-        options.toggle_hud_event_add_ufunction(&me, "ToggleHud")?;
-        options.switch_ui_event_add_ufunction(&me, "SwitchAllStyle")?;
+        options
+            .close_options_add(method(self, Self::close_options_menu))?
+            .detach();
+        options
+            .toggle_snap_event_add(method(self, Self::toggle_snap))?
+            .detach();
+        options
+            .toggle_hud_event_add(method(self, Self::toggle_hud))?
+            .detach();
+        options
+            .switch_ui_event_add(method(self, Self::switch_all_style))?
+            .detach();
 
         if let Some(pawn) = self.ar_pawn() {
-            pawn.ar_object_spawned_add_ufunction(&me, "Placed")?;
-            pawn.bp_plane_is_selected_add_ufunction(&me, "PlaneSelected")?;
+            pawn.ar_object_spawned_add(method(self, Self::placed))?
+                .detach();
+            pawn.bp_plane_is_selected_add(method(self, Self::plane_selected))?
+                .detach();
         }
 
         Ok(())

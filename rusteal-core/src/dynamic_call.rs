@@ -88,6 +88,17 @@ impl DynamicCall {
     }
 
     #[track_caller]
+    pub fn set_value<T: crate::dynamic_value::DynamicValue>(
+        &mut self,
+        name: &str,
+        value: &T,
+    ) -> RustealResult<()> {
+        let (prop, _) = self.find_param(name)?;
+
+        value.write_to(params_as_container(self.params), prop)
+    }
+
+    #[track_caller]
     pub fn set_struct<T: crate::traits::UeStruct>(
         &mut self,
         name: &str,
@@ -129,6 +140,17 @@ impl DynamicCall {
 
         check_ffi(unsafe {
             ffi_dispatch::delegate_broadcast_multicast(self.obj, self.delegate, self.params)
+        })
+    }
+
+    #[track_caller]
+    pub fn execute(self) -> RustealResult<()> {
+        if self.delegate.is_null() {
+            return Err(RustealError::invalid_operation("not a delegate call"));
+        }
+
+        check_ffi(unsafe {
+            ffi_dispatch::delegate_execute_delegate(self.obj, self.delegate, self.params)
         })
     }
 
@@ -182,6 +204,19 @@ pub struct DynamicCallResult {
 }
 
 impl DynamicCallResult {
+    #[track_caller]
+    pub fn value<T: crate::dynamic_value::DynamicValue>(&self, name: &str) -> RustealResult<T> {
+        let prop = unsafe {
+            ffi_dispatch::reflection_get_function_param(self.func, name.as_ptr(), name.len() as u32)
+        };
+
+        if prop.is_null() {
+            return Err(missing_param(self.func, name));
+        }
+
+        T::read_from(params_as_container(self.params), prop)
+    }
+
     #[track_caller]
     pub fn get<T: Copy + 'static>(&self, name: &str) -> RustealResult<T> {
         let prop = unsafe {
