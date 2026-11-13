@@ -186,7 +186,7 @@ impl TopDownPlayerController {
         Ok(())
     }
 
-    fn update_cached_destination(&mut self) {
+    fn update_cached_destination(&self) {
         let Ok(me) = self.as_ref().checked() else {
             return;
         };

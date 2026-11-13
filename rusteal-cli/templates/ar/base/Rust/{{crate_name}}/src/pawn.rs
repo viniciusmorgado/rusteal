@@ -13,7 +13,8 @@ use bindings::prelude::*;
 use bindings::umg::UserWidgetExt;
 use glam::{DVec2, DVec3};
 use rusteal_runtime::runtime::{
-    LinearColor, OwnedStruct, RustealResult, SubclassOf, UObjectRef, UStructRef, UeArray,
+    GameThread, LinearColor, OwnedStruct, RustealResult, SubclassOf, TWeakObjectPtr, UObjectRef,
+    UStructRef, UeArray,
 };
 use rusteal_runtime::{uclass, uclass_impl};
 
@@ -178,8 +179,12 @@ impl ARPawn {
 
     #[ufunction(BlueprintCallable)]
     pub fn feed_light_estimate(&self) {
+        let Ok(gt) = GameThread::current() else {
+            return;
+        };
+
         let estimate =
-            ARBlueprintLibrary::get_current_light_estimate().cast::<ARBasicLightEstimate>();
+            ARBlueprintLibrary::get_current_light_estimate(&gt).cast::<ARBasicLightEstimate>();
 
         let Ok(estimate) = estimate.and_then(|e| e.checked()) else {
             return;
@@ -274,12 +279,17 @@ impl ARPawn {
         self.set_previous_touch2(touch2);
 
         if touch1.pressed && !previous1.pressed {
-            let hit = self.world_hit_test(touch1.location);
-            let actor = hit.map(|(actor, _)| actor).unwrap_or_default();
-            self.one_finger_pressed(actor);
+            // The handlers change the pawn: the hit actor is kept apart from its borrow.
+            let hit = self
+                .world_hit_test(touch1.location)
+                .map(|(actor, location)| (TWeakObjectPtr::from_ref(&actor), location));
+            let actor = hit.as_ref().and_then(|(actor, _)| actor.get());
+            self.one_finger_pressed(actor.unwrap_or_default());
 
-            if let Some((actor, location)) = hit {
-                self.touch_hit(actor, location)?;
+            if let Some((actor, location)) = &hit
+                && let Some(actor) = actor.get()
+            {
+                self.touch_hit(actor, *location)?;
             }
         } else if !touch1.pressed && previous1.pressed {
             self.one_finger_released();
@@ -329,8 +339,10 @@ impl ARPawn {
             return None;
         }
 
+        // The hit result is a local copy: the actor it names is re-scoped to this pawn's call.
         let result = result.as_ref();
-        let actor = result.get_component().checked().ok()?.get_owner();
+        let component = result.get_component();
+        let actor = component.checked().ok()?.get_owner().with_scope_of(&me);
         Some((actor, result.get_location().to_dvec3()))
     }
 
@@ -377,8 +389,9 @@ impl ARPawn {
         self.recognise_gestures(delta)?;
 
         if !self.scanning_is_done() && !self.camera_depth_texture().is_valid() {
+            let gt = GameThread::current()?;
             self.set_camera_depth_texture(
-                ARBlueprintLibrary::get_ar_texture(EARTextureType::SceneDepthMap).upcast_to(),
+                ARBlueprintLibrary::get_ar_texture(&gt, EARTextureType::SceneDepthMap).upcast_to(),
             );
         }
 
@@ -453,6 +466,7 @@ impl ARPawn {
     }
 
     fn update_plane_candidate(&mut self) -> RustealResult<()> {
+        let gt = GameThread::current()?;
         let controller = GameplayStatics::get_player_controller(self.as_ref().upcast_to(), 0);
         let (width, height) = controller.checked()?.get_viewport_size();
         let center = DVec2::new(f64::from(width), f64::from(height)) * 0.5;
@@ -469,7 +483,7 @@ impl ARPawn {
             return Ok(());
         };
 
-        let geometry = ARTraceResultLibrary::get_tracked_geometry(first);
+        let geometry = ARTraceResultLibrary::get_tracked_geometry(&gt, first);
 
         let Ok(plane_geometry) = geometry.cast::<ARPlaneGeometry>().and_then(|g| g.checked())
         else {
@@ -505,9 +519,11 @@ impl ARPawn {
         &self,
         geometry: UObjectRef<bindings::augmented_reality::ARTrackedGeometry>,
     ) -> LinearColor {
-        let index = ARBlueprintLibrary::get_all_geometries()
-            .iter()
-            .position(|g| *g == geometry);
+        let index = GameThread::current().ok().and_then(|gt| {
+            ARBlueprintLibrary::get_all_geometries(&gt)
+                .iter()
+                .position(|g| *g == geometry)
+        });
         let colors = self.color_array().to_vec().unwrap_or_default();
 
         model::plane_color_index(index)

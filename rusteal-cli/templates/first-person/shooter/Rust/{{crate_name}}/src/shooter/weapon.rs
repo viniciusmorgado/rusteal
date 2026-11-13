@@ -8,7 +8,9 @@ use bindings::engine::{
 use bindings::prelude::*;
 use glam::DVec3;
 use rusteal_runtime::runtime::timer::{self, TimerHandle};
-use rusteal_runtime::runtime::{FName, OwnedStruct, RustealResult, SubclassOf, UObjectRef, method};
+use rusteal_runtime::runtime::{
+    FName, OwnedStruct, RustRef, RustealResult, SubclassOf, TWeakObjectPtr, UObjectRef, method,
+};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use super::model::{self, TriggerPull};
@@ -202,7 +204,7 @@ impl ShooterWeapon {
         spawned.cast()
     }
 
-    fn holder(&self) -> Option<Box<dyn ShooterWeaponHolder>> {
+    fn holder(&self) -> Option<RustRef<'_, Box<dyn ShooterWeaponHolder>>> {
         weapon_holder(self.as_ref().checked().ok()?.get_owner())
     }
 
@@ -217,7 +219,8 @@ impl ShooterWeapon {
     fn begin_play(&mut self) -> RustealResult<()> {
         let me = self.as_ref().checked()?;
 
-        let weapon = self.as_ref();
+        // The owner's destruction comes in a later frame: the closure keeps the weapon weak.
+        let weapon = TWeakObjectPtr::from_ref(&self.as_ref());
 
         me.get_owner()
             .checked()?
@@ -284,7 +287,7 @@ impl ShooterWeapon {
         self.clear_refire_timer();
     }
 
-    fn set_refire_timer(&mut self, callback: impl FnMut() + Send + 'static, delay: f32) {
+    fn set_refire_timer(&mut self, callback: impl FnMut() + 'static, delay: f32) {
         self.clear_refire_timer();
 
         let refire_handle = timer::set_timer(
@@ -305,7 +308,7 @@ impl ShooterWeapon {
     }
 
     fn fire_projectile(
-        &mut self,
+        &self,
         holder: &mut dyn ShooterWeaponHolder,
         target_location: DVec3,
     ) -> RustealResult<()> {

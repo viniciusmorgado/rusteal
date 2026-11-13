@@ -141,16 +141,19 @@ impl TwinStickAoEAttack {
 
 impl TwinStickAoEAttack {
     fn bind_overlap(&self) -> RustealResult<()> {
-        let me: UObjectRef<Actor> = self.as_ref();
-
         self.collision_sphere()?
             .checked()?
             .on_component_begin_overlap()
-            .add(
-                move |_overlapped, other_actor, _other_comp, _body_index, _from_sweep, _sweep| {
-                    if let Ok(aoe) = TwinStickAoEAttack::from_obj(me) {
-                        aoe.on_ao_e_overlap(other_actor);
-                    }
+            .add_method(
+                self,
+                |aoe: &mut Self,
+                 _overlapped,
+                 other_actor,
+                 _other_comp,
+                 _body_index,
+                 _from_sweep,
+                 _sweep| {
+                    aoe.on_ao_e_overlap(other_actor);
                 },
             )?
             .detach();

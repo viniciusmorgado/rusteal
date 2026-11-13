@@ -4,7 +4,7 @@ use bindings::engine::{
     ProjectileMovementComponentExt, SphereComponent, SphereComponentExt, StaticMeshComponent,
 };
 use bindings::prelude::*;
-use rusteal_runtime::runtime::{FName, RustealResult, UObjectRef, UStructRef};
+use rusteal_runtime::runtime::{FName, RustealResult, TWeakObjectPtr, UObjectRef, UStructRef};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use super::npc::TwinStickNPC;
@@ -87,7 +87,8 @@ impl TwinStickProjectile {
 
 impl TwinStickProjectile {
     fn bind_stop(&self) -> RustealResult<()> {
-        let me: UObjectRef<Actor> = self.as_ref();
+        // The stop comes in a later frame: the closure keeps the projectile weak.
+        let me = TWeakObjectPtr::from_ref(&self.as_ref());
 
         self.projectile_movement()?
             .checked()?

@@ -42,14 +42,9 @@ impl PlatformingPlayerController {
 
     #[ufunction(Override)]
     fn receive_possess(&mut self, possessed_pawn: UObjectRef<Pawn>) {
-        let controller: UObjectRef<PlayerController> = self.as_ref();
-
         let bound = possessed_pawn.checked().and_then(|pawn| {
-            pawn.on_destroyed().add(move |destroyed_actor| {
-                if let Ok(mut me) = PlatformingPlayerController::from_obj(controller) {
-                    me.on_pawn_destroyed(destroyed_actor);
-                }
-            })
+            pawn.on_destroyed()
+                .add_method(self, Self::on_pawn_destroyed)
         });
 
         match bound {

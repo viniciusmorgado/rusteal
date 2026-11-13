@@ -4,7 +4,7 @@ use bindings::engine::{
 };
 use bindings::prelude::*;
 use glam::DVec3;
-use rusteal_runtime::runtime::{UObjectRef, UStructRef, method};
+use rusteal_runtime::runtime::{UObjectRef, UStructRef};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use super::interfaces;
@@ -23,12 +23,11 @@ pub struct CombatLavaFloor {
 impl CombatLavaFloor {
     #[ufunction(Override)]
     fn receive_begin_play(&mut self) {
-        let mut on_floor_hit = method(self, Self::on_floor_hit);
-
         let bound = self.mesh().and_then(|mesh| {
-            mesh.checked()?.on_component_hit().add(
-                move |hit_component, other_actor, other_comp, normal_impulse, hit| {
-                    on_floor_hit(
+            mesh.checked()?.on_component_hit().add_method(
+                self,
+                |me: &mut Self, hit_component, other_actor, other_comp, normal_impulse, hit| {
+                    me.on_floor_hit(
                         hit_component,
                         other_actor,
                         other_comp,

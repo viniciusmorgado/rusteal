@@ -387,7 +387,7 @@ impl PlatformingCharacter {
         Ok(())
     }
 
-    fn wall_jump(&mut self, state: &mut MoveState) -> RustealResult<bool> {
+    fn wall_jump(&self, state: &mut MoveState) -> RustealResult<bool> {
         let me = self.as_ref().checked()?;
 
         let trace_start = me.k2_get_actor_location().to_dvec3();
@@ -478,22 +478,18 @@ impl PlatformingCharacter {
     }
 
     fn bind_dash_end(
-        &mut self,
+        &self,
         anim_instance: &UObjectRef<bindings::engine::AnimInstance>,
     ) -> RustealResult<()> {
         if self.dash_end_bound() {
             return Ok(());
         }
 
-        let character: UObjectRef<Character> = self.as_ref();
-
         anim_instance
             .checked()?
             .on_montage_ended()
-            .add(move |montage, interrupted| {
-                if let Ok(mut me) = PlatformingCharacter::from_obj(character)
-                    && montage == me.dash_montage()
-                {
+            .add_method(self, |me: &mut Self, montage, interrupted| {
+                if montage == me.dash_montage() {
                     me.dash_montage_ended(interrupted);
                 }
             })?

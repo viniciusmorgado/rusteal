@@ -3,7 +3,7 @@ use bindings::engine::{
     PrimitiveComponent, PrimitiveComponentExt,
 };
 use bindings::prelude::*;
-use rusteal_runtime::runtime::{FName, RustealResult, UObjectRef, UStructRef, UeArray, method};
+use rusteal_runtime::runtime::{FName, RustObject, RustealResult, UObjectRef, UStructRef, UeArray};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use super::character::CombatCharacter;
@@ -18,22 +18,27 @@ fn configure_box(volume_box: UObjectRef<BoxComponent>) -> RustealResult<()> {
     Ok(())
 }
 
-fn bind_overlap(
-    volume_box: RustealResult<UObjectRef<BoxComponent>>,
+/// Binds `on_overlap`, a method of `object`, to the box's begin overlap: the object is found again
+/// each time something overlaps, and the call is skipped once it is gone.
+fn bind_overlap<T: RustObject>(
+    volume_box: RustealResult<UObjectRef<'_, BoxComponent>>,
+    object: &T,
     mut on_overlap: impl FnMut(
+        &mut T,
         UObjectRef<PrimitiveComponent>,
         UObjectRef<Actor>,
         UObjectRef<PrimitiveComponent>,
         i32,
         bool,
         UStructRef<FHitResult>,
-    ) + Send
-    + 'static,
+    ) + 'static,
 ) {
     let bound = volume_box.and_then(|b| {
-        b.checked()?.on_component_begin_overlap().add(
-            move |component, other_actor, other_comp, body_index, from_sweep, sweep| {
+        b.checked()?.on_component_begin_overlap().add_method(
+            object,
+            move |me, component, other_actor, other_comp, body_index, from_sweep, sweep| {
                 on_overlap(
+                    me,
                     component,
                     other_actor,
                     other_comp,
@@ -69,7 +74,7 @@ impl CombatActivationVolume {
 
     #[ufunction(Override)]
     fn receive_begin_play(&mut self) {
-        bind_overlap(self.r#box(), method(self, Self::on_overlap));
+        bind_overlap(self.r#box(), self, Self::on_overlap);
     }
 
     #[ufunction(BlueprintCallable)]
@@ -121,7 +126,7 @@ impl CombatCheckpointVolume {
 
     #[ufunction(Override)]
     fn receive_begin_play(&mut self) {
-        bind_overlap(self.r#box(), method(self, Self::on_overlap));
+        bind_overlap(self.r#box(), self, Self::on_overlap);
     }
 
     #[ufunction(BlueprintCallable)]

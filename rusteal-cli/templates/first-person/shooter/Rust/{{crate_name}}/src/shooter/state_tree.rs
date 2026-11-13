@@ -98,9 +98,13 @@ impl StateTreeLineOfSightToTargetCondition {
         let (center_of_mass, extent) = target.get_actor_bounds(true, Some(false));
         let center_of_mass = center_of_mass.to_dvec3();
 
-        let Ok(camera) = FirstPersonCharacter::from_obj(self.character())
-            .and_then(|base| base.first_person_camera_component()?.checked())
-        else {
+        let owner = self.character();
+
+        let Ok(camera) = FirstPersonCharacter::from_obj(owner).and_then(|base| {
+            base.first_person_camera_component()?
+                .with_scope_of(&owner)
+                .checked()
+        }) else {
             return false;
         };
 

@@ -107,13 +107,12 @@ impl TimeTrialPlayerController {
         let controller: UObjectRef<PlayerController> = self.as_ref();
 
         let bound = possessed_pawn.checked().and_then(|pawn| {
-            pawn.on_destroyed().add(move |_destroyed_pawn| {
-                if let Ok(mut me) = TimeTrialPlayerController::from_obj(controller)
-                    && let Err(e) = me.respawn()
-                {
-                    log::warn!("[TimeTrial] respawn failed: {e}");
-                }
-            })
+            pawn.on_destroyed()
+                .add_method(self, |me: &mut Self, _destroyed_pawn| {
+                    if let Err(e) = me.respawn() {
+                        log::warn!("[TimeTrial] respawn failed: {e}");
+                    }
+                })
         });
 
         match bound {

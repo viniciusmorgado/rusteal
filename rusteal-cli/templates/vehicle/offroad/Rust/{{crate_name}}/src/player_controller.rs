@@ -91,16 +91,13 @@ impl VehicleAdvPlayerController {
 
         self.set_vehicle_pawn(vehicle);
 
-        let controller: UObjectRef<PlayerController> = self.as_ref();
-
         let bound = possessed_pawn.checked().and_then(|pawn| {
-            pawn.on_destroyed().add(move |_destroyed_pawn| {
-                if let Ok(mut me) = VehicleAdvPlayerController::from_obj(controller)
-                    && let Err(e) = me.respawn()
-                {
-                    log::warn!("[Vehicle] respawn failed: {e}");
-                }
-            })
+            pawn.on_destroyed()
+                .add_method(self, |me: &mut Self, _destroyed_pawn| {
+                    if let Err(e) = me.respawn() {
+                        log::warn!("[Vehicle] respawn failed: {e}");
+                    }
+                })
         });
 
         match bound {
