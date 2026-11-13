@@ -114,6 +114,14 @@ const MIGRATIONS: &[(&str, &str)] = &[
          loading::load_all/load_primary_asset give TWeakObjectPtr<T>, and an async #[ufunction] \
          takes its object parameters as TWeakObjectPtr<T>. Call get() or checked() on them.",
     ),
+    (
+        "0.10.0",
+        "Pinned<T> keeps its object as a reference the garbage collector sees instead of a root, \
+         one per Pinned: a clone or a second pin keeps the object on its own, and dropping one \
+         no longer lets the others' object go. It stays on the game thread. Call checked() or \
+         as_ref() on it; it no longer derefs to the parent class's Pinned. OwnedStruct<T> keeps \
+         the objects it holds alive while it exists.",
+    ),
 ];
 
 pub fn migration_notes(from: Version, to: Version) -> Vec<(Version, &'static str)> {

@@ -1126,11 +1126,7 @@ impl<T: UeStruct> OwnedStruct<T> {
             ffi_dispatch::reflection_initialize_struct(ustruct, data.as_mut_ptr())
         });
 
-        OwnedStruct {
-            data,
-            needs_destroy: true,
-            _marker: PhantomData,
-        }
+        unsafe { Self::from_constructed(data) }
     }
 
     pub fn from_bytes(data: Vec<u8>) -> Self {
@@ -1145,7 +1141,10 @@ impl<T: UeStruct> OwnedStruct<T> {
     ///
     /// `data` holds a `T` the engine constructed in it, which this value now owns.
     #[doc(hidden)]
-    pub unsafe fn from_constructed(data: Vec<u8>) -> Self {
+    pub unsafe fn from_constructed(mut data: Vec<u8>) -> Self {
+        // The objects the struct holds stay alive while it exists, as in a `#[uproperty]`.
+        unsafe { ffi_dispatch::lifecycle_track_struct(T::static_struct(), data.as_mut_ptr()) };
+
         OwnedStruct {
             data,
             needs_destroy: true,
@@ -1193,8 +1192,9 @@ impl<T: UeStruct> Clone for OwnedStruct<T> {
 
 impl<T: UeStruct> Drop for OwnedStruct<T> {
     fn drop(&mut self) {
-        if self.needs_destroy {
+        if self.needs_destroy && crate::api::is_api_initialized() {
             unsafe {
+                ffi_dispatch::lifecycle_untrack_struct(self.data.as_mut_ptr());
                 ffi_dispatch::reflection_destroy_struct(T::static_struct(), self.data.as_mut_ptr());
             }
         }

@@ -133,10 +133,10 @@ pub struct RustealErrorReport {
 
 #[repr(C)]
 pub struct RustealLifecycleApi {
-    pub add_gc_root: unsafe extern "C" fn(obj: UObjectHandle),
-    pub remove_gc_root: unsafe extern "C" fn(obj: UObjectHandle),
-    pub register_pinned: unsafe extern "C" fn(obj: UObjectHandle),
-    pub unregister_pinned: unsafe extern "C" fn(obj: UObjectHandle),
+    pub pin: unsafe extern "C" fn(obj: UObjectHandle) -> u32,
+    pub unpin: unsafe extern "C" fn(slot: u32),
+    pub track_struct: unsafe extern "C" fn(ustruct: UStructHandle, memory: *mut u8),
+    pub untrack_struct: unsafe extern "C" fn(memory: *mut u8),
 }
 
 #[repr(C)]
