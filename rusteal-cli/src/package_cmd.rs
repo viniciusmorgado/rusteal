@@ -14,6 +14,7 @@ pub fn target_platform(name: Option<&str>) -> Platform {
     platform::find(name, &platform::search_dirs()).unwrap_or_else(|e| fail(&e))
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn run_package(
     root: &Path,
     engine: &Path,
