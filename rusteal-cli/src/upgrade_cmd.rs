@@ -60,6 +60,13 @@ const MIGRATIONS: &[(&str, &str)] = &[
          #[ufunction(Override, ThreadSafe)] and the class's <Class>ThreadSafe view instead of \
          &self or &mut self.",
     ),
+    (
+        "0.10.0",
+        "A #[uclass] no longer derefs to UObjectRef<Parent>: call self.as_ref() for the object. \
+         A UObjectRef keeps its object's index and serial number, not its address: raw() is null \
+         once the object is destroyed, and a reference never matches a new object at the old \
+         address.",
+    ),
 ];
 
 pub fn migration_notes(from: Version, to: Version) -> Vec<(Version, &'static str)> {
@@ -261,7 +268,7 @@ glam = "0.33.8"
         assert!(migration_notes(v("0.10.0"), v("0.12.0")).is_empty());
 
         let notes = migration_notes(v("0.9.0"), v("0.10.0"));
-        assert_eq!(notes.len(), 9);
+        assert_eq!(notes.len(), MIGRATIONS.len());
         assert_eq!(notes[0].0, v("0.10.0"));
     }
 

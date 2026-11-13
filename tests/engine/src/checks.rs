@@ -264,6 +264,18 @@ pub const ALL: &[(&str, Check)] = &[
         crate::perf::call_overhead_is_measured,
     ),
     (
+        "a_destroyed_object_is_invalid_after_collection",
+        crate::object_lifetimes::a_destroyed_object_is_invalid_after_collection,
+    ),
+    (
+        "a_new_object_in_a_reused_slot_is_not_the_old_one",
+        crate::object_lifetimes::a_new_object_in_a_reused_slot_is_not_the_old_one,
+    ),
+    (
+        "a_method_callback_skips_a_destroyed_object",
+        crate::object_lifetimes::a_method_callback_skips_a_destroyed_object,
+    ),
+    (
         "profiling_scopes_run",
         crate::profiling::profiling_scopes_run,
     ),

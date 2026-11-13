@@ -40,13 +40,17 @@ impl InputActionValueExt for UStructRef<FInputActionValue> {
 /// (a pawn's lasts until it is unpossessed); [`ActionBinding::unbind`] removes it sooner.
 #[derive(Debug, Clone, Copy)]
 pub struct ActionBinding {
-    actor: rusteal_ffi::UObjectHandle,
+    actor: rusteal_core::FWeakObjectHandle,
     handle: u32,
 }
 
 impl ActionBinding {
     pub fn unbind(self) {
-        rusteal_core::input::unbind_action_raw(self.actor, self.handle);
+        let actor = rusteal_core::resolve_weak_handle(self.actor);
+
+        if !actor.is_null() {
+            rusteal_core::input::unbind_action_raw(actor, self.handle);
+        }
     }
 }
 
@@ -73,7 +77,10 @@ pub fn bind_action(
         },
     )?;
 
-    Ok(ActionBinding { actor, handle })
+    Ok(ActionBinding {
+        actor: unsafe { rusteal_core::weak_handle_of(actor) },
+        handle,
+    })
 }
 
 /// What [`bind_action_instance`] gives its callback: the action's value, how long it has been
@@ -111,7 +118,10 @@ pub fn bind_action_instance(
         },
     )?;
 
-    Ok(ActionBinding { actor, handle })
+    Ok(ActionBinding {
+        actor: unsafe { rusteal_core::weak_handle_of(actor) },
+        handle,
+    })
 }
 
 /// Binds the UFunction named `function` of `actor`, as Blueprint's input events do: for a

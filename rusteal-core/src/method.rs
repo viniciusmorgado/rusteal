@@ -1,5 +1,6 @@
-use rusteal_ffi::UObjectHandle;
+use rusteal_ffi::FWeakObjectHandle;
 
+use crate::object_ref::UObjectRef;
 use crate::traits::RustObject;
 
 /// Marks a method taking `&mut self`.
@@ -13,12 +14,13 @@ pub struct ByRef;
 pub trait Method<T, Args, Marker> {
     type Callback;
 
-    fn into_callback(self, object: UObjectHandle) -> Self::Callback;
+    fn into_callback(self, object: FWeakObjectHandle) -> Self::Callback;
 }
 
 /// A closure calling `function` on `object`, for an input action, a delegate or a timer: the
 /// compiler checks the method and its parameters, where a binding by name is checked when the
-/// game runs. The object is found again on each call, and a call after it is gone does nothing.
+/// game runs. The object is found again on each call by its index and serial number, so a call
+/// after it is gone does nothing, even when another object took its place in memory.
 ///
 /// ```ignore
 /// bind_action(&me, self.jump_action(), ETriggerEvent::Started, method(self, Self::jump))?;
@@ -28,7 +30,8 @@ pub fn method<T: RustObject, Args, Marker, F: Method<T, Args, Marker>>(
     object: &T,
     function: F,
 ) -> F::Callback {
-    function.into_callback(object.object_handle())
+    function
+        .into_callback(unsafe { UObjectRef::<T>::from_raw(object.object_handle()) }.weak_handle())
 }
 
 macro_rules! methods {
@@ -41,9 +44,15 @@ macro_rules! methods {
             type Callback = Box<dyn FnMut($($arg),*) + Send>;
 
             #[allow(unused_variables)]
-            fn into_callback(mut self, object: UObjectHandle) -> Self::Callback {
+            fn into_callback(mut self, object: FWeakObjectHandle) -> Self::Callback {
                 Box::new(move |$($value: $arg),*| {
-                    if let Ok(mut this) = T::from_object_handle(object) {
+                    let handle = UObjectRef::<T>::from_weak(object).raw();
+
+                    if handle.is_null() {
+                        return;
+                    }
+
+                    if let Ok(mut this) = T::from_object_handle(handle) {
                         self(&mut this $(, $value)*);
                     }
                 })
@@ -58,9 +67,15 @@ macro_rules! methods {
             type Callback = Box<dyn FnMut($($arg),*) + Send>;
 
             #[allow(unused_variables)]
-            fn into_callback(mut self, object: UObjectHandle) -> Self::Callback {
+            fn into_callback(mut self, object: FWeakObjectHandle) -> Self::Callback {
                 Box::new(move |$($value: $arg),*| {
-                    if let Ok(this) = T::from_object_handle(object) {
+                    let handle = UObjectRef::<T>::from_weak(object).raw();
+
+                    if handle.is_null() {
+                        return;
+                    }
+
+                    if let Ok(this) = T::from_object_handle(handle) {
                         self(&this $(, $value)*);
                     }
                 })

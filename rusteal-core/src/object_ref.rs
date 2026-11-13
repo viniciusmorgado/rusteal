@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 use std::ops::Deref;
 use std::panic::Location;
 
-use rusteal_ffi::{UClassHandle, UObjectHandle};
+use rusteal_ffi::{FWeakObjectHandle, UClassHandle, UObjectHandle};
 
 use crate::error::{RustealError, RustealResult};
 use crate::ffi_dispatch;
@@ -10,9 +10,38 @@ use crate::pinned::Pinned;
 use crate::script_interface::ScriptInterface;
 use crate::traits::{HasParent, UeClass, UeHandle, UeInterface, ValidHandle};
 
+/// The index and serial number of the object at `handle`, which must be null or an object the
+/// engine has just given.
+#[doc(hidden)]
+#[inline]
+pub unsafe fn weak_handle_of(handle: UObjectHandle) -> FWeakObjectHandle {
+    if handle.is_null() {
+        FWeakObjectHandle::default()
+    } else {
+        unsafe { ffi_dispatch::core_make_weak(handle) }
+    }
+}
+
+/// The address of the object `weak` names while it lives, null once it is destroyed. Never reads
+/// the object's memory: the engine's object array is looked up by index and the serial compared.
+#[doc(hidden)]
+#[inline]
+pub fn resolve_weak_handle(weak: FWeakObjectHandle) -> UObjectHandle {
+    if weak.object_serial_number == 0 {
+        return UObjectHandle::null();
+    }
+
+    unsafe { ffi_dispatch::core_resolve_weak(weak) }
+}
+
+/// A reference to an engine object, kept as the object's index and serial number in the engine's
+/// object array, the way `FWeakObjectPtr` keeps it. It never holds the object's address, so it
+/// cannot read freed memory or mistake a new object at a reused address for the old one: once
+/// the object is destroyed, [`is_valid`](Self::is_valid) is false and
+/// [`checked`](Self::checked) is an error.
 #[repr(transparent)]
 pub struct UObjectRef<T: UeClass> {
-    handle: UObjectHandle,
+    weak: FWeakObjectHandle,
     _marker: PhantomData<*const T>,
 }
 
@@ -26,7 +55,7 @@ impl<T: UeClass> Copy for UObjectRef<T> {}
 
 impl<T: UeClass> PartialEq for UObjectRef<T> {
     fn eq(&self, other: &Self) -> bool {
-        self.handle == other.handle
+        self.weak == other.weak
     }
 }
 
@@ -34,7 +63,7 @@ impl<T: UeClass> Eq for UObjectRef<T> {}
 
 impl<T: UeClass> std::hash::Hash for UObjectRef<T> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.handle.hash(state);
+        self.weak.hash(state);
     }
 }
 
@@ -50,39 +79,59 @@ impl<T: UeClass> UObjectRef<T> {
     #[inline]
     pub fn null() -> Self {
         UObjectRef {
-            handle: UObjectHandle::null(),
+            weak: FWeakObjectHandle::default(),
             _marker: PhantomData,
         }
     }
 
+    /// The reference to the object at `handle`, which must be null or an object the engine has
+    /// just given: its index and serial number are read from it now.
     #[inline]
     pub unsafe fn from_raw(handle: UObjectHandle) -> Self {
         UObjectRef {
-            handle,
+            weak: unsafe { weak_handle_of(handle) },
             _marker: PhantomData,
         }
     }
 
+    /// The reference an index and serial number name; it is valid while that object lives.
+    #[inline]
+    pub fn from_weak(weak: FWeakObjectHandle) -> Self {
+        UObjectRef {
+            weak,
+            _marker: PhantomData,
+        }
+    }
+
+    /// The object's index and serial number in the engine's object array.
+    #[inline]
+    pub fn weak_handle(&self) -> FWeakObjectHandle {
+        self.weak
+    }
+
+    /// The object's address while it lives, null once it is destroyed.
     #[inline]
     pub fn raw(&self) -> UObjectHandle {
-        self.handle
+        resolve_weak_handle(self.weak)
     }
 
     #[inline]
     pub fn is_valid(&self) -> bool {
-        unsafe { ffi_dispatch::core_is_valid(self.handle) }
+        !self.raw().is_null()
     }
 
     #[inline]
     #[track_caller]
     pub fn checked(&self) -> RustealResult<Checked<T>> {
-        if self.is_valid() {
+        let handle = self.raw();
+
+        if handle.is_null() {
+            Err(crate::error::destroyed::<T>(Location::caller()))
+        } else {
             Ok(Checked {
-                handle: self.handle,
+                handle,
                 _marker: PhantomData,
             })
-        } else {
-            Err(crate::error::destroyed::<T>(Location::caller()))
         }
     }
 
@@ -92,7 +141,7 @@ impl<T: UeClass> UObjectRef<T> {
         let target = U::static_class();
         if unsafe { ffi_dispatch::core_is_a(h, target) } {
             Ok(UObjectRef {
-                handle: self.handle,
+                weak: self.weak,
                 _marker: PhantomData,
             })
         } else {
@@ -153,12 +202,16 @@ impl<T: UeClass> UObjectRef<T> {
 
     #[inline]
     pub fn is_a<U: UeClass>(&self) -> bool {
-        self.is_valid() && unsafe { ffi_dispatch::core_is_a(self.handle, U::static_class()) }
+        let handle = self.raw();
+
+        !handle.is_null() && unsafe { ffi_dispatch::core_is_a(handle, U::static_class()) }
     }
 
     #[inline]
     pub fn implements<I: UeInterface + ?Sized>(&self) -> bool {
-        self.is_valid() && unsafe { ffi_dispatch::core_is_a(self.handle, I::static_class()) }
+        let handle = self.raw();
+
+        !handle.is_null() && unsafe { ffi_dispatch::core_is_a(handle, I::static_class()) }
     }
 
     pub fn interface<I: UeInterface + ?Sized>(self) -> RustealResult<ScriptInterface<I>> {
@@ -169,7 +222,7 @@ impl<T: UeClass> UObjectRef<T> {
 impl<T: HasParent> UObjectRef<T> {
     #[inline]
     pub fn upcast(self) -> UObjectRef<T::Parent> {
-        unsafe { UObjectRef::from_raw(self.handle) }
+        UObjectRef::from_weak(self.weak)
     }
 }
 
@@ -179,7 +232,7 @@ impl<T: UeClass> UObjectRef<T> {
     where
         T: crate::traits::Inherits<U>,
     {
-        unsafe { UObjectRef::from_raw(self.handle) }
+        UObjectRef::from_weak(self.weak)
     }
 }
 
@@ -197,7 +250,7 @@ impl<T: UeClass> ObjectPointer for UObjectRef<T> {
 
     #[inline]
     fn object_handle(&self) -> UObjectHandle {
-        self.handle
+        self.raw()
     }
 }
 
@@ -224,7 +277,8 @@ impl<T: UeClass> UeHandle for UObjectRef<T> {
 impl<T: UeClass> std::fmt::Debug for UObjectRef<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("UObjectRef")
-            .field("handle", &self.handle)
+            .field("index", &self.weak.object_index)
+            .field("serial", &self.weak.object_serial_number)
             .field("valid", &self.is_valid())
             .finish()
     }
@@ -304,5 +358,63 @@ impl<T: UeClass> std::fmt::Debug for Checked<T> {
         f.debug_struct("Checked")
             .field("handle", &self.handle)
             .finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct Probe;
+
+    impl UeClass for Probe {
+        fn static_class() -> UClassHandle {
+            UClassHandle::null()
+        }
+    }
+
+    fn named(object_index: i32, object_serial_number: i32) -> UObjectRef<Probe> {
+        UObjectRef::from_weak(FWeakObjectHandle {
+            object_index,
+            object_serial_number,
+        })
+    }
+
+    #[test]
+    fn a_reference_is_the_size_of_an_index_and_a_serial_number() {
+        assert_eq!(std::mem::size_of::<UObjectRef<Probe>>(), 8);
+        assert_eq!(
+            std::mem::size_of::<UObjectRef<Probe>>(),
+            std::mem::size_of::<FWeakObjectHandle>()
+        );
+    }
+
+    #[test]
+    fn a_null_reference_is_invalid_without_asking_the_engine() {
+        // No API table is installed here: resolving through it would panic.
+        let null = UObjectRef::<Probe>::null();
+
+        assert!(!null.is_valid());
+        assert!(null.raw().is_null());
+        assert!(null.checked().is_err());
+        assert_eq!(null, UObjectRef::default());
+    }
+
+    #[test]
+    fn identity_is_the_index_and_the_serial_number() {
+        assert_eq!(named(7, 3), named(7, 3));
+        assert_ne!(named(7, 3), named(7, 4), "a reused slot is another object");
+        assert_ne!(named(7, 3), named(8, 3));
+
+        let set: std::collections::HashSet<_> = [named(7, 3), named(7, 3), named(7, 4)].into();
+        assert_eq!(set.len(), 2);
+    }
+
+    #[test]
+    fn a_weak_pointer_and_a_reference_share_the_handle() {
+        let reference = named(12, 9);
+        let weak = crate::weak_ptr::TWeakObjectPtr::from_ref(&reference);
+
+        assert_eq!(weak.handle(), reference.weak_handle());
     }
 }

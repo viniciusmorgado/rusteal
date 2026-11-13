@@ -11,6 +11,9 @@ const _: () = assert!(size_of::<UFunctionHandle>() == 8);
 const _: () = assert!(size_of::<UStructHandle>() == 8);
 const _: () = assert!(size_of::<FNameHandle>() == 8);
 const _: () = assert!(size_of::<FWeakObjectHandle>() == 8);
+const _: () = assert!(offset_of!(FWeakObjectHandle, object_index) == 0);
+const _: () = assert!(offset_of!(FWeakObjectHandle, object_serial_number) == 4);
+const _: () = assert!(std::mem::align_of::<FWeakObjectHandle>() == 4);
 const _: () = assert!(size_of::<RustealErrorCode>() == 4);
 
 const _: () = assert!(size_of::<RustealReifyPropExtra>() == 56);

@@ -1,4 +1,5 @@
 #include "RustealApiTable.h"
+#include "UObject/WeakObjectPtr.h"
 
 static_assert(sizeof(RustealUObjectHandle) == 8,
               "RustealUObjectHandle must be 8 bytes");
@@ -35,6 +36,13 @@ static_assert(offsetof(RustealFWeakObjectHandle, object_index) == 0,
               "FWeakObjectHandle::object_index at offset 0");
 static_assert(offsetof(RustealFWeakObjectHandle, object_serial_number) == 4,
               "FWeakObjectHandle::object_serial_number at offset 4");
+
+// A weak handle is FWeakObjectPtr's own bytes (MakeWeak and ResolveWeak copy them), so the
+// engine's type must keep the index and serial number Rust compares, and nothing else.
+static_assert(sizeof(FWeakObjectPtr) == sizeof(RustealFWeakObjectHandle),
+              "FWeakObjectPtr must be the 8 bytes of RustealFWeakObjectHandle");
+static_assert(alignof(FWeakObjectPtr) == alignof(RustealFWeakObjectHandle),
+              "FWeakObjectPtr alignment");
 
 static_assert(sizeof(FRustealReifyPropExtra) == 56,
               "FRustealReifyPropExtra must be 56 bytes");

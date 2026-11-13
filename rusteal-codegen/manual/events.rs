@@ -1,6 +1,6 @@
 use rusteal_core::UObjectRef;
 use rusteal_core::events::NativeEvent;
-use rusteal_ffi::{RustealNativeEvent, RustealNativeEventArgs, UObjectHandle};
+use rusteal_ffi::{FWeakObjectHandle, RustealNativeEvent, RustealNativeEventArgs};
 
 use crate::engine::{Controller, GameModeBase, Level, PlayerController, World};
 
@@ -16,7 +16,7 @@ fn global<A: Send + 'static>(
     kind: RustealNativeEvent,
     convert: fn(&RustealNativeEventArgs) -> A,
 ) -> NativeEvent<A> {
-    NativeEvent::new(kind, UObjectHandle::null(), convert)
+    NativeEvent::new(kind, FWeakObjectHandle::default(), convert)
 }
 
 /// The application's lifecycle, `FCoreDelegates`.
@@ -105,7 +105,7 @@ mod path_following {
 
     impl PathFollowingEventsExt for UObjectRef<PathFollowingComponent> {
         fn on_request_finished(&self) -> NativeEvent<(u32, EPathFollowingResult)> {
-            NativeEvent::new(RustealNativeEvent::MoveRequestFinished, self.raw(), |args| {
+            NativeEvent::new(RustealNativeEvent::MoveRequestFinished, self.weak_handle(), |args| {
                 let code = EPathFollowingResult::from_i64(i64::from(args.b & 0xff))
                     .unwrap_or(EPathFollowingResult::Invalid);
                 (args.a, code)

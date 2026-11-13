@@ -1300,15 +1300,6 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
         }
     };
 
-    let deref_impl = quote! {
-        impl std::ops::Deref for #struct_name {
-            type Target = ::rusteal_runtime::runtime::UObjectRef<#parent_path>;
-            fn deref(&self) -> &::rusteal_runtime::runtime::UObjectRef<#parent_path> {
-                unsafe { &*(&self.__obj as *const ::rusteal_runtime::ffi::UObjectHandle as *const ::rusteal_runtime::runtime::UObjectRef<#parent_path>) }
-            }
-        }
-    };
-
     Ok(quote! {
         #user_struct
         #rust_data_struct
@@ -1317,7 +1308,6 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
         #has_parent_impl
         #inherits_impl
         #parent_check
-        #deref_impl
         #accessors_impl
         #thread_safe_view
         #register_fn
