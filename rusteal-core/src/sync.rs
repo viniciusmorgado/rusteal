@@ -1,6 +1,6 @@
-pub(crate) use std::sync::{
-    Mutex, MutexGuard, Once, OnceLock, RwLock, RwLockReadGuard, RwLockWriteGuard,
-};
+pub(crate) use std::sync::{Mutex, MutexGuard, Once, RwLock, RwLockReadGuard, RwLockWriteGuard};
+// Public so the exported profiling macros can name it from the crates that expand them.
+pub use std::sync::OnceLock;
 pub(crate) use std::thread_local;
 
 pub(crate) fn lock_or_recover<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
