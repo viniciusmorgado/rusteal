@@ -340,6 +340,8 @@ pub fn generate_delegate_structs(out: &mut String, delegates: &[DelegateInfo], c
             emit_next(out, &d.params);
         }
 
+        emit_method_binding(out, &d.params, method_name, &callback_sig);
+
         out.push_str(&format!(
             "    #[track_caller]\n    pub fn {method_name}(&self, mut callback: impl FnMut({callback_sig}) + 'static) -> rusteal_core::RustealResult<rusteal_core::DelegateBinding> {{\n"
         ));
@@ -397,6 +399,52 @@ pub fn generate_delegate_structs(out: &mut String, delegates: &[DelegateInfo], c
 
         out.push_str("}\n\n");
     }
+}
+
+/// `add_method` (`bind_method`): the delegate bound to a method, or a closure taking the class
+/// first, of a Rust class's object. The object is found again by its index and serial number
+/// each time the delegate fires, and the call is skipped once it is gone. Unlike
+/// `add(method(self, Self::f))`, the objects the delegate passes keep the lifetime of each call.
+fn emit_method_binding(
+    out: &mut String,
+    params: &[DelegateParam],
+    method_name: &str,
+    callback_sig: &str,
+) {
+    let args = params
+        .iter()
+        .map(|p| p.name.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let function_sig = if callback_sig.is_empty() {
+        "&mut __T".to_string()
+    } else {
+        format!("&mut __T, {callback_sig}")
+    };
+    let call_args = if args.is_empty() {
+        "&mut __this".to_string()
+    } else {
+        format!("&mut __this, {args}")
+    };
+
+    out.push_str(&format!(
+        "    /// [`{method_name}`](Self::{method_name}) with a method of a Rust class's `object`, or a\n\
+         \x20   /// closure taking the class first: the object is found again each time the delegate\n\
+         \x20   /// fires, and the call is skipped once it is gone.\n\
+         \x20   #[track_caller]\n\
+         \x20   pub fn {method_name}_method<__T: rusteal_core::RustObject>(&self, object: &__T, mut function: impl FnMut({function_sig}) + 'static) -> rusteal_core::RustealResult<rusteal_core::DelegateBinding> {{\n\
+         \x20       let __weak = unsafe {{ rusteal_core::weak_handle_of(rusteal_core::RustObject::object_handle(object)) }};\n\
+         \x20       self.{method_name}(move |{args}| {{\n\
+         \x20           let __handle = rusteal_core::resolve_weak_handle(__weak);\n\
+         \x20           if __handle.is_null() {{\n\
+         \x20               return;\n\
+         \x20           }}\n\
+         \x20           if let Ok(mut __this) = <__T as rusteal_core::RustObject>::from_object_handle(__handle) {{\n\
+         \x20               function({call_args});\n\
+         \x20           }}\n\
+         \x20       }})\n\
+         \x20   }}\n\n"
+    ));
 }
 
 /// What `next()` resolves to for a parameter, and how it is made from the parameter: objects

@@ -105,7 +105,7 @@ mod path_following {
         fn on_request_finished(&self) -> NativeEvent<(u32, EPathFollowingResult)>;
     }
 
-    impl PathFollowingEventsExt for UObjectRef<PathFollowingComponent> {
+    impl PathFollowingEventsExt for UObjectRef<'_, PathFollowingComponent> {
         fn on_request_finished(&self) -> NativeEvent<(u32, EPathFollowingResult)> {
             NativeEvent::new(RustealNativeEvent::MoveRequestFinished, self.weak_handle(), |args| {
                 let code = EPathFollowingResult::from_i64(i64::from(args.b & 0xff))
