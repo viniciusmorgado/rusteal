@@ -400,6 +400,13 @@ pub struct ProbeRow {
     tag: FName,
     #[uproperty(EditAnywhere)]
     tags: UeArray<FName>,
+    #[uproperty(EditAnywhere)]
+    icon: UObjectRef<Actor>,
+}
+
+/// An object field read from a row Rust owns lives as long as the row.
+pub fn row_icon(row: &OwnedStruct<ProbeRow>) -> UObjectRef<'_, Actor> {
+    row.icon()
 }
 
 /// A Rust class whose parent is a Rust class.

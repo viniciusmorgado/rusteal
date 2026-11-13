@@ -1176,6 +1176,13 @@ impl<T: UeStruct> OwnedStruct<T> {
         &self.data
     }
 
+    /// The struct's memory as a handle, for the accessors `#[ustruct]` generates: what they read
+    /// from it lives as long as the borrow of `self`.
+    #[doc(hidden)]
+    pub fn as_ptr(&self) -> UObjectHandle {
+        UObjectHandle(self.data.as_ptr() as *mut std::ffi::c_void)
+    }
+
     #[doc(hidden)]
     pub fn as_mut_ptr(&mut self) -> *mut u8 {
         self.data.as_mut_ptr()

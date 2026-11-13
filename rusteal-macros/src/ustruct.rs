@@ -135,10 +135,12 @@ pub fn expand_ustruct(attr: TokenStream, item: TokenStream) -> syn::Result<Token
         let method = &accessor.name;
         let docs = docs_of(&method.to_string());
 
+        // A getter reads the owned memory directly, so an object it gives borrows the owned struct
+        // and not a temporary view of it.
         let forward = if accessor.param.is_some() {
             quote! { self.as_ref().#method(val) }
         } else {
-            quote! { self.as_ref().#method() }
+            quote! { #body }
         };
 
         trait_items.push(quote! { #(#docs)* #signature; });
