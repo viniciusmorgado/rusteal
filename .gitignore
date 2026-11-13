@@ -26,6 +26,8 @@ ue_plugin/Rusteal/Source/Rusteal/Generated/
 
 # IDE
 .vscode/
+# ...except the files the vscode project feature writes into a new project
+!/rusteal-cli/project_features/vscode/Rust/.vscode/
 .idea/
 *.swp
 *.swo
