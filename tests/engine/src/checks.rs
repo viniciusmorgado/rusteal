@@ -285,6 +285,22 @@ pub const ALL: &[(&str, Check)] = &[
         crate::object_lifetimes::a_weak_pointer_comes_back_to_the_game_thread,
     ),
     (
+        "two_pins_keep_an_object_each",
+        crate::object_lifetimes::two_pins_keep_an_object_each,
+    ),
+    (
+        "an_owned_struct_keeps_its_objects",
+        crate::object_lifetimes::an_owned_struct_keeps_its_objects,
+    ),
+    (
+        "a_pinned_actor_destroyed_reads_as_gone",
+        crate::object_lifetimes::a_pinned_actor_destroyed_reads_as_gone,
+    ),
+    (
+        "unpinning_leaves_what_the_engine_keeps",
+        crate::object_lifetimes::unpinning_leaves_what_the_engine_keeps,
+    ),
+    (
         "profiling_scopes_run",
         crate::profiling::profiling_scopes_run,
     ),

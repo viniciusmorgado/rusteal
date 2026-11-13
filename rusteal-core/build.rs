@@ -146,9 +146,21 @@ fn thread_rule(table: &SubTable, func: &ApiFn) -> ThreadRule {
             ThreadRule::Any
         }
         "property" | "container" => ThreadRule::GameThreadOrThreadSafe,
-        "reflection" if matches!(name, "find_property" | "get_property_size") => {
+        "reflection"
+            if matches!(
+                name,
+                "find_property"
+                    | "get_property_size"
+                    | "get_struct_size"
+                    | "initialize_struct"
+                    | "destroy_struct"
+                    | "copy_struct"
+            ) =>
+        {
             ThreadRule::GameThreadOrThreadSafe
         }
+        // Owned structs register their memory under a lock, from wherever they are made.
+        "lifecycle" if matches!(name, "track_struct" | "untrack_struct") => ThreadRule::Any,
         "core"
             if name.starts_with("text_")
                 || matches!(

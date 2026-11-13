@@ -95,11 +95,14 @@ struct FRustealLoggingApi {
   void (*report)(const FRustealErrorReport *report);
 };
 
+// What Rust keeps alive, reported to the garbage collector as references (not roots): a pin is
+// a slot of its own (0 when the object was not alive), and an owned struct is tracked by its
+// memory while it exists.
 struct FRustealLifecycleApi {
-  void (*add_gc_root)(RustealUObjectHandle obj);
-  void (*remove_gc_root)(RustealUObjectHandle obj);
-  void (*register_pinned)(RustealUObjectHandle obj);
-  void (*unregister_pinned)(RustealUObjectHandle obj);
+  uint32 (*pin)(RustealUObjectHandle obj);
+  void (*unpin)(uint32 slot);
+  void (*track_struct)(RustealUStructHandle ustruct, uint8 *memory);
+  void (*untrack_struct)(uint8 *memory);
 };
 
 struct FRustealPropertyApi {
@@ -785,7 +788,6 @@ struct FRustealRustCallbacks {
   void (*on_shutdown)();
   void (*construct_rust_instance)(RustealUObjectHandle obj, uint64 type_id,
                                   bool is_cdo);
-  void (*notify_pinned_destroyed)(RustealUObjectHandle handle);
   void (*on_tick)(float delta_seconds);
   void (*release_delegate_callback)(uint64 callback_id);
   void (*retry_deferred_classes)(bool last_try);

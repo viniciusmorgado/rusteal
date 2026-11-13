@@ -76,14 +76,6 @@ pub mod callbacks {
         });
     }
 
-    pub fn notify_pinned_destroyed(module: &'static Module, handle: ffi::UObjectHandle) {
-        let _scope = module.enter();
-
-        runtime::ffi_boundary((), || {
-            runtime::pinned::notify_pinned_destroyed(handle);
-        });
-    }
-
     pub fn on_tick(module: &'static Module, delta_seconds: f32) {
         let _scope = module.enter();
 
@@ -272,7 +264,6 @@ pub fn shutdown(module: &'static Module) {
         runtime::ffi_boundary((), || rayon::shutdown(id));
         runtime::ffi_boundary((), || runtime::reify_registry::clear_module(id));
         runtime::ffi_boundary((), || runtime::delegate_registry::clear_module(id));
-        runtime::ffi_boundary((), || runtime::pinned::clear_module(id));
 
         module.finish_stop();
     }));
@@ -325,10 +316,6 @@ macro_rules! entry {
                 $crate::callbacks::construct_rust_instance(&__RUSTEAL_MODULE, obj, type_id)
             }
 
-            extern "C" fn notify_pinned_destroyed(handle: $crate::ffi::UObjectHandle) {
-                $crate::callbacks::notify_pinned_destroyed(&__RUSTEAL_MODULE, handle)
-            }
-
             extern "C" fn on_tick(delta_seconds: f32) {
                 $crate::callbacks::on_tick(&__RUSTEAL_MODULE, delta_seconds)
             }
@@ -348,7 +335,6 @@ macro_rules! entry {
                     invoke_delegate_callback,
                     on_shutdown,
                     construct_rust_instance,
-                    notify_pinned_destroyed,
                     on_tick,
                     release_delegate_callback,
                     retry_deferred_classes,

@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
-use bindings::engine::{ActorExt, KismetSystemLibrary};
+use bindings::engine::{ActorExt, FLatentActionInfo, FLatentActionInfoExt, KismetSystemLibrary};
 use bindings::enhanced_input::InputAction;
 use bindings::manual::world_ext::new_object_transient;
 use bindings::prelude::*;
@@ -237,5 +237,165 @@ pub fn a_weak_pointer_comes_back_to_the_game_thread(context: &Context) -> Outcom
                 "the weak pointer did not resolve back on the game thread".into(),
             )),
         }
+    }))
+}
+
+/// Frames waited after a garbage collection before looking at what it kept.
+const AFTER_COLLECTION: usize = 3;
+
+pub fn two_pins_keep_an_object_each(_context: &Context) -> Outcome {
+    let pinned = GameThread::current().and_then(|gt| {
+        let object = new_object_transient::<InputAction>(&gt)?;
+        Ok((
+            object.pin()?,
+            object.pin()?,
+            TWeakObjectPtr::from_ref(&object),
+        ))
+    });
+
+    let (first, second, weak) = match pinned {
+        Ok(pinned) => pinned,
+        Err(e) => return Outcome::Done(Err(format!("{e:?}"))),
+    };
+
+    drop(first);
+    KismetSystemLibrary::collect_garbage();
+
+    let mut second = Some(second);
+    let mut frames = 0;
+    let mut released_at = None;
+
+    Outcome::Pending(Box::new(move || {
+        frames += 1;
+
+        if frames < AFTER_COLLECTION {
+            return None;
+        }
+
+        match released_at {
+            None => {
+                if !weak.is_valid() {
+                    return Some(Err("dropping one of two pins let the object go".into()));
+                }
+
+                second = None;
+                KismetSystemLibrary::collect_garbage();
+                released_at = Some(frames);
+                None
+            }
+            Some(at) if frames < at + AFTER_COLLECTION => None,
+            Some(_) => Some(if weak.is_valid() {
+                Err("the object outlived its last pin".into())
+            } else {
+                drop(second.take());
+                Ok(())
+            }),
+        }
+    }))
+}
+
+pub fn an_owned_struct_keeps_its_objects(_context: &Context) -> Outcome {
+    let kept = GameThread::current().and_then(|gt| {
+        let object = new_object_transient::<InputAction>(&gt)?;
+        let info = rusteal_runtime::runtime::OwnedStruct::<FLatentActionInfo>::new();
+        info.as_ref().set_callback_target(object.upcast_to());
+        Ok((info, TWeakObjectPtr::from_ref(&object)))
+    });
+
+    let (info, weak) = match kept {
+        Ok(kept) => kept,
+        Err(e) => return Outcome::Done(Err(format!("{e:?}"))),
+    };
+
+    KismetSystemLibrary::collect_garbage();
+
+    let mut info = Some(info);
+    let mut frames = 0;
+    let mut released_at = None;
+
+    Outcome::Pending(Box::new(move || {
+        frames += 1;
+
+        if frames < AFTER_COLLECTION {
+            return None;
+        }
+
+        match released_at {
+            None => {
+                if !weak.is_valid() {
+                    return Some(Err(
+                        "an object held only by an owned struct was collected".into()
+                    ));
+                }
+
+                info = None;
+                KismetSystemLibrary::collect_garbage();
+                released_at = Some(frames);
+                None
+            }
+            Some(at) if frames < at + AFTER_COLLECTION => None,
+            Some(_) => Some(if weak.is_valid() {
+                Err("the object outlived the owned struct that held it".into())
+            } else {
+                drop(info.take());
+                Ok(())
+            }),
+        }
+    }))
+}
+
+pub fn a_pinned_actor_destroyed_reads_as_gone(context: &Context) -> Outcome {
+    let pinned = spawn(context).and_then(|actor| {
+        let pinned = actor.pin().map_err(|e| format!("pin: {e:?}"))?;
+        destroy(actor)?;
+        Ok(pinned)
+    });
+
+    let pinned = match pinned {
+        Ok(pinned) => pinned,
+        Err(e) => return Outcome::Done(Err(e)),
+    };
+
+    KismetSystemLibrary::collect_garbage();
+    let mut frames = 0;
+
+    Outcome::Pending(Box::new(move || {
+        frames += 1;
+
+        if frames < AFTER_COLLECTION {
+            return None;
+        }
+
+        Some(if pinned.is_alive() || pinned.checked().is_ok() {
+            Err("a pinned actor destroyed explicitly still reads as alive".into())
+        } else {
+            Ok(())
+        })
+    }))
+}
+
+pub fn unpinning_leaves_what_the_engine_keeps(context: &Context) -> Outcome {
+    let world = TWeakObjectPtr::from_ref(&context.world);
+
+    match context.world.pin() {
+        Ok(pinned) => drop(pinned),
+        Err(e) => return Outcome::Done(Err(format!("pin: {e:?}"))),
+    }
+
+    KismetSystemLibrary::collect_garbage();
+    let mut frames = 0;
+
+    Outcome::Pending(Box::new(move || {
+        frames += 1;
+
+        if frames < AFTER_COLLECTION {
+            return None;
+        }
+
+        Some(if world.is_valid() {
+            Ok(())
+        } else {
+            Err("dropping a pin of the world let the engine's world go".into())
+        })
     }))
 }
