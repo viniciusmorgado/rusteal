@@ -5,7 +5,7 @@ use bindings::blutility::{EditorUtilitySubsystem, EditorUtilitySubsystemExt};
 use bindings::core_ue::Object;
 use bindings::editor_subsystem::EditorSubsystem;
 use bindings::unreal_ed::EditorSubsystemBlueprintLibrary;
-use rusteal_runtime::runtime::{SubclassOf, console};
+use rusteal_runtime::runtime::{GameThread, SubclassOf, console};
 
 use crate::subsystem::{INITIALIZED, ProbeEditorSubsystem};
 use crate::utility::{ProbeUtility, RUNS};
@@ -40,8 +40,9 @@ fn ensure(condition: bool, what: impl Into<String>) -> Result<(), String> {
 }
 
 fn editor_library_subsystem_initializes() -> Result<(), String> {
+    let gt = GameThread::current().map_err(|e| format!("{e:?}"))?;
     let class = SubclassOf::<ProbeEditorSubsystem>::base().upcast_to::<EditorSubsystem>();
-    let subsystem = EditorSubsystemBlueprintLibrary::get_editor_subsystem(class);
+    let subsystem = EditorSubsystemBlueprintLibrary::get_editor_subsystem(&gt, class);
     let probe = ProbeEditorSubsystem::from_obj(subsystem)
         .map_err(|e| format!("no ProbeEditorSubsystem: {e:?}"))?;
 
@@ -56,8 +57,9 @@ fn editor_library_subsystem_initializes() -> Result<(), String> {
 }
 
 fn editor_utility_object_runs_from_the_subsystem() -> Result<(), String> {
+    let gt = GameThread::current().map_err(|e| format!("{e:?}"))?;
     let class = SubclassOf::<EditorUtilitySubsystem>::base().upcast_to::<EditorSubsystem>();
-    let subsystem = EditorSubsystemBlueprintLibrary::get_editor_subsystem(class)
+    let subsystem = EditorSubsystemBlueprintLibrary::get_editor_subsystem(&gt, class)
         .cast::<EditorUtilitySubsystem>()
         .map_err(|e| format!("{e:?}"))?
         .checked()
@@ -67,7 +69,10 @@ fn editor_utility_object_runs_from_the_subsystem() -> Result<(), String> {
     let ran = subsystem.try_run_class(SubclassOf::<ProbeUtility>::base().upcast_to::<Object>());
     let runs = RUNS.load(Ordering::SeqCst) - before;
 
-    ensure(ran && runs == 1, format!("TryRunClass gave {ran}, Run ran {runs} times"))
+    ensure(
+        ran && runs == 1,
+        format!("TryRunClass gave {ran}, Run ran {runs} times"),
+    )
 }
 
 fn append(lines: &[String]) {
@@ -75,7 +80,11 @@ fn append(lines: &[String]) {
         return;
     };
 
-    if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+    {
         for line in lines {
             let _ = writeln!(file, "{line}");
         }

@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use bindings::core_ue::Object;
 use bindings::engine::{Actor, ActorExt, GameplayStatics, SceneComponent};
 use bindings::prelude::*;
-use rusteal_runtime::runtime::{RustealResult, SubclassOf, Transform, UObjectRef};
+use rusteal_runtime::runtime::{RustRef, RustealResult, SubclassOf, Transform, UObjectRef};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use super::{CLIENTS, NetWorld, Role, all_players_connected};
@@ -31,9 +31,7 @@ static PING_SENT: AtomicBool = AtomicBool::new(false);
 static CALLS: Mutex<Option<Calls>> = Mutex::new(None);
 
 fn viewer(context: UObjectRef<Object>) -> usize {
-    GameplayStatics::get_player_controller(context, 0)
-        .raw()
-        .0 as usize
+    GameplayStatics::get_player_controller(context, 0).raw().0 as usize
 }
 
 fn with_calls<R>(f: impl FnOnce(&mut Calls) -> R) -> Option<R> {
@@ -82,7 +80,7 @@ impl RpcProbe {
     }
 }
 
-fn probe(net: &NetWorld) -> Option<RpcProbe> {
+fn probe<'a>(net: &NetWorld<'a>) -> Option<RustRef<'a, RpcProbe>> {
     let found = GameplayStatics::get_all_actors_of_class(
         net.context,
         SubclassOf::<RpcProbe>::base().upcast_to::<Actor>(),
@@ -161,14 +159,20 @@ pub fn client_function_runs_on_its_owner_only(net: &NetWorld) -> Option<Result<(
         Role::Client(_) => {
             let probe = probe(net)?;
             let viewer = viewer(net.context);
-            let (note, pinged) =
-                with_calls(|calls| (calls.notes.get(&viewer).copied(), calls.pings.contains_key(&viewer)))?;
+            let (note, pinged) = with_calls(|calls| {
+                (
+                    calls.notes.get(&viewer).copied(),
+                    calls.pings.contains_key(&viewer),
+                )
+            })?;
 
             match (owns(net, &probe), note) {
                 (true, Some(NOTE)) => Some(Ok(())),
                 (true, Some(other)) => Some(Err(format!("the owner got {other}"))),
                 (true, None) => None,
-                (false, Some(other)) => Some(Err(format!("a client that does not own the probe got {other}"))),
+                (false, Some(other)) => Some(Err(format!(
+                    "a client that does not own the probe got {other}"
+                ))),
                 (false, None) => pinged.then_some(Ok(())),
             }
         }
@@ -201,7 +205,10 @@ pub fn validation_refuses_a_bad_call(net: &NetWorld) -> Option<Result<(), String
             Some(if probe.total() == ADDED {
                 Ok(())
             } else {
-                Err(format!("the refused call ran: the total is {}", probe.total()))
+                Err(format!(
+                    "the refused call ran: the total is {}",
+                    probe.total()
+                ))
             })
         }
         Role::Client(_) => {

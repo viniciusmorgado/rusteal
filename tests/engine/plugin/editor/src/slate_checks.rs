@@ -60,7 +60,10 @@ pub fn widgets_call_their_closures() -> Result<(), String> {
                 clicks.load(Ordering::SeqCst)
             ),
         )?;
-        ensure(field_text == "start", format!("the text box says {field_text:?}"))?;
+        ensure(
+            field_text == "start",
+            format!("the text box says {field_text:?}"),
+        )?;
         ensure(panel.is_ok(), format!("the panel was not built: {panel:?}"))?;
     }
 
@@ -100,7 +103,7 @@ pub fn details_panel_runs_a_rust_customization() -> Result<(), String> {
     use bindings::editor_subsystem::EditorSubsystem;
     use bindings::manual::world_ext::new_object;
     use bindings::unreal_ed::EditorSubsystemBlueprintLibrary;
-    use rusteal_runtime::runtime::{SubclassOf, details};
+    use rusteal_runtime::runtime::{GameThread, SubclassOf, details};
 
     use crate::factory::ProbeNote;
     use crate::subsystem::ProbeEditorSubsystem;
@@ -122,7 +125,9 @@ pub fn details_panel_runs_a_rust_customization() -> Result<(), String> {
     })
     .map_err(e)?;
 
+    let gt = GameThread::current().map_err(e)?;
     let outer = EditorSubsystemBlueprintLibrary::get_editor_subsystem(
+        &gt,
         SubclassOf::<ProbeEditorSubsystem>::base().upcast_to::<EditorSubsystem>(),
     );
     let note = new_object::<ProbeNote>(&outer).map_err(e)?;

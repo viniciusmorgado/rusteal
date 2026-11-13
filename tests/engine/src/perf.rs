@@ -4,8 +4,7 @@ use std::time::Instant;
 use bindings::core_ue::Object;
 use bindings::engine::{ActorExt, KismetMathLibrary, SceneComponent};
 use bindings::prelude::*;
-use rusteal_runtime::runtime::reflected;
-use rusteal_runtime::runtime::{DynamicCall, Transform, UObjectRef, UeArray, UeClass};
+use rusteal_runtime::runtime::{DynamicCall, SubclassOf, Transform, UObjectRef, UeArray};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use crate::runner::{Context, Outcome};
@@ -55,12 +54,8 @@ fn measure(context: &Context) -> Result<Vec<String>, String> {
         nanoseconds_per(start, CALLS)
     ));
 
-    let library = unsafe {
-        UObjectRef::<Object>::from_handle(
-            reflected::default_object(KismetMathLibrary::static_class()).map_err(e)?,
-        )
-    }
-    .map_err(e)?;
+    let class = SubclassOf::<KismetMathLibrary>::base();
+    let library: UObjectRef<Object> = class.default_object().map_err(e)?.upcast_to();
 
     let start = Instant::now();
     for n in 0..CALLS {

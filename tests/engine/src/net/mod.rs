@@ -61,10 +61,11 @@ impl std::fmt::Display for Role {
     }
 }
 
-pub struct NetWorld {
+/// One machine's view of the network check, for the tick that runs it.
+pub struct NetWorld<'a> {
     pub role: Role,
-    pub world: UObjectRef<World>,
-    pub context: UObjectRef<Object>,
+    pub world: UObjectRef<'a, World>,
+    pub context: UObjectRef<'a, Object>,
 }
 
 pub struct NetCheck {
@@ -268,7 +269,9 @@ impl NetTestDirector {
         }
 
         let expected = checks().len() * (CLIENTS + 1);
-        let timed_out = run.started.is_some_and(|started| started.elapsed() > TIMEOUT);
+        let timed_out = run
+            .started
+            .is_some_and(|started| started.elapsed() > TIMEOUT);
 
         if run.outcomes.len() == expected || timed_out {
             finish(run);
