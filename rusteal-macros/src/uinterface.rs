@@ -301,7 +301,7 @@ pub fn expand_uinterface(attr: TokenStream, item: TokenStream) -> syn::Result<To
             #(#signature_fns)*
         }
 
-        impl #name for ::rusteal_runtime::runtime::ScriptInterface<dyn #name> {
+        impl #name for ::rusteal_runtime::runtime::ScriptInterface<'_, dyn #name> {
             #(#dispatch_fns)*
         }
 
@@ -381,7 +381,7 @@ mod tests {
         assert!(out.contains("\"Highlight\""));
         assert!(out.contains("FUNC_BLUEPRINT_EVENT"));
         assert!(out.contains("CPF_RETURN_PARM"));
-        assert!(out.contains("ScriptInterface < dyn Interactable >"));
+        assert!(out.contains("ScriptInterface < '_ , dyn Interactable >"));
         assert!(out.contains("__rusteal_signature_interact"));
     }
 

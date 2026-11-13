@@ -404,6 +404,21 @@ pub struct ProbeRow {
     icon: UObjectRef<Actor>,
 }
 
+/// An interface declared in Rust, called through a ScriptInterface of the call.
+#[rusteal_runtime::uinterface]
+pub trait ProbeTalker {
+    fn talk(&self, loudness: i32) -> i32;
+
+    fn greet(&self, other: UObjectRef<Actor>) -> bool;
+}
+
+pub fn talk_to(object: UObjectRef<'_, Actor>) -> i32 {
+    object
+        .interface::<dyn ProbeTalker>()
+        .map(|talker| talker.talk(3))
+        .unwrap_or(0)
+}
+
 /// An object field read from a row Rust owns lives as long as the row.
 pub fn row_icon(row: &OwnedStruct<ProbeRow>) -> UObjectRef<'_, Actor> {
     row.icon()
