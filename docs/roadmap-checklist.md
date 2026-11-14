@@ -388,12 +388,48 @@ project the harness does not cover.
 
 - [ ] Windows CI, Windows and macOS, Android, iOS, ARM64 on hardware
 
+## Object safety (before M9)
+
+### T0: exact validity
+
+- [x] References keep the engine's index and serial number (`FWeakObjectHandle`); a new object in a reused slot is never taken for the old one
+- [x] `method()`, delegate owners, native events and tasks keep weak handles; `FWeakObjectPtr` size asserted on both sides
+
+### T1: GC-visible fields
+
+- [x] `#[uclass]` refuses object references outside `#[uproperty]` (trybuild); the templates' ten fields migrated
+
+### T2: the game thread
+
+- [x] Object references and `UObjectHandle` not `Send`; callbacks without `Send` in `GameThreadOnly`
+- [x] Debug check of the thread in every dispatch wrapper; thread-safe scope for `#[ufunction(ThreadSafe)]`
+
+### T3: lifetimes
+
+- [x] `UObjectRef<'a, T>`, `Checked<'a, T>`, `ScriptInterface<'a, I>`; `GameThread` anchor; `from_obj` gives `RustRef`; setters take `&self`
+- [x] `add_method`/`bind_method` on delegates; `next()`, `load_async` and `async #[ufunction]` give weak pointers
+- [x] Templates, plugin templates and the harness migrated; `rusteal upgrade` notes
+
+### T4: GC references
+
+- [x] `Pinned` and `OwnedStruct` reported by an `FGCObject`, one slot per pin; `OwnedStruct` not `Send`
+
+### T5: static packages
+
+- [x] `--feature shared-std`: a static package for an engine fork with Rust inside; weak personality on ELF and Mach-O (universal libraries too), local on COFF (static 5/5 on the fork; LLD links of Linux, Android, macOS, iOS and Windows libraries)
+
+### T6: documentation and validation
+
+- [x] Handbooks: Object references, delegates, async, tasks, assets, packaging, versions; decisions D61–D66; roadmap
+- [x] Epic's engine (5.8.4, prebuilt): harness 117/117, templates 24/24, static 5/5
+- [x] The fork with Rust inside, `shared-std`: harness 117/117, templates 24/24, static 5/5
+
 ## M9 — Stabilization, 1.0.0-rc (≈0.19)
 
 - [ ] API freeze
 - [ ] Compatibility within 1.x: fingerprint and table order
 - [ ] Semver, deprecation and MSRV policy
-- [ ] Hot reload of structs and enums; Pinned and GC
+- [ ] Hot reload of structs and enums
 - [ ] Escape hatch to C++ documented and tested
 - [ ] Noir Blue and the Lyra slice without workarounds
 - [ ] One month of RC without a breaking change
