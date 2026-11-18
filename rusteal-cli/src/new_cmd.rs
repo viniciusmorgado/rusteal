@@ -542,6 +542,67 @@ pub fn copy_shared_packs(engine: &Path, root: &Path, packs: &[String]) {
     }
 }
 
+const ASSET_EXTENSIONS: &[&str] = &["uasset", "uexp", "ubulk", "uptnl"];
+
+pub fn copy_template_assets(engine: &Path, root: &Path, assets: &[String]) {
+    let mut copied = 0usize;
+    let mut kept = 0usize;
+
+    for asset in assets {
+        let Some((template, Some(rel))) = asset
+            .split_once('/')
+            .map(|(template, rest)| (template, rest.strip_prefix("Content/")))
+        else {
+            panic!("template asset {asset} is not <Template>/Content/<path>");
+        };
+
+        let source = engine.join("Templates").join(template).join("Content");
+        let (dir, stem) = rel.rsplit_once('/').unwrap_or(("", rel));
+        let files: Vec<PathBuf> = std::fs::read_dir(source.join(dir))
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|entry| entry.path())
+            .filter(|path| {
+                path.file_stem().is_some_and(|s| s == stem)
+                    && path.extension().is_some_and(|ext| {
+                        ASSET_EXTENSIONS.contains(&ext.to_string_lossy().to_lowercase().as_str())
+                    })
+            })
+            .collect();
+
+        if files.is_empty() {
+            eprintln!(
+                "Error: {} has no {asset}: the engine's {template} template is missing or \
+                 differs from the one Rusteal supports.",
+                engine.display()
+            );
+            std::process::exit(1);
+        }
+
+        for path in files {
+            let to = root
+                .join("Content")
+                .join(path.strip_prefix(&source).unwrap());
+
+            if to.exists() {
+                kept += 1;
+                continue;
+            }
+
+            std::fs::create_dir_all(to.parent().unwrap())
+                .unwrap_or_else(|e| panic!("Failed to create {}: {e}", to.display()));
+
+            copy_file(&path, &to);
+            copied += 1;
+        }
+    }
+
+    if !assets.is_empty() {
+        eprintln!("  engine template assets: {copied} files, {kept} already in the project");
+    }
+}
+
 fn copy_file(from: &Path, to: &Path) {
     std::fs::copy(from, to).unwrap_or_else(|e| panic!("Failed to copy {}: {e}", from.display()));
 
@@ -1009,6 +1070,52 @@ mod tests {
         );
 
         std::fs::set_permissions(&from, std::fs::Permissions::from_mode(0o644)).unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn template_assets_come_from_the_engine_without_their_sources() {
+        let dir = std::env::temp_dir().join(format!("rusteal-assets-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let engine = dir.join("Engine");
+        let root = dir.join("Game");
+        let content = engine.join("Templates/TP_X/Content/Demo/Meshes");
+        std::fs::create_dir_all(&content).unwrap();
+        std::fs::create_dir_all(root.join("Content/Demo/Meshes")).unwrap();
+
+        for file in [
+            "SM_A.uasset",
+            "SM_A.ubulk",
+            "SM_A.fbx",
+            "SM_AB.uasset",
+            "SM_B.uasset",
+        ] {
+            std::fs::write(content.join(file), b"engine").unwrap();
+        }
+
+        std::fs::write(root.join("Content/Demo/Meshes/SM_B.uasset"), b"project").unwrap();
+
+        copy_template_assets(
+            &engine,
+            &root,
+            &[
+                "TP_X/Content/Demo/Meshes/SM_A".to_string(),
+                "TP_X/Content/Demo/Meshes/SM_B".to_string(),
+            ],
+        );
+
+        let mut copied: Vec<String> = walk(&root.join("Content"))
+            .iter()
+            .map(|path| path.file_name().unwrap().to_string_lossy().into_owned())
+            .collect();
+        copied.sort();
+
+        assert_eq!(copied, ["SM_A.uasset", "SM_A.ubulk", "SM_B.uasset"]);
+        assert_eq!(
+            std::fs::read(root.join("Content/Demo/Meshes/SM_B.uasset")).unwrap(),
+            b"project"
+        );
+
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

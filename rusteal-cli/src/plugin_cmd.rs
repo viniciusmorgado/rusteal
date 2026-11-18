@@ -89,6 +89,7 @@ pub fn create_plugin(name: &str, template: &str, root: &Path, engine: &Path) -> 
 
     if let Some(feature) = &manifest.feature {
         new_cmd::copy_shared_packs(engine, root, &feature.shared_packs);
+        new_cmd::copy_template_assets(engine, root, &feature.template_assets);
     }
 
     tera::Tera::one_off(&manifest.next_step, &context, false)
