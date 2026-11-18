@@ -72,6 +72,8 @@ questions are tracked in the
 | [Templates](https://viniciusmorgado.github.io/dev.rusteal.github.io/templates/porting.html) | Porting an engine template to Rust, the template directories, features. |
 | [Releases and versions](https://viniciusmorgado.github.io/dev.rusteal.github.io/contributing/releases.html) | One version for everything, where it comes from, and the pipeline that publishes it. |
 
+Before opening a pull request, read [the contributing guide](https://github.com/viniciusmorgado/rusteal/blob/main/CONTRIBUTING.md) and its [AI policy](https://github.com/viniciusmorgado/rusteal/blob/main/CONTRIBUTING.md#ai-policy). Code written with generative AI is welcome. Every pull request is reviewed and tested by the core team, and its author answers for it and tells us how AI was used.
+
 ## Acknowledgments
 
 Rusteal is a hard fork of [**uika**](https://github.com/VioletHelianthus/uika) by [**VioletHelianthus**](https://github.com/VioletHelianthus), who designed and wrote the foundation this project stands on: the reflection-driven code generator, the UHT exporter plugin, the reification of Rust structs as `UClass`es, and the runtime. Thank you.
