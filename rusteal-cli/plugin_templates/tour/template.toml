@@ -10,3 +10,27 @@ next_step = "place a BP_KeyboardKey (Plugins > Tour Content), set its Key, and a
 plugin = "Tour"
 # The chamfered cube the gizmo demo and the template cubes use.
 shared_packs = ["High/LevelPrototyping"]
+# Epic's assets the Blueprints use (materials, meshes, textures, effects,
+# sounds), from the installed engine's Intro To Unreal template: each is
+# copied, with every file of it, to the project's Content/ at its path in the
+# template (/Game/DemoTemplate/...), skipping what the project already has.
+template_assets = [
+    "TP_UEIntro_BP/Content/DemoTemplate/Templates/M_BoxArt",
+    "TP_UEIntro_BP/Content/DemoTemplate/Templates/M_TemplateBox",
+    "TP_UEIntro_BP/Content/DemoTemplate/Templates/T__0006_TP_Vehicle",
+    "TP_UEIntro_BP/Content/DemoTemplate/Transform/M_Move",
+    "TP_UEIntro_BP/Content/DemoTemplate/Transform/M_Rotate",
+    "TP_UEIntro_BP/Content/DemoTemplate/Transform/SM_Gizmo_Location",
+    "TP_UEIntro_BP/Content/DemoTemplate/Transform/SM_Gizmo_Rotate",
+    "TP_UEIntro_BP/Content/DemoTemplate/Transform/SM_Gizmo_Scale",
+    "TP_UEIntro_BP/Content/DemoTemplate/_Core/EditorUI/M_Gradient",
+    "TP_UEIntro_BP/Content/DemoTemplate/_Core/EditorUI/T_ContentDrawer",
+    "TP_UEIntro_BP/Content/DemoTemplate/_Core/EditorUI/T_ContentDrawer_Asset",
+    "TP_UEIntro_BP/Content/DemoTemplate/_Core/EditorUI/T_ContentDrawer_Tab",
+    "TP_UEIntro_BP/Content/DemoTemplate/_Core/EditorUI/T_DetailsPanel_Coll",
+    "TP_UEIntro_BP/Content/DemoTemplate/_Core/EditorUI/T_DetailsPanel_CollList",
+    "TP_UEIntro_BP/Content/DemoTemplate/_Core/EditorUI/T_Outliner",
+    "TP_UEIntro_BP/Content/DemoTemplate/_Core/EditorUI/Transform",
+    "TP_UEIntro_BP/Content/DemoTemplate/_Core/SplinePath/M_Corner",
+    "TP_UEIntro_BP/Content/DemoTemplate/_Core/SplinePath/M_D_Direction",
+]

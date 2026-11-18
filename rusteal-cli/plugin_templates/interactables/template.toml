@@ -10,3 +10,19 @@ next_step = "place a BP_DoorTrigger and a BP_DoorFrame_Unlockable (Plugins > Int
 plugin = "Interactables"
 # The door frame and cube meshes.
 shared_packs = ["High/LevelPrototyping"]
+# Epic's assets the Blueprints use (materials, meshes, textures, effects,
+# sounds), from the installed engine's Intro To Unreal template: each is
+# copied, with every file of it, to the project's Content/ at its path in the
+# template (/Game/DemoTemplate/...), skipping what the project already has.
+template_assets = [
+    "TP_UEIntro_BP/Content/DemoTemplate/Blueprint/M_Light",
+    "TP_UEIntro_BP/Content/DemoTemplate/Metasounds/MS_TuningFork",
+    "TP_UEIntro_BP/Content/DemoTemplate/Metasounds/M_Distort",
+    "TP_UEIntro_BP/Content/DemoTemplate/Metasounds/M_Fork",
+    "TP_UEIntro_BP/Content/DemoTemplate/Metasounds/NS_Sound",
+    "TP_UEIntro_BP/Content/DemoTemplate/Metasounds/NewSoundAttenuation",
+    "TP_UEIntro_BP/Content/DemoTemplate/Metasounds/SM_TuningFork",
+    "TP_UEIntro_BP/Content/DemoTemplate/Templates/Confetti/M_GoldConfetti",
+    "TP_UEIntro_BP/Content/DemoTemplate/Templates/Confetti/NS_Confetti",
+    "TP_UEIntro_BP/Content/DemoTemplate/_Core/MI_Intro_Colorway",
+]
