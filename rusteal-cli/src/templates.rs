@@ -212,6 +212,8 @@ pub struct Feature {
     pub plugin: String,
     #[serde(default)]
     pub shared_packs: Vec<String>,
+    #[serde(default)]
+    pub template_assets: Vec<String>,
 }
 
 pub fn plugin_templates() -> Vec<(&'static str, PluginManifest)> {
@@ -553,6 +555,27 @@ mod tests {
                     pack.split('/').count(),
                     2,
                     "{name}: {pack} is not <Level>/<Pack>"
+                );
+            }
+
+            for asset in &feature.template_assets {
+                let rel = asset
+                    .split_once("/Content/")
+                    .map(|(template, rel)| (template.contains('/'), rel));
+
+                assert!(
+                    matches!(rel, Some((false, rel)) if !rel.is_empty() && !rel.contains('.')),
+                    "{name}: {asset} is not <Template>/Content/<path> without an extension"
+                );
+
+                let stem = asset.rsplit('/').next().unwrap();
+                let content = format!("{name}/Content/");
+                assert!(
+                    !PLUGIN_TEMPLATE_FILES.iter().any(|(path, _)| {
+                        path.starts_with(&content)
+                            && Path::new(path).file_stem().is_some_and(|s| s == stem)
+                    }),
+                    "{name}: {asset} comes from the engine, the plugin template does not ship it"
                 );
             }
         }
