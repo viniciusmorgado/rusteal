@@ -11,28 +11,29 @@ use bindings::umg::{
     WidgetBlueprintLibrary, WidgetExt,
 };
 use rusteal_runtime::runtime::{
-    FName, LinearColor, OwnedStruct, RustealResult, UObjectRef, method,
+    FName, GameThread, LinearColor, OwnedStruct, RustealResult, UObjectRef, method,
 };
 use rusteal_runtime::{uclass, uclass_impl};
 
 use crate::enums::{EIconType, EUIStyle};
 use crate::styles::{StylizedUI, font_info, slate_color};
 
-fn dynamic_material(
-    owner: UObjectRef<UserWidget>,
-    parent: UObjectRef<MaterialInterface>,
-) -> UObjectRef<MaterialInstanceDynamic> {
+fn dynamic_material<'a>(
+    owner: UObjectRef<'a, UserWidget>,
+    parent: UObjectRef<'a, MaterialInterface>,
+) -> UObjectRef<'a, MaterialInstanceDynamic> {
     KismetMaterialLibrary::create_dynamic_material_instance(owner.upcast_to(), parent, None, None)
 }
 
-fn material_from_image(
-    owner: UObjectRef<UserWidget>,
-    parent: UObjectRef<MaterialInterface>,
-    image: UObjectRef<Image>,
-) -> RustealResult<UObjectRef<MaterialInstanceDynamic>> {
+fn material_from_image<'a>(
+    owner: UObjectRef<'a, UserWidget>,
+    parent: UObjectRef<'a, MaterialInterface>,
+    image: UObjectRef<'a, Image>,
+) -> RustealResult<UObjectRef<'a, MaterialInstanceDynamic>> {
     let image = image.checked()?;
     let material = dynamic_material(owner, parent);
-    let icon = WidgetBlueprintLibrary::get_brush_resource_as_texture2_d(&image.get_brush());
+    let gt = GameThread::current()?;
+    let icon = WidgetBlueprintLibrary::get_brush_resource_as_texture2_d(&gt, &image.get_brush());
 
     material
         .checked()?
@@ -365,7 +366,6 @@ impl ToggleButton {
 
         let button = self.button().checked()?;
         button.set_style(&style);
-        self.change_style(EUIStyle::Light);
 
         button
             .on_pressed()
@@ -375,6 +375,9 @@ impl ToggleButton {
             .on_released()
             .add(method(self, Self::button_released))?
             .detach();
+
+        // After the button's last use: changing the style needs the class mutably.
+        self.change_style(EUIStyle::Light);
         Ok(())
     }
 }

@@ -10,7 +10,9 @@ use bindings::engine::{
 };
 use bindings::prelude::*;
 use glam::DVec3;
-use rusteal_runtime::runtime::{FName, Rotator, RustealResult, SubclassOf, UObjectRef};
+use rusteal_runtime::runtime::{
+    FName, Rotator, RustealResult, SubclassOf, TWeakObjectPtr, UObjectRef,
+};
 use rusteal_runtime::{uclass, uclass_impl};
 
 const INTERACTION_RANGE_RADIUS: f32 = 100.0;
@@ -44,13 +46,13 @@ pub struct StrategyUnit {
     #[uproperty]
     env_query_instance: UObjectRef<EnvQueryInstanceBlueprintWrapper>,
 
-    ai_controller: UObjectRef<AIController>,
+    ai_controller: TWeakObjectPtr<AIController>,
 
     current_movement_goal: DVec3,
 
     b_interact_on_arrival: bool,
 
-    interact_ignore_list: Vec<UObjectRef<StrategyUnit>>,
+    interact_ignore_list: Vec<TWeakObjectPtr<StrategyUnit>>,
 }
 
 #[uclass_impl]
@@ -108,7 +110,7 @@ impl StrategyUnit {
         new_controller: UObjectRef<Controller>,
     ) {
         let ai_controller: UObjectRef<AIController> = new_controller.cast().unwrap_or_default();
-        self.set_ai_controller(ai_controller);
+        self.set_ai_controller(TWeakObjectPtr::from_ref(&ai_controller));
 
         let Ok(controller) = ai_controller.checked() else {
             return;
@@ -116,13 +118,12 @@ impl StrategyUnit {
 
         let me: UObjectRef<StrategyUnit> = self.as_ref().cast().unwrap_or_default();
 
-        let bound = controller
-            .receive_move_completed()
-            .add(move |_request_id, _result| {
-                if let Ok(mut unit) = StrategyUnit::from_obj(me) {
-                    unit.handle_move_finished();
-                }
-            });
+        let bound = controller.receive_move_completed().add_method(
+            self,
+            |unit: &mut Self, _request_id, _result| {
+                unit.handle_move_finished();
+            },
+        );
 
         match bound {
             Ok(binding) => binding.detach(),
@@ -194,7 +195,7 @@ impl StrategyUnit {
     ) {
         self.set_current_movement_goal(location);
         self.set_b_interact_on_arrival(b_interact);
-        self.set_interact_ignore_list(ignore_list);
+        self.set_interact_ignore_list(ignore_list.iter().map(TWeakObjectPtr::from_ref).collect());
 
         self.stop_moving();
 
@@ -223,14 +224,12 @@ impl StrategyUnit {
         self.set_env_query_instance(query_instance);
 
         if let Ok(query) = query_instance.checked() {
-            let bound =
-                query
-                    .on_query_finished_event()
-                    .add(move |finished_query, _query_status| {
-                        if let Ok(mut unit) = StrategyUnit::from_obj(me) {
-                            unit.on_eqs_finished(finished_query);
-                        }
-                    });
+            let bound = query.on_query_finished_event().add_method(
+                self,
+                |unit: &mut Self, finished_query, _query_status| {
+                    unit.on_eqs_finished(finished_query);
+                },
+            );
 
             match bound {
                 Ok(binding) => binding.detach(),
@@ -256,7 +255,9 @@ impl StrategyUnit {
 
         self.set_current_movement_goal(top_result.to_dvec3());
 
-        let Ok(ai_controller) = self.ai_controller().checked() else {
+        let ai_controller = self.ai_controller();
+
+        let Ok(ai_controller) = ai_controller.checked() else {
             return;
         };
 
@@ -285,11 +286,13 @@ impl StrategyUnit {
             return;
         };
 
+        let ignore_list = self.interact_ignore_list();
         let mut ignored: Vec<UObjectRef<Actor>> = vec![me.as_ref().upcast_to()];
 
         ignored.extend(
-            self.interact_ignore_list()
+            ignore_list
                 .iter()
+                .filter_map(TWeakObjectPtr::get)
                 .map(|unit| unit.upcast_to()),
         );
 

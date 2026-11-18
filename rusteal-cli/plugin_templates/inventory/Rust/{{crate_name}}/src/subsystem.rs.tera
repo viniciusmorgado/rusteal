@@ -3,7 +3,7 @@ use bindings::engine::{
     Actor, ActorComponent, ActorExt, SubsystemBlueprintLibrary, WorldSubsystem,
 };
 use bindings::rusteal::RustealWorldSubsystem;
-use rusteal_runtime::runtime::{RustealResult, SubclassOf, Transform, UObjectRef};
+use rusteal_runtime::runtime::{RustealResult, RustRef, SubclassOf, Transform, UObjectRef};
 use rusteal_runtime::{uclass, uclass_impl};
 
 use crate::component::{{ plugin }}Component;
@@ -14,17 +14,19 @@ pub struct {{ plugin }}Subsystem {}
 #[uclass_impl]
 impl {{ plugin }}Subsystem {
     #[ufunction]
-    pub fn inventory_of(
+    pub fn inventory_of<'a>(
         &mut self,
-        actor: UObjectRef<Actor>,
+        actor: UObjectRef<'a, Actor>,
         create: bool,
-    ) -> UObjectRef<{{ plugin }}Component> {
+    ) -> UObjectRef<'a, {{ plugin }}Component> {
         find_or_add(actor, create).unwrap_or_else(|_| UObjectRef::null())
     }
 }
 
 impl {{ plugin }}Subsystem {
-    pub fn get(context: UObjectRef<bindings::core_ue::Object>) -> RustealResult<Self> {
+    pub fn get(
+        context: UObjectRef<'_, bindings::core_ue::Object>,
+    ) -> RustealResult<RustRef<'_, Self>> {
         let class = SubclassOf::<Self>::base().upcast_to::<WorldSubsystem>();
 
         Self::from_obj(SubsystemBlueprintLibrary::get_world_subsystem(

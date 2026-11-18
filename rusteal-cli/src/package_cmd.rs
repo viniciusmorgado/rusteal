@@ -6,12 +6,21 @@ use rusteal_codegen::config::{find_plugins, find_uproject};
 use crate::build_cmd::{self, HostPlatform};
 use crate::optimizations::{self, Snapshot, Switch};
 use crate::platform::{self, Platform};
+use crate::shared_std;
 use crate::static_link;
 use crate::xcode_shim;
 
 pub fn target_platform(name: Option<&str>) -> Platform {
     let name = name.unwrap_or(HostPlatform::CURRENT.ubt_platform);
     platform::find(name, &platform::search_dirs()).unwrap_or_else(|e| fail(&e))
+}
+
+/// What `rusteal package --feature` turns on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum PackageFeature {
+    /// For an engine that links Rust of its own (a fork with Rust inside): the static library unwinds through the
+    /// engine's Rust personality instead of exporting its own.
+    SharedStd,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -24,6 +33,7 @@ pub fn run_package(
     link_statically: bool,
     target: &Platform,
     server: bool,
+    shared_std: bool,
 ) {
     let host = HostPlatform::CURRENT.ubt_platform;
 
@@ -102,6 +112,22 @@ pub fn run_package(
 
         let installed =
             static_link::install(root, &artifact, &target.name).unwrap_or_else(|e| fail(&e));
+
+        if shared_std {
+            let shared = shared_std::share_engine_std(&installed).unwrap_or_else(|e| fail(&e));
+
+            eprintln!(
+                "rusteal package: shared-std, {}",
+                if shared == 0 {
+                    "the library exports no Rust personality of its own: nothing to share"
+                        .to_string()
+                } else {
+                    format!(
+                        "the library gives way to the engine's Rust personality ({shared} symbol changed)"
+                    )
+                }
+            );
+        }
 
         eprintln!(
             "rusteal package: the Rust libraries are linked into the game from {}{}",

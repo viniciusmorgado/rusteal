@@ -20,6 +20,7 @@ pub mod dynamic_value;
 mod executor;
 pub mod ffi_guard;
 pub mod fname;
+pub mod game_thread;
 pub mod gameplay_tags;
 pub mod http;
 pub mod input;
@@ -44,6 +45,10 @@ pub mod strings;
 pub mod struct_ref;
 pub mod subclass_of;
 mod sync;
+pub use sync::{
+    GameThreadOnly, ThreadSafeScope, assert_game_thread, assert_game_thread_or_thread_safe,
+    thread_safe_scope,
+};
 pub mod task;
 pub mod text;
 pub mod tick;
@@ -65,10 +70,11 @@ pub use error::{
     ffi_infallible, ffi_infallible_ctx,
 };
 pub use ffi_guard::ffi_boundary;
+pub use game_thread::{GameThread, RustRef};
 pub use logging::{LOG_DISPLAY, LOG_ERROR, LOG_WARNING};
 pub use method::method;
 pub use module::{FuncTable, Module, ModuleId, type_id};
-pub use object_ref::{Checked, ObjectPointer, UObjectRef};
+pub use object_ref::{Checked, ObjectPointer, UObjectRef, resolve_weak_handle, weak_handle_of};
 pub use pinned::Pinned;
 pub use script_interface::ScriptInterface;
 pub use soft_class_ref::SoftClassRef;

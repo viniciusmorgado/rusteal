@@ -183,8 +183,10 @@ refers to the next section.
 | No API stability or deprecation policy (the README says APIs change without notice) | missing | M9 |
 | UE deprecations do not reach the bindings as `#[deprecated]` | missing | M9 |
 | Hot reload of a changed `#[ustruct]`/`#[uenum]`, Rust-private fields across a reload, `-game` | missing | M9 |
-| `Pinned` not reference counted; a `UObjectRef` in a private field invisible to the GC | sharp edge | M9 |
-| The game thread is a convention, not asserted | sharp edge | M9 |
+| `Pinned` not reference counted; a `UObjectRef` in a private field invisible to the GC | closed: each `Pinned` is its own slot in an `FGCObject`, `OwnedStruct` is reported to the GC, `#[uclass]` refuses object references outside `#[uproperty]` | before M9 |
+| Object references read raw pointers: a freed object is undefined behavior, a new one at the same address is taken for it | closed: references keep the engine's index and serial number | before M9 |
+| A `UObjectRef` can outlive the call that gave it (a field, a closure, a task) | closed: `UObjectRef<'a, T>` is tied to its call; `TWeakObjectPtr` and `Pinned` keep objects | before M9 |
+| The game thread is a convention, not asserted | closed: object references are not `Send`; debug builds check every engine call | before M9 |
 | UE deprecations UE-DEP-001 and UE-DEP-002 open | open | M9 |
 
 ## Milestones
@@ -465,8 +467,9 @@ breakpoint is hit in the editor on each desktop; a trace shows Rust scopes.
   UE deprecations carried into the bindings as `#[deprecated]`, a Rust MSRV
   policy, the supported engine versions (5.8 for 1.x).
 - **Sharp edges:** struct and enum hot reload, opt-in persistence of private
-  fields, reference-counted `Pinned`, GC-visible private references, a debug
-  assertion of the game thread, UE-DEP-001/002 closed.
+  fields, UE-DEP-001/002 closed. (Reference-counted `Pinned`, GC-visible
+  private references and the game-thread assertion closed before M9, with
+  object safety.)
 - **Docs:** the escape hatch to C++ for tier 4, tested; every remaining limit
   in Known limits with its workaround.
 

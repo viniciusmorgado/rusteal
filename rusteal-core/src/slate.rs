@@ -63,7 +63,7 @@ impl Widget {
 /// A value a widget shows: fixed, or read again from a closure every frame.
 pub enum Attribute<T> {
     Fixed(T),
-    Bound(Box<dyn FnMut() -> T + Send>),
+    Bound(Box<dyn FnMut() -> T>),
 }
 
 impl From<&str> for Attribute<String> {
@@ -78,7 +78,7 @@ impl From<String> for Attribute<String> {
     }
 }
 
-impl<F: FnMut() -> String + Send + 'static> From<F> for Attribute<String> {
+impl<F: FnMut() -> String + 'static> From<F> for Attribute<String> {
     fn from(f: F) -> Self {
         Attribute::Bound(Box::new(f))
     }
@@ -92,19 +92,19 @@ impl From<bool> for Attribute<bool> {
 
 /// `Attribute::from_fn(|| ...)` for a value other than text read every frame.
 impl<T> Attribute<T> {
-    pub fn from_fn(f: impl FnMut() -> T + Send + 'static) -> Self {
+    pub fn from_fn(f: impl FnMut() -> T + 'static) -> Self {
         Attribute::Bound(Box::new(f))
     }
 }
 
-fn text_callback(mut f: Box<dyn FnMut() -> String + Send>) -> u64 {
+fn text_callback(mut f: Box<dyn FnMut() -> String>) -> u64 {
     register_callback(move |out| {
         let text = f();
         unsafe { ffi_dispatch::widget_slate_write_text(out, text.as_ptr(), text.len() as u32) };
     })
 }
 
-fn bool_callback(mut f: Box<dyn FnMut() -> bool + Send>) -> u64 {
+fn bool_callback(mut f: Box<dyn FnMut() -> bool>) -> u64 {
     register_callback(move |out| {
         if !out.is_null() {
             unsafe { *(out as *mut bool) = f() };
@@ -326,7 +326,7 @@ impl Button {
         self
     }
 
-    pub fn on_clicked(mut self, mut f: impl FnMut() + Send + 'static) -> Self {
+    pub fn on_clicked(mut self, mut f: impl FnMut() + 'static) -> Self {
         self.props.on_event = register_callback(move |_| f());
         self
     }
@@ -357,7 +357,7 @@ impl CheckBox {
         }
     }
 
-    pub fn on_changed(mut self, mut f: impl FnMut(bool) + Send + 'static) -> Self {
+    pub fn on_changed(mut self, mut f: impl FnMut(bool) + 'static) -> Self {
         self.props.on_event = register_callback(move |params| {
             if !params.is_null() {
                 f(unsafe { *(params as *const bool) });
@@ -397,13 +397,13 @@ impl EditableTextBox {
     }
 
     /// Called on every edit, with the whole text.
-    pub fn on_changed(mut self, mut f: impl FnMut(String) + Send + 'static) -> Self {
+    pub fn on_changed(mut self, mut f: impl FnMut(String) + 'static) -> Self {
         self.props.on_event = register_callback(move |params| f(read_text_arg(params)));
         self
     }
 
     /// Called when the text is committed: Enter, or the focus leaving the box.
-    pub fn on_committed(mut self, mut f: impl FnMut(String) + Send + 'static) -> Self {
+    pub fn on_committed(mut self, mut f: impl FnMut(String) + 'static) -> Self {
         self.props.on_commit = register_callback(move |params| f(read_text_arg(params)));
         self
     }
@@ -430,7 +430,7 @@ impl SpinBox {
         }
     }
 
-    pub fn on_changed(mut self, mut f: impl FnMut(f32) + Send + 'static) -> Self {
+    pub fn on_changed(mut self, mut f: impl FnMut(f32) + 'static) -> Self {
         self.props.on_event = register_callback(move |params| {
             if !params.is_null() {
                 f(unsafe { *(params as *const f32) });
@@ -567,7 +567,7 @@ builder_into_widget!(
 pub fn register_tab(
     name: &str,
     label: &str,
-    mut build: impl FnMut() -> RustealResult<Widget> + Send + 'static,
+    mut build: impl FnMut() -> RustealResult<Widget> + 'static,
 ) -> RustealResult<()> {
     let id = register_callback(move |out| {
         let built = build();

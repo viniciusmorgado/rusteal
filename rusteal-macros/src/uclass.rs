@@ -525,6 +525,61 @@ impl UPropertyField {
     }
 }
 
+/// The object reference a Rust-only field's type holds, at any depth (`Option`, `Vec`, maps,
+/// tuples, arrays, boxes...): the garbage collector does not see those fields.
+pub(crate) fn object_reference_in(ty: &syn::Type) -> Option<String> {
+    match ty {
+        syn::Type::Path(tp) => tp
+            .qself
+            .as_ref()
+            .and_then(|q| object_reference_in(&q.ty))
+            .or_else(|| object_reference_in_path(&tp.path)),
+        syn::Type::Tuple(tuple) => tuple.elems.iter().find_map(object_reference_in),
+        syn::Type::Array(array) => object_reference_in(&array.elem),
+        syn::Type::Slice(slice) => object_reference_in(&slice.elem),
+        syn::Type::Reference(reference) => object_reference_in(&reference.elem),
+        syn::Type::Ptr(ptr) => object_reference_in(&ptr.elem),
+        syn::Type::Paren(paren) => object_reference_in(&paren.elem),
+        syn::Type::Group(group) => object_reference_in(&group.elem),
+        syn::Type::TraitObject(object) => object.bounds.iter().find_map(|bound| match bound {
+            syn::TypeParamBound::Trait(t) => object_reference_in_path(&t.path),
+            _ => None,
+        }),
+        _ => None,
+    }
+}
+
+fn object_reference_in_path(path: &syn::Path) -> Option<String> {
+    const REFERENCES: [&str; 3] = ["UObjectRef", "Checked", "ScriptInterface"];
+
+    path.segments.iter().find_map(|segment| {
+        let name = segment.ident.to_string();
+
+        if REFERENCES.contains(&name.as_str()) {
+            return Some(name);
+        }
+
+        match &segment.arguments {
+            syn::PathArguments::AngleBracketed(args) => {
+                args.args.iter().find_map(|arg| match arg {
+                    syn::GenericArgument::Type(inner) => object_reference_in(inner),
+                    syn::GenericArgument::AssocType(assoc) => object_reference_in(&assoc.ty),
+                    _ => None,
+                })
+            }
+            syn::PathArguments::Parenthesized(args) => args
+                .inputs
+                .iter()
+                .find_map(|arg| object_reference_in(&arg.ty))
+                .or_else(|| match &args.output {
+                    syn::ReturnType::Type(_, out) => object_reference_in(out),
+                    syn::ReturnType::Default => None,
+                }),
+            syn::PathArguments::None => None,
+        }
+    })
+}
+
 struct RustPrivateField {
     ident: Ident,
     ty: syn::Type,
@@ -647,6 +702,25 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
                 args: pargs,
             });
         } else {
+            if let Some(found) = object_reference_in(&field_ty) {
+                return Err(syn::Error::new_spanned(
+                    &field_ty,
+                    format!(
+                        "`{field_ident}` keeps a `{found}` in a Rust-only field, where the garbage \
+                         collector cannot see it: the object can be destroyed while the field \
+                         still names it.\n\n\
+                         Keep it one of these ways instead:\n\
+                         - `#[uproperty] {field_ident}: UObjectRef<T>` when the class owns the \
+                         object or must keep it: the engine sees it;\n\
+                         - `{field_ident}: TWeakObjectPtr<T>` when the class only observes it: \
+                         `get()` is `None` once it is gone;\n\
+                         - `{field_ident}: Pinned<T>` when Rust alone keeps it alive.\n\n\
+                         Several objects are `#[uproperty] UeArray<UObjectRef<T>>` or \
+                         `Vec<TWeakObjectPtr<T>>`."
+                    ),
+                ));
+            }
+
             rust_fields.push(RustPrivateField {
                 ident: field_ident,
                 ty: field_ty,
@@ -767,7 +841,7 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
             fn from_object_handle(
                 handle: ::rusteal_runtime::ffi::UObjectHandle,
             ) -> ::rusteal_runtime::runtime::RustealResult<Self> {
-                Self::from_obj(unsafe { ::rusteal_runtime::runtime::UObjectRef::<Self>::from_raw(handle) })
+                Self::__from_handle(handle)
             }
         }
     };
@@ -804,7 +878,9 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
             pub fn #ident(&self) -> #ty {
                 unsafe { (*self.__rust_data).#ident.clone() }
             }
-            pub fn #setter_ident(&mut self, val: #ty) {
+            // `&self`, like the properties' setters: an object reference taken from `self`
+            // borrows it, and the class's other fields stay writable meanwhile.
+            pub fn #setter_ident(&self, val: #ty) {
                 unsafe { (*self.__rust_data).#ident = val; }
             }
             #[allow(dead_code)]
@@ -852,8 +928,23 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
 
     accessor_methods.push(quote! {
         #[track_caller]
-        pub fn from_obj(obj: ::rusteal_runtime::runtime::UObjectRef<impl ::rusteal_runtime::runtime::UeClass>) -> ::rusteal_runtime::runtime::RustealResult<Self> {
-            let handle = obj.checked()?.raw();
+        /// The Rust class behind `obj`, for as long as `obj` may live: the guard gives the class's
+        /// functions and fields, and cannot be kept past the call that found the object.
+        #[track_caller]
+        pub fn from_obj<'a>(
+            obj: ::rusteal_runtime::runtime::UObjectRef<'a, impl ::rusteal_runtime::runtime::UeClass>,
+        ) -> ::rusteal_runtime::runtime::RustealResult<::rusteal_runtime::runtime::RustRef<'a, Self>> {
+            Self::__from_handle(obj.checked()?.raw()).map(::rusteal_runtime::runtime::RustRef::new)
+        }
+
+        #[doc(hidden)]
+        #[track_caller]
+        pub fn __from_handle(
+            handle: ::rusteal_runtime::ffi::UObjectHandle,
+        ) -> ::rusteal_runtime::runtime::RustealResult<Self> {
+            if handle.is_null() {
+                return Err(::rusteal_runtime::runtime::RustealError::object_destroyed());
+            }
 
             let is_a = unsafe {
                 ::rusteal_runtime::runtime::ffi_dispatch::core_is_a(handle, <Self as ::rusteal_runtime::runtime::UeClass>::static_class())
@@ -887,7 +978,7 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
             let class = <Self as ::rusteal_runtime::runtime::UeClass>::static_class();
             let cdo = unsafe { ::rusteal_runtime::runtime::ffi_dispatch::reify_get_cdo(class) };
 
-            Self::from_obj(unsafe { ::rusteal_runtime::runtime::UObjectRef::<Self>::from_raw(cdo) })
+            Self::__from_handle(cdo)
         }
     });
 
@@ -925,12 +1016,14 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
     let thread_safe_view = quote! {
         #[doc = #thread_safe_doc]
         #[derive(Clone, Copy, Debug)]
-        #struct_vis struct #thread_safe_ident {
+        #struct_vis struct #thread_safe_ident<'a> {
             #[doc(hidden)]
             pub __obj: ::rusteal_runtime::ffi::UObjectHandle,
+            #[doc(hidden)]
+            pub __call: ::std::marker::PhantomData<&'a ()>,
         }
 
-        impl #thread_safe_ident {
+        impl #thread_safe_ident<'_> {
             #(#thread_safe_accessors)*
         }
     };
@@ -1300,15 +1393,6 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
         }
     };
 
-    let deref_impl = quote! {
-        impl std::ops::Deref for #struct_name {
-            type Target = ::rusteal_runtime::runtime::UObjectRef<#parent_path>;
-            fn deref(&self) -> &::rusteal_runtime::runtime::UObjectRef<#parent_path> {
-                unsafe { &*(&self.__obj as *const ::rusteal_runtime::ffi::UObjectHandle as *const ::rusteal_runtime::runtime::UObjectRef<#parent_path>) }
-            }
-        }
-    };
-
     Ok(quote! {
         #user_struct
         #rust_data_struct
@@ -1317,7 +1401,6 @@ pub fn expand_uclass(attr: TokenStream, item: TokenStream) -> syn::Result<TokenS
         #has_parent_impl
         #inherits_impl
         #parent_check
-        #deref_impl
         #accessors_impl
         #thread_safe_view
         #register_fn
@@ -2206,5 +2289,60 @@ mod tests {
         assert!(err.to_string().contains("unknown #[uproperty] argument"));
         let attr: syn::Attribute = parse_quote!(#[uproperty(meta = "x")]);
         assert!(parse_uproperty_args(&attr).is_err());
+    }
+
+    fn private_field_error(field: proc_macro2::TokenStream) -> Option<String> {
+        expand_uclass(
+            quote::quote!(parent = Actor),
+            quote::quote!(
+                pub struct Guard {
+                    #field
+                }
+            ),
+        )
+        .err()
+        .map(|e| e.to_string())
+    }
+
+    #[test]
+    fn object_references_in_rust_only_fields_are_errors() {
+        for field in [
+            quote::quote!(target: UObjectRef<Actor>),
+            quote::quote!(target: Option<UObjectRef<Actor>>),
+            quote::quote!(targets: Vec<UObjectRef<Actor>>),
+            quote::quote!(by_name: std::collections::HashMap<String, UObjectRef<Actor>>),
+            quote::quote!(pair: (i32, rusteal_runtime::runtime::UObjectRef<Actor>)),
+            quote::quote!(fixed: [UObjectRef<Actor>; 2]),
+            quote::quote!(boxed: Box<Option<Checked<Actor>>>),
+            quote::quote!(usable: ScriptInterface<dyn Usable>),
+            quote::quote!(later: Box<dyn Fn(UObjectRef<Actor>)>),
+        ] {
+            let error = private_field_error(field.clone())
+                .unwrap_or_else(|| panic!("`{field}` was accepted"));
+
+            assert!(error.contains("garbage"), "{error}");
+            assert!(error.contains("#[uproperty]"), "{error}");
+            assert!(error.contains("TWeakObjectPtr"), "{error}");
+            assert!(error.contains("Pinned"), "{error}");
+        }
+    }
+
+    #[test]
+    fn rust_only_fields_that_keep_no_object_reference_are_accepted() {
+        for field in [
+            quote::quote!(health: f32),
+            quote::quote!(target: TWeakObjectPtr<Actor>),
+            quote::quote!(targets: Vec<TWeakObjectPtr<Actor>>),
+            quote::quote!(kept: Pinned<Actor>),
+            quote::quote!(timer: Option<TimerHandle>),
+            quote::quote!(#[uproperty] target: UObjectRef<Actor>),
+            quote::quote!(#[uproperty] targets: UeArray<UObjectRef<Actor>>),
+        ] {
+            assert_eq!(
+                private_field_error(field.clone()),
+                None,
+                "`{field}` was refused"
+            );
+        }
     }
 }

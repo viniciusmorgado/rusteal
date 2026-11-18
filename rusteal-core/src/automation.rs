@@ -35,7 +35,7 @@ impl std::ops::BitOr for Contexts {
 pub fn register_test<E: Display>(
     name: &str,
     contexts: Contexts,
-    mut run: impl FnMut() -> Result<(), E> + Send + 'static,
+    mut run: impl FnMut() -> Result<(), E> + 'static,
 ) -> RustealResult<()> {
     let callback_id = delegate_registry::register_callback(move |_| {
         if let Err(error) = run() {

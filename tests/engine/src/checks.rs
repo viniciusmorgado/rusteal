@@ -37,8 +37,9 @@ use bindings::slate_core::{
 };
 use rusteal_runtime::runtime::http;
 use rusteal_runtime::runtime::{
-    DynamicCall, FName, Inherits, OwnedStruct, Rotator, SoftClassRef, SoftObjectRef, SubclassOf,
-    TWeakObjectPtr, Text, Transform, UObjectRef, UeClass, UeStruct, task, timer,
+    DynamicCall, FName, GameThread, Inherits, OwnedStruct, Rotator, RustRef, SoftClassRef,
+    SoftObjectRef, SubclassOf, TWeakObjectPtr, Text, Transform, UObjectRef, UeClass, UeStruct,
+    task, timer,
 };
 
 use crate::fixtures::{
@@ -264,6 +265,42 @@ pub const ALL: &[(&str, Check)] = &[
         crate::perf::call_overhead_is_measured,
     ),
     (
+        "a_destroyed_object_is_invalid_after_collection",
+        crate::object_lifetimes::a_destroyed_object_is_invalid_after_collection,
+    ),
+    (
+        "a_new_object_in_a_reused_slot_is_not_the_old_one",
+        crate::object_lifetimes::a_new_object_in_a_reused_slot_is_not_the_old_one,
+    ),
+    (
+        "a_method_callback_skips_a_destroyed_object",
+        crate::object_lifetimes::a_method_callback_skips_a_destroyed_object,
+    ),
+    (
+        "an_engine_call_off_the_game_thread_is_refused",
+        crate::object_lifetimes::an_engine_call_off_the_game_thread_is_refused,
+    ),
+    (
+        "a_weak_pointer_comes_back_to_the_game_thread",
+        crate::object_lifetimes::a_weak_pointer_comes_back_to_the_game_thread,
+    ),
+    (
+        "two_pins_keep_an_object_each",
+        crate::object_lifetimes::two_pins_keep_an_object_each,
+    ),
+    (
+        "an_owned_struct_keeps_its_objects",
+        crate::object_lifetimes::an_owned_struct_keeps_its_objects,
+    ),
+    (
+        "a_pinned_actor_destroyed_reads_as_gone",
+        crate::object_lifetimes::a_pinned_actor_destroyed_reads_as_gone,
+    ),
+    (
+        "unpinning_leaves_what_the_engine_keeps",
+        crate::object_lifetimes::unpinning_leaves_what_the_engine_keeps,
+    ),
+    (
         "profiling_scopes_run",
         crate::profiling::profiling_scopes_run,
     ),
@@ -305,7 +342,7 @@ fn done(result: Result<(), String>) -> Outcome {
     Outcome::Done(result)
 }
 
-fn spawn(context: &Context) -> Result<UObjectRef<TestActor>, String> {
+fn spawn<'a>(context: &Context<'a>) -> Result<UObjectRef<'a, TestActor>, String> {
     let transform = FTransform::from_transform(Transform::IDENTITY);
 
     context
@@ -569,6 +606,9 @@ fn udelegate_listener_survives_garbage_collection(context: &Context) -> Outcome 
         Err(e) => return done(Err(e)),
     };
 
+    // The check runs on in later frames: it keeps the actor as a weak pointer.
+    let actor = TWeakObjectPtr::from_ref(&actor);
+
     KismetSystemLibrary::collect_garbage();
     let mut frames = 0;
 
@@ -579,10 +619,17 @@ fn udelegate_listener_survives_garbage_collection(context: &Context) -> Outcome 
             return None;
         }
 
-        let fired = TestActor::from_obj(actor).map(|actor| actor.ping(9));
+        let fired = actor
+            .get()
+            .ok_or_else(|| "the actor is gone".to_string())
+            .and_then(|actor| {
+                TestActor::from_obj(actor)
+                    .map(|actor| actor.ping(9))
+                    .map_err(|e| format!("{e:?}"))
+            });
 
         if let Err(e) = fired {
-            return Some(Err(format!("{e:?}")));
+            return Some(Err(e));
         }
 
         let value = *seen.lock().unwrap();
@@ -775,19 +822,28 @@ fn sleep_follows_world_time_and_pause(context: &Context) -> Outcome {
         let world_slept = Arc::new(Mutex::new(None));
         let paused_woke = Arc::new(AtomicBool::new(false));
         let real_woke = Arc::new(AtomicBool::new(false));
-        let world: UObjectRef<bindings::core_ue::Object> = actor.upcast_to();
+        // The task and the check run on in later frames: they keep the actor as a weak pointer.
+        let me = TWeakObjectPtr::from_ref(&actor);
 
         let sink = world_slept.clone();
         let _measured = task::spawn_local(&actor, async move {
-            let before = GameplayStatics::get_time_seconds(world);
+            let Some(actor) = me.get() else {
+                return;
+            };
+
+            let before = GameplayStatics::get_time_seconds(actor.upcast_to());
             timer::sleep(&actor, Duration::from_millis(100)).await;
-            *sink.lock().unwrap() = Some(GameplayStatics::get_time_seconds(world) - before);
+
+            if let Some(actor) = me.get() {
+                *sink.lock().unwrap() =
+                    Some(GameplayStatics::get_time_seconds(actor.upcast_to()) - before);
+            }
         });
 
-        Ok::<_, String>((actor, world, world_slept, paused_woke, real_woke))
+        Ok::<_, String>((me, world_slept, paused_woke, real_woke))
     })();
 
-    let (actor, world, world_slept, paused_woke, real_woke) = match started {
+    let (me, world_slept, paused_woke, real_woke) = match started {
         Ok(started) => started,
         Err(e) => return done(Err(e)),
     };
@@ -804,6 +860,12 @@ fn sleep_follows_world_time_and_pause(context: &Context) -> Outcome {
             return (frames > 600).then(|| Err("the world sleep never woke".to_string()));
         };
 
+        let Some(actor) = me.get() else {
+            return Some(Err("the actor is gone".to_string()));
+        };
+
+        let world: UObjectRef<bindings::core_ue::Object> = actor.upcast_to();
+
         match (paused_at, unpaused_at) {
             (None, _) => {
                 if !GameplayStatics::set_game_paused(world, true) {
@@ -812,8 +874,10 @@ fn sleep_follows_world_time_and_pause(context: &Context) -> Outcome {
 
                 let sink = paused_woke.clone();
                 let _paused = task::spawn_local(&actor, async move {
-                    timer::sleep(&actor, Duration::from_millis(50)).await;
-                    sink.store(true, Ordering::SeqCst);
+                    if let Some(actor) = me.get() {
+                        timer::sleep(&actor, Duration::from_millis(50)).await;
+                        sink.store(true, Ordering::SeqCst);
+                    }
                 });
 
                 let sink = real_woke.clone();
@@ -885,7 +949,13 @@ fn latent_engine_functions_resume_their_task(context: &Context) -> Outcome {
         let results = Arc::new(Mutex::new(LatentResults::default()));
         let sink = results.clone();
 
+        let me = TWeakObjectPtr::from_ref(&actor);
+
         let _task = task::spawn_local(&actor, async move {
+            let Some(actor) = me.get() else {
+                return;
+            };
+
             let world: UObjectRef<bindings::core_ue::Object> = actor.upcast_to();
 
             let before = GameplayStatics::get_time_seconds(world);
@@ -905,7 +975,7 @@ fn latent_engine_functions_resume_their_task(context: &Context) -> Outcome {
 
             let moved = async {
                 let root = TestActor::from_obj(actor)
-                    .and_then(|actor| actor.root())
+                    .and_then(|this| Ok(this.root()?.with_scope_of(&actor)))
                     .map_err(|e| format!("{e:?}"))?;
 
                 KismetSystemLibrary::move_component_to(
@@ -986,13 +1056,18 @@ fn latent_action_of_a_destroyed_owner_is_cancelled(context: &Context) -> Outcome
         let flag = resumed.clone();
         let guard = SetOnDrop(dropped.clone());
 
+        let me = TWeakObjectPtr::from_ref(&doomed);
+
         let _task = task::spawn_local(&doomed, async move {
             let _guard = guard;
-            KismetSystemLibrary::delay(doomed.upcast_to(), 10.0).await;
-            flag.store(true, Ordering::SeqCst);
+
+            if let Some(doomed) = me.get() {
+                KismetSystemLibrary::delay(doomed.upcast_to(), 10.0).await;
+                flag.store(true, Ordering::SeqCst);
+            }
         });
 
-        Ok::<_, String>((doomed, resumed, dropped))
+        Ok::<_, String>((me, resumed, dropped))
     })();
 
     let (doomed, resumed, dropped) = match started {
@@ -1062,7 +1137,13 @@ fn assets_load_in_the_background(context: &Context) -> Outcome {
         let results = Arc::new(Mutex::new(LoadResults::default()));
         let sink = results.clone();
 
+        let me = TWeakObjectPtr::from_ref(&actor);
+
         let _task = task::spawn_local(&actor, async move {
+            let Some(actor) = me.get() else {
+                return;
+            };
+
             let cancelled = task::spawn_local(&actor, async {
                 SoftObjectRef::<StaticMesh>::new("/Engine/BasicShapes/Cylinder.Cylinder")
                     .load_async()
@@ -1094,7 +1175,10 @@ fn assets_load_in_the_background(context: &Context) -> Outcome {
 
             let mut results = sink.lock().unwrap();
             results.mesh = Some(match mesh {
-                Ok(mesh) => mesh.get_name().unwrap_or_else(|e| format!("{e:?}")),
+                Ok(mesh) => mesh.get().map_or_else(
+                    || "the loaded mesh is gone".to_string(),
+                    |mesh| mesh.get_name().unwrap_or_else(|e| format!("{e:?}")),
+                ),
                 Err(e) => format!("{e:?}"),
             });
             results.class = Some(match class {
@@ -1175,9 +1259,14 @@ fn delegates_resolve_their_next_firing(context: &Context) -> Outcome {
         let results = Arc::new(Mutex::new(NextResults::default()));
         let sink = results.clone();
 
+        let actor_weak = TWeakObjectPtr::from_ref(&actor);
+        let other_weak = TWeakObjectPtr::from_ref(&other);
+
         let _task = task::spawn_local(&actor, async move {
             let outcome = async {
                 let e = |e| format!("{e:?}");
+                let actor = actor_weak.checked().map_err(e)?.as_ref();
+                let other = other_weak.get().ok_or("the other actor is gone")?;
                 let me = TestActor::from_obj(actor).map_err(e)?;
 
                 let pinged = me.on_ping_next();
@@ -1190,7 +1279,9 @@ fn delegates_resolve_their_next_firing(context: &Context) -> Outcome {
                 let destroyed = destroyed.await.map_err(e)?;
 
                 let world: UObjectRef<bindings::core_ue::Object> = actor.upcast_to();
+                let gt = GameThread::current().map_err(e)?;
                 let save = GameplayStatics::create_save_game_object(
+                    &gt,
                     SubclassOf::<crate::fixtures::TestSave>::base().upcast_to::<SaveGame>(),
                 );
                 let action = AsyncActionHandleSaveGame::async_save_game_to_slot(
@@ -1204,7 +1295,7 @@ fn delegates_resolve_their_next_firing(context: &Context) -> Outcome {
                 action.activate();
                 let (_, saved) = completed.await.map_err(e)?;
 
-                Ok::<_, String>((pinged, destroyed.raw() == other.raw(), saved))
+                Ok::<_, String>((pinged, destroyed.handle() == other.weak_handle(), saved))
             }
             .await;
 
@@ -1266,7 +1357,7 @@ fn delegates_resolve_their_next_firing(context: &Context) -> Outcome {
 }
 
 fn latent_info(
-    target: UObjectRef<TestActor>,
+    target: UObjectRef<'_, TestActor>,
     linkage: i32,
     uuid: i32,
 ) -> OwnedStruct<FLatentActionInfo> {
@@ -1280,7 +1371,7 @@ fn latent_info(
 }
 
 fn call_count_up(
-    actor: UObjectRef<TestActor>,
+    actor: UObjectRef<'_, TestActor>,
     steps: i32,
     info: &OwnedStruct<FLatentActionInfo>,
 ) -> Result<(), String> {
@@ -1305,7 +1396,13 @@ fn async_ufunction_runs_as_a_latent_node(context: &Context) -> Outcome {
 
         call_count_up(doomed, 1000, &latent_info(doomed_target, 9, 43))?;
 
-        Ok::<_, String>((actor, target, doomed, doomed_target))
+        let weak = TWeakObjectPtr::from_ref;
+        Ok::<_, String>((
+            weak(&actor),
+            weak(&target),
+            weak(&doomed),
+            weak(&doomed_target),
+        ))
     })();
 
     let (actor, target, doomed, doomed_target) = match started {
@@ -1319,6 +1416,12 @@ fn async_ufunction_runs_as_a_latent_node(context: &Context) -> Outcome {
     Outcome::Pending(Box::new(move || {
         frames += 1;
         let e = |e| format!("{e:?}");
+        let (actor, target, doomed, doomed_target) = (
+            actor.get().unwrap_or_default(),
+            target.get().unwrap_or_default(),
+            doomed.get().unwrap_or_default(),
+            doomed_target.get().unwrap_or_default(),
+        );
 
         if frames == 3 {
             if let Ok(doomed) = doomed.checked() {
@@ -1371,7 +1474,13 @@ fn native_event_fires_for_a_streamed_level(context: &Context) -> Outcome {
         let added = Arc::new(Mutex::new(None));
         let sink = added.clone();
 
+        let me = TWeakObjectPtr::from_ref(&actor);
+
         let _task = task::spawn_local(&actor, async move {
+            let Some(actor) = me.get() else {
+                return;
+            };
+
             let level_added = world_events::level_added().next();
             let world: UObjectRef<bindings::core_ue::Object> = actor.upcast_to();
 
@@ -1390,7 +1499,7 @@ fn native_event_fires_for_a_streamed_level(context: &Context) -> Outcome {
             } else {
                 level_added
                     .await
-                    .map(|(level, _)| !level.raw().is_null())
+                    .map(|(level, _)| level.is_valid())
                     .map_err(|e| format!("{e:?}"))
             };
 
@@ -1601,7 +1710,7 @@ fn input_and_delegates_reach_closures_and_methods(context: &Context) -> Outcome 
         let actor = spawn(context)?;
         let me = TestActor::from_obj(actor).map_err(e)?;
 
-        me.on_ping_add(rusteal_runtime::runtime::method(&me, TestActor::pinged))
+        me.on_ping_add(rusteal_runtime::runtime::method(&*me, TestActor::pinged))
             .map_err(e)?
             .detach();
         me.ping(11);
@@ -1639,12 +1748,13 @@ fn input_and_delegates_reach_closures_and_methods(context: &Context) -> Outcome 
             &me.as_ref(),
             action,
             ETriggerEvent::Triggered,
-            rusteal_runtime::runtime::method(&me, TestActor::jumped),
+            rusteal_runtime::runtime::method(&*me, TestActor::jumped),
         )
         .map_err(e)?;
 
         let instances = Arc::new(Mutex::new(Vec::new()));
         let seen = instances.clone();
+        let action_handle = action.weak_handle();
 
         let _kept = bind_action_instance(
             &controller,
@@ -1653,7 +1763,7 @@ fn input_and_delegates_reach_closures_and_methods(context: &Context) -> Outcome 
             move |instance| {
                 seen.lock().unwrap().push((
                     instance.value.get_bool(),
-                    instance.action.raw() == action.raw(),
+                    instance.action.weak_handle() == action_handle,
                     instance.elapsed_seconds,
                 ));
             },
@@ -1663,10 +1773,10 @@ fn input_and_delegates_reach_closures_and_methods(context: &Context) -> Outcome 
         let subsystem = enhanced_input_subsystem(controller).map_err(e)?;
 
         Ok::<_, String>((
-            actor,
-            action,
+            TWeakObjectPtr::from_ref(&actor),
+            TWeakObjectPtr::from_ref(&action),
             pinned_action,
-            subsystem,
+            TWeakObjectPtr::from_ref(&subsystem),
             closure,
             presses,
             pinged,
@@ -1686,6 +1796,10 @@ fn input_and_delegates_reach_closures_and_methods(context: &Context) -> Outcome 
 
     Outcome::Pending(Box::new(move || {
         frames += 1;
+        let (actor, action) = (
+            actor.get().unwrap_or_default(),
+            action.get().unwrap_or_default(),
+        );
 
         if frames <= 20 {
             if let Ok(subsystem) = subsystem.checked() {
@@ -1793,15 +1907,14 @@ fn rust_string_property_longer_than_512_bytes(context: &Context) -> Outcome {
 
 const DEFAULT_MATERIAL: &str = "/Engine/EngineMaterials/DefaultMaterial.DefaultMaterial";
 
-fn default_material() -> Result<UObjectRef<Material>, String> {
-    SoftObjectRef::<Material>::new(DEFAULT_MATERIAL)
-        .load_synchronous()
-        .map_err(|e| format!("load: {e:?}"))
+/// The engine's default material, loaded: it lives as long as `soft` is borrowed.
+fn default_material(soft: &SoftObjectRef<Material>) -> Result<UObjectRef<'_, Material>, String> {
+    soft.load_synchronous().map_err(|e| format!("load: {e:?}"))
 }
 
-fn add_component<T: UeClass + Inherits<ActorComponent>>(
-    context: &Context,
-) -> Result<UObjectRef<T>, String> {
+fn add_component<'a, T: UeClass + Inherits<ActorComponent>>(
+    context: &Context<'a>,
+) -> Result<UObjectRef<'a, T>, String> {
     let actor = spawn(context)?
         .checked()
         .map_err(|e| format!("checked: {e:?}"))?;
@@ -1820,7 +1933,8 @@ fn add_component<T: UeClass + Inherits<ActorComponent>>(
 
 fn engine_soft_property_keeps_the_path(context: &Context) -> Outcome {
     done((|| {
-        let material = default_material()?;
+        let soft = SoftObjectRef::<Material>::new(DEFAULT_MATERIAL);
+        let material = default_material(&soft)?;
         let cloud = add_component::<VolumetricCloudComponent>(context)?
             .checked()
             .map_err(|e| format!("checked: {e:?}"))?;
@@ -1841,9 +1955,11 @@ fn engine_soft_property_keeps_the_path(context: &Context) -> Outcome {
 
 fn engine_soft_reference_crosses_as_a_path(_: &Context) -> Outcome {
     done((|| {
-        let material = default_material()?;
+        let soft = SoftObjectRef::<Material>::new(DEFAULT_MATERIAL);
+        let material = default_material(&soft)?;
+        let gt = GameThread::current().map_err(|e| format!("{e:?}"))?;
         let loaded =
-            KismetSystemLibrary::load_asset_blocking(&SoftObjectRef::new(DEFAULT_MATERIAL));
+            KismetSystemLibrary::load_asset_blocking(&gt, &SoftObjectRef::new(DEFAULT_MATERIAL));
         ensure(
             loaded.raw() == material.raw(),
             "LoadAsset_Blocking did not load the path",
@@ -1867,11 +1983,13 @@ fn engine_weak_property_follows_its_object(context: &Context) -> Outcome {
         let root = TestActor::from_obj(target)
             .map_err(|e| format!("{e:?}"))?
             .root()
-            .map_err(|e| format!("{e:?}"))?;
+            .map_err(|e| format!("{e:?}"))?
+            .with_scope_of(&target);
 
         movement.set_homing_target_component(TWeakObjectPtr::from_ref(&root));
 
-        let followed = movement.get_homing_target_component().get();
+        let homing = movement.get_homing_target_component();
+        let followed = homing.get();
         ensure(
             followed.map(|c| c.raw()) == Some(root.raw()),
             "the weak reference does not reach the component",
@@ -1891,7 +2009,8 @@ fn engine_weak_property_follows_its_object(context: &Context) -> Outcome {
 
 fn engine_struct_with_an_array_returned_by_a_function(context: &Context) -> Outcome {
     done((|| {
-        let material = default_material()?;
+        let soft = SoftObjectRef::<Material>::new(DEFAULT_MATERIAL);
+        let material = default_material(&soft)?;
         let camera = add_component::<CameraComponent>(context)?
             .checked()
             .map_err(|e| format!("checked: {e:?}"))?;
@@ -1973,7 +2092,8 @@ fn engine_soft_class_reference_crosses_as_a_path(_: &Context) -> Outcome {
 
 fn engine_soft_class_property_keeps_the_path(_: &Context) -> Outcome {
     done((|| {
-        let input = InputSettings::get_input_settings()
+        let gt = GameThread::current().map_err(|e| format!("{e:?}"))?;
+        let input = InputSettings::get_input_settings(&gt)
             .checked()
             .map_err(|e| format!("input settings: {e:?}"))?;
         let class: SoftClassRef<PlayerInput> = input.get_default_player_input_class();
@@ -2120,7 +2240,8 @@ fn engine_optional_fields(_: &Context) -> Outcome {
 
 fn engine_function_takes_an_interface(context: &Context) -> Outcome {
     done((|| {
-        let material = default_material()?;
+        let soft = SoftObjectRef::<Material>::new(DEFAULT_MATERIAL);
+        let material = default_material(&soft)?;
         let blendable = material
             .cast::<BlendableInterface>()
             .map_err(|e| format!("cast: {e:?}"))?;
@@ -2140,14 +2261,15 @@ fn engine_function_takes_an_interface(context: &Context) -> Outcome {
         let len = array.len().map_err(|e| format!("len: {e:?}"))?;
         ensure(len == 1, format!("{len} blendables"))?;
         let first = array.get(0).map_err(|e| format!("get: {e:?}"))?;
-        let object = first.as_ref().get_object();
+        let first = first.as_ref();
+        let object = first.get_object();
         ensure(
             object.raw() == material.raw(),
             "the blendable is not the material",
         )?;
         ensure(
-            first.as_ref().get_weight() == 0.5,
-            format!("weight {}", first.as_ref().get_weight()),
+            first.get_weight() == 0.5,
+            format!("weight {}", first.get_weight()),
         )
     })())
 }
@@ -2189,12 +2311,9 @@ fn engine_member_function_takes_a_closure_with_arguments(context: &Context) -> O
         let timeline = add_component::<TimelineComponent>(context)?
             .checked()
             .map_err(|e| format!("checked: {e:?}"))?;
-        let curve = rusteal_runtime::runtime::world::new_object_raw(
-            timeline.raw(),
-            CurveFloat::static_class(),
-        )
-        .and_then(UObjectRef::<CurveFloat>::from_handle)
-        .map_err(|e| format!("curve: {e:?}"))?;
+        let outer = timeline.as_ref();
+        let curve = bindings::manual::world_ext::new_object::<CurveFloat>(&outer)
+            .map_err(|e| format!("curve: {e:?}"))?;
         let checked = curve.checked().map_err(|e| format!("checked: {e:?}"))?;
 
         let rich = checked.get_float_curve();
@@ -2233,7 +2352,7 @@ fn engine_member_function_takes_a_closure_with_arguments(context: &Context) -> O
     }))
 }
 
-fn test_actor(context: &Context) -> Result<TestActor, String> {
+fn test_actor<'a>(context: &Context<'a>) -> Result<RustRef<'a, TestActor>, String> {
     TestActor::from_obj(spawn(context)?).map_err(|e| format!("{e:?}"))
 }
 
@@ -2665,9 +2784,8 @@ fn static_functions_of_a_library(_: &Context) -> Outcome {
         let e = |e| format!("{e:?}");
         ensure(TestLibrary::add_three(1, 2, 3) == 6, "add_three from Rust")?;
 
-        let library = SubclassOf::<TestLibrary>::base()
-            .default_object()
-            .map_err(e)?;
+        let class = SubclassOf::<TestLibrary>::base();
+        let library = class.default_object().map_err(e)?;
 
         let mut call = DynamicCall::new(&library, "AddThree").map_err(e)?;
         call.set_value("A", &1i32).map_err(e)?;

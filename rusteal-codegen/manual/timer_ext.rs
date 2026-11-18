@@ -26,7 +26,7 @@ impl KismetSystemLibrary {
     /// Blueprint's **Set Timer by Event**, calling `delegate`: the closure is freed when the timer
     /// is cleared, when a one-shot timer has fired, or when its world goes away.
     pub fn k2_set_timer_delegate(
-        delegate: impl FnMut() + Send + 'static,
+        delegate: impl FnMut() + 'static,
         time: f32,
         b_looping: bool,
         b_max_once_per_frame: Option<bool>,
@@ -49,7 +49,7 @@ impl KismetSystemLibrary {
 
     /// Blueprint's **Set Timer for Next Tick by Event**, calling `delegate` once.
     pub fn k2_set_timer_for_next_tick_delegate(
-        mut delegate: impl FnMut() + Send + 'static,
+        mut delegate: impl FnMut() + 'static,
     ) -> OwnedStruct<FTimerHandle> {
         engine_handle(set_timer_for_next_tick_raw(
             rusteal_core::UObjectHandle::null(),

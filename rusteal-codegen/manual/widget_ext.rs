@@ -1,18 +1,18 @@
 use rusteal_core::{RustealError, RustealResult, SubclassOf, UObjectRef, UeClass};
 
-pub fn create_widget<T: UeClass>(
-    owner: &UObjectRef<impl UeClass>,
-) -> RustealResult<UObjectRef<T>> {
+pub fn create_widget<'a, T: UeClass>(
+    owner: &UObjectRef<'a, impl UeClass>,
+) -> RustealResult<UObjectRef<'a, T>> {
     let owner_handle = owner.checked()?.raw();
     let class = T::static_class();
     let handle = rusteal_core::widget::create_widget_raw(owner_handle, class)?;
     Ok(unsafe { UObjectRef::from_raw(handle) })
 }
 
-pub fn create_widget_of_class<T: UeClass>(
-    owner: &UObjectRef<impl UeClass>,
+pub fn create_widget_of_class<'a, T: UeClass>(
+    owner: &UObjectRef<'a, impl UeClass>,
     class: SubclassOf<T>,
-) -> RustealResult<UObjectRef<T>> {
+) -> RustealResult<UObjectRef<'a, T>> {
     let owner_handle = owner.checked()?.raw();
 
     if class.is_null() {
@@ -23,9 +23,9 @@ pub fn create_widget_of_class<T: UeClass>(
     Ok(unsafe { UObjectRef::from_raw(handle) })
 }
 
-pub fn create_child_widget<T: UeClass>(
-    parent_user_widget: &UObjectRef<impl UeClass>,
-) -> RustealResult<UObjectRef<T>> {
+pub fn create_child_widget<'a, T: UeClass>(
+    parent_user_widget: &UObjectRef<'a, impl UeClass>,
+) -> RustealResult<UObjectRef<'a, T>> {
     let parent_handle = parent_user_widget.checked()?.raw();
     let tree_handle = rusteal_core::widget::get_widget_tree_raw(parent_handle)?;
     let class = T::static_class();

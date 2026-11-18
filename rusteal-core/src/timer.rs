@@ -85,7 +85,7 @@ pub fn set_timer(
     context: &UObjectRef<impl UeClass>,
     delay: Duration,
     looping: bool,
-    callback: impl FnMut() + Send + 'static,
+    callback: impl FnMut() + 'static,
 ) -> RustealResult<TimerHandle> {
     let context = context.checked()?.raw();
     set_timer_raw(context, delay.as_secs_f32(), looping, false, -1.0, callback)
@@ -98,7 +98,7 @@ pub fn set_timer_with_first_delay(
     delay: Duration,
     looping: bool,
     first_delay: Option<Duration>,
-    callback: impl FnMut() + Send + 'static,
+    callback: impl FnMut() + 'static,
 ) -> RustealResult<TimerHandle> {
     let context = context.checked()?.raw();
     let first = first_delay.map_or(-1.0, |d| d.as_secs_f32());
@@ -122,7 +122,7 @@ pub fn set_timer_raw(
     looping: bool,
     max_once_per_frame: bool,
     first_delay: f32,
-    mut callback: impl FnMut() + Send + 'static,
+    mut callback: impl FnMut() + 'static,
 ) -> RustealResult<TimerHandle> {
     let id = register_callback(move |_| callback());
     let mut handle = 0u64;
@@ -158,7 +158,7 @@ fn weak_or_null(context: rusteal_ffi::UObjectHandle) -> Option<FWeakObjectHandle
 #[track_caller]
 pub fn set_timer_for_next_tick(
     context: &UObjectRef<impl UeClass>,
-    callback: impl FnOnce() + Send + 'static,
+    callback: impl FnOnce() + 'static,
 ) -> RustealResult<TimerHandle> {
     set_timer_for_next_tick_raw(context.checked()?.raw(), callback)
 }
@@ -167,7 +167,7 @@ pub fn set_timer_for_next_tick(
 #[track_caller]
 pub fn set_timer_for_next_tick_raw(
     context: rusteal_ffi::UObjectHandle,
-    callback: impl FnOnce() + Send + 'static,
+    callback: impl FnOnce() + 'static,
 ) -> RustealResult<TimerHandle> {
     let mut callback = Some(callback);
 

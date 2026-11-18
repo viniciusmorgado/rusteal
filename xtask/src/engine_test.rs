@@ -865,7 +865,15 @@ fn packaged_game(package: &Path) -> Option<PathBuf> {
         .find(|path| path.exists())
 }
 
-pub fn static_test() {
+pub fn static_test(args: &[String]) {
+    let features: Vec<&str> = match args {
+        [] => Vec::new(),
+        [flag, feature] if flag == "--feature" && feature == "shared-std" => {
+            vec!["--feature", "shared-std"]
+        }
+        _ => fail("static-test takes no arguments but `--feature shared-std`"),
+    };
+
     let repo = repo_root();
     let work = repo.join("target/engine-test");
     let project = work.join(PROJECT);
@@ -919,7 +927,9 @@ pub fn static_test() {
     let _ = std::fs::remove_dir_all(&package);
     run(
         Command::new(&cli)
-            .args(["package", "--static", "--output"])
+            .args(["package", "--static"])
+            .args(&features)
+            .arg("--output")
             .arg(&package)
             .arg(&project)
             .stdin(std::process::Stdio::null()),

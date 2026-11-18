@@ -60,6 +60,76 @@ const MIGRATIONS: &[(&str, &str)] = &[
          #[ufunction(Override, ThreadSafe)] and the class's <Class>ThreadSafe view instead of \
          &self or &mut self.",
     ),
+    (
+        "0.10.0",
+        "A #[uclass] no longer derefs to UObjectRef<Parent>: call self.as_ref() for the object. \
+         A UObjectRef keeps its object's index and serial number, not its address: raw() is null \
+         once the object is destroyed, and a reference never matches a new object at the old \
+         address.",
+    ),
+    (
+        "0.10.0",
+        "A #[uclass] refuses Rust-only fields that keep an object (UObjectRef, Checked or \
+         ScriptInterface, inside Option, Vec, maps and the like too): the garbage collector \
+         does not see them. Make the field #[uproperty] when the class owns the object or must \
+         keep it, TWeakObjectPtr<T> when it only observes it, or Pinned<T> when Rust alone keeps \
+         it alive; several objects are #[uproperty] UeArray<UObjectRef<T>> or \
+         Vec<TWeakObjectPtr<T>>.",
+    ),
+    (
+        "0.10.0",
+        "UObjectRef, Checked, Pinned, ScriptInterface and SubclassOf are no longer Send: engine \
+         objects stay on the game thread. To use one in background work, send a \
+         TWeakObjectPtr<T> and resolve it on the game thread, in task::run_on_game_thread or in \
+         task::spawn's `done`, which now runs there without needing Send and must be called \
+         from the game thread. Callbacks for timers, delegates, input, ticks, console commands, \
+         Slate and details no longer need Send either. Debug builds check that engine calls are \
+         made on the game thread (or inside a #[ufunction(ThreadSafe)] for properties).",
+    ),
+    (
+        "0.10.0",
+        "UObjectRef<'a, T>, Checked<'a, T> and ScriptInterface<'a, I> live as long as the call \
+         that handed them out: they cannot be kept in a struct field, a static, or a closure or \
+         task that runs later. Keep a TWeakObjectPtr<T> there instead and resolve it when it \
+         runs. A function that returns an object it got neither from its parameters nor from \
+         &self names the lifetime (fn f<'a>(x: UObjectRef<'a, A>) -> UObjectRef<'a, B>) or \
+         re-scopes it with with_scope_of(&other). Objects found from a path or made with no outer \
+         borrow a GameThread: load_object(&gt, path), find_object(&gt, path), \
+         new_object_transient(&gt), and engine functions with no object parameter that return \
+         one take &gt first (let gt = GameThread::current()?). SoftObjectRef::get and \
+         load_synchronous borrow the soft reference: keep it in a let first.",
+    ),
+    (
+        "0.10.0",
+        "MyClass::from_obj(object) gives a RustRef<'_, MyClass>, which derefs to the class, \
+         instead of the class itself: a function that returned MyClass returns \
+         RustRef<'_, MyClass>, and method(&*this, ...) takes the class out of it. The setters of \
+         Rust-only fields take &self. The ThreadSafe view of a class has a lifetime \
+         (MyClassThreadSafe<'_>).",
+    ),
+    (
+        "0.10.0",
+        "What arrives after an .await comes as weak pointers: a delegate's next() and native \
+         events give TWeakObjectPtr<T> for their objects, SoftObjectRef::load_async and \
+         loading::load_all/load_primary_asset give TWeakObjectPtr<T>, and an async #[ufunction] \
+         takes its object parameters as TWeakObjectPtr<T>. Call get() or checked() on them.",
+    ),
+    (
+        "0.10.0",
+        "A delegate whose parameters include objects binds a class's method with \
+         add_method(self, Self::on_hit), or a closure taking the class first \
+         (add_method(self, |me: &mut Self, other| ...)); a #[udelegate] has <name>_add_method. \
+         add(method(self, Self::on_hit)) no longer compiles for them: the objects live only as \
+         long as each call. method() stays for timers, input and delegates of plain values.",
+    ),
+    (
+        "0.10.0",
+        "Pinned<T> keeps its object as a reference the garbage collector sees instead of a root, \
+         one per Pinned: a clone or a second pin keeps the object on its own, and dropping one \
+         no longer lets the others' object go. It stays on the game thread. Call checked() or \
+         as_ref() on it; it no longer derefs to the parent class's Pinned. OwnedStruct<T> keeps \
+         the objects it holds alive while it exists, and stays on the thread that made it.",
+    ),
 ];
 
 pub fn migration_notes(from: Version, to: Version) -> Vec<(Version, &'static str)> {
@@ -261,7 +331,7 @@ glam = "0.33.8"
         assert!(migration_notes(v("0.10.0"), v("0.12.0")).is_empty());
 
         let notes = migration_notes(v("0.9.0"), v("0.10.0"));
-        assert_eq!(notes.len(), 9);
+        assert_eq!(notes.len(), MIGRATIONS.len());
         assert_eq!(notes[0].0, v("0.10.0"));
     }
 

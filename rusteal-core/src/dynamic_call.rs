@@ -9,7 +9,7 @@ use crate::object_ref::UObjectRef;
 use crate::traits::UeClass;
 
 pub struct DynamicCall {
-    obj: UObjectHandle,
+    obj: rusteal_ffi::FWeakObjectHandle,
     func: UFunctionHandle,
     params: NativePtr,
     delegate: FPropertyHandle,
@@ -34,7 +34,7 @@ impl DynamicCall {
         let params = unsafe { ffi_dispatch::reflection_alloc_params(func) };
 
         Ok(DynamicCall {
-            obj: h,
+            obj: unsafe { crate::object_ref::weak_handle_of(h) },
             func,
             params,
             delegate: FPropertyHandle::null(),
@@ -63,7 +63,7 @@ impl DynamicCall {
         let params = unsafe { ffi_dispatch::reflection_alloc_params(func) };
 
         Ok(DynamicCall {
-            obj: h,
+            obj: unsafe { crate::object_ref::weak_handle_of(h) },
             func,
             params,
             delegate,
@@ -138,8 +138,10 @@ impl DynamicCall {
             return Err(RustealError::invalid_operation("not a delegate call"));
         }
 
+        let obj = self.object()?;
+
         check_ffi(unsafe {
-            ffi_dispatch::delegate_broadcast_multicast(self.obj, self.delegate, self.params)
+            ffi_dispatch::delegate_broadcast_multicast(obj, self.delegate, self.params)
         })
     }
 
@@ -149,19 +151,21 @@ impl DynamicCall {
             return Err(RustealError::invalid_operation("not a delegate call"));
         }
 
+        let obj = self.object()?;
+
         check_ffi(unsafe {
-            ffi_dispatch::delegate_execute_delegate(self.obj, self.delegate, self.params)
+            ffi_dispatch::delegate_execute_delegate(obj, self.delegate, self.params)
         })
     }
 
     #[track_caller]
     pub fn call(mut self) -> RustealResult<DynamicCallResult> {
-        let code =
-            unsafe { ffi_dispatch::reflection_call_function(self.obj, self.func, self.params) };
+        let obj = self.object()?;
+        let code = unsafe { ffi_dispatch::reflection_call_function(obj, self.func, self.params) };
 
         check_ffi(code).map_err(|e| {
             e.context(format!("calling {}", function_name(self.func)))
-                .on_handle(self.obj)
+                .on_handle(obj)
         })?;
 
         let result = DynamicCallResult {
@@ -174,6 +178,18 @@ impl DynamicCall {
         Ok(result)
     }
 
+    /// The object called, while it lives: the call is an error once it is destroyed.
+    #[track_caller]
+    fn object(&self) -> RustealResult<UObjectHandle> {
+        let obj = crate::object_ref::resolve_weak_handle(self.obj);
+
+        if obj.is_null() {
+            Err(RustealError::object_destroyed())
+        } else {
+            Ok(obj)
+        }
+    }
+
     #[track_caller]
     fn find_param(&self, name: &str) -> RustealResult<(FPropertyHandle, u32)> {
         let prop = unsafe {
@@ -181,7 +197,8 @@ impl DynamicCall {
         };
 
         if prop.is_null() {
-            return Err(missing_param(self.func, name).on_handle(self.obj));
+            return Err(missing_param(self.func, name)
+                .on_handle(crate::object_ref::resolve_weak_handle(self.obj)));
         }
 
         let offset = unsafe { ffi_dispatch::reflection_get_property_offset(prop) };

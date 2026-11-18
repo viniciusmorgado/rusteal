@@ -400,6 +400,28 @@ pub struct ProbeRow {
     tag: FName,
     #[uproperty(EditAnywhere)]
     tags: UeArray<FName>,
+    #[uproperty(EditAnywhere)]
+    icon: UObjectRef<Actor>,
+}
+
+/// An interface declared in Rust, called through a ScriptInterface of the call.
+#[rusteal_runtime::uinterface]
+pub trait ProbeTalker {
+    fn talk(&self, loudness: i32) -> i32;
+
+    fn greet(&self, other: UObjectRef<Actor>) -> bool;
+}
+
+pub fn talk_to(object: UObjectRef<'_, Actor>) -> i32 {
+    object
+        .interface::<dyn ProbeTalker>()
+        .map(|talker| talker.talk(3))
+        .unwrap_or(0)
+}
+
+/// An object field read from a row Rust owns lives as long as the row.
+pub fn row_icon(row: &OwnedStruct<ProbeRow>) -> UObjectRef<'_, Actor> {
+    row.icon()
 }
 
 /// A Rust class whose parent is a Rust class.
@@ -464,7 +486,7 @@ impl Probe {
     }
 
     #[ufunction(BlueprintCallable)]
-    fn take_objects(&mut self, action: UObjectRef<InputAction>, class: SubclassOf<Pawn>) -> UObjectRef<InputAction> {
+    fn take_objects<'a>(&mut self, action: UObjectRef<'a, InputAction>, class: SubclassOf<Pawn>) -> UObjectRef<'a, InputAction> {
         self.set_pawn_class(class);
         action
     }
@@ -545,7 +567,24 @@ pub fn delegates(probe: &Probe) -> RustealResult<()> {
     Ok(())
 }
 
-pub fn upcasts(probe: UObjectRef<Probe>, pc: UObjectRef<PlayerController>) -> (UObjectRef<Actor>, UObjectRef<Pawn>) {
+pub fn watch(probe: &mut Probe, other: UObjectRef<Actor>) -> RustealResult<()> {
+    let destroyed = other.checked()?.on_destroyed();
+
+    destroyed
+        .add_method(probe, |me: &mut Probe, gone: UObjectRef<Actor>| {
+            let _ = (me.speed(), gone.is_valid());
+        })?
+        .detach();
+
+    destroyed.add_method(probe, Probe::forget)?.detach();
+    Ok(())
+}
+
+impl Probe {
+    fn forget(&mut self, _gone: UObjectRef<Actor>) {}
+}
+
+pub fn upcasts<'a>(probe: UObjectRef<'a, Probe>, pc: UObjectRef<'a, PlayerController>) -> (UObjectRef<'a, Actor>, UObjectRef<'a, Pawn>) {
     let _controller: UObjectRef<Controller> = pc.upcast_to::<Controller>();
     let _actor_class: SubclassOf<Actor> = SubclassOf::<PlayerController>::base().upcast_to::<Actor>();
     (pc.upcast_to::<Actor>(), probe.upcast_to::<Pawn>())

@@ -13,7 +13,8 @@ use bindings::umg::{WidgetComponent, WidgetComponentExt};
 use glam::DVec3;
 use rusteal_runtime::runtime::timer::{self, TimerHandle};
 use rusteal_runtime::runtime::{
-    FName, OwnedStruct, RustealResult, SubclassOf, UObjectRef, UStructRef, UeArray, method,
+    FName, OwnedStruct, RustealResult, SubclassOf, TWeakObjectPtr, UObjectRef, UStructRef, UeArray,
+    method,
 };
 use rusteal_runtime::{uclass, uclass_impl};
 
@@ -83,11 +84,11 @@ pub struct CombatEnemy {
 
     attack_end_bound: bool,
 
-    attack_completed_task: UObjectRef<StateTreeTaskBlueprintBase>,
+    attack_completed_task: TWeakObjectPtr<StateTreeTaskBlueprintBase>,
 
-    landed_task: UObjectRef<StateTreeTaskBlueprintBase>,
+    landed_task: TWeakObjectPtr<StateTreeTaskBlueprintBase>,
 
-    spawner: UObjectRef<Actor>,
+    spawner: TWeakObjectPtr<Actor>,
 
     removal_timer: Option<TimerHandle>,
 }
@@ -222,7 +223,7 @@ impl CombatEnemy {
     }
 }
 
-fn finish(task: UObjectRef<StateTreeTaskBlueprintBase>) {
+fn finish(task: TWeakObjectPtr<StateTreeTaskBlueprintBase>) {
     if let Ok(task) = task.checked() {
         task.finish_task(Some(true));
     }
@@ -268,15 +269,15 @@ impl CombatEnemy {
     }
 
     pub fn set_attack_completed_listener(&mut self, task: UObjectRef<StateTreeTaskBlueprintBase>) {
-        self.set_attack_completed_task(task);
+        self.set_attack_completed_task(TWeakObjectPtr::from_ref(&task));
     }
 
     pub fn set_landed_listener(&mut self, task: UObjectRef<StateTreeTaskBlueprintBase>) {
-        self.set_landed_task(task);
+        self.set_landed_task(TWeakObjectPtr::from_ref(&task));
     }
 
     pub fn set_death_listener(&mut self, spawner: UObjectRef<Actor>) {
-        self.set_spawner(spawner);
+        self.set_spawner(TWeakObjectPtr::from_ref(&spawner));
     }
 
     pub fn last_danger_location(&self) -> DVec3 {
@@ -287,7 +288,7 @@ impl CombatEnemy {
         self.state().last_danger_time
     }
 
-    fn play_attack_montage(&mut self, montage: UObjectRef<AnimMontage>) {
+    fn play_attack_montage(&self, montage: UObjectRef<AnimMontage>) {
         let Ok(anim_instance) = self.anim_instance() else {
             return;
         };
@@ -301,21 +302,16 @@ impl CombatEnemy {
         }
     }
 
-    fn bind_attack_end(&mut self, anim_instance: UObjectRef<AnimInstance>) -> RustealResult<()> {
+    fn bind_attack_end(&self, anim_instance: UObjectRef<AnimInstance>) -> RustealResult<()> {
         if self.attack_end_bound() {
             return Ok(());
         }
 
-        let enemy: UObjectRef<Character> = self.as_ref();
-
         anim_instance
             .checked()?
             .on_montage_ended()
-            .add(move |montage, _interrupted| {
-                if let Ok(mut me) = CombatEnemy::from_obj(enemy)
-                    && (montage == me.combo_attack_montage()
-                        || montage == me.charged_attack_montage())
-                {
+            .add_method(self, |me: &mut Self, montage, _interrupted| {
+                if montage == me.combo_attack_montage() || montage == me.charged_attack_montage() {
                     me.attack_montage_ended();
                 }
             })?
@@ -405,8 +401,9 @@ impl CombatAttacker for CombatEnemy {
 
         for hit in hits {
             let hit = hit.as_ref();
+            let component = hit.get_component();
 
-            let Ok(actor) = hit.get_component().checked().map(|c| c.get_owner()) else {
+            let Ok(actor) = component.checked().map(|c| c.get_owner()) else {
                 continue;
             };
 
@@ -509,7 +506,9 @@ impl CombatDamageable for CombatEnemy {
             mesh.set_simulate_physics(true);
         }
 
-        if let Ok(mut spawner) = CombatEnemySpawner::from_obj(self.spawner()) {
+        if let Some(spawner) = self.spawner().get()
+            && let Ok(mut spawner) = CombatEnemySpawner::from_obj(spawner)
+        {
             spawner.on_enemy_died();
         }
 

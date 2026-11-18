@@ -7,7 +7,7 @@ use bindings::prelude::*;
 use bindings::umg::{UserWidget, UserWidgetExt};
 use rusteal_runtime::runtime::input::should_display_touch_interface;
 use rusteal_runtime::runtime::{
-    FName, OwnedStruct, RustealResult, SubclassOf, UObjectRef, UeArray,
+    FName, OwnedStruct, RustRef, RustealResult, SubclassOf, UObjectRef, UeArray,
 };
 use rusteal_runtime::{uclass, uclass_impl};
 
@@ -94,7 +94,7 @@ impl ShooterPlayerController {
         }
     }
 
-    fn bullet_counter(&mut self) -> Option<ShooterBulletCounterUI> {
+    fn bullet_counter(&self) -> Option<RustRef<'_, ShooterBulletCounterUI>> {
         if let Ok(ui) = ShooterBulletCounterUI::from_obj(self.bullet_counter_ui()) {
             return Some(ui);
         }
@@ -154,15 +154,11 @@ impl ShooterPlayerController {
     }
 
     fn possess_pawn(&mut self, possessed_pawn: UObjectRef<Pawn>) -> RustealResult<()> {
-        let controller: UObjectRef<PlayerController> = self.as_ref();
-
         possessed_pawn
             .checked()?
             .on_destroyed()
-            .add(move |destroyed_actor| {
-                if let Ok(mut me) = ShooterPlayerController::from_obj(controller) {
-                    me.on_pawn_destroyed(destroyed_actor);
-                }
+            .add_method(self, |me: &mut Self, destroyed_actor| {
+                me.on_pawn_destroyed(destroyed_actor);
             })?
             .detach();
 

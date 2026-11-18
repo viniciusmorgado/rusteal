@@ -11,8 +11,8 @@ pub struct CommandContext {
 
 impl CommandContext {
     #[track_caller]
-    pub fn world<W: UeClass>(&self) -> RustealResult<UObjectRef<W>> {
-        UObjectRef::from_handle(self.world)
+    pub fn world<W: UeClass>(&self) -> RustealResult<UObjectRef<'_, W>> {
+        unsafe { UObjectRef::from_handle(self.world) }
     }
 }
 
@@ -20,7 +20,7 @@ impl CommandContext {
 pub fn register_command(
     name: &str,
     help: &str,
-    mut run: impl FnMut(&[&str], &CommandContext) + Send + 'static,
+    mut run: impl FnMut(&[&str], &CommandContext) + 'static,
 ) -> RustealResult<()> {
     let callback_id = delegate_registry::register_callback(move |params| {
         let args = unsafe { &*(params as *const RustealConsoleArgs) };

@@ -1,22 +1,24 @@
-use rusteal_core::UObjectRef;
+use rusteal_core::{ObjectPointer, TWeakObjectPtr, UObjectRef};
 use rusteal_core::events::NativeEvent;
-use rusteal_ffi::{RustealNativeEvent, RustealNativeEventArgs, UObjectHandle};
+use rusteal_ffi::{FWeakObjectHandle, RustealNativeEvent, RustealNativeEventArgs};
 
 use crate::engine::{Controller, GameModeBase, Level, PlayerController, World};
 
-fn first<T: rusteal_core::UeClass>(args: &RustealNativeEventArgs) -> UObjectRef<T> {
-    unsafe { UObjectRef::from_raw(args.first) }
+// An event's objects reach callbacks bound earlier and futures awaited later, past the call that
+// gave them, so they come as weak pointers.
+fn first<T: rusteal_core::UeClass>(args: &RustealNativeEventArgs) -> TWeakObjectPtr<T> {
+    unsafe { TWeakObjectPtr::from_object_handle(args.first) }
 }
 
-fn second<T: rusteal_core::UeClass>(args: &RustealNativeEventArgs) -> UObjectRef<T> {
-    unsafe { UObjectRef::from_raw(args.second) }
+fn second<T: rusteal_core::UeClass>(args: &RustealNativeEventArgs) -> TWeakObjectPtr<T> {
+    unsafe { TWeakObjectPtr::from_object_handle(args.second) }
 }
 
-fn global<A: Send + 'static>(
+fn global<A: 'static>(
     kind: RustealNativeEvent,
     convert: fn(&RustealNativeEventArgs) -> A,
 ) -> NativeEvent<A> {
-    NativeEvent::new(kind, UObjectHandle::null(), convert)
+    NativeEvent::new(kind, FWeakObjectHandle::default(), convert)
 }
 
 /// The application's lifecycle, `FCoreDelegates`.
@@ -54,22 +56,22 @@ pub mod world_events {
     use super::*;
 
     /// A world was initialized.
-    pub fn initialized() -> NativeEvent<UObjectRef<World>> {
+    pub fn initialized() -> NativeEvent<TWeakObjectPtr<World>> {
         global(RustealNativeEvent::WorldInitialized, first)
     }
 
     /// A world is cleaned up, with whether its session ended.
-    pub fn cleanup() -> NativeEvent<(UObjectRef<World>, bool)> {
+    pub fn cleanup() -> NativeEvent<(TWeakObjectPtr<World>, bool)> {
         global(RustealNativeEvent::WorldCleanup, |args| (first(args), args.a != 0))
     }
 
     /// A level was added to a world (a streamed level became visible).
-    pub fn level_added() -> NativeEvent<(UObjectRef<Level>, UObjectRef<World>)> {
+    pub fn level_added() -> NativeEvent<(TWeakObjectPtr<Level>, TWeakObjectPtr<World>)> {
         global(RustealNativeEvent::LevelAdded, |args| (first(args), second(args)))
     }
 
     /// A level was removed from a world.
-    pub fn level_removed() -> NativeEvent<(UObjectRef<Level>, UObjectRef<World>)> {
+    pub fn level_removed() -> NativeEvent<(TWeakObjectPtr<Level>, TWeakObjectPtr<World>)> {
         global(RustealNativeEvent::LevelRemoved, |args| (first(args), second(args)))
     }
 }
@@ -79,12 +81,12 @@ pub mod game_mode_events {
     use super::*;
 
     /// A player logged in, after the game mode's own PostLogin.
-    pub fn post_login() -> NativeEvent<(UObjectRef<GameModeBase>, UObjectRef<PlayerController>)> {
+    pub fn post_login() -> NativeEvent<(TWeakObjectPtr<GameModeBase>, TWeakObjectPtr<PlayerController>)> {
         global(RustealNativeEvent::PostLogin, |args| (first(args), second(args)))
     }
 
     /// A player is logging out.
-    pub fn logout() -> NativeEvent<(UObjectRef<GameModeBase>, UObjectRef<Controller>)> {
+    pub fn logout() -> NativeEvent<(TWeakObjectPtr<GameModeBase>, TWeakObjectPtr<Controller>)> {
         global(RustealNativeEvent::Logout, |args| (first(args), second(args)))
     }
 }
@@ -103,9 +105,9 @@ mod path_following {
         fn on_request_finished(&self) -> NativeEvent<(u32, EPathFollowingResult)>;
     }
 
-    impl PathFollowingEventsExt for UObjectRef<PathFollowingComponent> {
+    impl PathFollowingEventsExt for UObjectRef<'_, PathFollowingComponent> {
         fn on_request_finished(&self) -> NativeEvent<(u32, EPathFollowingResult)> {
-            NativeEvent::new(RustealNativeEvent::MoveRequestFinished, self.raw(), |args| {
+            NativeEvent::new(RustealNativeEvent::MoveRequestFinished, self.weak_handle(), |args| {
                 let code = EPathFollowingResult::from_i64(i64::from(args.b & 0xff))
                     .unwrap_or(EPathFollowingResult::Invalid);
                 (args.a, code)

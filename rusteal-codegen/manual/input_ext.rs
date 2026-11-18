@@ -40,13 +40,17 @@ impl InputActionValueExt for UStructRef<FInputActionValue> {
 /// (a pawn's lasts until it is unpossessed); [`ActionBinding::unbind`] removes it sooner.
 #[derive(Debug, Clone, Copy)]
 pub struct ActionBinding {
-    actor: rusteal_ffi::UObjectHandle,
+    actor: rusteal_core::FWeakObjectHandle,
     handle: u32,
 }
 
 impl ActionBinding {
     pub fn unbind(self) {
-        rusteal_core::input::unbind_action_raw(self.actor, self.handle);
+        let actor = rusteal_core::resolve_weak_handle(self.actor);
+
+        if !actor.is_null() {
+            rusteal_core::input::unbind_action_raw(actor, self.handle);
+        }
     }
 }
 
@@ -58,7 +62,7 @@ pub fn bind_action(
     actor: &UObjectRef<impl UeClass>,
     action: UObjectRef<InputAction>,
     trigger_event: ETriggerEvent,
-    mut callback: impl FnMut(UStructRef<FInputActionValue>) + Send + 'static,
+    mut callback: impl FnMut(UStructRef<FInputActionValue>) + 'static,
 ) -> RustealResult<ActionBinding> {
     let actor = actor.checked()?.raw();
     let action = action.checked()?.raw();
@@ -73,17 +77,20 @@ pub fn bind_action(
         },
     )?;
 
-    Ok(ActionBinding { actor, handle })
+    Ok(ActionBinding {
+        actor: unsafe { rusteal_core::weak_handle_of(actor) },
+        handle,
+    })
 }
 
 /// What [`bind_action_instance`] gives its callback: the action's value, how long it has been
 /// evaluated and triggered, and the action itself.
 #[derive(Debug)]
-pub struct ActionInstance {
+pub struct ActionInstance<'a> {
     pub value: UStructRef<FInputActionValue>,
     pub elapsed_seconds: f32,
     pub triggered_seconds: f32,
-    pub action: UObjectRef<InputAction>,
+    pub action: UObjectRef<'a, InputAction>,
 }
 
 /// [`bind_action`] with the action's times and the action itself, as an [`ActionInstance`].
@@ -92,7 +99,7 @@ pub fn bind_action_instance(
     actor: &UObjectRef<impl UeClass>,
     action: UObjectRef<InputAction>,
     trigger_event: ETriggerEvent,
-    mut callback: impl FnMut(ActionInstance) + Send + 'static,
+    mut callback: impl FnMut(ActionInstance<'_>) + 'static,
 ) -> RustealResult<ActionBinding> {
     let actor = actor.checked()?.raw();
     let action = action.checked()?.raw();
@@ -111,7 +118,10 @@ pub fn bind_action_instance(
         },
     )?;
 
-    Ok(ActionBinding { actor, handle })
+    Ok(ActionBinding {
+        actor: unsafe { rusteal_core::weak_handle_of(actor) },
+        handle,
+    })
 }
 
 /// Binds the UFunction named `function` of `actor`, as Blueprint's input events do: for a
@@ -128,9 +138,9 @@ pub fn bind_action_by_name(
     rusteal_core::input::bind_action_raw(actor, action, trigger_event as u8, function)
 }
 
-pub fn enhanced_input_subsystem(
-    controller: UObjectRef<PlayerController>,
-) -> RustealResult<UObjectRef<EnhancedInputLocalPlayerSubsystem>> {
+pub fn enhanced_input_subsystem<'a>(
+    controller: UObjectRef<'a, PlayerController>,
+) -> RustealResult<UObjectRef<'a, EnhancedInputLocalPlayerSubsystem>> {
     controller.checked()?;
 
     let class: SubclassOf<LocalPlayerSubsystem> =

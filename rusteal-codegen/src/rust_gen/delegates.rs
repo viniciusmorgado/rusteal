@@ -273,7 +273,7 @@ pub fn generate_delegate_impls(out: &mut String, delegates: &[DelegateInfo]) {
              \x20               {class_name}::static_class(), {byte_lit}.as_ptr(), {prop_name_len}\n\
              \x20           )\n\
              \x20       }});\n\
-             \x20       {struct_name} {{ owner: self.handle(), prop }}\n\
+             \x20       {struct_name} {{ owner: unsafe {{ rusteal_core::weak_handle_of(self.handle()) }}, prop }}\n\
              \x20   }}\n\n"
         ));
     }
@@ -286,7 +286,7 @@ pub fn generate_delegate_structs(out: &mut String, delegates: &[DelegateInfo], c
 
         out.push_str(&format!(
             "pub struct {struct_name} {{\n\
-             \x20   pub owner: rusteal_core::UObjectHandle,\n\
+             \x20   pub owner: rusteal_core::FWeakObjectHandle,\n\
              \x20   pub prop: rusteal_core::FPropertyHandle,\n\
              }}\n\n"
         ));
@@ -329,7 +329,7 @@ pub fn generate_delegate_structs(out: &mut String, delegates: &[DelegateInfo], c
              \x20   pub fn {ufunction_method}(&self, target: &rusteal_core::UObjectRef<impl rusteal_core::UeClass>, function: &str) -> rusteal_core::RustealResult<()> {{\n\
              \x20       let target = target.checked()?.raw();\n\
              \x20       rusteal_core::check_ffi(unsafe {{\n\
-             \x20           rusteal_core::ffi_dispatch::delegate_add_function(self.owner, self.prop, target, function.as_ptr(), function.len() as u32)\n\
+             \x20           rusteal_core::ffi_dispatch::delegate_add_function(rusteal_core::resolve_weak_handle(self.owner), self.prop, target, function.as_ptr(), function.len() as u32)\n\
              \x20       }})\n\
              \x20   }}\n\n",
             if is_multicast { "AddDynamic" } else { "BindDynamic" },
@@ -340,8 +340,10 @@ pub fn generate_delegate_structs(out: &mut String, delegates: &[DelegateInfo], c
             emit_next(out, &d.params);
         }
 
+        emit_method_binding(out, &d.params, method_name, &callback_sig);
+
         out.push_str(&format!(
-            "    #[track_caller]\n    pub fn {method_name}(&self, mut callback: impl FnMut({callback_sig}) + Send + 'static) -> rusteal_core::RustealResult<rusteal_core::DelegateBinding> {{\n"
+            "    #[track_caller]\n    pub fn {method_name}(&self, mut callback: impl FnMut({callback_sig}) + 'static) -> rusteal_core::RustealResult<rusteal_core::DelegateBinding> {{\n"
         ));
 
         if !d.params.is_empty() {
@@ -364,7 +366,7 @@ pub fn generate_delegate_structs(out: &mut String, delegates: &[DelegateInfo], c
 
         if d.params.is_empty() {
             out.push_str(&format!(
-                "        let owner = self.owner;\n\
+                "        let owner = rusteal_core::resolve_weak_handle(self.owner);\n\
                  \x20       let prop = self.prop;\n\
                  \x20       rusteal_core::delegate_registry::{api_fn}(owner, prop, move |_params: rusteal_core::ffi_dispatch::NativePtr| {{\n\
                  \x20           callback();\n\
@@ -377,7 +379,7 @@ pub fn generate_delegate_structs(out: &mut String, delegates: &[DelegateInfo], c
         }
 
         out.push_str(&format!(
-            "        let owner = self.owner;\n\
+            "        let owner = rusteal_core::resolve_weak_handle(self.owner);\n\
              \x20       let prop = self.prop;\n\
              \x20       rusteal_core::delegate_registry::{api_fn}(owner, prop, move |params: rusteal_core::ffi_dispatch::NativePtr| {{\n\
              \x20           unsafe {{\n"
@@ -399,16 +401,84 @@ pub fn generate_delegate_structs(out: &mut String, delegates: &[DelegateInfo], c
     }
 }
 
+/// `add_method` (`bind_method`): the delegate bound to a method, or a closure taking the class
+/// first, of a Rust class's object. The object is found again by its index and serial number
+/// each time the delegate fires, and the call is skipped once it is gone. Unlike
+/// `add(method(self, Self::f))`, the objects the delegate passes keep the lifetime of each call.
+fn emit_method_binding(
+    out: &mut String,
+    params: &[DelegateParam],
+    method_name: &str,
+    callback_sig: &str,
+) {
+    let args = params
+        .iter()
+        .map(|p| p.name.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let function_sig = if callback_sig.is_empty() {
+        "&mut __T".to_string()
+    } else {
+        format!("&mut __T, {callback_sig}")
+    };
+    let call_args = if args.is_empty() {
+        "&mut __this".to_string()
+    } else {
+        format!("&mut __this, {args}")
+    };
+
+    out.push_str(&format!(
+        "    /// [`{method_name}`](Self::{method_name}) with a method of a Rust class's `object`, or a\n\
+         \x20   /// closure taking the class first: the object is found again each time the delegate\n\
+         \x20   /// fires, and the call is skipped once it is gone.\n\
+         \x20   #[track_caller]\n\
+         \x20   pub fn {method_name}_method<__T: rusteal_core::RustObject>(&self, object: &__T, mut function: impl FnMut({function_sig}) + 'static) -> rusteal_core::RustealResult<rusteal_core::DelegateBinding> {{\n\
+         \x20       let __weak = unsafe {{ rusteal_core::weak_handle_of(rusteal_core::RustObject::object_handle(object)) }};\n\
+         \x20       self.{method_name}(move |{args}| {{\n\
+         \x20           let __handle = rusteal_core::resolve_weak_handle(__weak);\n\
+         \x20           if __handle.is_null() {{\n\
+         \x20               return;\n\
+         \x20           }}\n\
+         \x20           if let Ok(mut __this) = <__T as rusteal_core::RustObject>::from_object_handle(__handle) {{\n\
+         \x20               function({call_args});\n\
+         \x20           }}\n\
+         \x20       }})\n\
+         \x20   }}\n\n"
+    ));
+}
+
+/// What `next()` resolves to for a parameter, and how it is made from the parameter: objects
+/// arrive after an `.await`, past the call that passed them, so they come as weak pointers.
+fn next_output(param: &DelegateParam) -> (String, String) {
+    let name = &param.name;
+
+    if let Some(class) = param.rust_type.strip_prefix("rusteal_core::UObjectRef<") {
+        (
+            format!("rusteal_core::TWeakObjectPtr<{class}"),
+            format!("rusteal_core::TWeakObjectPtr::from_ref(&{name})"),
+        )
+    } else if param.rust_type == "rusteal_core::UObjectHandle" {
+        (
+            "rusteal_core::FWeakObjectHandle".to_string(),
+            format!("unsafe {{ rusteal_core::weak_handle_of({name}) }}"),
+        )
+    } else {
+        (param.rust_type.clone(), name.clone())
+    }
+}
+
 fn emit_next(out: &mut String, params: &[DelegateParam]) {
     let names: Vec<&str> = params.iter().map(|p| p.name.as_str()).collect();
-    let types: Vec<&str> = params.iter().map(|p| p.rust_type.as_str()).collect();
+    let outputs: Vec<(String, String)> = params.iter().map(next_output).collect();
+    let types: Vec<&str> = outputs.iter().map(|(ty, _)| ty.as_str()).collect();
+    let values: Vec<&str> = outputs.iter().map(|(_, value)| value.as_str()).collect();
 
     let (output, value) = match params.len() {
         0 => ("()".to_string(), "()".to_string()),
-        1 => (types[0].to_string(), names[0].to_string()),
+        1 => (types[0].to_string(), values[0].to_string()),
         _ => (
             format!("({})", types.join(", ")),
-            format!("({})", names.join(", ")),
+            format!("({})", values.join(", ")),
         ),
     };
 

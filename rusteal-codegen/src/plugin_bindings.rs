@@ -10,6 +10,7 @@ use syn::{
 
 use crate::context::CodegenContext;
 use crate::naming::to_snake_case;
+use crate::rust_gen::classes::{anchor_static_function, with_call_lifetime};
 use crate::write_if_changed;
 
 pub const PLUGINS_DIR: &str = "plugins";
@@ -820,16 +821,19 @@ pub fn generate_plugin_module(model: &PluginModel, index: &TypeIndex) -> String 
             }
         }
 
+        // As for the engine's classes: the objects a function gives live as long as the
+        // `Checked` it is called on.
         write!(
             out,
-            "\n{class_cfg}pub trait {name}Ext: rusteal_core::ValidHandle {{\n{}}}\n\n\
-             {class_cfg}impl {name}Ext for rusteal_core::Checked<{name}> {{}}\n\
-             {class_cfg}impl {name}Ext for rusteal_core::Pinned<{name}> {{}}\n",
-            members
-                .iter()
-                .map(|m| indent(m, "    "))
-                .collect::<Vec<_>>()
-                .join("\n")
+            "\n{class_cfg}pub trait {name}Ext<'a>: rusteal_core::ValidHandle {{\n{}}}\n\n\
+             {class_cfg}impl<'a> {name}Ext<'a> for rusteal_core::Checked<'a, {name}> {{}}\n",
+            with_call_lifetime(
+                &members
+                    .iter()
+                    .map(|m| indent(m, "    "))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            )
         )
         .unwrap();
 
@@ -839,7 +843,7 @@ pub fn generate_plugin_module(model: &PluginModel, index: &TypeIndex) -> String 
                 "\n{class_cfg}impl {name} {{\n{}}}\n",
                 statics
                     .iter()
-                    .map(|m| indent(m, "    "))
+                    .map(|m| anchor_static_function(&indent(m, "    ")))
                     .collect::<Vec<_>>()
                     .join("\n")
             )
@@ -1088,7 +1092,14 @@ impl ProbeTarget {
         assert!(code.contains("fn charge(&self) -> i32 {"));
         assert!(code.contains("PropertySlot::new(\"DisplayName\")"));
         assert!(code.contains("fn mode(&self) -> Option<crate::engine::EMovementMode> {"));
-        assert!(code.contains("fn friend(&self) -> rusteal_core::UObjectRef<ProbeTarget> {"));
+        assert!(code.contains("fn friend(&self) -> rusteal_core::UObjectRef<'a, ProbeTarget> {"));
+        assert!(code.contains("pub trait ProbeTargetExt<'a>: rusteal_core::ValidHandle {"));
+        assert!(
+            code.contains(
+                "impl<'a> ProbeTargetExt<'a> for rusteal_core::Checked<'a, ProbeTarget> {}"
+            )
+        );
+        assert!(!code.contains("rusteal_core::Pinned<ProbeTarget>"));
         assert!(
             code.contains(
                 "fn add_charge(&self, amount: i32) -> rusteal_core::RustealResult<i32> {"

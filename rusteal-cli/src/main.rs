@@ -10,6 +10,7 @@ mod platform;
 mod plugin_cmd;
 mod project_version;
 mod setup;
+mod shared_std;
 mod standalone;
 mod static_link;
 mod sync_plugin;
@@ -109,6 +110,8 @@ enum Commands {
         optimizations: optimizations::Switch,
         #[arg(long)]
         server: bool,
+        #[arg(long = "feature", value_enum, requires = "link_statically")]
+        features: Vec<crate::package_cmd::PackageFeature>,
     },
     Upgrade {
         project: Option<PathBuf>,
@@ -279,6 +282,7 @@ fn main() {
             platform,
             optimizations,
             server,
+            features,
         } => {
             let root = project_root(project.as_deref());
             check_version(&root, Scope::PinsAndPlugins);
@@ -296,6 +300,7 @@ fn main() {
                 link_statically,
                 &target,
                 server,
+                features.contains(&package_cmd::PackageFeature::SharedStd),
             );
         }
         Commands::Platform {
@@ -524,6 +529,20 @@ mod tests {
 
         assert!(link_statically);
         assert_eq!(platform.as_deref(), Some("packs/console.toml"));
+
+        let shared =
+            Cli::try_parse_from(["rusteal", "package", "--static", "--feature", "shared-std"]);
+        let Ok(Cli {
+            command: Commands::Package { features, .. },
+        }) = shared
+        else {
+            panic!("--feature shared-std is refused");
+        };
+        assert_eq!(features, [crate::package_cmd::PackageFeature::SharedStd]);
+        assert!(Cli::try_parse_from(["rusteal", "package", "--feature", "shared-std"]).is_err());
+        assert!(
+            Cli::try_parse_from(["rusteal", "package", "--static", "--feature", "other"]).is_err()
+        );
         assert!(Cli::try_parse_from(["rusteal", "platform", "show", "Linux"]).is_ok());
         assert!(Cli::try_parse_from(["rusteal", "platform", "list"]).is_ok());
     }

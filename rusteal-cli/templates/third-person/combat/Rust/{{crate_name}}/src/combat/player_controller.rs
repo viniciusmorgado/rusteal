@@ -43,14 +43,11 @@ impl CombatPlayerController {
 
     #[ufunction(Override)]
     fn receive_possess(&mut self, possessed_pawn: UObjectRef<Pawn>) {
-        let controller: UObjectRef<PlayerController> = self.as_ref();
-
         let bound = possessed_pawn.checked().and_then(|pawn| {
-            pawn.on_destroyed().add(move |destroyed_actor| {
-                if let Ok(mut me) = CombatPlayerController::from_obj(controller) {
+            pawn.on_destroyed()
+                .add_method(self, |me: &mut Self, destroyed_actor| {
                     me.on_pawn_destroyed(destroyed_actor);
-                }
-            })
+                })
         });
 
         match bound {

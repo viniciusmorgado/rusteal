@@ -1,0 +1,12 @@
+error: `target` keeps a `UObjectRef` in a Rust-only field, where the garbage collector cannot see it: the object can be destroyed while the field still names it.
+
+       Keep it one of these ways instead:
+       - `#[uproperty] target: UObjectRef<T>` when the class owns the object or must keep it: the engine sees it;
+       - `target: TWeakObjectPtr<T>` when the class only observes it: `get()` is `None` once it is gone;
+       - `target: Pinned<T>` when Rust alone keeps it alive.
+
+       Several objects are `#[uproperty] UeArray<UObjectRef<T>>` or `Vec<TWeakObjectPtr<T>>`.
+ --> tests/ui/object_reference_in_a_rust_only_field.rs:5:13
+  |
+5 |     target: Option<rusteal_runtime::runtime::UObjectRef<Actor>>,
+  |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

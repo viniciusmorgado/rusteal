@@ -1,6 +1,6 @@
 use bindings::engine::Actor;
 use glam::DVec3;
-use rusteal_runtime::runtime::UObjectRef;
+use rusteal_runtime::runtime::{RustRef, UObjectRef};
 
 use super::character::CombatCharacter;
 use super::damageable_box::CombatDamageableBox;
@@ -36,32 +36,37 @@ pub trait CombatActivatable {
     fn deactivate_interaction(&mut self, activation_instigator: UObjectRef<Actor>);
 }
 
-pub fn attacker(actor: UObjectRef<Actor>) -> Option<Box<dyn CombatAttacker>> {
+/// The Rust class behind `actor` as a `CombatAttacker`, for this call.
+pub fn attacker(actor: UObjectRef<'_, Actor>) -> Option<RustRef<'_, Box<dyn CombatAttacker>>> {
     if let Ok(character) = CombatCharacter::from_obj(actor) {
-        Some(Box::new(character))
+        Some(character.map(|c| Box::new(c) as Box<_>))
     } else if let Ok(enemy) = CombatEnemy::from_obj(actor) {
-        Some(Box::new(enemy))
+        Some(enemy.map(|c| Box::new(c) as Box<_>))
     } else {
         None
     }
 }
 
-pub fn damageable(actor: UObjectRef<Actor>) -> Option<Box<dyn CombatDamageable>> {
+/// The Rust class behind `actor` as a `CombatDamageable`, for this call.
+pub fn damageable(actor: UObjectRef<'_, Actor>) -> Option<RustRef<'_, Box<dyn CombatDamageable>>> {
     if let Ok(character) = CombatCharacter::from_obj(actor) {
-        Some(Box::new(character))
+        Some(character.map(|c| Box::new(c) as Box<_>))
     } else if let Ok(enemy) = CombatEnemy::from_obj(actor) {
-        Some(Box::new(enemy))
+        Some(enemy.map(|c| Box::new(c) as Box<_>))
     } else if let Ok(damageable_box) = CombatDamageableBox::from_obj(actor) {
-        Some(Box::new(damageable_box))
+        Some(damageable_box.map(|c| Box::new(c) as Box<_>))
     } else if let Ok(dummy) = CombatDummy::from_obj(actor) {
-        Some(Box::new(dummy))
+        Some(dummy.map(|c| Box::new(c) as Box<_>))
     } else {
         None
     }
 }
 
-pub fn activatable(actor: UObjectRef<Actor>) -> Option<Box<dyn CombatActivatable>> {
+/// The Rust class behind `actor` as a `CombatActivatable`, for this call.
+pub fn activatable(
+    actor: UObjectRef<'_, Actor>,
+) -> Option<RustRef<'_, Box<dyn CombatActivatable>>> {
     CombatEnemySpawner::from_obj(actor)
         .ok()
-        .map(|spawner| Box::new(spawner) as Box<dyn CombatActivatable>)
+        .map(|spawner| spawner.map(|s| Box::new(s) as Box<dyn CombatActivatable>))
 }
